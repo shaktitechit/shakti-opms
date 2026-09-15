@@ -6,11 +6,29 @@ const Department = require('../../models/Department');
 const { toPlain } = require('../../utils/mongoJson');
 const { ApiError } = require('../../utils/ApiError');
 const { sanitizeUser } = require('../../utils/sanitize');
+const { APP_LOGIN_URL } = require('../../config/env');
+const emailHelper = require('../messages/helpers/email.helper');
 const {
   resolveRoleIdsForUser,
   resolveDefaultRoleIdsForDepartment,
   assertRolesExist,
 } = require('./userRoles.util');
+
+const TEMPLATE_WELCOME = 'welcome';
+
+async function sendWelcomeEmail({ name, email, password }) {
+  try {
+    await emailHelper.sendTemplateEmail(email, TEMPLATE_WELCOME, {
+      subject: 'Welcome — your account credentials',
+      recipientName: name || 'there',
+      email,
+      password,
+      loginUrl: APP_LOGIN_URL,
+    });
+  } catch (err) {
+    console.error(`[User Service] welcome email failed for ${email}: ${err.message}`);
+  }
+}
 
 async function assertDepartmentExists(departmentCode) {
   const code = String(departmentCode || '').toLowerCase().trim();
@@ -91,7 +109,8 @@ async function create(body, actor) {
 
   const department = await assertDepartmentExists(body.department);
 
-  const hash = await bcrypt.hash(body.password || 'ChangeMe123!', 10);
+  const plainPassword = body.password || '';
+  const hash = await bcrypt.hash(plainPassword, 10);
 
   const roleIds = await resolveRoleIdsForUser({ ...body, department });
   if (!roleIds.length) {
@@ -113,6 +132,12 @@ async function create(body, actor) {
     roles: roleIds,
     portals,
     is_active: body.is_active !== false,
+  });
+
+  await sendWelcomeEmail({
+    name: body.name,
+    email,
+    password: plainPassword,
   });
 
   return sanitizeUser(
