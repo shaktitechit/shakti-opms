@@ -39,12 +39,10 @@ export function publicPartyServiceOrigin(): string {
 }
 
 /**
- * Public notification service origin (`NEXT_PUBLIC_NOTIFICATION_SERVICE_URL`).
- * Defaults to notification-service on http://localhost:7012 or falls back to main API origin.
+ * Notifications are proxied by opms-backend (`/api/notifications`).
+ * Backends reach notification-service via `NOTIFICATION_SERVICE_URL` (server-only).
  */
 export function publicNotificationServiceOrigin(): string {
-  const raw = process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL?.trim();
-  if (raw) return raw.replace(/\/+$/, "");
   return publicApiOrigin();
 }
 

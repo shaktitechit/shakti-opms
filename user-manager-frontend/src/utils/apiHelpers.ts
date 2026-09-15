@@ -3,10 +3,9 @@ export const API_BASE =
   process.env.NEXT_PUBLIC_API_ORIGIN ||
   "http://localhost:7003";
 
+/** Notifications are proxied by auth-service (`/api/notifications`). */
 export function publicNotificationServiceOrigin(): string {
-  const raw = process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL?.trim();
-  if (raw) return raw.replace(/\/+$/, "");
-  return API_BASE;
+  return API_BASE.replace(/\/+$/, "");
 }
 
 export function getAuthHeaders(token?: string | null): Record<string, string> {

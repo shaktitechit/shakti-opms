@@ -10,13 +10,12 @@ export const PRODUCT_SERVICE_URL =
 export const PARTY_SERVICE_URL =
   process.env.NEXT_PUBLIC_PARTY_SERVICE_URL || "http://localhost:7006";
 
-export const NOTIFICATION_SERVICE_URL =
-  process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL || "http://localhost:7012";
-
+/**
+ * Notifications are proxied by lead-manager-backend (`/api/notifications`).
+ * Backends reach notification-service via `NOTIFICATION_SERVICE_URL` (server-only).
+ */
 export function publicNotificationServiceOrigin(): string {
-  const raw = process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL?.trim();
-  if (raw) return raw.replace(/\/+$/, "");
-  return LEAD_MANAGER_SERVICE_URL;
+  return LEAD_MANAGER_SERVICE_URL.replace(/\/+$/, "");
 }
 
 export function resolvePublicAssetUrl(path: string): string {

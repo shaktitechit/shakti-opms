@@ -1,13 +1,13 @@
 export const AUTH_SERVICE_URL =
   process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || "http://localhost:7003";
 
-export const NOTIFICATION_SERVICE_URL =
-  process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL || "http://localhost:7012";
-
-/** @deprecated Prefer NOTIFICATION_SERVICE_URL for shell APIs. */
-export const LEAD_MANAGER_SERVICE_URL =
-  process.env.NEXT_PUBLIC_LEAD_MANAGER_SERVICE_URL ||
-  NOTIFICATION_SERVICE_URL;
+/**
+ * Notifications are proxied by auth-service (`/api/notifications`).
+ * Backends reach notification-service via `NOTIFICATION_SERVICE_URL` (server-only).
+ */
+export function publicNotificationServiceOrigin(): string {
+  return AUTH_SERVICE_URL.replace(/\/+$/, "");
+}
 
 export const OPMS_FRONTEND_URL = (
   process.env.NEXT_PUBLIC_OPMS_URL || "http://localhost:7002"
@@ -24,12 +24,6 @@ export const WORK_PLANNER_FRONTEND_URL = (
 export const LEAD_MANAGER_FRONTEND_URL = (
   process.env.NEXT_PUBLIC_LEAD_MANAGER_URL || "http://localhost:7010/dashboard"
 ).replace(/\/+$/, "");
-
-export function publicNotificationServiceOrigin(): string {
-  const raw = process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL?.trim();
-  if (raw) return raw.replace(/\/+$/, "");
-  return NOTIFICATION_SERVICE_URL;
-}
 
 export function resolvePublicAssetUrl(path: string): string {
   if (!path) return "";

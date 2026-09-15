@@ -13,13 +13,12 @@ export const PARTY_SERVICE_URL =
 export const LEAD_MANAGER_SERVICE_URL =
   process.env.NEXT_PUBLIC_LEAD_MANAGER_SERVICE_URL || "http://localhost:7009";
 
-export const NOTIFICATION_SERVICE_URL =
-  process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL || "http://localhost:7012";
-
+/**
+ * Notifications are proxied by work-planner-backend (`/api/notifications`).
+ * Backends reach notification-service via `NOTIFICATION_SERVICE_URL` (server-only).
+ */
 export function publicNotificationServiceOrigin(): string {
-  const raw = process.env.NEXT_PUBLIC_NOTIFICATION_SERVICE_URL?.trim();
-  if (raw) return raw.replace(/\/+$/, "");
-  return WORK_PLANNER_SERVICE_URL;
+  return WORK_PLANNER_SERVICE_URL.replace(/\/+$/, "");
 }
 
 export function resolvePublicAssetUrl(path: string): string {
