@@ -1,5 +1,5 @@
 /**
- * @fileoverview Process entry: env, MongoDB connect, optional seed bootstrap, queue registration, HTTP listen.
+ * @fileoverview Process entry: env, MongoDB connect, queue registration, HTTP listen.
  * @module server
  */
 const path = require('path');
@@ -13,9 +13,6 @@ const workers = require('./workers');
 
 db.connect()
   .then(async () => {
-    const { syncRolesAndPermissionsToMongo, syncSuperAdminUserToMongo } = require('./data/mongoSyncUsers');
-    await syncRolesAndPermissionsToMongo();
-    await syncSuperAdminUserToMongo(process.env.ADMIN_PASSWORD || 'ChangeMe123!');
     await queues.registerQueues(logger);
     workers.startAll(logger);
     const app = require('./app');

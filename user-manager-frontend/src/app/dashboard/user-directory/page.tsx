@@ -3,13 +3,12 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { RefreshCw, Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { RefreshCw, Plus, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
 
 import { readSessionFromStorage } from "@/utils/authStorage";
 import { API_BASE, getAuthHeaders, extractList } from "@/utils/apiHelpers";
 
 import { KpiStatsCards } from "@/components/dashboard/KpiStatsCards";
-import { FilterBar } from "@/components/dashboard/FilterBar";
 import { UserTable } from "@/components/dashboard/UserTable";
 import { DeleteUserModal } from "@/components/modals/DeleteUserModal";
 
@@ -25,7 +24,6 @@ export default function UserDirectoryPage() {
 
   // Filter, Pagination & Modal state
   const [search, setSearch] = useState("");
-  const [deptFilter, setDeptFilter] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -44,7 +42,7 @@ export default function UserDirectoryPage() {
   // Reset pagination on search or filter change
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, deptFilter]);
+  }, [search]);
 
   const token = session?.token;
   const currentUserId = String(session?.user?.id || session?.user?._id || "");
@@ -93,19 +91,13 @@ export default function UserDirectoryPage() {
 
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
-      const matchesSearch =
+      return (
         !search.trim() ||
         (u.name ?? "").toLowerCase().includes(search.toLowerCase()) ||
-        (u.email ?? "").toLowerCase().includes(search.toLowerCase());
-
-      const matchesDept =
-        deptFilter === "all" ||
-        u.department === deptFilter ||
-        u.roleCode === deptFilter;
-
-      return matchesSearch && matchesDept;
+        (u.email ?? "").toLowerCase().includes(search.toLowerCase())
+      );
     });
-  }, [users, search, deptFilter]);
+  }, [users, search]);
 
   // Pagination calculation
   const totalPages = useMemo(() => {
@@ -136,14 +128,7 @@ export default function UserDirectoryPage() {
     return pages;
   }, [totalPages, currentPage]);
 
-  const deptCounts = useMemo(() => {
-    const map: Record<string, number> = { all: users.length };
-    users.forEach((u) => {
-      const d = u.department || "unknown";
-      map[d] = (map[d] || 0) + 1;
-    });
-    return map;
-  }, [users]);
+
 
   const stats = useMemo(() => {
     let active = 0;
@@ -192,6 +177,21 @@ export default function UserDirectoryPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted" />
+            <input
+              type="text"
+              placeholder="Search by name or email…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-48 sm:w-56 rounded-xl border border-border bg-card py-2.5 pl-9 pr-8 text-xs text-foreground placeholder:text-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 shadow-inner"
+            />
+            {search && (
+              <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted hover:text-foreground transition">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
           <button
             onClick={() => fetchUsers()}
             disabled={isLoadingUsers}
@@ -209,15 +209,6 @@ export default function UserDirectoryPage() {
           </Link>
         </div>
       </div>
-
-      {/* Filter & Search Bar */}
-      <FilterBar
-        search={search}
-        setSearch={setSearch}
-        deptFilter={deptFilter}
-        setDeptFilter={setDeptFilter}
-        deptCounts={deptCounts}
-      />
 
       {/* User Directory Data Table */}
       <UserTable
