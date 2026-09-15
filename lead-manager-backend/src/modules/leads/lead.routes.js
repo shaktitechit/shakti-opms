@@ -43,7 +43,9 @@ router.delete('/quotations/:quotationId', quotationController.remove);
 
 /* --- Leads CRUD --- */
 router.post('/', controller.create);
+router.post('/bulk-upload', controller.bulkCreate);
 router.delete('/bulk', controller.bulkRemove);
+
 router.get('/:id', controller.get);
 router.put('/:id', controller.update);
 router.delete('/:id', controller.remove);

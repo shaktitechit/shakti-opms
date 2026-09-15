@@ -28,6 +28,15 @@ exports.create = asyncHandler(async (req, res) => {
   });
 });
 
+exports.bulkCreate = asyncHandler(async (req, res) => {
+  validation.assertBulkCreate(req.body || {});
+  res.status(201).json({
+    success: true,
+    data: await leadService.bulkCreate(req.body, req.user),
+  });
+});
+
+
 exports.update = asyncHandler(async (req, res) => {
   validation.assertUpdate(req.body || {});
   res.json({

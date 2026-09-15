@@ -56,6 +56,8 @@ import { AssignLeadModal } from "./AssignLeadModal";
 import { FollowUpModal } from "./FollowUpModal";
 import { ConfirmDeleteLeadModal } from "./ConfirmDeleteLeadModal";
 import { GoogleSheetLeadsModal } from "./GoogleSheetLeadsModal";
+import { BulkUploadLeadsModal } from "./BulkUploadLeadsModal";
+
 
 import { readSessionFromStorage } from "@/utils/authStorage";
 
@@ -94,7 +96,7 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
   const [page, setPage] = useState<number>(1);
-  const [limit, setLimit] = useState<number>(20);
+  const [limit, setLimit] = useState<number>(25);
   const [showFilters, setShowFilters] = useState<boolean>(false);
 
   // Modals state
@@ -102,6 +104,8 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
   const [followUpTarget, setFollowUpTarget] = useState<LeadRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<LeadRecord | null>(null);
   const [sheetOpen, setSheetOpen] = useState<boolean>(false);
+  const [bulkUploadOpen, setBulkUploadOpen] = useState<boolean>(false);
+
 
   const { data: sources } = useListLeadSourcesQuery();
   const { data: usersData } = useListUsersQuery();
@@ -213,15 +217,26 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
               Refresh
             </button>
             {isAdmin && (
-              <button
-                type="button"
-                onClick={() => setSheetOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-100 dark:border-emerald-500/20 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/70"
-              >
-                <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-                Google Sheet
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => setBulkUploadOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-500/30 bg-indigo-50 px-3 py-2 text-xs font-semibold text-indigo-800 shadow-xs transition hover:bg-indigo-100 dark:border-indigo-500/20 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-950/70"
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                  Bulk Upload
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSheetOpen(true)}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 shadow-xs transition hover:bg-emerald-100 dark:border-emerald-500/20 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/70"
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                  Google Sheet
+                </button>
+              </>
             )}
+
 
             <Link
               href="/dashboard/leads/follow-ups"
@@ -765,6 +780,14 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
           portalHome={portalHome}
         />
       )}
+
+      {bulkUploadOpen && (
+        <BulkUploadLeadsModal
+          isOpen={bulkUploadOpen}
+          onClose={() => setBulkUploadOpen(false)}
+        />
+      )}
     </div>
   );
 }
+

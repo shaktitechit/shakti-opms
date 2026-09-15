@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { CalendarDays, Download, ExternalLink, Plus, RefreshCw, Trash2, Search, FileSpreadsheet } from "lucide-react";
+import { CalendarDays, Copy, Download, ExternalLink, Plus, RefreshCw, Trash2, Search, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { useGetPlansQuery, useDeletePlanMutation } from "@/store/api/workPlannerApiSlice";
 import { isManager, readSessionFromStorage } from "@/utils/authStorage";
@@ -287,6 +287,13 @@ export function WorkPlansPage() {
                           >
                             View
                             <ExternalLink className="h-3 w-3" />
+                          </Link>
+                          <Link
+                            href={`/dashboard/plans/new?copy=${id}`}
+                            className="rounded p-1 text-muted hover:bg-primary/10 hover:text-primary transition"
+                            title="Copy plan"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
                           </Link>
                           {canEdit ? (
                             <button

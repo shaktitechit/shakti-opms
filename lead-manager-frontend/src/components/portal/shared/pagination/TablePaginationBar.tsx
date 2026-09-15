@@ -47,6 +47,7 @@ export function TablePaginationBar({
             className="cursor-pointer rounded border-none bg-transparent py-0.5 text-xs font-semibold text-slate-750 focus:ring-0 dark:text-slate-200"
           >
             <option value={10}>10</option>
+            <option value={20}>20</option>
             <option value={25}>25</option>
             <option value={50}>50</option>
           </select>

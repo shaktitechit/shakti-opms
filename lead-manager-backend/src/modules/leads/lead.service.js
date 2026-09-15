@@ -1201,12 +1201,129 @@ async function bulkDelete(ids, user) {
   };
 }
 
+/**
+ * Bulk create leads (Manager only).
+ */
+async function bulkCreate(body, user) {
+  if (!isLeadManager(user)) {
+    throw new ApiError(403, 'Only Lead Managers can perform bulk lead upload');
+  }
+
+  const { Lead } = getModels();
+  const leads = body.leads || [];
+  const createdLeads = [];
+  const errors = [];
+
+  for (let i = 0; i < leads.length; i++) {
+    const item = leads[i];
+    const rowNum = i + 1;
+    const name = item.name ? String(item.name).trim() : '';
+    const source = item.source ? String(item.source).trim() : '';
+    const email = item.email ? String(item.email).trim().toLowerCase() : '';
+    const phone = item.phone ? String(item.phone).trim() : '';
+
+    if (!name) {
+      errors.push({ index: i, row: rowNum, name, error: 'Name is required' });
+      continue;
+    }
+    if (!source) {
+      errors.push({ index: i, row: rowNum, name, error: 'Source is required' });
+      continue;
+    }
+    if (!phone && !email) {
+      errors.push({ index: i, row: rowNum, name, error: 'Either phone or email is required' });
+      continue;
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errors.push({ index: i, row: rowNum, name, error: 'Invalid email format' });
+      continue;
+    }
+
+    const priority = ['low', 'medium', 'high', 'urgent'].includes(item.priority) ? item.priority : 'medium';
+    const assigned_to = item.assigned_to ? item.assigned_to : null;
+    const status = ['new', 'assigned', 'follow_up', 'quotation', 'won', 'lost', 'converted'].includes(item.status)
+      ? item.status
+      : (assigned_to ? 'assigned' : 'new');
+
+    let doc = null;
+    let attempts = 0;
+    let createError = null;
+
+    while (!doc && attempts < 5) {
+      attempts++;
+      const lead_no = await generateLeadNo(new Date());
+      try {
+        doc = await Lead.create({
+          company_id: item.company_id || user.company_id,
+          lead_no,
+          name,
+          company_name: item.company_name ? String(item.company_name).trim() : '',
+          email,
+          phone,
+          alternate_phone: item.alternate_phone ? String(item.alternate_phone).trim() : '',
+          industry: item.industry ? String(item.industry).trim() : '',
+          designation: item.designation ? String(item.designation).trim() : '',
+          requirement: item.requirement ? String(item.requirement).trim() : '',
+          estimated_value: Number(item.estimated_value || 0),
+          source,
+          status,
+          priority,
+          assigned_to,
+          assigned_by: assigned_to ? user._id : undefined,
+          assigned_at: assigned_to ? new Date() : undefined,
+          notes: item.notes ? String(item.notes).trim() : '',
+          billing_address: item.billing_address || {
+            city: item.city ? String(item.city).trim() : '',
+            state: item.state ? String(item.state).trim() : '',
+            address_line1: item.address ? String(item.address).trim() : '',
+          },
+          created_by: user._id,
+          updated_by: user._id,
+          last_activity_at: new Date(),
+        });
+      } catch (err) {
+        if (err.code === 11000 && attempts < 5) {
+          continue;
+        }
+        createError = err.message || 'Database insertion error';
+        break;
+      }
+    }
+
+    if (doc) {
+      const plain = toPlain(doc.toObject());
+      createdLeads.push(plain);
+    } else {
+      errors.push({ index: i, row: rowNum, name, error: createError || 'Failed to generate lead number' });
+    }
+  }
+
+  if (createdLeads.length > 0 && user) {
+    await activityService.create({
+      actor: user._id,
+      entity_type: 'lead',
+      entity_id: createdLeads[0]._id,
+      action: 'created',
+      message: `Bulk created ${createdLeads.length} leads (${errors.length} errors)`,
+    });
+  }
+
+  return {
+    total: leads.length,
+    createdCount: createdLeads.length,
+    errorCount: errors.length,
+    createdLeads,
+    errors,
+  };
+}
+
 module.exports = {
   isLeadManager,
   checkDuplicates,
   list,
   get,
   create,
+  bulkCreate,
   update,
   assign,
   changeStatus,
@@ -1218,3 +1335,4 @@ module.exports = {
   restore,
   bulkDelete,
 };
+

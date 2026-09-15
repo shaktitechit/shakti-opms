@@ -142,9 +142,22 @@ function assertFollowUpComplete(body) {
   }
 }
 
+function assertBulkCreate(body) {
+  if (!body || typeof body !== 'object') {
+    throw new ApiError(400, 'Request body is required');
+  }
+  if (!Array.isArray(body.leads) || body.leads.length === 0) {
+    throw new ApiError(400, 'leads array is required and must contain at least 1 item');
+  }
+  if (body.leads.length > 200) {
+    throw new ApiError(400, 'Maximum 200 leads can be uploaded in a single bulk request');
+  }
+}
+
 module.exports = {
   assertObjectId,
   assertCreate,
+  assertBulkCreate,
   assertUpdate,
   assertAssign,
   assertStatusChange,
@@ -154,3 +167,4 @@ module.exports = {
   assertFollowUpCreate,
   assertFollowUpComplete,
 };
+

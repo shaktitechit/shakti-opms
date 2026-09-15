@@ -49,6 +49,7 @@ import { WorkFormModal } from "./WorkFormModal";
 
 interface WorkPlanFormPageProps {
   planId?: string;
+  copyId?: string;
 }
 
 interface ExecutiveUser {
@@ -94,9 +95,10 @@ function hasWorkPlannerAccess(u: ExecutiveUser, sessionUserId?: string): boolean
   });
 }
 
-export function WorkPlanFormPage({ planId }: WorkPlanFormPageProps) {
+export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
   const router = useRouter();
   const isEditing = Boolean(planId);
+  const isCopying = Boolean(copyId) && !isEditing;
   const sessionUser = readSessionFromStorage()?.user;
   const managerRole = isManager(sessionUser);
 
@@ -201,6 +203,54 @@ export function WorkPlanFormPage({ planId }: WorkPlanFormPageProps) {
     }
     loadPlan();
   }, [planId, fetchPlan]);
+
+  // Load source plan data for copy mode
+  useEffect(() => {
+    if (!copyId || isEditing) return;
+    async function loadSourcePlan() {
+      try {
+        setLoading(true);
+        const plan = await fetchPlan(copyId!).unwrap();
+        if (plan) {
+          setPlanType(plan.plan_type || "Visits");
+          setLocation(plan.location || "");
+          setRemarks(plan.remarks || "");
+          if (plan.sales_user) {
+            const sUser =
+              typeof plan.sales_user === "object"
+                ? plan.sales_user._id || plan.sales_user.id
+                : plan.sales_user;
+            if (sUser) setSalesUserId(String(sUser));
+          }
+          // Copy visits but strip IDs and status so they are created fresh
+          if (Array.isArray(plan.visits)) {
+            setVisits(
+              plan.visits.map((v: any) => {
+                const { _id, id, status, check_in_time, check_out_time, outcome, ...rest } = v;
+                // If party is an object, keep it as-is for display but strip visit-level IDs
+                return { ...rest };
+              })
+            );
+          }
+          // Copy works but strip IDs and status so they are created fresh
+          if (Array.isArray(plan.works)) {
+            setWorks(
+              plan.works.map((w: any) => {
+                const { _id, id, status, outcome, completion_remarks, ...rest } = w;
+                return { ...rest };
+              })
+            );
+          }
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Failed to load plan for copying";
+        toast.error(msg);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadSourcePlan();
+  }, [copyId, isEditing, fetchPlan]);
 
   // Filter executives assigned to Work Planner portal + match search query
   const eligibleExecutives = useMemo(() => {
@@ -441,11 +491,13 @@ export function WorkPlanFormPage({ planId }: WorkPlanFormPageProps) {
           </Link>
           <div>
             <h1 className="text-xl font-bold text-foreground">
-              {isEditing ? "Edit Work Plan" : "Create Work Plan"}
+              {isEditing ? "Edit Work Plan" : isCopying ? "Copy Work Plan" : "Create Work Plan"}
             </h1>
             <p className="text-xs text-muted">
               {isEditing
                 ? "Update plan dates, executive, location, remarks, visits or tasks"
+                : isCopying
+                ? "Creating a new work plan from a copied template — adjust date, visits, and tasks as needed"
                 : "Schedule a new work plan with initial visits or tasks"}
             </p>
           </div>

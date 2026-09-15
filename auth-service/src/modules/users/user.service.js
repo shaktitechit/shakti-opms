@@ -15,6 +15,7 @@ const {
 } = require('./userRoles.util');
 
 const TEMPLATE_WELCOME = 'welcome';
+const TEMPLATE_PORTAL_ASSIGNED = 'portal_assigned';
 
 async function sendWelcomeEmail({ name, email, password }) {
   try {
@@ -27,6 +28,60 @@ async function sendWelcomeEmail({ name, email, password }) {
     });
   } catch (err) {
     console.error(`[User Service] welcome email failed for ${email}: ${err.message}`);
+  }
+}
+
+async function sendPortalAssignedEmail({ name, email, portals, actorName }) {
+  if (!Array.isArray(portals) || portals.length === 0) return;
+  try {
+    const portalListStr = portals
+      .map((p) => {
+        const pName = p.portal?.name || p.portal_name || p.portal_code || p.portal;
+        const roles = Array.isArray(p.access_roles) && p.access_roles.length > 0 ? p.access_roles.join(', ') : '';
+        return roles ? `${pName} [${roles}]` : pName;
+      })
+      .filter(Boolean)
+      .join('; ');
+
+    await emailHelper.sendTemplateEmail(email, TEMPLATE_PORTAL_ASSIGNED, {
+      subject: 'Portal Access Assigned',
+      recipientName: name || 'there',
+      email,
+      portals,
+      portalListSummary: portalListStr,
+      actorName: actorName || 'Administrator',
+      loginUrl: APP_LOGIN_URL,
+    });
+  } catch (err) {
+    console.error(`[User Service] portal assigned email failed for ${email}: ${err.message}`);
+  }
+}
+
+async function sendPortalAssignedInAppNotification({ userId, portals }) {
+  if (!Array.isArray(portals) || portals.length === 0) return;
+  try {
+    const notificationServiceUrl = process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:7012';
+    const portalListStr = portals
+      .map((p) => p.portal?.name || p.portal_name || p.portal_code || p.portal)
+      .filter(Boolean)
+      .join(', ');
+
+    await fetch(`${notificationServiceUrl.replace(/\/$/, '')}/api/notifications/internal/create`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId,
+        payload: {
+          title: 'Portal Access Updated',
+          message: `You have been assigned access to portal(s): ${portalListStr}`,
+          type: 'portal_assigned',
+          link: '/portals',
+        },
+      }),
+      signal: AbortSignal.timeout(5000),
+    });
+  } catch (err) {
+    console.error(`[User Service] in-app notification failed for user ${userId}: ${err.message}`);
   }
 }
 
@@ -140,14 +195,25 @@ async function create(body, actor) {
     password: plainPassword,
   });
 
-  return sanitizeUser(
-    toPlain(
-      await User.findById(doc._id)
-        .populate('roles')
-        .populate('portals.portal')
-        .lean()
-    )
-  );
+  const createdUser = await User.findById(doc._id)
+    .populate('roles')
+    .populate('portals.portal')
+    .lean();
+
+  if (createdUser.portals && createdUser.portals.length > 0) {
+    await sendPortalAssignedEmail({
+      name: body.name,
+      email,
+      portals: createdUser.portals,
+      actorName: actor?.name,
+    });
+    await sendPortalAssignedInAppNotification({
+      userId: doc._id,
+      portals: createdUser.portals,
+    });
+  }
+
+  return sanitizeUser(toPlain(createdUser));
 }
 
 async function update(id, body, actor) {
@@ -203,14 +269,25 @@ async function update(id, body, actor) {
 
   await user.save();
 
-  return sanitizeUser(
-    toPlain(
-      await User.findById(id)
-        .populate('roles')
-        .populate('portals.portal')
-        .lean()
-    )
-  );
+  const updatedUser = await User.findById(id)
+    .populate('roles')
+    .populate('portals.portal')
+    .lean();
+
+  if (body.portals !== undefined && updatedUser.portals && updatedUser.portals.length > 0) {
+    await sendPortalAssignedEmail({
+      name: updatedUser.name,
+      email: updatedUser.email,
+      portals: updatedUser.portals,
+      actorName: actor?.name,
+    });
+    await sendPortalAssignedInAppNotification({
+      userId: id,
+      portals: updatedUser.portals,
+    });
+  }
+
+  return sanitizeUser(toPlain(updatedUser));
 }
 
 async function remove(id, actor) {

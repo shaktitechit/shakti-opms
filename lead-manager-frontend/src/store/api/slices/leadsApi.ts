@@ -16,6 +16,15 @@ export type LeadStatus =
 
 export type LeadPriority = "low" | "medium" | "high" | "urgent";
 
+export type BulkUploadLeadsResult = {
+  total: number;
+  createdCount: number;
+  errorCount: number;
+  createdLeads: LeadRecord[];
+  errors: Array<{ index: number; row: number; name?: string; error: string }>;
+};
+
+
 export type LeadFollowUpType =
   | "call"
   | "meeting"
@@ -387,6 +396,17 @@ export const leadsApi = medicaApi.injectEndpoints({
       invalidatesTags: [{ type: "Lead", id: "LIST" }],
     }),
 
+    bulkUploadLeads: build.mutation<BulkUploadLeadsResult, { leads: Partial<LeadInputPayload>[] }>({
+      query: (body) => ({
+        url: "/leads/bulk-upload",
+        method: "POST",
+        body,
+      }),
+      transformResponse: (res: ApiEnvelope<BulkUploadLeadsResult>) => unwrapEnvelope(res),
+      invalidatesTags: [{ type: "Lead", id: "LIST" }],
+    }),
+
+
     restoreLead: build.mutation<{ _id: string }, string>({
       query: (id) => ({
         url: `/leads/${id}/restore`,
@@ -721,7 +741,9 @@ export const {
   useUpdateLeadMutation,
   useDeleteLeadMutation,
   useBulkDeleteLeadsMutation,
+  useBulkUploadLeadsMutation,
   useRestoreLeadMutation,
+
   useCheckLeadDuplicatesMutation,
   useAssignLeadMutation,
   useChangeLeadStatusMutation,

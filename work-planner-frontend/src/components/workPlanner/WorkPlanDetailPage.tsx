@@ -9,6 +9,7 @@ import {
   Calendar,
   CheckCircle2,
   Clock,
+  Copy,
   Edit3,
   MapPin,
   Plus,
@@ -317,6 +318,13 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
             </button>
           )}
 
+          <Link
+            href={`/dashboard/plans/new?copy=${planId}`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition"
+          >
+            <Copy className="h-4 w-4 text-muted" />
+            Copy
+          </Link>
           {showStructureActions && (
             <Link
               href={`/dashboard/plans/new?edit=${planId}`}

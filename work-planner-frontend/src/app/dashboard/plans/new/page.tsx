@@ -7,7 +7,8 @@ import { WorkPlanFormPage } from "@/components/workPlanner/WorkPlanFormPage";
 function NewPlanPageContent() {
   const searchParams = useSearchParams();
   const editId = searchParams.get("edit") || undefined;
-  return <WorkPlanFormPage planId={editId} />;
+  const copyId = searchParams.get("copy") || undefined;
+  return <WorkPlanFormPage planId={editId} copyId={copyId} />;
 }
 
 export default function NewPlanPage() {
