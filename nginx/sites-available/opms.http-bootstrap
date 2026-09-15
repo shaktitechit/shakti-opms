@@ -12,7 +12,7 @@
 #     -d opms.spspl.com -d app.spspl.com -d users.spspl.com -d plans.spspl.com \
 #     -d leads.spspl.com -d api-opms.spspl.com -d auth.spspl.com \
 #     -d api-products.spspl.com -d api-parties.spspl.com -d api-plans.spspl.com \
-#     -d api-leads.spspl.com -d api-message.spspl.com -d notification.spspl.com \
+#     -d api-leads.spspl.com -d api-message.spspl.com -d api-notification.spspl.com \
 #     --cert-name opms.spspl.com
 #
 # Then switch to HTTPS:
@@ -169,7 +169,7 @@ server {
 
 server {
     listen 80;
-    server_name notification.spspl.com;
+    server_name api-notification.spspl.com;
     location ^~ /.well-known/acme-challenge/ { root /var/www/html; }
     location ~ ^/api/notifications/stream {
         include /etc/nginx/snippets/proxy-sse.conf;

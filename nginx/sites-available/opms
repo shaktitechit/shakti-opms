@@ -248,7 +248,7 @@ server {
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
-    server_name notification.spspl.com;
+    server_name api-notification.spspl.com;
     include /etc/nginx/snippets/opms-ssl.conf;
     client_max_body_size 10m;
 
