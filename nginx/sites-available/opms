@@ -49,7 +49,7 @@ server {
         api-plans.spspl.com
         api-leads.spspl.com
         api-message.spspl.com
-        notification.spspl.com;
+        api-notification.spspl.com;
 
     location ^~ /.well-known/acme-challenge/ {
         root /var/www/html;
