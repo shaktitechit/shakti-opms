@@ -1,36 +1,21 @@
 # =============================================================================
-# OPMS — nginx sites-available (copy/symlink onto the host)
+# OPMS — nginx sites-available (HTTPS)
 #
-# Domains match .env.docker.example public URLs (spspl.com).
-# Upstream targets are Docker host-mapped ports on 127.0.0.1.
+# DO NOT enable this file until certificates exist:
+#   ls /etc/letsencrypt/live/opms.spspl.com/fullchain.pem
 #
-# Install on Ubuntu/Debian:
-#   sudo cp -r nginx/snippets/* /etc/nginx/snippets/
-#   sudo cp nginx/sites-available/opms /etc/nginx/sites-available/opms
-#   sudo ln -sfn /etc/nginx/sites-available/opms /etc/nginx/sites-enabled/opms
+# Order of operations:
+#   1) Keep opms.http-bootstrap enabled (HTTP proxies + ACME webroot)
+#   2) Point DNS A/AAAA for all hosts at this server
+#   3) Issue one multi-SAN cert (see nginx/snippets/opms-ssl.conf)
+#   4) Then:
+#        sudo cp nginx/sites-available/opms /etc/nginx/sites-available/opms
+#        sudo nginx -t && sudo systemctl reload nginx
 #
-# TLS (Let's Encrypt) — after DNS points here:
-#   sudo certbot --nginx \
-#     -d opms.spspl.com -d app.spspl.com \
-#     -d users.spspl.com -d plans.spspl.com -d leads.spspl.com \
-#     -d api-opms.spspl.com -d auth.spspl.com \
-#     -d api-products.spspl.com -d api-parties.spspl.com \
-#     -d api-plans.spspl.com -d api-leads.spspl.com \
-#     -d api-message.spspl.com -d notification.spspl.com
-#
-# Or use a wildcard cert and set ssl_certificate paths below.
-#
-# Required in /etc/nginx/nginx.conf http {} block (once):
-#   map $http_upgrade $connection_upgrade {
-#       default upgrade;
-#       ''      close;
-#   }
-#   client_max_body_size 50m;
+# listen is "ssl" only (no http2 flag) to avoid
+# "protocol options redefined" warnings with other sites on :443.
 # =============================================================================
 
-# -----------------------------------------------------------------------------
-# Upstreams (Docker compose host ports from .env.docker)
-# -----------------------------------------------------------------------------
 upstream opms_backend          { server 127.0.0.1:7001; keepalive 32; }
 upstream opms_frontend         { server 127.0.0.1:7002; keepalive 16; }
 upstream auth_service          { server 127.0.0.1:7003; keepalive 32; }
@@ -46,7 +31,7 @@ upstream notification_service  { server 127.0.0.1:7012; keepalive 32; }
 upstream app_frontend          { server 127.0.0.1:7013; keepalive 16; }
 
 # -----------------------------------------------------------------------------
-# HTTP → HTTPS (all public hosts)
+# HTTP → HTTPS (+ ACME challenge)
 # -----------------------------------------------------------------------------
 server {
     listen 80;
@@ -66,7 +51,6 @@ server {
         api-message.spspl.com
         notification.spspl.com;
 
-    # Let's Encrypt challenge
     location ^~ /.well-known/acme-challenge/ {
         root /var/www/html;
         allow all;
@@ -81,17 +65,11 @@ server {
 # Frontends
 # =============================================================================
 
-# Portal / app launcher
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
     server_name app.spspl.com;
-
-    # Replace with certbot paths or wildcard cert
-    ssl_certificate     /etc/letsencrypt/live/app.spspl.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/app.spspl.com/privkey.pem;
-    include /etc/nginx/snippets/ssl-params.conf;
-
+    include /etc/nginx/snippets/opms-ssl.conf;
     client_max_body_size 50m;
 
     location / {
@@ -100,16 +78,11 @@ server {
     }
 }
 
-# OPMS UI
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
     server_name opms.spspl.com;
-
-    ssl_certificate     /etc/letsencrypt/live/opms.spspl.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/opms.spspl.com/privkey.pem;
-    include /etc/nginx/snippets/ssl-params.conf;
-
+    include /etc/nginx/snippets/opms-ssl.conf;
     client_max_body_size 50m;
 
     location / {
@@ -118,16 +91,11 @@ server {
     }
 }
 
-# User Manager UI
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
     server_name users.spspl.com;
-
-    ssl_certificate     /etc/letsencrypt/live/users.spspl.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/users.spspl.com/privkey.pem;
-    include /etc/nginx/snippets/ssl-params.conf;
-
+    include /etc/nginx/snippets/opms-ssl.conf;
     client_max_body_size 50m;
 
     location / {
@@ -136,16 +104,11 @@ server {
     }
 }
 
-# Work Planner UI
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
     server_name plans.spspl.com;
-
-    ssl_certificate     /etc/letsencrypt/live/plans.spspl.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/plans.spspl.com/privkey.pem;
-    include /etc/nginx/snippets/ssl-params.conf;
-
+    include /etc/nginx/snippets/opms-ssl.conf;
     client_max_body_size 50m;
 
     location / {
@@ -154,16 +117,11 @@ server {
     }
 }
 
-# Lead Manager UI
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
     server_name leads.spspl.com;
-
-    ssl_certificate     /etc/letsencrypt/live/leads.spspl.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/leads.spspl.com/privkey.pem;
-    include /etc/nginx/snippets/ssl-params.conf;
-
+    include /etc/nginx/snippets/opms-ssl.conf;
     client_max_body_size 50m;
 
     location / {
@@ -173,19 +131,14 @@ server {
 }
 
 # =============================================================================
-# API / backend services
+# APIs
 # =============================================================================
 
-# OPMS API
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
     server_name api-opms.spspl.com;
-
-    ssl_certificate     /etc/letsencrypt/live/api-opms.spspl.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api-opms.spspl.com/privkey.pem;
-    include /etc/nginx/snippets/ssl-params.conf;
-
+    include /etc/nginx/snippets/opms-ssl.conf;
     client_max_body_size 50m;
 
     location / {
@@ -196,19 +149,13 @@ server {
     }
 }
 
-# Auth
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
     server_name auth.spspl.com;
-
-    ssl_certificate     /etc/letsencrypt/live/auth.spspl.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/auth.spspl.com/privkey.pem;
-    include /etc/nginx/snippets/ssl-params.conf;
-
+    include /etc/nginx/snippets/opms-ssl.conf;
     client_max_body_size 50m;
 
-    # Auth may proxy notification SSE under /api/notifications
     location ~ ^/api/notifications/stream {
         include /etc/nginx/snippets/proxy-sse.conf;
         proxy_pass http://auth_service;
@@ -221,16 +168,11 @@ server {
     }
 }
 
-# Products API
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
     server_name api-products.spspl.com;
-
-    ssl_certificate     /etc/letsencrypt/live/api-products.spspl.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api-products.spspl.com/privkey.pem;
-    include /etc/nginx/snippets/ssl-params.conf;
-
+    include /etc/nginx/snippets/opms-ssl.conf;
     client_max_body_size 50m;
 
     location / {
@@ -239,16 +181,11 @@ server {
     }
 }
 
-# Parties API
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
     server_name api-parties.spspl.com;
-
-    ssl_certificate     /etc/letsencrypt/live/api-parties.spspl.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api-parties.spspl.com/privkey.pem;
-    include /etc/nginx/snippets/ssl-params.conf;
-
+    include /etc/nginx/snippets/opms-ssl.conf;
     client_max_body_size 50m;
 
     location / {
@@ -257,16 +194,11 @@ server {
     }
 }
 
-# Work Planner API
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
     server_name api-plans.spspl.com;
-
-    ssl_certificate     /etc/letsencrypt/live/api-plans.spspl.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api-plans.spspl.com/privkey.pem;
-    include /etc/nginx/snippets/ssl-params.conf;
-
+    include /etc/nginx/snippets/opms-ssl.conf;
     client_max_body_size 50m;
 
     location ~ ^/api/notifications/stream {
@@ -280,16 +212,11 @@ server {
     }
 }
 
-# Lead Manager API
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
     server_name api-leads.spspl.com;
-
-    ssl_certificate     /etc/letsencrypt/live/api-leads.spspl.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api-leads.spspl.com/privkey.pem;
-    include /etc/nginx/snippets/ssl-params.conf;
-
+    include /etc/nginx/snippets/opms-ssl.conf;
     client_max_body_size 50m;
 
     location ~ ^/api/notifications/stream {
@@ -304,16 +231,11 @@ server {
     }
 }
 
-# Message / email / WhatsApp webhooks
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
     server_name api-message.spspl.com;
-
-    ssl_certificate     /etc/letsencrypt/live/api-message.spspl.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api-message.spspl.com/privkey.pem;
-    include /etc/nginx/snippets/ssl-params.conf;
-
+    include /etc/nginx/snippets/opms-ssl.conf;
     client_max_body_size 50m;
 
     location / {
@@ -323,19 +245,13 @@ server {
     }
 }
 
-# Notification service (SSE)
 server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
     server_name notification.spspl.com;
-
-    ssl_certificate     /etc/letsencrypt/live/notification.spspl.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/notification.spspl.com/privkey.pem;
-    include /etc/nginx/snippets/ssl-params.conf;
-
+    include /etc/nginx/snippets/opms-ssl.conf;
     client_max_body_size 10m;
 
-    # Direct SSE endpoint
     location ~ ^/api/notifications/stream {
         include /etc/nginx/snippets/proxy-sse.conf;
         proxy_pass http://notification_service;

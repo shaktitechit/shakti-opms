@@ -1,10 +1,23 @@
 # =============================================================================
 # OPMS — HTTP-only bootstrap (use BEFORE certificates exist)
 #
-# sudo cp nginx/sites-available/opms.http-bootstrap /etc/nginx/sites-available/opms
-# sudo ln -sfn /etc/nginx/sites-available/opms /etc/nginx/sites-enabled/opms
-# sudo nginx -t && sudo systemctl reload nginx
-# sudo certbot --nginx ...   # then replace with full nginx/sites-available/opms
+#   sudo cp nginx/snippets/* /etc/nginx/snippets/
+#   sudo cp nginx/sites-available/opms.http-bootstrap /etc/nginx/sites-available/opms
+#   sudo ln -sfn /etc/nginx/sites-available/opms /etc/nginx/sites-enabled/opms
+#   sudo mkdir -p /var/www/html
+#   sudo nginx -t && sudo systemctl reload nginx
+#
+# Issue certs (DNS must already point here):
+#   sudo certbot certonly --webroot -w /var/www/html \
+#     -d opms.spspl.com -d app.spspl.com -d users.spspl.com -d plans.spspl.com \
+#     -d leads.spspl.com -d api-opms.spspl.com -d auth.spspl.com \
+#     -d api-products.spspl.com -d api-parties.spspl.com -d api-plans.spspl.com \
+#     -d api-leads.spspl.com -d api-message.spspl.com -d notification.spspl.com \
+#     --cert-name opms.spspl.com
+#
+# Then switch to HTTPS:
+#   sudo cp nginx/sites-available/opms /etc/nginx/sites-available/opms
+#   sudo nginx -t && sudo systemctl reload nginx
 # =============================================================================
 
 upstream opms_backend          { server 127.0.0.1:7001; keepalive 32; }
