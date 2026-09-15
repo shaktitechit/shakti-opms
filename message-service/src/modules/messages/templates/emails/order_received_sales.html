@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New Order Notification - #{{orderNo}}</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      color: #1e293b;
+      background-color: #f8fafc;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .wrapper {
+      width: 100%;
+      background-color: #f8fafc;
+      padding: 30px 15px;
+    }
+
+    .container {
+      max-width: 680px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+      border: 1px solid #e2e8f0;
+    }
+
+    .header {
+      background-color: #f1f5f9;
+      color: #1e40af;
+      padding: 32px 24px;
+      text-align: center;
+      border-bottom: 1px solid #e2e8f0;
+    }
+
+    .header-logo {
+      max-height: 80px;
+      width: auto;
+      margin-bottom: 10px;
+      display: inline-block;
+    }
+
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 700;
+      color: #1e40af;
+      letter-spacing: -0.5px;
+    }
+
+    .header p {
+      margin: 4px 0 0 0;
+      font-size: 14px;
+      color: #2563eb;
+      font-weight: 500;
+    }
+
+    .content {
+      padding: 32px 24px;
+    }
+
+    .greeting {
+      font-size: 16px;
+      font-weight: 600;
+      color: #0f172a;
+      margin-bottom: 10px;
+    }
+
+    .intro-text {
+      font-size: 14px;
+      color: #475569;
+      margin-bottom: 24px;
+      line-height: 1.6;
+    }
+
+    .order-info-card {
+      background-color: #f1f5f9;
+      border-radius: 8px;
+      padding: 14px 20px;
+      margin-bottom: 24px;
+      border-left: 4px solid #1e40af;
+    }
+
+    .section-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 24px 0 12px 0;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #f1f5f9;
+    }
+
+    /* Items Table */
+    .items-table-container {
+      width: 100%;
+      overflow-x: auto;
+      margin-bottom: 24px;
+    }
+
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: left;
+    }
+
+    .items-table th {
+      background-color: #1e40af;
+      color: #ffffff;
+      padding: 10px 8px;
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .items-table td {
+      padding: 10px 8px;
+      border-bottom: 1px solid #e2e8f0;
+      color: #334155;
+    }
+
+    .items-table tr:nth-child(even) td {
+      background-color: #f8fafc;
+    }
+
+    .text-center {
+      text-align: center;
+    }
+
+    .text-right {
+      text-align: right;
+    }
+
+    .font-semibold {
+      font-weight: 600;
+    }
+
+    /* Total Summary Box */
+    .totals-box {
+      width: 100%;
+      background-color: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-bottom: 24px;
+    }
+
+    .totals-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      font-size: 13px;
+      color: #475569;
+    }
+
+    .totals-row.grand-total {
+      border-top: 2px solid #cbd5e1;
+      margin-top: 8px;
+      padding-top: 10px;
+      font-size: 16px;
+      font-weight: 700;
+      color: #1e40af;
+    }
+
+    /* Disclaimer Alert Box */
+    .disclaimer-box {
+      background-color: #fffbeb;
+      border: 1px solid #fef3c7;
+      border-left: 4px solid #f59e0b;
+      border-radius: 6px;
+      padding: 14px 16px;
+      margin-bottom: 24px;
+      font-size: 13px;
+      color: #92400e;
+      line-height: 1.5;
+    }
+
+    .disclaimer-title {
+      font-weight: 700;
+      margin-bottom: 2px;
+    }
+
+    /* Footer */
+    .footer {
+      background-color: #f8fafc;
+      border-top: 1px solid #e2e8f0;
+      padding: 24px;
+      text-align: center;
+      font-size: 12px;
+      color: #64748b;
+    }
+
+    .footer p {
+      margin: 4px 0;
+    }
+
+    .footer a {
+      color: #0f766e;
+      text-decoration: none;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrapper">
+    <div class="container">
+      <!-- Header -->
+      <div class="header">
+        {{companyLogoHtml}}
+        <h1>{{companyName}}</h1>
+        <p>Order Received Confirmation</p>
+      </div>
+
+      <!-- Content -->
+      <div class="content">
+        <d<div class="greeting">Hello {{salesPersonName}},</div>
+        <div class="intro-text">
+          A new order <strong>#{{orderNo}}</strong> has been placed for your assigned customer
+          <strong>{{customerName}}</strong>. Below are the order details for your review and follow-up.
+        </div>
+
+        <!-- Order Meta Card (Without Payment Status) -->
+        <div class="order-info-card">
+          <table style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 4px 0; font-size: 13px; color: #64748b;">Order Number:</td>
+              <td style="padding: 4px 0; font-size: 13px; color: #0f172a; font-weight: 600; text-align: right;">
+                #{{orderNo}}</td>
+            </tr>
+            <tr>
+              <td style="padding: 4px 0; font-size: 13px; color: #64748b;">Order Date:</td>
+              <td style="padding: 4px 0; font-size: 13px; color: #0f172a; font-weight: 600; text-align: right;">{{orderDate}}</td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- Items Table (No Pricing - Only Item Name and Quantity) -->
+        <div class="section-title">Order Items Summary</div>
+        <div class="items-table-container">
+          <table class="items-table">
+            <thead>
+              <tr>
+                <th class="text-center" style="width: 10%;">#</th>
+                <th style="width: 65%;">Item Name</th>
+                <th class="text-center" style="width: 25%;">Quantity</th>
+              </tr>
+            </thead>
+            <tbody>
+              {{itemsRows}}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Shipping / Delivery Info -->
+        <div class="section-title">Delivery Address</div>
+        <div style="font-size: 13px; color: #475569; line-height: 1.5; margin-bottom: 24px;">
+          {{shippingAddress}}
+        </div>
+
+        <!-- Disclaimer Box -->
+        <div class="disclaimer-box">
+          <div class="disclaimer-title">⚠️ Disclaimer: Tentative Order Summary</div>
+          <div>Please note that this order details summary is <strong>tentative and subject to change</strong> based on
+            final stock availability, price/tax adjustments, and company verification prior to dispatch.</div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="footer">
+        <p>If you have any questions, feel free to contact our support team at <a
+            href="mailto:{{companyEmail}}">{{companyEmail}}</a>.</p>
+        <p>&copy; {{year}} {{companyName}}. All rights reserved.</p>
+      </div>   </div>
+  </div>
+</body>
+
+</html>

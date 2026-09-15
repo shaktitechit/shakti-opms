@@ -1,0 +1,363 @@
+"use client";
+
+import { useParams, useSearchParams } from "next/navigation";
+
+import {
+  PortalOverview,
+  PortalSectionPlaceholder,
+  ListMyOrdersPage,
+  ListTransportPlansPage,
+
+  TransportPlanFormPage,
+  TransportPlanDetailPage,
+  TransportPlanCalendarPage,
+  ListPartiesPage,
+  ListProductsPage,
+  PartyDetailPage,
+  ProductDetailPage,
+  ListAdminOrdersPage,
+  AdminCreateOrderPage,
+  ListFinanceOrdersPage,
+  FinanceCreateOrderPage,
+  ListAccountOrdersPage,
+  AccountCreateOrderPage,
+  ListDispatchOrdersPage,
+  ListDriversPage,
+  ListVehiclesPage,
+  DriverDetailPage,
+  VehicleDetailPage,
+  ListTransportAgentsPage,
+  TransportAgentDetailPage,
+  SuperAdminOrdersPage,
+  ListSuperAdminOrdersPage,
+  SuperAdminOrderDetail,
+  SuperAdminCreateOrderPage,
+  ProfilePage,
+} from "@/components/portal";
+import CreateOrderPage from "@/components/portal/sales/CreateOrderPage";
+import {
+  type PortalKey,
+  isPortalKey,
+  resolvePortalPageTitle,
+} from "@/constants/portalNav";
+import { useAppSelector } from "@/store/hooks";
+
+export default function PortalCatchAllPage() {
+  const params = useParams();
+  const searchParams = useSearchParams();
+  const authToken = useAppSelector((state) => state.auth.token);
+
+  const raw =
+    typeof params.portal === "string"
+      ? params.portal
+      : Array.isArray(params.portal)
+        ? params.portal[0]
+        : "";
+  const portal: PortalKey = isPortalKey(raw) ? raw : "admin";
+
+  const restRaw = params.rest;
+  const restArr: string[] = Array.isArray(restRaw)
+    ? restRaw
+    : typeof restRaw === "string"
+      ? [restRaw]
+      : [];
+
+  const title = resolvePortalPageTitle(portal, restArr);
+  const workPlannerView = searchParams.get("view") || "plans";
+
+  if (restArr.length === 0) {
+    return <PortalOverview portal={portal} />;
+  }
+
+  // ── LEADS & QUOTATIONS (REDIRECT TO LEAD MANAGER MICRO-FRONTEND) ───────
+  if (restArr[0] === "quotations" || restArr[0] === "leads") {
+    const baseLeadManagerUrl = process.env.NEXT_PUBLIC_LEAD_MANAGER_URL || "http://localhost:7010";
+    const leadManagerUrl = authToken
+      ? `${baseLeadManagerUrl}?token=${encodeURIComponent(String(authToken))}`
+      : baseLeadManagerUrl;
+    return (
+      <div className="space-y-4 p-4">
+        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900">
+          <div>
+            <h2 className="font-bold text-slate-900 dark:text-slate-100">Lead Manager Micro-Frontend</h2>
+            <p className="text-xs text-slate-500">
+              Leads & Quotations are now managed in the decoupled Lead Manager Portal at{" "}
+              <a href={leadManagerUrl} target="_blank" rel="noreferrer" className="text-orange-600 underline">
+                {leadManagerUrl}
+              </a>
+            </p>
+          </div>
+          <a
+            href={leadManagerUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-lg bg-orange-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow hover:bg-orange-700 transition"
+          >
+            Open Lead Manager Portal ↗
+          </a>
+        </div>
+      </div>
+    );
+  }
+
+  // ── ADMIN ────────────────────────────────────────────────────────────────
+  if (portal === "admin" && restArr.length === 1 && restArr[0] === "orders") {
+    return <ListAdminOrdersPage />;
+  }
+  if (portal === "admin" && restArr.length === 1 && restArr[0] === "create-order") {
+    return <AdminCreateOrderPage />;
+  }
+
+  if (portal === "admin" && restArr.length === 1 && restArr[0] === "parties") {
+    return <ListPartiesPage portalHome="/admin" />;
+  }
+  if (portal === "admin" && restArr.length === 1 && restArr[0] === "products") {
+    return <ListProductsPage portalHome="/admin" />;
+  }
+  if (portal === "admin" && restArr.length === 1 && restArr[0] === "transport-agents") {
+    return <ListTransportAgentsPage portalHome="/admin" />;
+  }
+  if (portal === "admin" && restArr.length === 1 && restArr[0] === "transport-planner") {
+    return <ListTransportPlansPage portalHome="/admin" />;
+  }
+  if (portal === "admin" && restArr.length === 2 && restArr[0] === "transport-planner" && restArr[1] === "calendar") {
+    return <TransportPlanCalendarPage portalHome="/admin" />;
+  }
+  if (portal === "admin" && restArr.length === 2 && restArr[0] === "transport-planner" && restArr[1] === "new") {
+    return <TransportPlanFormPage mode="create" portalHome="/admin" />;
+  }
+  if (
+    portal === "admin" &&
+    restArr.length === 3 &&
+    restArr[0] === "transport-planner" &&
+    restArr[2] === "edit"
+  ) {
+    return <TransportPlanFormPage mode="edit" planId={restArr[1]} portalHome="/admin" />;
+  }
+  if (portal === "admin" && restArr.length === 2 && restArr[0] === "transport-planner") {
+    return <TransportPlanDetailPage planId={restArr[1]} portalHome="/admin" />;
+  }
+
+  // ── SALES ────────────────────────────────────────────────────────────────
+  if (portal === "sales" && restArr.length === 1 && restArr[0] === "create-order") {
+    return <CreateOrderPage />;
+  }
+  if (portal === "sales" && restArr.length === 1 && restArr[0] === "orders") {
+    return <ListMyOrdersPage />;
+  }
+
+
+  // ── FINANCE ──────────────────────────────────────────────────────────────
+  if (portal === "finance" && restArr.length === 1 && restArr[0] === "orders") {
+    return <ListFinanceOrdersPage />;
+  }
+  if (portal === "finance" && restArr.length === 1 && restArr[0] === "create-order") {
+    return <FinanceCreateOrderPage />;
+  }
+
+  if (portal === "finance" && restArr.length === 1 && restArr[0] === "parties") {
+    return <ListPartiesPage portalHome="/finance" />;
+  }
+  if (portal === "finance" && restArr.length === 1 && restArr[0] === "products") {
+    return <ListProductsPage portalHome="/finance" />;
+  }
+  if (portal === "finance" && restArr.length === 1 && restArr[0] === "transport-agents") {
+    return <ListTransportAgentsPage portalHome="/finance" />;
+  }
+  if (portal === "finance" && restArr.length === 1 && restArr[0] === "transport-planner") {
+    return <ListTransportPlansPage portalHome="/finance" />;
+  }
+  if (portal === "finance" && restArr.length === 2 && restArr[0] === "transport-planner" && restArr[1] === "calendar") {
+    return <TransportPlanCalendarPage portalHome="/finance" />;
+  }
+  if (portal === "finance" && restArr.length === 2 && restArr[0] === "transport-planner" && restArr[1] === "new") {
+    return <TransportPlanFormPage mode="create" portalHome="/finance" />;
+  }
+  if (
+    portal === "finance" &&
+    restArr.length === 3 &&
+    restArr[0] === "transport-planner" &&
+    restArr[2] === "edit"
+  ) {
+    return <TransportPlanFormPage mode="edit" planId={restArr[1]} portalHome="/finance" />;
+  }
+  if (portal === "finance" && restArr.length === 2 && restArr[0] === "transport-planner") {
+    return <TransportPlanDetailPage planId={restArr[1]} portalHome="/finance" />;
+  }
+
+  // ── ACCOUNT ──────────────────────────────────────────────────────────────
+  if (portal === "account" && restArr.length === 1 && restArr[0] === "orders") {
+    return <ListAccountOrdersPage />;
+  }
+  if (portal === "account" && restArr.length === 1 && restArr[0] === "create-order") {
+    return <AccountCreateOrderPage />;
+  }
+  if (portal === "account" && restArr.length === 1 && restArr[0] === "parties") {
+    return <ListPartiesPage portalHome="/account" />;
+  }
+  if (portal === "account" && restArr.length === 1 && restArr[0] === "products") {
+    return <ListProductsPage portalHome="/account" />;
+  }
+  if (portal === "account" && restArr.length === 1 && restArr[0] === "transport-agents") {
+    return <ListTransportAgentsPage portalHome="/account" />;
+  }
+  if (portal === "account" && restArr.length === 1 && restArr[0] === "transport-planner") {
+    return <ListTransportPlansPage portalHome="/account" />;
+  }
+  if (portal === "account" && restArr.length === 2 && restArr[0] === "transport-planner" && restArr[1] === "calendar") {
+    return <TransportPlanCalendarPage portalHome="/account" />;
+  }
+  if (portal === "account" && restArr.length === 2 && restArr[0] === "transport-planner" && restArr[1] === "new") {
+    return <TransportPlanFormPage mode="create" portalHome="/account" />;
+  }
+  if (
+    portal === "account" &&
+    restArr.length === 3 &&
+    restArr[0] === "transport-planner" &&
+    restArr[2] === "edit"
+  ) {
+    return <TransportPlanFormPage mode="edit" planId={restArr[1]} portalHome="/account" />;
+  }
+  if (portal === "account" && restArr.length === 2 && restArr[0] === "transport-planner") {
+    return <TransportPlanDetailPage planId={restArr[1]} portalHome="/account" />;
+  }
+
+  // ── DISPATCH ─────────────────────────────────────────────────────────────
+  if (portal === "dispatch" && restArr.length === 1 && restArr[0] === "orders") {
+    return <ListDispatchOrdersPage />;
+  }
+  if (portal === "dispatch" && restArr.length === 1 && restArr[0] === "drivers") {
+    return <ListDriversPage />;
+  }
+  if (portal === "dispatch" && restArr.length === 1 && restArr[0] === "vehicles") {
+    return <ListVehiclesPage />;
+  }
+  if (portal === "dispatch" && restArr.length === 1 && restArr[0] === "transport-agents") {
+    return <ListTransportAgentsPage />;
+  }
+  if (portal === "dispatch" && restArr.length === 1 && restArr[0] === "transport-planner") {
+    return <ListTransportPlansPage portalHome="/dispatch" />;
+  }
+  if (portal === "dispatch" && restArr.length === 2 && restArr[0] === "transport-planner" && restArr[1] === "calendar") {
+    return <TransportPlanCalendarPage portalHome="/dispatch" />;
+  }
+  if (portal === "dispatch" && restArr.length === 2 && restArr[0] === "transport-planner") {
+    return <TransportPlanDetailPage planId={restArr[1]} portalHome="/dispatch" />;
+  }
+  if (portal === "dispatch" && restArr.length === 2 && restArr[0] === "vehicles") {
+    return <VehicleDetailPage id={restArr[1]} />;
+  }
+  if (portal === "dispatch" && restArr.length === 2 && restArr[0] === "drivers") {
+    return <DriverDetailPage id={restArr[1]} />;
+  }
+  if (portal === "dispatch" && restArr.length === 2 && restArr[0] === "transport-agents") {
+    return <TransportAgentDetailPage id={restArr[1]} />;
+  }
+
+  // ── SUPER ADMIN ──────────────────────────────────────────────────────────
+  if (portal === "super_admin" && restArr.length === 1 && restArr[0] === "orders") {
+    return <ListSuperAdminOrdersPage />;
+  }
+  if (portal === "super_admin" && restArr.length === 1 && restArr[0] === "create-order") {
+    return <SuperAdminCreateOrderPage />;
+  }
+
+  if (portal === "super_admin" && restArr.length === 2 && restArr[0] === "order") {
+    return <SuperAdminOrderDetail orderId={restArr[1]} />;
+  }
+  if (portal === "super_admin" && restArr.length === 1 && restArr[0] === "users") {
+    const baseUserManagerUrl = process.env.NEXT_PUBLIC_USER_MANAGER_URL || "http://localhost:7004";
+    const userManagerUrl = authToken
+      ? `${baseUserManagerUrl}?token=${encodeURIComponent(String(authToken))}`
+      : baseUserManagerUrl;
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900">
+          <div>
+            <h2 className="font-bold text-slate-900 dark:text-slate-100">User Management Micro-Frontend</h2>
+            <p className="text-xs text-slate-500">
+              Decoupled user-manager-frontend app active at{" "}
+              <a href={userManagerUrl} target="_blank" rel="noreferrer" className="text-violet-600 underline">
+                {userManagerUrl}
+              </a>
+            </p>
+          </div>
+          <a
+            href={userManagerUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-lg bg-violet-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow hover:bg-violet-700 transition"
+          >
+            Open Standalone Window ↗
+          </a>
+        </div>
+        <iframe
+          src={userManagerUrl}
+          title="User Manager Frontend"
+          className="w-full h-[750px] rounded-2xl border border-slate-200 shadow-sm dark:border-white/10 bg-white dark:bg-slate-900"
+        />
+      </div>
+    );
+  }
+  if (portal === "super_admin" && restArr.length === 1 && restArr[0] === "parties") {
+    return <ListPartiesPage portalHome="/super_admin" />;
+  }
+  if (portal === "super_admin" && restArr.length === 1 && restArr[0] === "products") {
+    return <ListProductsPage portalHome="/super_admin" />;
+  }
+  if (portal === "super_admin" && restArr.length === 1 && restArr[0] === "transport-agents") {
+    return <ListTransportAgentsPage portalHome="/super_admin" />;
+  }
+  if (portal === "super_admin" && restArr.length === 1 && restArr[0] === "transport-planner") {
+    return <ListTransportPlansPage portalHome="/super_admin" />;
+  }
+  if (portal === "super_admin" && restArr.length === 2 && restArr[0] === "transport-planner" && restArr[1] === "calendar") {
+    return <TransportPlanCalendarPage portalHome="/super_admin" />;
+  }
+  if (portal === "super_admin" && restArr.length === 2 && restArr[0] === "transport-planner" && restArr[1] === "new") {
+    return <TransportPlanFormPage mode="create" portalHome="/super_admin" />;
+  }
+  if (
+    portal === "super_admin" &&
+    restArr.length === 3 &&
+    restArr[0] === "transport-planner" &&
+    restArr[2] === "edit"
+  ) {
+    return <TransportPlanFormPage mode="edit" planId={restArr[1]} portalHome="/super_admin" />;
+  }
+  if (portal === "super_admin" && restArr.length === 2 && restArr[0] === "transport-planner") {
+    return <TransportPlanDetailPage planId={restArr[1]} portalHome="/super_admin" />;
+  }
+  if (portal === "super_admin" && restArr.length === 2 && restArr[0] === "parties") {
+    return <PartyDetailPage id={restArr[1]} portalHome="/super_admin" />;
+  }
+  if (portal === "super_admin" && restArr.length === 2 && restArr[0] === "products") {
+    return <ProductDetailPage id={restArr[1]} portalHome="/super_admin" />;
+  }
+
+  // ── SHARED DETAIL PAGES ──────────────────────────────────────────────────
+  if (
+    (portal === "admin" || portal === "finance" || portal === "account" || portal === "super_admin") &&
+    restArr.length === 2 && restArr[0] === "parties"
+  ) {
+    return <PartyDetailPage id={restArr[1]} portalHome={`/${portal}`} />;
+  }
+  if (
+    (portal === "admin" || portal === "finance" || portal === "account" || portal === "super_admin") &&
+    restArr.length === 2 && restArr[0] === "products"
+  ) {
+    return <ProductDetailPage id={restArr[1]} portalHome={`/${portal}`} />;
+  }
+  if (
+    (portal === "admin" || portal === "finance" || portal === "account" || portal === "super_admin") &&
+    restArr.length === 2 && restArr[0] === "transport-agents"
+  ) {
+    return <TransportAgentDetailPage id={restArr[1]} portalHome={`/${portal}`} />;
+  }
+
+  if (restArr.length === 1 && restArr[0] === "profile") {
+    return <ProfilePage />;
+  }
+
+  return <PortalSectionPlaceholder portal={portal} title={title} />;
+}
