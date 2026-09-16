@@ -96,6 +96,27 @@ function hasWorkPlannerAccess(u: ExecutiveUser, sessionUserId?: string): boolean
   });
 }
 
+function hasWorkPlannerManagerAccess(u: ExecutiveUser): boolean {
+  if (!Array.isArray(u.portals) || u.portals.length === 0) {
+    return false;
+  }
+
+  const wpPortal = u.portals.find((p) => {
+    const code = p.portal_code || p.portal?.code || p.code;
+    return code === "work_planner";
+  });
+
+  if (!wpPortal) return false;
+
+  const roles: string[] = Array.isArray(wpPortal.access_roles)
+    ? wpPortal.access_roles
+    : (wpPortal as any).access_role
+      ? [(wpPortal as any).access_role]
+      : [];
+
+  return roles.some((r) => String(r).toLowerCase().trim() === "manager");
+}
+
 export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
   const router = useRouter();
   const isEditing = Boolean(planId);
@@ -337,35 +358,12 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
     loadSourcePlan();
   }, [copyId, isEditing, fetchPlan]);
 
-  // Filter eligible managers for discussion dropdown
+  // Filter eligible managers for discussion dropdown: strictly only users assigned to work_planner portal with manager access
   const eligibleManagers = useMemo(() => {
-    const managers = allUsers.filter((u) => {
-      if (u.department === "super_admin") return true;
-      if ((u as any).role === "admin" || (u as any).role === "super_admin") return true;
-      if (Array.isArray(u.portals)) {
-        const p = u.portals.find((item) => {
-          const code = item.portal_code || item.portal?.code || item.code;
-          return code === "work_planner";
-        });
-        if (p) {
-          const roles: string[] = Array.isArray(p.access_roles)
-            ? p.access_roles
-            : (p as any).access_role
-              ? [(p as any).access_role]
-              : [];
-          return roles.some((r) => {
-            const norm = String(r).toLowerCase().trim();
-            return norm === "manager" || norm === "admin";
-          });
-        }
-      }
-      return false;
-    });
-
-    const pool = managers.length > 0 ? managers : allUsers;
-    if (!managerSearch.trim()) return pool;
+    const managers = allUsers.filter(hasWorkPlannerManagerAccess);
+    if (!managerSearch.trim()) return managers;
     const q = managerSearch.toLowerCase().trim();
-    return pool.filter(
+    return managers.filter(
       (u) =>
         u.name?.toLowerCase().includes(q) ||
         u.email?.toLowerCase().includes(q) ||
