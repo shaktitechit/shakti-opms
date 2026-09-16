@@ -17,6 +17,14 @@ function registerModels() {
         email: { type: String, required: true, unique: true, lowercase: true, trim: true },
         phone: { type: String, trim: true },
         department: { type: String, trim: true },
+        roles: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Role' }],
+        portals: [
+          {
+            portal: { type: mongoose.Schema.Types.ObjectId, ref: 'Portal' },
+            portal_code: { type: String, trim: true },
+            access_roles: [{ type: String, trim: true }],
+          },
+        ],
         is_active: { type: Boolean, default: true },
       },
       { timestamps: true }
@@ -123,6 +131,13 @@ function registerModels() {
         },
         remarks: { type: String, trim: true },
         location: { type: String, trim: true },
+        is_discussed_with_manager: { type: Boolean, default: false },
+        discussed_manager_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        discussed_manager_name: { type: String, trim: true },
+        discussion_method: {
+          type: String,
+          enum: ['on_call', 'on_direct_meeting', 'on_email', 'other'],
+        },
         submitted_at: Date,
         approved_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         approved_at: Date,

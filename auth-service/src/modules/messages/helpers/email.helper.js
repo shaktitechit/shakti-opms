@@ -10,7 +10,6 @@ function getServiceToken() {
     {
       sub: 'auth-service',
       name: 'Auth Service',
-      roles: ['admin', 'superadmin'],
     },
     JWT_SECRET,
     { expiresIn: '1h' }

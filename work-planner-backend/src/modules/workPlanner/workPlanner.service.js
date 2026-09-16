@@ -8,6 +8,7 @@ const { toPlain } = require('../../utils/mongoJson');
 const { ApiError } = require('../../utils/ApiError');
 const activityService = require('../activity/activity.service');
 const notificationService = require('../notifications/notification.service');
+const { sendWorkPlanCompletedEmail } = require('./workPlanNotification.service');
 const {
   EDITABLE_PLAN_STATUSES,
   EDITABLE_EXPENSE_STATUSES,
@@ -147,6 +148,7 @@ async function loadPlanOrThrow(id) {
   const plan = await WorkPlan.findOne({ _id: id, deletedAt: null })
     .populate('sales_user', 'name email department')
     .populate('approved_by', 'name email')
+    .populate('discussed_manager_id', 'name email department')
     .lean();
   if (!plan) throw new ApiError(404, 'Work plan not found');
   return plan;
@@ -250,6 +252,12 @@ async function completePlan(id, user) {
   plan.updated_by = userId(user);
   await plan.save();
   await logActivity(user, id, 'status_changed', 'Work plan marked completed');
+
+  // Trigger completion notification emails to Work Plan portal managers from executive's email
+  sendWorkPlanCompletedEmail(id, user).catch((err) =>
+    console.error('[workPlanner.service] completion email error:', err?.message || err)
+  );
+
   return get(id, user);
 }
 
@@ -305,6 +313,7 @@ async function list(query = {}, user) {
     WorkPlan.find(filter)
       .populate('sales_user', 'name email department')
       .populate('approved_by', 'name email')
+      .populate('discussed_manager_id', 'name email department')
       .sort({ plan_date: -1, createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -412,6 +421,10 @@ async function create(body, user) {
       remarks: body.remarks?.trim() || undefined,
       location: body.location?.trim() || undefined,
       plan_type: body.plan_type?.trim() || 'Visits',
+      is_discussed_with_manager: Boolean(body.is_discussed_with_manager),
+      discussed_manager_id: body.discussed_manager_id || undefined,
+      discussed_manager_name: body.discussed_manager_name?.trim() || undefined,
+      discussion_method: body.discussion_method?.trim() || undefined,
       created_by: userId(user),
       updated_by: userId(user),
     });
@@ -447,6 +460,24 @@ async function update(id, body, user) {
   if (body.plan_type !== undefined) {
     plan.plan_type =
       typeof body.plan_type === 'string' ? body.plan_type.trim() : body.plan_type;
+  }
+  if (body.is_discussed_with_manager !== undefined) {
+    plan.is_discussed_with_manager = Boolean(body.is_discussed_with_manager);
+  }
+  if (body.discussed_manager_id !== undefined) {
+    plan.discussed_manager_id = body.discussed_manager_id || undefined;
+  }
+  if (body.discussed_manager_name !== undefined) {
+    plan.discussed_manager_name =
+      typeof body.discussed_manager_name === 'string'
+        ? body.discussed_manager_name.trim()
+        : body.discussed_manager_name;
+  }
+  if (body.discussion_method !== undefined) {
+    plan.discussion_method =
+      typeof body.discussion_method === 'string'
+        ? body.discussion_method.trim()
+        : body.discussion_method;
   }
   // Rejected plans return to draft when edited
   if (plan.status === 'rejected') {

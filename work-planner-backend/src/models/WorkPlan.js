@@ -32,6 +32,13 @@ const workPlanSchema = new mongoose.Schema(
     remarks: { type: String, trim: true },
     /** Free-text location / city for the day's plan. */
     location: { type: String, trim: true },
+    is_discussed_with_manager: { type: Boolean, default: false },
+    discussed_manager_id: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    discussed_manager_name: { type: String, trim: true },
+    discussion_method: {
+      type: String,
+      enum: ["on_call", "on_direct_meeting", "on_email", "other"],
+    },
     submitted_at: Date,
     approved_by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     approved_at: Date,

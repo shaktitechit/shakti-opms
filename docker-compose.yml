@@ -112,6 +112,8 @@ services:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: ${WORK_PLANNER_BACKEND_PORT:-7007}
       AUTH_SERVICE_URL: ${AUTH_SERVICE_URL:-http://auth-service:7003}
+      MESSAGE_SERVICE_URL: ${MESSAGE_SERVICE_URL:-http://message-service:7011}
+      NOTIFICATION_SERVICE_URL: ${NOTIFICATION_SERVICE_URL:-http://notification-service:7012}
     depends_on:
       auth-service:
         condition: service_healthy

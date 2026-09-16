@@ -22,6 +22,7 @@ import {
   DollarSign,
   Briefcase,
   Trash2,
+  MessageSquare,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -50,6 +51,7 @@ import type {
 import {
   canAddExpenseForPlanDate,
   expenseAddWindowHint,
+  formatDiscussionMethod,
   formatPlanDate,
   formatTime,
   isLeavePlan,
@@ -285,6 +287,11 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
               Executive: <span className="font-medium text-foreground">{salesUserLabel(plan.sales_user)}</span>
               {plan.location ? ` • Location: ${plan.location}` : ""}
               {plan.plan_type ? ` • Type: ${plan.plan_type}` : ""}
+              {plan.is_discussed_with_manager ? (
+                <span className="inline-flex items-center gap-1 ml-2 text-emerald-600 dark:text-emerald-400 font-semibold">
+                  • <MessageSquare className="h-3 w-3 inline" /> Discussed with Manager
+                </span>
+              ) : null}
             </p>
           </div>
         </div>
@@ -372,31 +379,68 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
         </div>
       )}
 
-      {/* Plan Info Card */}
-      {!leavePlan && (plan.remarks || plan.rejection_reason) ? (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {plan.remarks ? (
-            <div className="rounded-xl border border-border bg-card p-4">
-              <h3 className="text-xs font-semibold text-muted mb-1">
-                Plan Objectives / Remarks
-              </h3>
-              <p className="text-xs text-foreground whitespace-pre-line">
-                {plan.remarks}
-              </p>
+      {/* Plan Info & Discussion Cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {plan.remarks ? (
+          <div className="rounded-xl border border-border bg-card p-4">
+            <h3 className="text-xs font-semibold text-muted mb-1">
+              Plan Objectives / Remarks
+            </h3>
+            <p className="text-xs text-foreground whitespace-pre-line">
+              {plan.remarks}
+            </p>
+          </div>
+        ) : null}
+
+        {/* Manager Discussion Card */}
+        <div className="rounded-xl border border-border bg-card p-4">
+          <div className="flex items-center gap-1.5 mb-2">
+            <MessageSquare className="h-4 w-4 text-primary" />
+            <h3 className="text-xs font-semibold text-foreground">
+              Manager Discussion
+            </h3>
+          </div>
+          {plan.is_discussed_with_manager ? (
+            <div className="space-y-1.5 text-xs">
+              <div className="flex items-center gap-1.5">
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                  <CheckCircle2 className="h-3 w-3" />
+                  Discussed with Manager
+                </span>
+              </div>
+              <div className="text-muted">
+                <span className="font-medium text-foreground">Manager:</span>{" "}
+                {plan.discussed_manager_name ||
+                  (typeof plan.discussed_manager_id === "object"
+                    ? plan.discussed_manager_id?.name
+                    : "") ||
+                  "Manager"}
+              </div>
+              <div className="text-muted">
+                <span className="font-medium text-foreground">Method:</span>{" "}
+                <span className="font-medium text-foreground">
+                  {formatDiscussionMethod(plan.discussion_method)}
+                </span>
+              </div>
             </div>
-          ) : null}
-          {plan.rejection_reason ? (
-            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4">
-              <h3 className="text-xs font-semibold text-rose-500 mb-1">
-                Rejection Reason
-              </h3>
-              <p className="text-xs text-rose-500">
-                {plan.rejection_reason}
-              </p>
-            </div>
-          ) : null}
+          ) : (
+            <p className="text-xs text-muted">
+              This plan was not marked as discussed with a manager.
+            </p>
+          )}
         </div>
-      ) : null}
+
+        {plan.rejection_reason ? (
+          <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4">
+            <h3 className="text-xs font-semibold text-rose-500 mb-1">
+              Rejection Reason
+            </h3>
+            <p className="text-xs text-rose-500">
+              {plan.rejection_reason}
+            </p>
+          </div>
+        ) : null}
+      </div>
 
       {/* Section 1: Field Visits (Visits plan only) */}
       {visitsPlan && (

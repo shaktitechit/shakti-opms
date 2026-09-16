@@ -21,6 +21,7 @@ import {
   Briefcase,
   Clock,
   Edit3,
+  MessageSquare,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useGetUsersQuery } from "@/store/api/authApiSlice";
@@ -133,23 +134,38 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
   const [workModalOpen, setWorkModalOpen] = useState(false);
   const [editingWorkIndex, setEditingWorkIndex] = useState<number | null>(null);
 
+  // Discussion with manager state
+  const [isDiscussedWithManager, setIsDiscussedWithManager] = useState(false);
+  const [discussedManagerId, setDiscussedManagerId] = useState<string>("");
+  const [discussedManagerName, setDiscussedManagerName] = useState<string>("");
+  const [isCustomManager, setIsCustomManager] = useState(false);
+  const [customManagerName, setCustomManagerName] = useState("");
+  const [discussionMethod, setDiscussionMethod] = useState<"on_call" | "on_direct_meeting" | "on_email" | "other">("on_call");
+  const [managerSearch, setManagerSearch] = useState("");
+  const [managerDropdownOpen, setManagerDropdownOpen] = useState(false);
+  const managerDropdownRef = useRef<HTMLDivElement>(null);
+
   // Search & Combobox states for executive selection
   const [execSearch, setExecSearch] = useState("");
   const [execDropdownOpen, setExecDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on click outside
+  // Close dropdowns on click outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setExecDropdownOpen(false);
+      }
+      if (managerDropdownRef.current && !managerDropdownRef.current.contains(event.target as Node)) {
+        setManagerDropdownOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const { data: usersData } = useGetUsersQuery(undefined, { skip: !managerRole });
+  // Fetch all users for executive selection (managers) and manager discussion selection (all users)
+  const { data: usersData } = useGetUsersQuery();
   const [fetchPlan] = useLazyGetPlanQuery();
   const [createPlanMut] = useCreatePlanMutation();
   const [updatePlanMut] = useUpdatePlanMutation();
@@ -160,12 +176,14 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
   const [updateWorkMut] = useUpdateWorkMutation();
   const [removeWorkMut] = useRemoveWorkMutation();
 
+  const allUsers = useMemo(() => (usersData as ExecutiveUser[]) || [], [usersData]);
+
   // Load roster of executives for manager selection
   useEffect(() => {
-    if (managerRole && usersData) {
+    if (usersData) {
       setExecutives(usersData as ExecutiveUser[]);
     }
-  }, [managerRole, usersData]);
+  }, [usersData]);
 
   useEffect(() => {
     if (!planId) return;
@@ -187,6 +205,43 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                 : plan.sales_user;
             if (sUser) setSalesUserId(String(sUser));
           }
+
+          // Load discussion details
+          const isDiscussed = Boolean(plan.is_discussed_with_manager);
+          setIsDiscussedWithManager(isDiscussed);
+          if (isDiscussed) {
+            const mId =
+              typeof plan.discussed_manager_id === "object"
+                ? plan.discussed_manager_id?._id
+                : plan.discussed_manager_id;
+            const mName =
+              plan.discussed_manager_name ||
+              (typeof plan.discussed_manager_id === "object"
+                ? plan.discussed_manager_id?.name
+                : "") ||
+              "";
+            if (mId) {
+              setDiscussedManagerId(String(mId));
+              setDiscussedManagerName(mName);
+              setIsCustomManager(false);
+              setCustomManagerName("");
+            } else if (mName) {
+              setDiscussedManagerId("");
+              setDiscussedManagerName(mName);
+              setIsCustomManager(true);
+              setCustomManagerName(mName);
+            }
+            if (plan.discussion_method) {
+              setDiscussionMethod(plan.discussion_method as any);
+            }
+          } else {
+            setDiscussedManagerId("");
+            setDiscussedManagerName("");
+            setIsCustomManager(false);
+            setCustomManagerName("");
+            setDiscussionMethod("on_call");
+          }
+
           if (Array.isArray(plan.visits)) {
             setVisits(plan.visits);
           }
@@ -222,12 +277,42 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                 : plan.sales_user;
             if (sUser) setSalesUserId(String(sUser));
           }
+
+          // Discussion state on copy
+          const isDiscussed = Boolean(plan.is_discussed_with_manager);
+          setIsDiscussedWithManager(isDiscussed);
+          if (isDiscussed) {
+            const mId =
+              typeof plan.discussed_manager_id === "object"
+                ? plan.discussed_manager_id?._id
+                : plan.discussed_manager_id;
+            const mName =
+              plan.discussed_manager_name ||
+              (typeof plan.discussed_manager_id === "object"
+                ? plan.discussed_manager_id?.name
+                : "") ||
+              "";
+            if (mId) {
+              setDiscussedManagerId(String(mId));
+              setDiscussedManagerName(mName);
+              setIsCustomManager(false);
+              setCustomManagerName("");
+            } else if (mName) {
+              setDiscussedManagerId("");
+              setDiscussedManagerName(mName);
+              setIsCustomManager(true);
+              setCustomManagerName(mName);
+            }
+            if (plan.discussion_method) {
+              setDiscussionMethod(plan.discussion_method as any);
+            }
+          }
+
           // Copy visits but strip IDs and status so they are created fresh
           if (Array.isArray(plan.visits)) {
             setVisits(
               plan.visits.map((v: any) => {
                 const { _id, id, status, check_in_time, check_out_time, outcome, ...rest } = v;
-                // If party is an object, keep it as-is for display but strip visit-level IDs
                 return { ...rest };
               })
             );
@@ -251,6 +336,47 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
     }
     loadSourcePlan();
   }, [copyId, isEditing, fetchPlan]);
+
+  // Filter eligible managers for discussion dropdown
+  const eligibleManagers = useMemo(() => {
+    const managers = allUsers.filter((u) => {
+      if (u.department === "super_admin") return true;
+      if ((u as any).role === "admin" || (u as any).role === "super_admin") return true;
+      if (Array.isArray(u.portals)) {
+        const p = u.portals.find((item) => {
+          const code = item.portal_code || item.portal?.code || item.code;
+          return code === "work_planner";
+        });
+        if (p) {
+          const roles: string[] = Array.isArray(p.access_roles)
+            ? p.access_roles
+            : (p as any).access_role
+              ? [(p as any).access_role]
+              : [];
+          return roles.some((r) => {
+            const norm = String(r).toLowerCase().trim();
+            return norm === "manager" || norm === "admin";
+          });
+        }
+      }
+      return false;
+    });
+
+    const pool = managers.length > 0 ? managers : allUsers;
+    if (!managerSearch.trim()) return pool;
+    const q = managerSearch.toLowerCase().trim();
+    return pool.filter(
+      (u) =>
+        u.name?.toLowerCase().includes(q) ||
+        u.email?.toLowerCase().includes(q) ||
+        u.department?.toLowerCase().includes(q)
+    );
+  }, [allUsers, managerSearch]);
+
+  const selectedManager = useMemo(() => {
+    if (!discussedManagerId) return null;
+    return allUsers.find((u) => u._id === discussedManagerId || u.id === discussedManagerId) || null;
+  }, [discussedManagerId, allUsers]);
 
   // Filter executives assigned to Work Planner portal + match search query
   const eligibleExecutives = useMemo(() => {
@@ -395,6 +521,20 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
       return;
     }
 
+    if (isDiscussedWithManager) {
+      if (isCustomManager) {
+        if (!customManagerName.trim()) {
+          toast.error("Please enter the custom manager name");
+          return;
+        }
+      } else {
+        if (!discussedManagerId && !discussedManagerName.trim()) {
+          toast.error("Please select a manager or enter custom manager name");
+          return;
+        }
+      }
+    }
+
     setSubmitting(true);
     try {
       const payload: Partial<WorkPlanRecord> = {
@@ -402,6 +542,17 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
         plan_type: planType as WorkPlanRecord["plan_type"],
         location: location.trim(),
         remarks: remarks.trim(),
+        is_discussed_with_manager: isDiscussedWithManager,
+        discussed_manager_id:
+          isDiscussedWithManager && !isCustomManager && discussedManagerId
+            ? discussedManagerId
+            : undefined,
+        discussed_manager_name: isDiscussedWithManager
+          ? isCustomManager
+            ? customManagerName.trim()
+            : selectedManager?.name || discussedManagerName.trim() || undefined
+          : undefined,
+        discussion_method: isDiscussedWithManager ? discussionMethod : undefined,
         ...(managerRole && salesUserId ? { sales_user: salesUserId } : {}),
       };
 
@@ -726,6 +877,186 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
               className="w-full rounded-lg border border-border bg-surface-muted pl-9 pr-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary"
             />
           </div>
+        </div>
+
+        {/* Manager Discussion Section */}
+        <div className="rounded-xl border border-border bg-surface-muted/30 p-4 space-y-3">
+          <div className="flex items-start justify-between">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={isDiscussedWithManager}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setIsDiscussedWithManager(checked);
+                  if (!checked) {
+                    setDiscussedManagerId("");
+                    setDiscussedManagerName("");
+                    setIsCustomManager(false);
+                    setCustomManagerName("");
+                  }
+                }}
+                className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20 accent-primary cursor-pointer"
+              />
+              <div className="flex items-center gap-1.5">
+                <MessageSquare className="h-4 w-4 text-primary" />
+                <span className="text-xs font-semibold text-foreground">
+                  Is this Plan discussed with the Manager?
+                </span>
+              </div>
+            </label>
+            {isDiscussedWithManager && (
+              <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                <Check className="h-3 w-3" />
+                Discussion Logged
+              </span>
+            )}
+          </div>
+
+          {isDiscussedWithManager && (
+            <div className="pt-2 border-t border-border/60 space-y-3">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {/* Manager Selection: Search & Select or Custom */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-foreground">
+                      Discussed Manager <span className="text-rose-500">*</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsCustomManager(!isCustomManager);
+                        if (!isCustomManager) {
+                          setDiscussedManagerId("");
+                        } else {
+                          setCustomManagerName("");
+                        }
+                      }}
+                      className="text-[11px] font-medium text-primary hover:underline"
+                    >
+                      {isCustomManager ? "← Select from List" : "+ Custom Manager"}
+                    </button>
+                  </div>
+
+                  {isCustomManager ? (
+                    <input
+                      type="text"
+                      placeholder="Enter manager's name..."
+                      value={customManagerName}
+                      onChange={(e) => setCustomManagerName(e.target.value)}
+                      className="w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary"
+                      required
+                    />
+                  ) : (
+                    <div className="relative" ref={managerDropdownRef}>
+                      <button
+                        type="button"
+                        onClick={() => setManagerDropdownOpen(!managerDropdownOpen)}
+                        className="flex w-full items-center justify-between rounded-lg border border-border bg-surface-muted px-3 py-2 text-left text-xs font-medium text-foreground focus:border-primary focus:outline-none"
+                      >
+                        <div className="truncate">
+                          {selectedManager ? (
+                            <span className="font-semibold text-foreground">
+                              {selectedManager.name}{" "}
+                              <span className="text-[11px] font-normal text-muted">
+                                ({selectedManager.department || selectedManager.email})
+                              </span>
+                            </span>
+                          ) : discussedManagerName ? (
+                            <span className="font-semibold text-foreground">{discussedManagerName}</span>
+                          ) : (
+                            <span className="text-muted">Search &amp; select manager...</span>
+                          )}
+                        </div>
+                        <ChevronDown className="h-4 w-4 text-muted shrink-0 ml-2" />
+                      </button>
+
+                      {managerDropdownOpen && (
+                        <div className="absolute left-0 top-full z-50 mt-1 w-full rounded-xl border border-border bg-card p-2 shadow-xl">
+                          <div className="relative mb-2">
+                            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted" />
+                            <input
+                              type="text"
+                              placeholder="Search manager by name or email..."
+                              value={managerSearch}
+                              onChange={(e) => setManagerSearch(e.target.value)}
+                              className="w-full rounded-lg border border-border bg-surface-muted pl-8 pr-3 py-1.5 text-xs text-foreground outline-none focus:border-primary"
+                              autoFocus
+                            />
+                          </div>
+                          <div className="max-h-48 overflow-y-auto space-y-1">
+                            {eligibleManagers.length === 0 ? (
+                              <div className="p-3 text-center text-xs text-muted">
+                                No managers found
+                              </div>
+                            ) : (
+                              eligibleManagers.map((u) => {
+                                const isSelected =
+                                  (u._id || u.id) === discussedManagerId;
+                                return (
+                                  <button
+                                    key={u._id || u.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setDiscussedManagerId(u._id || u.id || "");
+                                      setDiscussedManagerName(u.name || "");
+                                      setManagerDropdownOpen(false);
+                                    }}
+                                    className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition ${
+                                      isSelected
+                                        ? "bg-primary/10 text-primary font-medium"
+                                        : "text-foreground hover:bg-surface-muted"
+                                    }`}
+                                  >
+                                    <div className="truncate">
+                                      <div className="font-semibold">{u.name}</div>
+                                      <div className="text-[11px] text-muted truncate">{u.email}</div>
+                                    </div>
+                                    {isSelected && <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />}
+                                  </button>
+                                );
+                              })
+                            )}
+                          </div>
+                          <div className="border-t border-border mt-2 pt-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsCustomManager(true);
+                                setDiscussedManagerId("");
+                                setManagerDropdownOpen(false);
+                              }}
+                              className="flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-primary hover:bg-primary/10 transition"
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                              <span>Enter Custom Manager Name...</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Discussion Method */}
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-foreground">
+                    Method of Discussion <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={discussionMethod}
+                    onChange={(e) => setDiscussionMethod(e.target.value as any)}
+                    className="w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary"
+                  >
+                    <option value="on_call">On Call</option>
+                    <option value="on_direct_meeting">On Direct Meeting</option>
+                    <option value="on_email">On Email</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Dynamic Embedded Section: Field Visits (if Plan Type is Visits) */}

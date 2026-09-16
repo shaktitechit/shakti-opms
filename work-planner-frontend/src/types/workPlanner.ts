@@ -237,6 +237,10 @@ export type WorkPlanRecord = {
   plan_type?: "Visits" | "Leave" | "Work From Home" | "Work From Office";
   remarks?: string;
   location?: string;
+  is_discussed_with_manager?: boolean;
+  discussed_manager_id?: string | { _id?: string; name?: string; email?: string };
+  discussed_manager_name?: string;
+  discussion_method?: "on_call" | "on_direct_meeting" | "on_email" | "other";
   submitted_at?: string;
   approved_by?: string | { _id?: string; name?: string; email?: string };
   approved_at?: string;

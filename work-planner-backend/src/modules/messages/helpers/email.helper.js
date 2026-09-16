@@ -1,5 +1,5 @@
 /**
- * @fileoverview Email helper for lead-manager-backend delegating to message-service.
+ * @fileoverview Email helper for work-planner-backend delegating to message-service.
  * @module modules/messages/helpers/email.helper
  */
 const axios = require('axios');
@@ -10,8 +10,8 @@ const { logger } = require('../../../utils/logger');
 function getServiceToken() {
   return jwt.sign(
     {
-      sub: 'lead-manager-service',
-      name: 'Lead Manager Service',
+      sub: 'work-planner-service',
+      name: 'Work Planner Service',
     },
     JWT_SECRET,
     { expiresIn: '1h' }

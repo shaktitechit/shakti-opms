@@ -404,3 +404,19 @@ export function taskWindowHint(planDate: unknown): string {
 export function workPlanWindowHint(planDate: unknown): string {
   return planItemWindowHint("Work plans", planDate, "completed");
 }
+
+export function formatDiscussionMethod(method?: string | null): string {
+  if (!method) return "—";
+  switch (method) {
+    case "on_call":
+      return "On Call";
+    case "on_direct_meeting":
+      return "Direct Meeting";
+    case "on_email":
+      return "On Email";
+    case "other":
+      return "Other";
+    default:
+      return method.replace(/_/g, " ");
+  }
+}

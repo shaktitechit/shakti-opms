@@ -5,6 +5,7 @@ module.exports = {
   MONGODB_URI: process.env.MONGODB_URI || '',
   JWT_SECRET: process.env.JWT_SECRET || '',
   AUTH_SERVICE_URL: process.env.AUTH_SERVICE_URL || '',
+  MESSAGE_SERVICE_URL: process.env.MESSAGE_SERVICE_URL || '',
   NOTIFICATION_SERVICE_URL: process.env.NOTIFICATION_SERVICE_URL || '',
   CORS_ORIGIN: process.env.CORS_ORIGIN || '*',
   JSON_BODY_LIMIT: process.env.JSON_BODY_LIMIT || '15mb',

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { CalendarDays, Copy, Download, ExternalLink, Plus, RefreshCw, Trash2, Search, FileSpreadsheet } from "lucide-react";
+import { CalendarDays, Copy, Download, ExternalLink, Plus, RefreshCw, Trash2, Search, FileSpreadsheet, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { useGetPlansQuery, useDeletePlanMutation } from "@/store/api/workPlannerApiSlice";
 import { isManager, readSessionFromStorage } from "@/utils/authStorage";
@@ -15,6 +15,7 @@ import {
   WORK_PLAN_STATUS_TABS,
   WORK_PLAN_TYPE_TABS,
   canEditPlan,
+  formatDiscussionMethod,
   formatPlanDate,
   planIdOf,
   renderPlanStatusBadge,
@@ -71,12 +72,22 @@ export function WorkPlansPage() {
       const location = (r.location || "").toLowerCase();
       const status = (r.status || "").toLowerCase();
       const planType = (r.plan_type || "visits").toLowerCase();
+      const managerName = (
+        r.discussed_manager_name ||
+        (typeof r.discussed_manager_id === "object"
+          ? r.discussed_manager_id?.name
+          : "") ||
+        ""
+      ).toLowerCase();
+      const method = (r.discussion_method || "").toLowerCase();
       return (
         sales.includes(q) ||
         remarks.includes(q) ||
         location.includes(q) ||
         status.includes(q) ||
-        planType.includes(q)
+        planType.includes(q) ||
+        managerName.includes(q) ||
+        method.includes(q)
       );
     });
   }, [plans, searchQuery]);
@@ -230,6 +241,7 @@ export function WorkPlansPage() {
                 <th className="px-4 py-3">Executive</th>
                 <th className="px-4 py-3">Plan Type</th>
                 <th className="px-4 py-3">Location / City</th>
+                <th className="px-4 py-3">Discussion</th>
                 <th className="px-4 py-3">Activity</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3 text-right">Actions</th>
@@ -238,13 +250,13 @@ export function WorkPlansPage() {
             <tbody className="divide-y divide-border text-foreground">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-muted">
+                  <td colSpan={8} className="p-8 text-center text-muted">
                     Loading work plans…
                   </td>
                 </tr>
               ) : filteredPlans.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-muted">
+                  <td colSpan={8} className="p-8 text-center text-muted">
                     No work plans found for selected filters.
                   </td>
                 </tr>
@@ -270,6 +282,35 @@ export function WorkPlansPage() {
                       </td>
                       <td className="px-4 py-3 text-muted">
                         {r.location || "—"}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        {r.is_discussed_with_manager ? (
+                          <div className="space-y-0.5">
+                            <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                              <MessageSquare className="h-3 w-3" />
+                              {formatDiscussionMethod(r.discussion_method)}
+                            </span>
+                            <div
+                              className="text-[11px] text-muted truncate max-w-[140px]"
+                              title={
+                                r.discussed_manager_name ||
+                                (typeof r.discussed_manager_id === "object"
+                                  ? r.discussed_manager_id?.name
+                                  : "") ||
+                                "Manager"
+                              }
+                            >
+                              with{" "}
+                              {r.discussed_manager_name ||
+                                (typeof r.discussed_manager_id === "object"
+                                  ? r.discussed_manager_id?.name
+                                  : "") ||
+                                "Manager"}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-muted">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-muted font-medium">
                         {r.plan_type === "Work From Home" || r.plan_type === "Work From Office"

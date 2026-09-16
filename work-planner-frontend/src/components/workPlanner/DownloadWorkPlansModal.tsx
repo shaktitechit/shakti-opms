@@ -24,10 +24,12 @@ import {
   ChevronRight,
   FolderOpen,
   CornerDownRight,
+  MessageSquare,
 } from "lucide-react";
 import { useLazyGetPlansQuery } from "@/store/api/workPlannerApiSlice";
 import type { WorkPlanRecord, WorkPlanVisitRecord, WorkPlanWorkRecord } from "@/types/workPlanner";
 import {
+  formatDiscussionMethod,
   formatPlanDate,
   salesUserLabel,
   renderPlanStatusBadge,
@@ -300,12 +302,23 @@ export function DownloadWorkPlansModal({
           const dtStr = formatPlanDate(planDate).toLowerCase();
           const typeStr = planType.toLowerCase();
 
+          const discMgr = (
+            plan.discussed_manager_name ||
+            (typeof plan.discussed_manager_id === "object"
+              ? plan.discussed_manager_id?.name
+              : "") ||
+            ""
+          ).toLowerCase();
+          const discMethod = (plan.discussion_method || "").toLowerCase();
+
           const parentMatch =
             userStr.includes(q) ||
             locStr.includes(q) ||
             remStr.includes(q) ||
             dtStr.includes(q) ||
-            typeStr.includes(q);
+            typeStr.includes(q) ||
+            discMgr.includes(q) ||
+            discMethod.includes(q);
 
           const visitMatch = childVisits.some(
             (v) =>
@@ -336,6 +349,14 @@ export function DownloadWorkPlansModal({
           planStatus,
           planLocation,
           planRemarks,
+          isDiscussedWithManager: Boolean(plan.is_discussed_with_manager),
+          discussedManagerName:
+            plan.discussed_manager_name ||
+            (typeof plan.discussed_manager_id === "object"
+              ? plan.discussed_manager_id?.name
+              : "") ||
+            "",
+          discussionMethod: plan.discussion_method || "",
           childVisits,
           childTasks,
           totalVisits: plan.visit_count ?? (plan.visits?.length || 0),
@@ -401,6 +422,9 @@ export function DownloadWorkPlansModal({
         "Record Level",
         "Plan Date",
         "Sales Executive",
+        "Discussed With Manager",
+        "Discussed Manager",
+        "Discussion Method",
         "Plan Type / Activity",
         "Party Name / Task Title",
         "Contact / Description",
@@ -424,6 +448,9 @@ export function DownloadWorkPlansModal({
           "PARENT WORK PLAN",
           formatPlanDate(p.planDate),
           `"${execName.replace(/"/g, '""')}"`,
+          p.isDiscussedWithManager ? "Yes" : "No",
+          `"${(p.discussedManagerName || (p.isDiscussedWithManager ? "Manager" : "—")).replace(/"/g, '""')}"`,
+          p.isDiscussedWithManager ? formatDiscussionMethod(p.discussionMethod) : "—",
           p.planType,
           `"${p.planType} Plan (${p.totalVisits} Visits, ${p.totalTasks} Tasks)"`,
           `"${(p.planRemarks || "").replace(/"/g, '""')}"`,
@@ -442,6 +469,9 @@ export function DownloadWorkPlansModal({
             "CHILD VISIT",
             formatPlanDate(p.planDate),
             `"${execName.replace(/"/g, '""')}"`,
+            "—",
+            "—",
+            "—",
             "Field Visit",
             `"${v.partyName.replace(/"/g, '""')}"`,
             `"${v.contactInfo.replace(/"/g, '""')}"`,
@@ -461,6 +491,9 @@ export function DownloadWorkPlansModal({
             "CHILD TASK",
             formatPlanDate(p.planDate),
             `"${execName.replace(/"/g, '""')}"`,
+            "—",
+            "—",
+            "—",
             "Work Task",
             `"${w.title.replace(/"/g, '""')}"`,
             `"${w.description.replace(/"/g, '""')}"`,
@@ -504,6 +537,9 @@ export function DownloadWorkPlansModal({
         const execName = salesUserLabel(p.salesUser);
 
         // 1. Parent Plan Row
+        const discSummary = p.isDiscussedWithManager
+          ? `Discussed with ${p.discussedManagerName || "Manager"} (${formatDiscussionMethod(p.discussionMethod)})`
+          : "";
         rows.push({
           _rowType: "PARENT PLAN",
           hierarchyId: `${parentRowIndex}`,
@@ -511,10 +547,10 @@ export function DownloadWorkPlansModal({
           date: formatPlanDate(p.planDate),
           executive: execName,
           activity: p.planType === "Visits" ? `Visits Plan (${p.childVisits.length} Visits)` : `Tasks Plan (${p.childTasks.length} Tasks)`,
-          details: p.planRemarks || "—",
+          details: [p.planRemarks, discSummary].filter(Boolean).join(" | ") || "—",
           plannedTime: "Full Day",
           status: p.planStatus.toUpperCase(),
-          remarks: p.planRemarks || "—",
+          remarks: [p.planRemarks, discSummary].filter(Boolean).join(" | ") || "—",
         });
 
         // 2. Child Visits Rows
@@ -975,7 +1011,13 @@ export function DownloadWorkPlansModal({
 
                           {/* 2. Sales Executive */}
                           <td className="border-r border-border px-3 py-2.5 font-bold text-foreground whitespace-nowrap">
-                            {salesUserLabel(p.salesUser)}
+                            <div>{salesUserLabel(p.salesUser)}</div>
+                            {p.isDiscussedWithManager && (
+                              <div className="flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">
+                                <MessageSquare className="h-3 w-3 shrink-0 inline" />
+                                <span>Discussed ({p.discussedManagerName || "Manager"})</span>
+                              </div>
+                            )}
                           </td>
 
                           {/* 3. Plan Type */}
