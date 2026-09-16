@@ -18,19 +18,19 @@
 # "protocol options redefined" warnings with other sites on :443.
 # =============================================================================
 
-upstream opms_backend          { server 127.0.0.1:5001; keepalive 32; }
-upstream opms_frontend         { server 127.0.0.1:5002; keepalive 16; }
-upstream auth_service          { server 127.0.0.1:5003; keepalive 32; }
-upstream user_manager_frontend { server 127.0.0.1:5004; keepalive 16; }
-upstream product_service       { server 127.0.0.1:5005; keepalive 32; }
-upstream party_service         { server 127.0.0.1:5006; keepalive 32; }
-upstream work_planner_backend  { server 127.0.0.1:5007; keepalive 32; }
-upstream work_planner_frontend { server 127.0.0.1:5008; keepalive 16; }
-upstream lead_manager_backend  { server 127.0.0.1:5009; keepalive 32; }
-upstream lead_manager_frontend { server 127.0.0.1:5010; keepalive 16; }
-upstream message_service       { server 127.0.0.1:5011; keepalive 32; }
-upstream notification_service  { server 127.0.0.1:5012; keepalive 32; }
-upstream app_frontend          { server 127.0.0.1:5013; keepalive 16; }
+upstream medica_opms_backend          { server 127.0.0.1:5001; keepalive 32; }
+upstream medica_opms_frontend         { server 127.0.0.1:5002; keepalive 16; }
+upstream medica_auth_service          { server 127.0.0.1:5003; keepalive 32; }
+upstream medica_user_manager_frontend { server 127.0.0.1:5004; keepalive 16; }
+upstream medica_product_service       { server 127.0.0.1:5005; keepalive 32; }
+upstream medica_party_service         { server 127.0.0.1:5006; keepalive 32; }
+upstream medica_work_planner_backend  { server 127.0.0.1:5007; keepalive 32; }
+upstream medica_work_planner_frontend { server 127.0.0.1:5008; keepalive 16; }
+upstream medica_lead_manager_backend  { server 127.0.0.1:5009; keepalive 32; }
+upstream medica_lead_manager_frontend { server 127.0.0.1:5010; keepalive 16; }
+upstream medica_message_service       { server 127.0.0.1:5011; keepalive 32; }
+upstream medica_notification_service  { server 127.0.0.1:5012; keepalive 32; }
+upstream medica_app_frontend          { server 127.0.0.1:5013; keepalive 16; }
 
 # -----------------------------------------------------------------------------
 # HTTP → HTTPS (+ ACME challenge)
@@ -75,7 +75,7 @@ server {
 
     location / {
         include /etc/nginx/snippets/proxy-upgrade.conf;
-        proxy_pass http://app_frontend;
+        proxy_pass http://medica_app_frontend;
     }
 }
 
@@ -88,7 +88,7 @@ server {
 
     location / {
         include /etc/nginx/snippets/proxy-upgrade.conf;
-        proxy_pass http://opms_frontend;
+        proxy_pass http://medica_opms_frontend;
     }
 }
 
@@ -101,7 +101,7 @@ server {
 
     location / {
         include /etc/nginx/snippets/proxy-upgrade.conf;
-        proxy_pass http://user_manager_frontend;
+        proxy_pass http://medica_user_manager_frontend;
     }
 }
 
@@ -114,7 +114,7 @@ server {
 
     location / {
         include /etc/nginx/snippets/proxy-upgrade.conf;
-        proxy_pass http://work_planner_frontend;
+        proxy_pass http://medica_work_planner_frontend;
     }
 }
 
@@ -127,7 +127,7 @@ server {
 
     location / {
         include /etc/nginx/snippets/proxy-upgrade.conf;
-        proxy_pass http://lead_manager_frontend;
+        proxy_pass http://medica_lead_manager_frontend;
     }
 }
 
@@ -144,7 +144,7 @@ server {
 
     location / {
         include /etc/nginx/snippets/proxy-params.conf;
-        proxy_pass http://opms_backend;
+        proxy_pass http://medica_opms_backend;
         proxy_read_timeout 120s;
         proxy_send_timeout 120s;
     }
@@ -159,12 +159,12 @@ server {
 
     location ~ ^/api/notifications/stream {
         include /etc/nginx/snippets/proxy-sse.conf;
-        proxy_pass http://auth_service;
+        proxy_pass http://medica_auth_service;
     }
 
     location / {
         include /etc/nginx/snippets/proxy-params.conf;
-        proxy_pass http://auth_service;
+        proxy_pass http://medica_auth_service;
         proxy_read_timeout 120s;
     }
 }
@@ -178,7 +178,7 @@ server {
 
     location / {
         include /etc/nginx/snippets/proxy-params.conf;
-        proxy_pass http://product_service;
+        proxy_pass http://medica_product_service;
     }
 }
 
@@ -191,7 +191,7 @@ server {
 
     location / {
         include /etc/nginx/snippets/proxy-params.conf;
-        proxy_pass http://party_service;
+        proxy_pass http://medica_party_service;
     }
 }
 
@@ -204,12 +204,12 @@ server {
 
     location ~ ^/api/notifications/stream {
         include /etc/nginx/snippets/proxy-sse.conf;
-        proxy_pass http://work_planner_backend;
+        proxy_pass http://medica_work_planner_backend;
     }
 
     location / {
         include /etc/nginx/snippets/proxy-params.conf;
-        proxy_pass http://work_planner_backend;
+        proxy_pass http://medica_work_planner_backend;
     }
 }
 
@@ -222,12 +222,12 @@ server {
 
     location ~ ^/api/notifications/stream {
         include /etc/nginx/snippets/proxy-sse.conf;
-        proxy_pass http://lead_manager_backend;
+        proxy_pass http://medica_lead_manager_backend;
     }
 
     location / {
         include /etc/nginx/snippets/proxy-params.conf;
-        proxy_pass http://lead_manager_backend;
+        proxy_pass http://medica_lead_manager_backend;
         proxy_read_timeout 120s;
     }
 }
@@ -241,7 +241,7 @@ server {
 
     location / {
         include /etc/nginx/snippets/proxy-params.conf;
-        proxy_pass http://message_service;
+        proxy_pass http://medica_message_service;
         proxy_read_timeout 120s;
     }
 }
