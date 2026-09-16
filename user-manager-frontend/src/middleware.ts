@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
+
 export function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
-  const cookieToken = request.cookies.get("shakti_session")?.value;
-  const urlToken = searchParams.get("token");
+  const cookieToken =
+    request.cookies.get("shakti_session")?.value ||
+    request.cookies.get("medica_session")?.value;
+  const urlToken = searchParams.get("token")?.trim() || "";
   const effectiveToken = cookieToken || urlToken;
 
   const isAuthRoute = pathname === "/" || pathname === "/login";
@@ -15,6 +19,12 @@ export function middleware(request: NextRequest) {
     const response = NextResponse.next();
     response.cookies.set("shakti_session", urlToken, {
       path: "/",
+      maxAge: COOKIE_MAX_AGE,
+      sameSite: "lax",
+    });
+    response.cookies.set("medica_session", urlToken, {
+      path: "/",
+      maxAge: COOKIE_MAX_AGE,
       sameSite: "lax",
     });
     return response;
@@ -22,17 +32,27 @@ export function middleware(request: NextRequest) {
 
   // 2. If accessing protected route without session token, redirect to login page (/)
   if (isProtectedRoute && !effectiveToken) {
-    const loginUrl = new URL("/", request.url);
-    loginUrl.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(loginUrl);
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/";
+    redirectUrl.searchParams.set("redirect", pathname);
+    return NextResponse.redirect(redirectUrl);
   }
 
   // 3. If authenticated user tries to access login page (/), redirect to /dashboard
   if (isAuthRoute && effectiveToken) {
-    const response = NextResponse.redirect(new URL("/dashboard", request.url));
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/dashboard";
+    redirectUrl.search = "";
+    const response = NextResponse.redirect(redirectUrl);
     if (urlToken && !cookieToken) {
       response.cookies.set("shakti_session", urlToken, {
         path: "/",
+        maxAge: COOKIE_MAX_AGE,
+        sameSite: "lax",
+      });
+      response.cookies.set("medica_session", urlToken, {
+        path: "/",
+        maxAge: COOKIE_MAX_AGE,
         sameSite: "lax",
       });
     }

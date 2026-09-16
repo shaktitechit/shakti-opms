@@ -7,6 +7,7 @@ import { resolveHomeFromUser } from "@/constants/dashboardAccess";
 
 /** Non-HttpOnly: lets Edge middleware route without JWT in LS. Cleared together with Redux logout. */
 export const SESSION_COOKIE_NAME = "medica_session";
+export const SHAKTI_SESSION_COOKIE_NAME = "shakti_session";
 /** Comma-separated OPMS access_roles for Edge path allowlists. */
 export const OPMS_ROLES_COOKIE_NAME = "medica_opms_roles";
 /** @deprecated Cleared on persist; replaced by {@link OPMS_ROLES_COOKIE_NAME}. */
@@ -42,11 +43,13 @@ export function persistSessionMarksFromAuth(input: {
       formatOpmsRolesCookie(roles),
       COOKIE_MAX_AGE_SECONDS,
     );
+    setCookie(SHAKTI_SESSION_COOKIE_NAME, input.token, COOKIE_MAX_AGE_SECONDS);
     return;
   }
 
   deleteCookie(SESSION_COOKIE_NAME);
   deleteCookie(OPMS_ROLES_COOKIE_NAME);
+  deleteCookie(SHAKTI_SESSION_COOKIE_NAME);
 }
 
 export function clearSessionMarks(): void {
@@ -54,6 +57,7 @@ export function clearSessionMarks(): void {
   deleteCookie(SESSION_COOKIE_NAME);
   deleteCookie(OPMS_ROLES_COOKIE_NAME);
   deleteCookie(DEPT_HINT_COOKIE_NAME);
+  deleteCookie(SHAKTI_SESSION_COOKIE_NAME);
 }
 
 /** Home path from OPMS portal roles on the user object. */

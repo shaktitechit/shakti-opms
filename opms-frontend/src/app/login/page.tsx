@@ -92,7 +92,12 @@ function LoginForm() {
       return;
     }
     persistSessionMarksFromAuth({ token, user });
-    router.replace(loginDestination({ from, user }));
+    const dest = loginDestination({ from, user });
+    if (typeof window !== "undefined") {
+      window.location.href = dest;
+    } else {
+      router.replace(dest);
+    }
   }, [token, user, from, router, dispatch]);
 
   const onSubmit = useCallback(
@@ -115,8 +120,14 @@ function LoginForm() {
           );
           return;
         }
+        persistSessionMarksFromAuth({ token: data?.token, user: data?.user });
         toast.success("Signed in");
-        router.replace(loginDestination({ from, user: data?.user }));
+        const dest = loginDestination({ from, user: data?.user });
+        if (typeof window !== "undefined") {
+          window.location.href = dest;
+        } else {
+          router.replace(dest);
+        }
       } catch (rejected: unknown) {
         toast.error(mutationRejectedMessage(rejected));
       }

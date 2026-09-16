@@ -50,7 +50,15 @@ function rolesFromSsoToken(token: string): string[] {
   }
 }
 
-function applySessionCookies(res: NextResponse, roles: string[]) {
+function redirectReq(targetPath: string, req: NextRequest) {
+  const url = req.nextUrl.clone();
+  const [pathOnly, ...searchParts] = targetPath.split("?");
+  url.pathname = pathOnly || "/";
+  url.search = searchParts.length ? `?${searchParts.join("?")}` : "";
+  return NextResponse.redirect(url);
+}
+
+function applySessionCookies(res: NextResponse, roles: string[], token?: string) {
   if (!roles.length) return;
   res.cookies.set(SESSION_COOKIE_NAME, "1", {
     path: "/",
@@ -62,6 +70,13 @@ function applySessionCookies(res: NextResponse, roles: string[]) {
     maxAge: COOKIE_MAX_AGE,
     sameSite: "lax",
   });
+  if (token) {
+    res.cookies.set("shakti_session", token, {
+      path: "/",
+      maxAge: COOKIE_MAX_AGE,
+      sameSite: "lax",
+    });
+  }
 }
 
 export function middleware(req: NextRequest) {
@@ -74,14 +89,19 @@ export function middleware(req: NextRequest) {
   const ssoRoles = ssoToken ? rolesFromSsoToken(ssoToken) : [];
 
   const isLoginRoute = pathname === "/login";
+  const isRootRoute = pathname === "/";
   const hasSession = req.cookies.get(SESSION_COOKIE_NAME)?.value === "1";
 
   const rolesFromCookie = parseOpmsRolesCookie(
     req.cookies.get(OPMS_ROLES_COOKIE_NAME)?.value,
   );
-  const roles = ssoRoles.length ? ssoRoles : rolesFromCookie;
+
+  const shaktiToken = req.cookies.get("shakti_session")?.value?.trim() || "";
+  const shaktiRoles = (!rolesFromCookie.length && shaktiToken) ? rolesFromSsoToken(shaktiToken) : [];
+
+  const roles = ssoRoles.length ? ssoRoles : (rolesFromCookie.length ? rolesFromCookie : shaktiRoles);
   const hasRoles = roles.length > 0;
-  const sessionOk = (hasSession && hasRoles) || ssoRoles.length > 0;
+  const sessionOk = (hasSession && hasRoles) || ssoRoles.length > 0 || (Boolean(shaktiToken) && hasRoles);
 
   const protectionHit = isProtectedPortalPath(pathname);
 
@@ -91,7 +111,7 @@ export function middleware(req: NextRequest) {
   const pathAllowed = (targetPath: string): boolean =>
     rolesAllowPortalPath({ pathname: targetPath, roles });
 
-  if (isLoginRoute && sessionOk) {
+  if ((isLoginRoute || isRootRoute) && sessionOk) {
     const fromRaw = req.nextUrl.searchParams.get("from")?.trim() ?? "";
     const normalized = normalizeDeepLinkPath(fromRaw);
     const pathOnly = (normalized.split("?")[0] ?? "").trim();
@@ -101,29 +121,29 @@ export function middleware(req: NextRequest) {
       isProtectedPortalPath(pathOnly) &&
       pathAllowed(pathOnly)
     ) {
-      const res = NextResponse.redirect(new URL(pathOnly, req.url));
-      if (ssoRoles.length) applySessionCookies(res, ssoRoles);
+      const res = redirectReq(pathOnly, req);
+      if (ssoRoles.length) applySessionCookies(res, ssoRoles, ssoToken);
       return res;
     }
-    const res = NextResponse.redirect(new URL(homeUrl(), req.url));
-    if (ssoRoles.length) applySessionCookies(res, ssoRoles);
+    const res = redirectReq(homeUrl(), req);
+    if (ssoRoles.length) applySessionCookies(res, ssoRoles, ssoToken);
     return res;
   }
 
   if (protectionHit && !sessionOk) {
-    const login = new URL("/login", req.url);
-    login.searchParams.set("from", `${pathname}${req.nextUrl.search}`);
-    return NextResponse.redirect(login);
+    const fromTarget = `${pathname}${req.nextUrl.search}`;
+    const loginTarget = `/login?from=${encodeURIComponent(fromTarget)}`;
+    return redirectReq(loginTarget, req);
   }
 
   if (protectionHit && sessionOk) {
     if (!pathAllowed(pathname)) {
-      const res = NextResponse.redirect(new URL(homeUrl(), req.url));
-      if (ssoRoles.length) applySessionCookies(res, ssoRoles);
+      const res = redirectReq(homeUrl(), req);
+      if (ssoRoles.length) applySessionCookies(res, ssoRoles, ssoToken);
       return res;
     }
     const res = NextResponse.next();
-    if (ssoRoles.length) applySessionCookies(res, ssoRoles);
+    if (ssoRoles.length) applySessionCookies(res, ssoRoles, ssoToken);
     return res;
   }
 
@@ -132,6 +152,7 @@ export function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
+    "/",
     "/login",
     "/dashboard/:path*",
     "/admin",

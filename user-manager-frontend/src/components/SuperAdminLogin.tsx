@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Crown, ShieldAlert, Loader2, LogIn, Sun, Moon } from "lucide-react";
 import type { UserSession } from "@/types/userManager";
 import { API_BASE } from "@/utils/apiHelpers";
-import { saveSessionToStorage } from "@/utils/authStorage";
+import { hasSuperAdminAccess, saveSessionToStorage } from "@/utils/authStorage";
 import { useTheme } from "@/hooks/useTheme";
 
 function resolveAssetUrl(path: string): string {
@@ -94,7 +94,7 @@ export function SuperAdminLogin({
         throw new Error("Authentication failed: Missing session token.");
       }
 
-      if (user.department !== "super_admin") {
+      if (!hasSuperAdminAccess(user)) {
         throw new Error(
           "Access Denied: Only Super Admin accounts are authorized to sign into the User Management Dashboard.",
         );

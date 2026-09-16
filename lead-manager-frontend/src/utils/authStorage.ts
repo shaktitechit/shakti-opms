@@ -2,6 +2,7 @@ import type { AuthUser, UserPortalAccess, UserSession } from "@/types/leadManage
 
 const SESSION_STORAGE_KEY = "shakti.lead_manager.session";
 const COOKIE_KEY = "shakti_session";
+const MEDICA_COOKIE_KEY = "medica_session";
 
 function getCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
@@ -39,8 +40,9 @@ function parseJwtUser(token: string): AuthUser | null {
       email: decoded.email || "",
       department: decoded.department || "sales",
       roles: decoded.roles || [],
+      role_codes: decoded.role_codes || [],
       portals: decoded.portals || [],
-    } as AuthUser;
+    } as any;
   } catch {
     return null;
   }
@@ -48,9 +50,23 @@ function parseJwtUser(token: string): AuthUser | null {
 
 export function hasLeadManagerPortalAccess(user: AuthUser | null | undefined): boolean {
   if (!user) return false;
-  const portalAccess = Array.isArray(user.portals)
-    ? user.portals.find((p: UserPortalAccess) => p.portal_code === "lead_manager")
-    : null;
+  const uAny = user as any;
+  if (
+    uAny.department === "super_admin" ||
+    uAny.department === "admin" ||
+    (Array.isArray(uAny.role_codes) && (uAny.role_codes.includes("admin") || uAny.role_codes.includes("super_admin"))) ||
+    (Array.isArray(uAny.roles) && (uAny.roles.includes("super_admin") || uAny.roles.includes("admin")))
+  ) {
+    return true;
+  }
+  const portals = Array.isArray(user.portals)
+    ? user.portals
+    : Array.isArray(uAny.portal_access)
+    ? uAny.portal_access
+    : [];
+  const portalAccess = portals.find(
+    (p: any) => p && (p.portal_code === "lead_manager" || p.portal === "lead_manager")
+  );
   return Boolean(
     portalAccess &&
       Array.isArray(portalAccess.access_roles) &&
@@ -159,7 +175,7 @@ export function readSessionFromStorage(): UserSession | null {
     }
 
     // Fallback check cookie
-    const token = getCookie(COOKIE_KEY);
+    const token = getCookie(COOKIE_KEY) || getCookie(MEDICA_COOKIE_KEY);
     if (token) {
       const userFromJwt = parseJwtUser(token);
       if (userFromJwt && hasLeadManagerPortalAccess(userFromJwt)) {
@@ -180,10 +196,12 @@ export function saveSessionToStorage(session: UserSession | null): void {
   if (!session) {
     window.localStorage.removeItem(SESSION_STORAGE_KEY);
     deleteCookie(COOKIE_KEY);
+    deleteCookie(MEDICA_COOKIE_KEY);
   } else {
     window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
     if (session.token) {
       setCookie(COOKIE_KEY, session.token);
+      setCookie(MEDICA_COOKIE_KEY, session.token);
     }
   }
 }

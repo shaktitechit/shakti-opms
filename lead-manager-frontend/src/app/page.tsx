@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { useLoginMutation } from "@/store/api/authApiSlice";
 import {
   hasLeadManagerPortalAccess,
+  readSessionFromStorage,
   saveSessionToStorage,
   syncSessionCookie,
 } from "@/utils/authStorage";
@@ -23,6 +24,17 @@ export default function LoginPage() {
   const [loginMut, { isLoading: loading }] = useLoginMutation();
   const { setThemeColor, setCustomPrimary } = useTheme();
   const [companyInfo, setCompanyInfo] = useState<Record<string, any> | null>(null);
+
+  useEffect(() => {
+    const existing = readSessionFromStorage();
+    if (existing?.token) {
+      if (typeof window !== "undefined") {
+        window.location.href = "/dashboard";
+      } else {
+        router.replace("/dashboard");
+      }
+    }
+  }, [router]);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,7 +102,11 @@ export default function LoginPage() {
       await syncSessionCookie(res.token, res.user);
 
       toast.success(`Welcome back, ${res.user.name || res.user.email}`);
-      router.push("/dashboard");
+      if (typeof window !== "undefined") {
+        window.location.href = "/dashboard";
+      } else {
+        router.push("/dashboard");
+      }
     } catch (err: unknown) {
       const msg =
         (err as any)?.data?.message ||

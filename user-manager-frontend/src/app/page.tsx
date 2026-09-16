@@ -17,14 +17,22 @@ export default function RootPage() {
     setSession(s);
     setIsInitializing(false);
     if (s?.token) {
-      router.replace("/dashboard");
+      if (typeof window !== "undefined") {
+        window.location.href = "/dashboard";
+      } else {
+        router.replace("/dashboard");
+      }
     }
   }, [router]);
 
   const handleLoginSuccess = (newSession: UserSession) => {
     saveSessionToStorage(newSession);
     setSession(newSession);
-    router.push("/dashboard");
+    if (typeof window !== "undefined") {
+      window.location.href = "/dashboard";
+    } else {
+      router.push("/dashboard");
+    }
   };
 
   if (isInitializing) {

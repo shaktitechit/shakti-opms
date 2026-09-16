@@ -13,6 +13,7 @@ const LEGACY_SESSION_KEYS = [
   "shakti.user_manager.session",
 ];
 const COOKIE_KEY = "shakti_session";
+const MEDICA_COOKIE_KEY = "medica_session";
 const DEPT_COOKIE = "shakti_department";
 const ROLES_COOKIE = "shakti_roles";
 
@@ -108,6 +109,7 @@ export function readSessionFromStorage(): UserSession | null {
               }
             : parsed.user;
         setCookie(COOKIE_KEY, parsed.token);
+        setCookie(MEDICA_COOKIE_KEY, parsed.token);
         writeAccessCookies(user);
         return { token: parsed.token, user };
       }
@@ -128,7 +130,7 @@ export function readSessionFromStorage(): UserSession | null {
       }
     }
 
-    const token = getCookie(COOKIE_KEY);
+    const token = getCookie(COOKIE_KEY) || getCookie(MEDICA_COOKIE_KEY);
     if (token) {
       const userFromJwt = parseJwtUser(token);
       if (userFromJwt && hasAppAccess(userFromJwt)) {
@@ -149,11 +151,13 @@ export function saveSessionToStorage(session: UserSession | null): void {
   if (!session) {
     window.localStorage.removeItem(SESSION_STORAGE_KEY);
     deleteCookie(COOKIE_KEY);
+    deleteCookie(MEDICA_COOKIE_KEY);
     clearAccessCookies();
   } else {
     window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
     if (session.token) {
       setCookie(COOKIE_KEY, session.token);
+      setCookie(MEDICA_COOKIE_KEY, session.token);
     }
     writeAccessCookies(session.user);
   }

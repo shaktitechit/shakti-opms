@@ -8,10 +8,22 @@ import {
   resolveHomeFromUser,
 } from "@/constants/dashboardAccess";
 
+const COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
+
+function redirectUrl(request: NextRequest, targetPath: string): URL {
+  const url = request.nextUrl.clone();
+  const [pathOnly, ...searchParts] = targetPath.split("?");
+  url.pathname = pathOnly || "/";
+  url.search = searchParts.length ? `?${searchParts.join("?")}` : "";
+  return url;
+}
+
 export function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
-  const cookieToken = request.cookies.get("shakti_session")?.value;
-  const urlToken = searchParams.get("token");
+  const cookieToken =
+    request.cookies.get("shakti_session")?.value ||
+    request.cookies.get("medica_session")?.value;
+  const urlToken = searchParams.get("token")?.trim() || "";
   const effectiveToken = cookieToken || urlToken;
 
   const claims = effectiveToken ? readJwtClaims(effectiveToken) : null;
@@ -34,17 +46,25 @@ export function middleware(request: NextRequest) {
     const response = NextResponse.next();
     response.cookies.set("shakti_session", urlToken, {
       path: "/",
+      maxAge: COOKIE_MAX_AGE,
+      sameSite: "lax",
+    });
+    response.cookies.set("medica_session", urlToken, {
+      path: "/",
+      maxAge: COOKIE_MAX_AGE,
       sameSite: "lax",
     });
     if (department) {
       response.cookies.set("shakti_department", department, {
         path: "/",
+        maxAge: COOKIE_MAX_AGE,
         sameSite: "lax",
       });
     }
     if (roleCodes.length) {
       response.cookies.set("shakti_roles", roleCodes.join(","), {
         path: "/",
+        maxAge: COOKIE_MAX_AGE,
         sameSite: "lax",
       });
     }
@@ -52,9 +72,10 @@ export function middleware(request: NextRequest) {
   }
 
   if (isProtectedRoute && !effectiveToken) {
-    const loginUrl = new URL("/", request.url);
-    loginUrl.searchParams.set("redirect", pathname);
-    return NextResponse.redirect(loginUrl);
+    const target = request.nextUrl.clone();
+    target.pathname = "/";
+    target.searchParams.set("redirect", pathname);
+    return NextResponse.redirect(target);
   }
 
   if (
@@ -70,7 +91,7 @@ export function middleware(request: NextRequest) {
         role_codes: roleCodes,
         roles: roleCodes.length ? ["x"] : [],
       }) || `/dashboard/${department}`;
-    return NextResponse.redirect(new URL(home, request.url));
+    return NextResponse.redirect(redirectUrl(request, home));
   }
 
   if (isAuthRoute && effectiveToken) {
@@ -80,10 +101,16 @@ export function middleware(request: NextRequest) {
         role_codes: roleCodes,
         roles: roleCodes.length ? ["x"] : claims?.roles || [],
       }) || (department ? `/dashboard/${department}` : "/dashboard");
-    const response = NextResponse.redirect(new URL(home, request.url));
+    const response = NextResponse.redirect(redirectUrl(request, home));
     if (urlToken && !cookieToken) {
       response.cookies.set("shakti_session", urlToken, {
         path: "/",
+        maxAge: COOKIE_MAX_AGE,
+        sameSite: "lax",
+      });
+      response.cookies.set("medica_session", urlToken, {
+        path: "/",
+        maxAge: COOKIE_MAX_AGE,
         sameSite: "lax",
       });
     }

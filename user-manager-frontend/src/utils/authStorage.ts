@@ -2,6 +2,7 @@ import type { AuthUser, UserSession } from "@/types/userManager";
 
 const SESSION_STORAGE_KEY = "shakti.user_manager.session";
 const COOKIE_KEY = "shakti_session";
+const MEDICA_COOKIE_KEY = "medica_session";
 
 function getCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
@@ -18,6 +19,17 @@ function setCookie(name: string, value: string, days = 7) {
 function deleteCookie(name: string) {
   if (typeof document === "undefined") return;
   document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`;
+}
+
+export function hasSuperAdminAccess(user: any): boolean {
+  if (!user) return false;
+  if (user.department === "super_admin" || user.department === "admin") return true;
+  if (Array.isArray(user.role_codes) && (user.role_codes.includes("super_admin") || user.role_codes.includes("admin"))) return true;
+  if (Array.isArray(user.roles) && (user.roles.includes("super_admin") || user.roles.includes("admin"))) return true;
+  const portals = Array.isArray(user.portals) ? user.portals : (Array.isArray(user.portal_access) ? user.portal_access : []);
+  const p = portals.find((x: any) => x && (x.portal_code === "user_manager" || x.portal === "user_manager"));
+  if (p && Array.isArray(p.access_roles) && (p.access_roles.includes("super_admin") || p.access_roles.includes("admin"))) return true;
+  return false;
 }
 
 function parseJwtUser(token: string): AuthUser | null {
@@ -39,7 +51,9 @@ function parseJwtUser(token: string): AuthUser | null {
       email: decoded.email || "superadmin@example.com",
       department: decoded.department || "super_admin",
       roles: decoded.roles || ["super_admin"],
-    } as AuthUser;
+      role_codes: decoded.role_codes || [],
+      portals: decoded.portals || [],
+    } as any;
   } catch {
     return null;
   }
@@ -70,9 +84,9 @@ export function readSessionFromStorage(): UserSession | null {
     const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as UserSession;
-      if (parsed?.token && parsed?.user && parsed.user.department === "super_admin") {
-        // Ensure cookie is synced
+      if (parsed?.token && parsed?.user && hasSuperAdminAccess(parsed.user)) {
         setCookie(COOKIE_KEY, parsed.token);
+        setCookie(MEDICA_COOKIE_KEY, parsed.token);
         return parsed;
       }
     }
@@ -80,7 +94,7 @@ export function readSessionFromStorage(): UserSession | null {
     const legacyRaw = window.localStorage.getItem("medica.auth");
     if (legacyRaw) {
       const parsed = JSON.parse(legacyRaw);
-      if (parsed?.token && parsed?.user && parsed.user.department === "super_admin") {
+      if (parsed?.token && parsed?.user && hasSuperAdminAccess(parsed.user)) {
         const session = { token: parsed.token, user: parsed.user as AuthUser };
         saveSessionToStorage(session);
         return session;
@@ -88,10 +102,10 @@ export function readSessionFromStorage(): UserSession | null {
     }
 
     // Fallback check cookie
-    const token = getCookie(COOKIE_KEY);
+    const token = getCookie(COOKIE_KEY) || getCookie(MEDICA_COOKIE_KEY);
     if (token) {
       const userFromJwt = parseJwtUser(token);
-      if (userFromJwt) {
+      if (userFromJwt && hasSuperAdminAccess(userFromJwt)) {
         const session = { token, user: userFromJwt };
         saveSessionToStorage(session);
         return session;
@@ -109,10 +123,12 @@ export function saveSessionToStorage(session: UserSession | null): void {
   if (!session) {
     window.localStorage.removeItem(SESSION_STORAGE_KEY);
     deleteCookie(COOKIE_KEY);
+    deleteCookie(MEDICA_COOKIE_KEY);
   } else {
     window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
     if (session.token) {
       setCookie(COOKIE_KEY, session.token);
+      setCookie(MEDICA_COOKIE_KEY, session.token);
     }
   }
 }

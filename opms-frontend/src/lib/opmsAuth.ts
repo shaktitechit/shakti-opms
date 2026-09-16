@@ -68,6 +68,19 @@ export function getOpmsPortalAccess(
 }
 
 export function getOpmsAccessRoles(user: unknown): string[] {
+  if (user && typeof user === "object") {
+    const u = user as OpmsAuthUser;
+    if (normalizeRole(u.department) === "super_admin") {
+      const portalAccess = getOpmsPortalAccess(user);
+      const roles = portalAccess && Array.isArray(portalAccess.access_roles)
+        ? portalAccess.access_roles.map(normalizeRole).filter(Boolean)
+        : [];
+      if (!roles.includes("super_admin")) {
+        roles.unshift("super_admin");
+      }
+      return roles;
+    }
+  }
   const portalAccess = getOpmsPortalAccess(user);
   if (!portalAccess || !Array.isArray(portalAccess.access_roles)) return [];
   return portalAccess.access_roles.map(normalizeRole).filter(Boolean);
