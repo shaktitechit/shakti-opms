@@ -524,6 +524,12 @@ async function list(query = {}, user) {
 async function get(id, user) {
   const plan = await loadPlanOrThrow(id);
   assertCanView(plan, user);
+  const { withFreshViewUrl } = require('../../services/fileManagement');
+  if (plan.day_end && Array.isArray(plan.day_end.attachments)) {
+    plan.day_end.attachments = await Promise.all(
+      plan.day_end.attachments.map((att) => withFreshViewUrl(att))
+    );
+  }
   const [visits, works, expenses] = await Promise.all([loadVisits(id), loadWorks(id), loadExpenses(id)]);
   const totals = buildExpenseTotals(expenses);
   return { ...toPlain(plan), visits, works, expenses, ...totals };

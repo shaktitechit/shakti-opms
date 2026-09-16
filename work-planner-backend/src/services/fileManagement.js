@@ -205,6 +205,7 @@ module.exports = {
   uploadMulterFile,
   getFileMeta,
   getViewPresignedUrl,
+  resolveFileId,
   withFreshViewUrl,
   withFreshExpenseAttachmentUrls,
 };

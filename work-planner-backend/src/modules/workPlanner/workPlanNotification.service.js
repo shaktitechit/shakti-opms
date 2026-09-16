@@ -2,6 +2,7 @@
  * @fileoverview Work Plan notification service to send completion emails to managers.
  * @module modules/workPlanner/workPlanNotification.service
  */
+const axios = require('axios');
 const { getModels } = require('../../data/mongoRegistry');
 const emailHelper = require('../messages/helpers/email.helper');
 const { logger } = require('../../utils/logger');
@@ -320,17 +321,37 @@ async function sendCustomDayEndEmail(planId, executiveUser, dayEndData = {}) {
 
       emailAttachments = await Promise.all(
         attachmentDocs.map(async (att) => {
-          let fileUrl = att.url;
-          if (att.filename && (!fileUrl || !fileUrl.startsWith('http'))) {
+          const fileId = att.filename;
+          let freshUrl = att.url;
+          if (fileId && !String(fileId).includes('/')) {
             try {
-              fileUrl = await getViewPresignedUrl(att.filename);
+              freshUrl = await getViewPresignedUrl(fileId);
             } catch (err) {
-              logger.warn(`[WorkPlanNotification] Failed to refresh URL for attachment ${att._id}: ${err.message}`);
+              logger.warn(`[WorkPlanNotification] Failed to get fresh presigned URL for attachment ${att._id}: ${err.message}`);
             }
           }
+
+          // Download binary buffer so the attachment in email is never corrupted or expired
+          if (freshUrl && freshUrl.startsWith('http')) {
+            try {
+              const fileRes = await axios.get(freshUrl, {
+                responseType: 'arraybuffer',
+                timeout: 20000,
+              });
+              const buffer = Buffer.from(fileRes.data);
+              return {
+                filename: att.original_name || att.filename || 'attachment.pdf',
+                content: buffer.toString('base64'),
+                contentType: att.mime_type || 'application/octet-stream',
+              };
+            } catch (dlErr) {
+              logger.error(`[WorkPlanNotification] Could not download attachment content for ${att._id}: ${dlErr.message}`);
+            }
+          }
+
           return {
-            filename: att.original_name || att.filename || 'attachment',
-            path: fileUrl,
+            filename: att.original_name || att.filename || 'attachment.pdf',
+            path: freshUrl,
             contentType: att.mime_type || 'application/octet-stream',
           };
         })

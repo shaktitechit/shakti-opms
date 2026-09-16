@@ -14,6 +14,7 @@ import {
   File,
 } from "lucide-react";
 import type { WorkPlanDayEnd } from "@/types/workPlanner";
+import { WORK_PLANNER_SERVICE_URL } from "@/lib/env";
 
 interface DayEndViewModalProps {
   dayEnd?: WorkPlanDayEnd;
@@ -131,7 +132,11 @@ export function DayEndViewModal({ dayEnd, isOpen, onClose }: DayEndViewModalProp
                 {dayEnd.attachments.map((att) => (
                   <a
                     key={att._id}
-                    href={att.url}
+                    href={
+                      att._id
+                        ? `${WORK_PLANNER_SERVICE_URL}/api/work-planner/attachments/${att._id}/view`
+                        : att.url
+                    }
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface-muted px-2.5 py-1 text-xs text-foreground hover:bg-surface transition"

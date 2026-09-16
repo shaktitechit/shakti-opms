@@ -250,3 +250,30 @@ exports.uploadAttachment = asyncHandler(async (req, res) => {
   );
   res.status(201).json({ success: true, data: attachment });
 });
+
+exports.viewAttachment = asyncHandler(async (req, res) => {
+  const { ApiError } = require('../../utils/ApiError');
+  const { getModels } = require('../../data/mongoRegistry');
+  const { Attachment } = getModels();
+  const { getViewPresignedUrl, resolveFileId } = require('../../services/fileManagement');
+  const att = await Attachment.findById(req.params.attachmentId).lean();
+  if (!att) {
+    throw new ApiError(404, 'Attachment not found');
+  }
+  const fileId = resolveFileId ? resolveFileId(att) : att.filename;
+  if (!fileId) {
+    if (att.url) {
+      return res.redirect(302, att.url);
+    }
+    throw new ApiError(404, 'File ID not found on attachment');
+  }
+  try {
+    const freshUrl = await getViewPresignedUrl(fileId);
+    return res.redirect(302, freshUrl);
+  } catch (_err) {
+    if (att.url) {
+      return res.redirect(302, att.url);
+    }
+    throw _err;
+  }
+});

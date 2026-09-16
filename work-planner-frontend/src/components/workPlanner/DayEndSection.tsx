@@ -18,6 +18,7 @@ import {
   Users,
 } from "lucide-react";
 import type { WorkPlanRecord } from "@/types/workPlanner";
+import { WORK_PLANNER_SERVICE_URL } from "@/lib/env";
 import { workPlanWindowHint } from "./workPlanUtils";
 
 interface DayEndSectionProps {
@@ -192,7 +193,11 @@ export function DayEndSection({
                 {dayEnd.attachments.map((att) => (
                   <a
                     key={att._id}
-                    href={att.url}
+                    href={
+                      att._id
+                        ? `${WORK_PLANNER_SERVICE_URL}/api/work-planner/attachments/${att._id}/view`
+                        : att.url
+                    }
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1.5 text-xs text-foreground hover:bg-surface-muted transition shadow-2xs group"
