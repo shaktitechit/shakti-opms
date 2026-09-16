@@ -56,7 +56,12 @@ function isFinanceReviewOrder(orderDoc) {
  * After due sheet upload: notify finance for orders in finance review
  * with OrderApproval.is_due_sheet_uploaded = true.
  */
-async function shootFinanceApprovalPendingEmail(orderId) {
+async function shootFinanceApprovalPendingEmail(orderId, emailOptions = {}) {
+  const { shouldSendWorkflowEmail } = require('../../utils/workflowEmail.helper');
+  if (!shouldSendWorkflowEmail(emailOptions)) {
+    return;
+  }
+
   const { Order, Party } = getModels();
   const { shootAutoEmail, EMAIL_TEMPLATES } = require('../../utils/emailHelper');
 
@@ -74,6 +79,12 @@ async function shootFinanceApprovalPendingEmail(orderId) {
     process.env.ADMIN_EMAIL || process.env.SMTP_FROM || '';
   const financeEmail =
     process.env.FINANCE_EMAIL || process.env.SMTP_FROM || customEmail;
+
+  const explicitRecipients =
+    Array.isArray(emailOptions?.recipients) && emailOptions.recipients.length > 0
+      ? emailOptions.recipients
+      : null;
+  const targetRecipient = explicitRecipients || financeEmail;
 
   const financePendingIds = await findOrderIdsWithFinancePending(getModels());
   const otherIds = financePendingIds.filter((id) => String(id) !== String(orderId));
@@ -110,7 +121,7 @@ async function shootFinanceApprovalPendingEmail(orderId) {
     : financePendingIds.length + 1;
 
   await shootAutoEmail({
-    recipient: financeEmail,
+    recipient: targetRecipient,
     templateName: EMAIL_TEMPLATES.FINANCE_APPROVAL_PENDING,
     templateParams: {
       recipient: financeEmail,
@@ -298,7 +309,11 @@ async function create(body, user, options = {}) {
   if (isCurrent && doc.status === DUE_SHEET_STATUS.ACTIVE) {
     await markOrderApprovalDueSheetUploaded(body.order);
     try {
-      await shootFinanceApprovalPendingEmail(body.order);
+      let emailOpts = body.email_options;
+      if (typeof emailOpts === 'string') {
+        try { emailOpts = JSON.parse(emailOpts); } catch { emailOpts = {}; }
+      }
+      await shootFinanceApprovalPendingEmail(body.order, emailOpts);
     } catch (_emailErr) {
       const { logger } = require('../../config/logger');
       if (logger) {

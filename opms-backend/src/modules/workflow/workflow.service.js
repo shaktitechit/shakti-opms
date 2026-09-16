@@ -313,6 +313,35 @@ async function transitionOrderStatus(params) {
     await notificationHelper.notifyOrderTransition(notificationPayload);
   }
 
+  if (!params._systemCall) {
+    try {
+      const { sendWorkflowEmail } = require('../../utils/workflowEmail.helper');
+      const emailScopeMap = {
+        [ORDER_STATUS.ON_HOLD]: 'on_hold',
+        [ORDER_STATUS.CANCELLED]: 'cancelled',
+        [ORDER_STATUS.DELIVERED]: 'delivered',
+        [ORDER_STATUS.IN_TRANSIT]: 'in_transit',
+        [ORDER_STATUS.FINANCE_REJECTED]: 'finance_rejected',
+        [ORDER_STATUS.ACCOUNT_REJECTED]: 'account_rejected',
+      };
+      const scope = emailScopeMap[notificationPayload?.nextStatus];
+      if (scope) {
+        await sendWorkflowEmail({
+          orderId: params.orderId,
+          scope,
+          emailOptions: params.email_options,
+          actorUser: params.actorUser,
+          remarks: params.remarks || params.rejectionReason,
+        });
+      }
+    } catch (_wfEmailErr) {
+      const { logger } = require('../../config/logger');
+      if (logger) {
+        logger.error(`[workflow.transitionOrderStatus] Email notification error: ${_wfEmailErr?.message}`);
+      }
+    }
+  }
+
   await workflowQueue.enqueuePostTransition({
     orderId: params.orderId,
     fromStatus: notificationPayload?.fromStatus,

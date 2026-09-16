@@ -43,6 +43,10 @@ import { computeDepartmentStageBoxes } from "@/components/portal/shared/orderDep
 import FinalOrderStatementModal from "@/components/portal/shared/FinalOrderStatementModal";
 import { PortalBusyOverlay } from "@/components/portal/shared/PortalBusyOverlay";
 import { buildUserNameById } from "@/components/portal/shared/userDisplay";
+import {
+  WorkflowEmailControls,
+  type WorkflowEmailOptions,
+} from "@/components/portal/shared/WorkflowEmailControls";
 import { mutationRejectedMessage } from "@/lib/mutationMessages";
 import { toast } from "@/lib/toast";
 import { useAppSelector } from "@/store/hooks";
@@ -239,6 +243,11 @@ export default function OrderDetailsPage({
 
   const [transitioningTo, setTransitioningTo] = useState<string | null>(null);
   const [transitionRemarks, setTransitionRemarks] = useState("");
+  const [transitionEmailOptions, setTransitionEmailOptions] = useState<WorkflowEmailOptions>({
+    send_email: false,
+    send_to_party: false,
+    recipients: [],
+  });
   const [confirmResolveOpen, setConfirmResolveOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<OrderDetailTabId>(
     config.defaultTab,
@@ -649,6 +658,7 @@ export default function OrderDetailsPage({
             approval_status: "pending_review",
             approval_notes: transitionRemarks.trim() || undefined,
             approval_items: approvalItems,
+            email_options: transitionEmailOptions,
           }).unwrap();
           const approvalId = readId(approval);
           if (!approvalId)
@@ -658,6 +668,7 @@ export default function OrderDetailsPage({
             id: approvalId,
             body: {
               approval_notes: transitionRemarks.trim() || undefined,
+              email_options: transitionEmailOptions,
             },
           }).unwrap();
         } else {
@@ -669,6 +680,7 @@ export default function OrderDetailsPage({
               ...(nextStatus === "finance_rejected"
                 ? { rejection_reason: transitionRemarks.trim() }
                 : {}),
+              email_options: transitionEmailOptions,
             },
           }).unwrap();
         }
@@ -677,6 +689,7 @@ export default function OrderDetailsPage({
         );
         setTransitioningTo(null);
         setTransitionRemarks("");
+        setTransitionEmailOptions({ send_email: false, send_to_party: false, recipients: [] });
         handleRefetch();
       } catch (rejected) {
         toast.error(mutationRejectedMessage(rejected));
@@ -686,6 +699,7 @@ export default function OrderDetailsPage({
       config.approvalsMode,
       orderId,
       transitionRemarks,
+      transitionEmailOptions,
       transitionOrder,
       handleRefetch,
       orderItems,
@@ -976,6 +990,27 @@ export default function OrderDetailsPage({
                     }
                   />
                 </div>
+
+                <WorkflowEmailControls
+                  order={detail}
+                  scope={
+                    transitioningTo === "finance_rejected"
+                      ? "finance_reject"
+                      : transitioningTo === "account_rejected"
+                        ? "account_reject"
+                        : transitioningTo === "on_hold"
+                          ? "on_hold"
+                          : transitioningTo === "cancelled"
+                            ? "cancelled"
+                            : transitioningTo === "delivered"
+                              ? "delivered"
+                              : transitioningTo === "in_transit"
+                                ? "in_transit"
+                                : "generic"
+                  }
+                  value={transitionEmailOptions}
+                  onChange={setTransitionEmailOptions}
+                />
               </div>
               <div className="mt-6 flex justify-end gap-3 font-sans font-medium">
                 <Button

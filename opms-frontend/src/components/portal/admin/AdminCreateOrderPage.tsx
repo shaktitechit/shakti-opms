@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import type { FormEvent } from "react";
 import {
+  WorkflowEmailControls,
+  type WorkflowEmailOptions,
+} from "@/components/portal/shared/WorkflowEmailControls";
+import {
   ShoppingCart,
   Search,
   User,
@@ -16,6 +20,7 @@ import {
   Check,
   History,
   X,
+  Mail,
 } from "lucide-react";
 
 import {
@@ -661,6 +666,11 @@ export default function AdminCreateOrderPage({
   const [mapTarget, setMapTarget] = useState<MapOrderLinePriceTarget | null>(null);
   const [mapModalOpen, setMapModalOpen] = useState(false);
   const [previousItemsModalOpen, setPreviousItemsModalOpen] = useState(false);
+  const [emailOptions, setEmailOptions] = useState<WorkflowEmailOptions>({
+    send_email: false,
+    send_to_party: false,
+    recipients: [],
+  });
 
   const [createOrder, { isLoading: isCreating }] = useCreateOrderMutation();
 
@@ -1153,6 +1163,7 @@ export default function AdminCreateOrderPage({
           approval_items: approvalItems,
           contact_number: selectedContacts,
           contact_name: selectedContactNames,
+          email_options: emailOptions,
         };
 
         const data = (await createOrder(body).unwrap()) as any;
@@ -1333,6 +1344,31 @@ export default function AdminCreateOrderPage({
                 />
               </div>
             </div>
+          </section>
+
+          {/* Workflow Email Controls */}
+          <section className="rounded-xl border border-slate-200/90 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900">
+            <header className="mb-3 flex items-center gap-2 border-b border-slate-100 pb-2.5 dark:border-white/5">
+              <Mail className="h-4 w-4 text-blue-500" />
+              <div>
+                <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-50">
+                  Email Notification Settings
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Configure automated order confirmation emails upon order creation.
+                </p>
+              </div>
+            </header>
+            <WorkflowEmailControls
+              party={selectedParty}
+              order={{
+                party: selectedParty,
+                assigned_sales_user: assignedSales ? { _id: assignedSales } : null,
+              }}
+              scope="admin_approve"
+              value={emailOptions}
+              onChange={setEmailOptions}
+            />
           </section>
 
           {/* Line Items */}

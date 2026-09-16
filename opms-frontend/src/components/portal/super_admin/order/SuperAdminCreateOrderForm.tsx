@@ -11,6 +11,10 @@ import {
   type ReactNode,
 } from "react";
 import {
+  WorkflowEmailControls,
+  type WorkflowEmailOptions,
+} from "@/components/portal/shared/WorkflowEmailControls";
+import {
   X,
   ShoppingCart,
   Package,
@@ -443,6 +447,12 @@ export function SuperAdminCreateOrderForm({ isOpen, onClose, onOrderCreated, ord
       setOrderData(fetchedOrder);
     }
   }, [fetchedOrder]);
+
+  const [emailOptions, setEmailOptions] = useState<WorkflowEmailOptions>({
+    send_email: false,
+    send_to_party: false,
+    recipients: [],
+  });
 
   // Mutations
   const [createOrder, { isLoading: isCreating }] = useCreateOrderMutation();
@@ -902,6 +912,7 @@ export function SuperAdminCreateOrderForm({ isOpen, onClose, onOrderCreated, ord
           approval_items: approvalItems,
           contact_number: firstWithPhone ? [firstWithPhone.phone.trim()] : [],
           contact_name: firstWithPhone ? [firstWithPhone.name.trim()] : [],
+          email_options: emailOptions,
         };
 
         const data = (await createOrder(body).unwrap()) as any;
@@ -1494,6 +1505,15 @@ export function SuperAdminCreateOrderForm({ isOpen, onClose, onOrderCreated, ord
                           <p className="text-2xs font-semibold uppercase text-blue-200">Grand Total</p>
                           <p className="mt-1 text-base font-bold text-white font-mono">₹{formatMoney(liveSummary.total)}</p>
                         </div>
+                      </div>
+                      <div className="mb-4">
+                        <WorkflowEmailControls
+                          order={{ party: selectedParty, assigned_sales_user: assignedSales ? { _id: assignedSales } : null }}
+                          scope="admin_approve"
+                          value={emailOptions}
+                          onChange={setEmailOptions}
+                          compact
+                        />
                       </div>
                       <button
                         type="submit"

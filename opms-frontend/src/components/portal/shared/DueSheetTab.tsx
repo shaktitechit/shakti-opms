@@ -1,6 +1,10 @@
 "use client";
 
-import { LargeModalPortal } from "./LargeModalPortal";
+import { LargeModalPortal } from "@/components/portal/shared/LargeModalPortal";
+import {
+  WorkflowEmailControls,
+  type WorkflowEmailOptions,
+} from "@/components/portal/shared/WorkflowEmailControls";
 import { useEffect, useMemo, useState } from "react";
 import { DashboardCard } from "@/components/widgets";
 import {
@@ -149,6 +153,11 @@ export function DueSheetTab({ orderId, onUploadSuccess }: DueSheetTabProps) {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadRemarks, setUploadRemarks] = useState("");
   const [uploadSheetDate, setUploadSheetDate] = useState("");
+  const [emailOptions, setEmailOptions] = useState<WorkflowEmailOptions>({
+    send_email: false,
+    send_to_party: false,
+    recipients: [],
+  });
 
   const [replaceTargetId, setReplaceTargetId] = useState<string | null>(null);
   const [replaceFile, setReplaceFile] = useState<File | null>(null);
@@ -228,6 +237,7 @@ export function DueSheetTab({ orderId, onUploadSuccess }: DueSheetTabProps) {
       if (uploadSheetDate) {
         formData.append("sheet_date", new Date(uploadSheetDate).toISOString());
       }
+      formData.append("email_options", JSON.stringify(emailOptions));
 
       await createDueSheet(formData).unwrap();
       toast.success("Due sheet uploaded successfully");
@@ -376,10 +386,17 @@ export function DueSheetTab({ orderId, onUploadSuccess }: DueSheetTabProps) {
                   value={uploadRemarks}
                   onChange={(e) => setUploadRemarks(e.target.value)}
                   rows={2}
-                  className="mt-1.5 w-full rounded-lg border border-slate-200/95 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-500/25 dark:border-white/15 dark:bg-slate-950 dark:text-slate-50"
+                  className="mt-1.5 w-full rounded-lg border border-slate-200/95 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-500/25 dark:border-white/15 dark:bg-slate-955 dark:text-slate-50"
                   placeholder="Notes about this due sheet..."
                 />
               </div>
+
+              <WorkflowEmailControls
+                order={{ _id: orderId }}
+                scope="due_sheet"
+                value={emailOptions}
+                onChange={setEmailOptions}
+              />
 
               <div className="flex justify-end gap-3">
                 <button type="button" onClick={() => setIsUploadModalOpen(false)} className={btnSecondaryClass}>

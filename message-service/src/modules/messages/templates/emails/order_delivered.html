@@ -4,13 +4,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Order Delivered - {{orderNo}}</title>
+  <title>Order Delivered - #{{orderNo}}</title>
   <style>
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       line-height: 1.6;
       color: #1e293b;
-      background-color: #f8fafc;
+      background-color: #f1f5f9;
       margin: 0;
       padding: 0;
       -webkit-font-smoothing: antialiased;
@@ -18,102 +18,130 @@
 
     .wrapper {
       width: 100%;
-      background-color: #f8fafc;
+      background-color: #f1f5f9;
       padding: 30px 15px;
+      box-sizing: border-box;
     }
 
-    .container {
+    .letterhead-card {
       max-width: 680px;
       margin: 0 auto;
       background-color: #ffffff;
-      border-radius: 12px;
+      border-radius: 8px;
       overflow: hidden;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
       border: 1px solid #e2e8f0;
     }
 
-    .header {
-      background-color: #f1f5f9;
-      color: #1e40af;
-      padding: 32px 24px;
+    /* ── Company Letterhead Header ── */
+    .letterhead-header {
+      padding: 28px 32px 16px 32px;
+      background-color: #ffffff;
       text-align: center;
-      border-bottom: 1px solid #e2e8f0;
     }
 
     .header-logo {
-      max-height: 80px;
-      width: auto;
-      margin-bottom: 10px;
-      display: inline-block;
+      max-height: 72px;
+      max-width: 180px;
+      display: block;
+      margin: 0 auto 12px auto;
     }
 
-    .header h1 {
+    .company-name {
       margin: 0;
-      font-size: 24px;
-      font-weight: 700;
-      color: #1e40af;
-      letter-spacing: -0.5px;
-    }
-
-    .header p {
-      margin: 4px 0 0 0;
-      font-size: 15px;
-      color: #166534;
-      font-weight: 600;
-    }
-
-    .content {
-      padding: 32px 24px;
-    }
-
-    .greeting {
-      font-size: 16px;
-      font-weight: 600;
-      color: #0f172a;
-      margin-bottom: 10px;
-    }
-
-    .intro-text {
-      font-size: 14px;
-      color: #475569;
-      margin-bottom: 24px;
-      line-height: 1.6;
-    }
-
-    .delivery-card {
-      background-color: #f0fdf4;
-      border-radius: 8px;
-      padding: 16px 20px;
-      margin-bottom: 24px;
-      border-left: 4px solid #16a34a;
-    }
-
-    .section-title {
-      font-size: 15px;
-      font-weight: 700;
-      color: #0f172a;
-      margin: 24px 0 12px 0;
-      padding-bottom: 8px;
-      border-bottom: 2px solid #f1f5f9;
-    }
-
-    .badge-delivered {
-      display: inline-block;
-      background-color: #dcfce7;
-      color: #15803d;
-      border: 1px solid #bbf7d0;
-      font-size: 12px;
-      font-weight: 700;
-      padding: 2px 10px;
-      border-radius: 12px;
+      font-size: 22px;
+      font-weight: 800;
+      color: #1e3a5f;
+      letter-spacing: -0.3px;
       text-transform: uppercase;
     }
 
-    /* Items Table */
+    .company-tagline {
+      font-size: 12px;
+      color: #64748b;
+      font-style: italic;
+      margin-top: 4px;
+    }
+
+    .header-divider {
+      height: 3px;
+      background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 70%, #bfdbfe 100%);
+      margin-top: 16px;
+      border-radius: 2px;
+    }
+
+    .doc-badge-wrap {
+      text-align: center;
+      padding: 12px 32px 0 32px;
+    }
+
+    .doc-badge {
+      display: inline-block;
+      background-color: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      color: #166534;
+      padding: 4px 14px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+
+    /* ── Content ── */
+    .content {
+      padding: 24px 32px;
+    }
+
+    .greeting {
+      font-size: 15px;
+      font-weight: 600;
+      color: #0f172a;
+      margin-bottom: 8px;
+    }
+
+    .intro-text {
+      font-size: 13.5px;
+      color: #475569;
+      margin-bottom: 20px;
+      line-height: 1.6;
+    }
+
+    .order-info-card {
+      background-color: #f8fafc;
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin-bottom: 20px;
+      border: 1px solid #e2e8f0;
+      border-left: 4px solid #16a34a;
+    }
+
+    .badge-delivered {
+      background-color: #16a34a;
+      color: #ffffff;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .section-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 20px 0 10px 0;
+      padding-bottom: 6px;
+      border-bottom: 2px solid #f1f5f9;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    /* ── Items Table (Strictly No Pricing) ── */
     .items-table-container {
       width: 100%;
       overflow-x: auto;
-      margin-bottom: 24px;
+      margin-bottom: 20px;
     }
 
     .items-table {
@@ -124,9 +152,9 @@
     }
 
     .items-table th {
-      background-color: #1e40af;
+      background-color: #166534;
       color: #ffffff;
-      padding: 10px 8px;
+      padding: 9px 10px;
       font-weight: 600;
       font-size: 12px;
       text-transform: uppercase;
@@ -134,7 +162,7 @@
     }
 
     .items-table td {
-      padding: 10px 8px;
+      padding: 9px 10px;
       border-bottom: 1px solid #e2e8f0;
       color: #334155;
     }
@@ -147,70 +175,72 @@
       text-align: center;
     }
 
-    .text-right {
-      text-align: right;
-    }
-
     .font-semibold {
       font-weight: 600;
     }
 
-    .info-box {
-      background-color: #eff6ff;
-      border: 1px solid #dbeafe;
-      border-left: 4px solid #1e40af;
-      border-radius: 6px;
-      padding: 14px 16px;
-      margin-bottom: 24px;
-      font-size: 13px;
-      color: #1e3a8a;
-      line-height: 1.5;
-    }
-
-    /* Footer */
-    .footer {
+    /* ── Company Letterhead Footer ── */
+    .letter-footer {
       background-color: #f8fafc;
       border-top: 1px solid #e2e8f0;
-      padding: 24px;
+      padding: 20px 32px;
       text-align: center;
-      font-size: 12px;
+      font-size: 11.5px;
       color: #64748b;
+      line-height: 1.7;
     }
 
-    .footer p {
-      margin: 4px 0;
-    }
-
-    .footer a {
+    .letter-footer a {
       color: #1e40af;
-      text-decoration: none;
+      text-decoration: underline;
+    }
+
+    .letter-footer p {
+      margin: 3px 0;
+    }
+
+    .copyright-line {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #94a3b8;
     }
   </style>
 </head>
 
 <body>
   <div class="wrapper">
-    <div class="container">
-      <!-- Header -->
-      <div class="header">
+    <div class="letterhead-card">
+
+      <!-- Company Letterhead Header -->
+      <div class="letterhead-header">
         {{companyLogoHtml}}
-        <h1>{{companyName}}</h1>
-        <p>🎉 Your Order Has Been Delivered!</p>
+        <h1 class="company-name">{{companyName}}</h1>
+        <div class="company-tagline">{{companyTagline}}</div>
+        <div class="header-divider"></div>
+      </div>
+
+      <div class="doc-badge-wrap">
+        <span class="doc-badge">Order Delivered Confirmation</span>
       </div>
 
       <!-- Content -->
       <div class="content">
-        <div class="greeting">Hello John Doe,</div>
+        <div class="greeting">Hello {{customerName}},</div>
         <div class="intro-text">
-          Great news! Your order <strong>{{orderNo}}</strong> with <strong>{{companyName}}</strong> has been successfully delivered. Please find your delivery confirmation and order summary details below.
+          Great news! Your order <strong>#{{orderNo}}</strong> with <strong>{{companyName}}</strong> has been successfully delivered. Please find your delivery confirmation and delivered items details below.
         </div>
 
-        <!-- Delivery Confirmation Card -->
-        <div class="delivery-card">
+        <!-- Order Meta Card -->
+        <div class="order-info-card">
           <table style="width: 100%; border-collapse: collapse;">
             <tr>
               <td style="padding: 4px 0; font-size: 13px; color: #64748b;">Order Number:</td>
-              <td style="padding: 4px 0; font-size: 13px; color: #0f172a; font-weight: 700; text-align: right;">{{orderNo}}</td>
+              <td style="padding: 4px 0; font-size: 13px; color: #0f172a; font-weight: 700; text-align: right;">
+                #{{orderNo}}</td>
+            </tr>
+            <tr>
+              <td style="padding: 4px 0; font-size: 13px; color: #64748b;">Customer / Party:</td>
+              <td style="padding: 4px 0; font-size: 13px; color: #0f172a; font-weight: 600; text-align: right;">{{customerName}}</td>
             </tr>
             <tr>
               <td style="padding: 4px 0; font-size: 13px; color: #64748b;">Order Date:</td>
@@ -218,15 +248,15 @@
             </tr>
             <tr>
               <td style="padding: 4px 0; font-size: 13px; color: #64748b;">Delivered On:</td>
-              <td style="padding: 4px 0; font-size: 13px; color: #15803d; font-weight: 700; text-align: right;">13 August 2026, 02:30 PM</td>
+              <td style="padding: 4px 0; font-size: 13px; color: #15803d; font-weight: 700; text-align: right;">{{deliveryDate}}</td>
             </tr>
             <tr>
               <td style="padding: 4px 0; font-size: 13px; color: #64748b;">Received By:</td>
-              <td style="padding: 4px 0; font-size: 13px; color: #0f172a; font-weight: 600; text-align: right;">John Doe (Signature On File)</td>
+              <td style="padding: 4px 0; font-size: 13px; color: #0f172a; font-weight: 600; text-align: right;">{{receivedBy}}</td>
             </tr>
             <tr>
               <td style="padding: 4px 0; font-size: 13px; color: #64748b;">Tracking / Docket No:</td>
-              <td style="padding: 4px 0; font-size: 13px; color: #1e40af; font-weight: 700; text-align: right;">MED-TRK-994821</td>
+              <td style="padding: 4px 0; font-size: 13px; color: #1e40af; font-weight: 700; text-align: right;">{{trackingNo}}</td>
             </tr>
             <tr>
               <td style="padding: 4px 0; font-size: 13px; color: #64748b;">Delivery Status:</td>
@@ -235,7 +265,7 @@
           </table>
         </div>
 
-        <!-- Items Table -->
+        <!-- Items Table (Quantity Only - Strictly No Pricing) -->
         <div class="section-title">Delivered Items Summary</div>
         <div class="items-table-container">
           <table class="items-table">
@@ -251,25 +281,14 @@
             </tbody>
           </table>
         </div>
-
-        <!-- Delivery Address -->
-        <div class="section-title">Delivery Address</div>
-        <div style="font-size: 13px; color: #475569; line-height: 1.5; margin-bottom: 24px;">
-          John Doe, 123 Healthcare Blvd, Suite 400, New York, NY 10001
-        </div>
-
-        <!-- Info Box -->
-        <div class="info-box">
-          <div style="font-weight: 700; margin-bottom: 2px;">📦 Delivered Package Inspection</div>
-          <div>Please unpack and verify your delivered medicines against the order invoice. If you notice any damaged items or discrepancies, please contact our support team within 48 hours.</div>
-        </div>
       </div>
 
-      <!-- Footer -->
-      <div class="footer">
-        <p>If you have any questions, feel free to contact our support team at <a href="mailto:{{companyEmail}}">{{companyEmail}}</a>.</p>
-        <p>&copy; {{year}} {{companyName}}. All rights reserved.</p>
+      <!-- Company Letterhead Footer -->
+      <div class="letter-footer">
+        {{companyFooterHtml}}
+        <div class="copyright-line">&copy; {{year}} {{companyName}}. All rights reserved.</div>
       </div>
+
     </div>
   </div>
 </body>

@@ -47,6 +47,7 @@ import DispatchesTab from "./components/DispatchesTab";
 import TransportsTab from "./components/TransportsTab";
 import ApprovalTab from "./components/ApprovalTab";
 import SubmitOrderPreviewModal from "./components/SubmitOrderPreviewModal";
+import type { WorkflowEmailOptions } from "@/components/portal/shared/WorkflowEmailControls";
 
 const btnSecondaryClass =
   "rounded-lg border border-slate-200/95 px-3 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-50 disabled:opacity-50 dark:border-white/15 dark:text-slate-100 dark:hover:bg-white/5";
@@ -246,6 +247,12 @@ export default function SalesOrderDetail({ orderId }: { orderId: string }) {
   const [createOrderApproval] = useCreateOrderApprovalMutation();
   const [fetchOrderApprovals] = useLazyGetOrderApprovalsQuery();
 
+  const [submitEmailOptions, setSubmitEmailOptions] = useState<WorkflowEmailOptions>({
+    send_email: false,
+    send_to_party: false,
+    recipients: [],
+  });
+
   const detail =
     data && typeof data === "object"
       ? (data as Record<string, unknown>)
@@ -435,8 +442,9 @@ export default function SalesOrderDetail({ orderId }: { orderId: string }) {
       approval_items: approvalItems,
       contact_number: selectedContacts,
       contact_name: selectedContactNames,
+      email_options: submitEmailOptions,
     };
-  }, [readOnlyItems, partyDetailQ.data, submitRemarks]);
+  }, [readOnlyItems, partyDetailQ.data, submitRemarks, submitEmailOptions]);
 
   const verifyApprovalExists = useCallback(
     async (id: string) => {
@@ -624,6 +632,8 @@ export default function SalesOrderDetail({ orderId }: { orderId: string }) {
         onRetry={() => void handleSubmitRetry()}
         isSubmitting={isSubmittingOrder}
         submitIssue={submitIssue}
+        emailOptions={submitEmailOptions}
+        onEmailOptionsChange={setSubmitEmailOptions}
       />
 
       <ItemFulfillmentDetailsModal

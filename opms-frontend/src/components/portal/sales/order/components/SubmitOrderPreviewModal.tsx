@@ -6,6 +6,10 @@ import {
   largeModalPanelClass,
 } from "@/components/portal/shared/modalLayout";
 import { LargeModalPortal } from "@/components/portal/shared/LargeModalPortal";
+import {
+  WorkflowEmailControls,
+  type WorkflowEmailOptions,
+} from "@/components/portal/shared/WorkflowEmailControls";
 
 type SubmitIssue = {
   kind: "submit" | "approval";
@@ -23,6 +27,8 @@ type SubmitOrderPreviewModalProps = {
   onRetry?: () => void;
   isSubmitting: boolean;
   submitIssue?: SubmitIssue;
+  emailOptions?: WorkflowEmailOptions;
+  onEmailOptionsChange?: (value: WorkflowEmailOptions) => void;
 };
 
 function formatDate(v: unknown): string {
@@ -47,6 +53,8 @@ export default function SubmitOrderPreviewModal({
   onRetry,
   isSubmitting,
   submitIssue = null,
+  emailOptions,
+  onEmailOptionsChange,
 }: SubmitOrderPreviewModalProps) {
   const items = useMemo(() => {
     if (!Array.isArray(detail.order_items)) return [];
@@ -198,6 +206,15 @@ export default function SubmitOrderPreviewModal({
               placeholder="Notes for admin review…"
             />
           </div>
+
+          {emailOptions && onEmailOptionsChange && (
+            <WorkflowEmailControls
+              order={detail}
+              scope="submit"
+              value={emailOptions}
+              onChange={onEmailOptionsChange}
+            />
+          )}
         </div>
 
         <div className="flex justify-end gap-3 border-t border-slate-100 px-5 py-4 dark:border-white/5">

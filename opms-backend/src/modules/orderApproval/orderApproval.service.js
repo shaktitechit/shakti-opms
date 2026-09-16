@@ -112,7 +112,12 @@ function isAccountPendingOrder(orderDoc) {
  * After finance approves: notify accounts for finance-approved orders
  * still pending account approval.
  */
-async function shootAccountApprovalPendingEmail(orderId) {
+async function shootAccountApprovalPendingEmail(orderId, emailOptions = {}) {
+  const { shouldSendWorkflowEmail } = require('../../utils/workflowEmail.helper');
+  if (!shouldSendWorkflowEmail(emailOptions)) {
+    return;
+  }
+
   const { Order, Party } = getModels();
   const { shootAutoEmail, EMAIL_TEMPLATES } = require('../../utils/emailHelper');
 
@@ -130,6 +135,12 @@ async function shootAccountApprovalPendingEmail(orderId) {
     process.env.ADMIN_EMAIL || process.env.SMTP_FROM || '';
   const accountEmail =
     process.env.ACCOUNT_EMAIL || process.env.DUE_SHEET_EMAIL || process.env.SMTP_FROM || customEmail;
+
+  const explicitRecipients =
+    Array.isArray(emailOptions?.recipients) && emailOptions.recipients.length > 0
+      ? emailOptions.recipients
+      : null;
+  const targetRecipient = explicitRecipients || accountEmail;
 
   const accountPendingIds = await findOrderIdsWithAccountPending(getModels());
   const otherIds = accountPendingIds.filter((id) => String(id) !== String(orderId));
@@ -166,10 +177,10 @@ async function shootAccountApprovalPendingEmail(orderId) {
     : accountPendingIds.length + 1;
 
   await shootAutoEmail({
-    recipient: accountEmail,
+    recipient: targetRecipient,
     templateName: EMAIL_TEMPLATES.ACCOUNT_APPROVAL_PENDING,
     templateParams: {
-      recipient: accountEmail,
+      recipient: targetRecipient,
       subject: `Action Required: Account Approval Pending for Order #${orderNo}`,
       companyName,
       accountPersonName: 'Accounts Team',
@@ -1764,6 +1775,15 @@ async function decideAdmin(id, decision, body, user) {
     });
 
     await enqueuePostAdminApprovalJobs(refreshedOrder._id, user._id);
+    try {
+      const { shootPostAdminApprovalEmails } = require('../orders/order.service');
+      await shootPostAdminApprovalEmails(refreshedOrder._id, body?.email_options);
+    } catch (_emailErr) {
+      const { logger } = require('../../config/logger');
+      if (logger) {
+        logger.error(`[decideAdmin] Error queuing post-admin-approval emails: ${_emailErr?.message}`);
+      }
+    }
   } else {
     doc.is_admin_approved = false;
     doc.rejected_by = user._id;
@@ -1792,6 +1812,19 @@ async function decideAdmin(id, decision, body, user) {
         remarks: body?.rejection_reason || doc.rejection_reason || '',
         _systemCall: true,
       });
+    }
+
+    try {
+      const { sendWorkflowEmail } = require('../../utils/workflowEmail.helper');
+      await sendWorkflowEmail({
+        orderId: orderForMerge._id,
+        scope: 'admin_reject',
+        emailOptions: body?.email_options,
+        actorUser: user,
+        remarks: body?.rejection_reason || doc.rejection_reason || '',
+      });
+    } catch (_emailErr) {
+      // ignore
     }
   }
 
@@ -1949,6 +1982,21 @@ async function decideFinance(id, decision, body, user) {
       });
     }
 
+    if (isRejected || finalStatus === 'rejected') {
+      try {
+        const { sendWorkflowEmail } = require('../../utils/workflowEmail.helper');
+        await sendWorkflowEmail({
+          orderId: order._id,
+          scope: 'finance_rejected',
+          emailOptions: body?.email_options,
+          actorUser: user,
+          remarks: body?.rejection_reason || doc.rejection_reason || '',
+        });
+      } catch (_emailErr) {
+        // ignore
+      }
+    }
+
     if (isApprovedOrPartial) {
       const orderAfterTransition = await Order.findById(order._id);
       if (orderAfterTransition) {
@@ -1976,7 +2024,7 @@ async function decideFinance(id, decision, body, user) {
         await enqueuePostFinanceApprovalJobs(order._id, user._id);
 
         try {
-          await shootAccountApprovalPendingEmail(order._id);
+          await shootAccountApprovalPendingEmail(order._id, body?.email_options);
         } catch (_emailErr) {
           const { logger } = require('../../config/logger');
           if (logger) {
@@ -2191,6 +2239,32 @@ async function decideAccount(id, decision, body, user, options = {}) {
         if (!options.skipAsyncJobs) {
           await enqueuePostAccountApprovalJobs(order._id, user._id);
         }
+
+        try {
+          const { sendWorkflowEmail } = require('../../utils/workflowEmail.helper');
+          await sendWorkflowEmail({
+            orderId: order._id,
+            scope: 'account_approved',
+            emailOptions: body?.email_options,
+            actorUser: user,
+            remarks: body?.approval_notes,
+          });
+        } catch (_emailErr) {
+          // ignore
+        }
+      }
+    } else if (isRejected || finalStatus === 'rejected') {
+      try {
+        const { sendWorkflowEmail } = require('../../utils/workflowEmail.helper');
+        await sendWorkflowEmail({
+          orderId: order._id,
+          scope: 'account_rejected',
+          emailOptions: body?.email_options,
+          actorUser: user,
+          remarks: body?.rejection_reason || doc.rejection_reason || '',
+        });
+      } catch (_emailErr) {
+        // ignore
       }
     }
   }

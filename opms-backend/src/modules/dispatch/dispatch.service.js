@@ -562,6 +562,19 @@ async function create(body, user, options = {}) {
     });
     await enqueuePostDispatchJobs(body.order, user._id);
     await linkDispatchToActiveTransportPlan(doc, user);
+
+    try {
+      const { sendWorkflowEmail } = require('../../utils/workflowEmail.helper');
+      await sendWorkflowEmail({
+        orderId: body.order,
+        scope: 'dispatch',
+        emailOptions: body.email_options,
+        actorUser: user,
+        remarks: body.remarks || `Dispatch ${doc.dispatch_no} recorded`,
+      });
+    } catch (_emailErr) {
+      // ignore email error
+    }
   }
 
   await recalculateOrderDispatchState(body.order, user);

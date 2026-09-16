@@ -25,6 +25,10 @@ import {
   largeModalPanelClass,
 } from "@/components/portal/shared/modalLayout";
 import { LargeModalPortal } from "@/components/portal/shared/LargeModalPortal";
+import {
+  WorkflowEmailControls,
+  type WorkflowEmailOptions,
+} from "@/components/portal/shared/WorkflowEmailControls";
 
 type CreateAccountDispatchModalProps = {
   open: boolean;
@@ -78,6 +82,11 @@ export function CreateAccountDispatchModal({
   const [billDocumentFile, setBillDocumentFile] = useState<File | null>(null);
   const [warehouseLocation, setWarehouseLocation] = useState("");
   const [dispatchRemarks, setDispatchRemarks] = useState("");
+  const [emailOptions, setEmailOptions] = useState<WorkflowEmailOptions>({
+    send_email: false,
+    send_to_party: false,
+    recipients: [],
+  });
   const [dispatchItemsQuantities, setDispatchItemsQuantities] = useState<Record<string, number>>({});
   const [activeApprovalId, setActiveApprovalId] = useState("");
 
@@ -495,6 +504,7 @@ export function CreateAccountDispatchModal({
           if (billDocumentFile) {
             formData.append("bill_document", billDocumentFile);
           }
+          formData.append("email_options", JSON.stringify(emailOptions));
 
           res = await createDispatch(formData).unwrap();
           toast.success("Dispatch draft created successfully.");
@@ -920,6 +930,13 @@ export function CreateAccountDispatchModal({
                 </div>
               </>
             )}
+
+            <WorkflowEmailControls
+              order={detail || { _id: orderId }}
+              scope="dispatch"
+              value={emailOptions}
+              onChange={setEmailOptions}
+            />
           </div>
 
           <div className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50/60 px-6 py-4 dark:border-white/5 dark:bg-slate-950/40">

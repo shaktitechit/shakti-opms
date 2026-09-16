@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dispatch Pending - Order #{{orderNo}}</title>
+  <title>Order Status Update - #{{orderNo}}</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -77,9 +77,9 @@
 
     .doc-badge {
       display: inline-block;
-      background-color: #ecfeff;
-      border: 1px solid #a5f3fc;
-      color: #0e7490;
+      background-color: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1e40af;
       padding: 4px 14px;
       border-radius: 20px;
       font-size: 12px;
@@ -113,43 +113,7 @@
       padding: 14px 18px;
       margin-bottom: 20px;
       border: 1px solid #e2e8f0;
-      border-left: 4px solid #0891b2;
-    }
-
-    .badge-pending {
-      background-color: #fef3c7;
-      color: #92400e;
-      padding: 2px 8px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 700;
-    }
-
-    .badge-priority-urgent {
-      background-color: #fee2e2;
-      color: #991b1b;
-      padding: 2px 7px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 700;
-    }
-
-    .badge-priority-high {
-      background-color: #ffedd5;
-      color: #9a3412;
-      padding: 2px 7px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 700;
-    }
-
-    .badge-priority-normal {
-      background-color: #f1f5f9;
-      color: #475569;
-      padding: 2px 7px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 600;
+      border-left: 4px solid #1e40af;
     }
 
     .section-title {
@@ -159,9 +123,8 @@
       margin: 20px 0 10px 0;
       padding-bottom: 6px;
       border-bottom: 2px solid #f1f5f9;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
     }
 
     /* ── Items Table (Strictly No Pricing) ── */
@@ -174,22 +137,22 @@
     .items-table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 12.5px;
+      font-size: 13px;
       text-align: left;
     }
 
     .items-table th {
-      background-color: #0891b2;
+      background-color: #1e40af;
       color: #ffffff;
-      padding: 9px 8px;
+      padding: 9px 10px;
       font-weight: 600;
-      font-size: 11.5px;
+      font-size: 12px;
       text-transform: uppercase;
       letter-spacing: 0.3px;
     }
 
     .items-table td {
-      padding: 8px 8px;
+      padding: 9px 10px;
       border-bottom: 1px solid #e2e8f0;
       color: #334155;
     }
@@ -206,21 +169,16 @@
       font-weight: 600;
     }
 
-    .action-box {
-      background-color: #ecfeff;
-      border: 1px solid #a5f3fc;
-      border-left: 4px solid #0891b2;
+    .remarks-box {
+      background-color: #eff6ff;
+      border: 1px solid #dbeafe;
+      border-left: 4px solid #3b82f6;
       border-radius: 6px;
       padding: 12px 14px;
       margin-bottom: 20px;
       font-size: 13px;
-      color: #0e7490;
+      color: #1e3a8a;
       line-height: 1.5;
-    }
-
-    .action-title {
-      font-weight: 700;
-      margin-bottom: 2px;
     }
 
     /* ── Company Letterhead Footer ── */
@@ -264,22 +222,23 @@
       </div>
 
       <div class="doc-badge-wrap">
-        <span class="doc-badge">Dispatch Pending Alert</span>
+        <span class="doc-badge">Order Status Update</span>
       </div>
 
       <!-- Content -->
       <div class="content">
-        <div class="greeting">Hello {{dispatchTeamName}},</div>
+        <div class="greeting">Hello {{customerName}},</div>
         <div class="intro-text">
-          Order <strong>#{{orderNo}}</strong> for customer <strong>{{customerName}}</strong> is approved and currently <span class="badge-pending">PENDING DISPATCH</span>. Below are the delivery schedule and priority details.
+          Here is a status update regarding your order <strong>#{{orderNo}}</strong> with <strong>{{companyName}}</strong>.
         </div>
 
-        <!-- Order Info Card -->
+        <!-- Order Meta Card -->
         <div class="order-info-card">
           <table style="width: 100%; border-collapse: collapse;">
             <tr>
               <td style="padding: 4px 0; font-size: 13px; color: #64748b;">Order Number:</td>
-              <td style="padding: 4px 0; font-size: 13px; color: #0f172a; font-weight: 700; text-align: right;">#{{orderNo}}</td>
+              <td style="padding: 4px 0; font-size: 13px; color: #0f172a; font-weight: 700; text-align: right;">
+                #{{orderNo}}</td>
             </tr>
             <tr>
               <td style="padding: 4px 0; font-size: 13px; color: #64748b;">Customer / Party:</td>
@@ -290,7 +249,7 @@
               <td style="padding: 4px 0; font-size: 13px; color: #0f172a; font-weight: 600; text-align: right;">{{orderDate}}</td>
             </tr>
             <tr>
-              <td style="padding: 4px 0; font-size: 13px; color: #64748b;">Expected Delivery Date:</td>
+              <td style="padding: 4px 0; font-size: 13px; color: #64748b;">Expected Delivery:</td>
               <td style="padding: 4px 0; font-size: 13px; color: #1e40af; font-weight: 700; text-align: right;">{{expectedDeliveryDate}}</td>
             </tr>
             <tr>
@@ -300,33 +259,27 @@
           </table>
         </div>
 
-        <!-- Pending Orders Section -->
-        <div class="section-title">
-          <span>Other Orders Pending Dispatch</span>
-          <span class="badge-pending">{{totalPendingCount}} Orders Pending</span>
-        </div>
+        <!-- Items Table (Quantity Only - Strictly No Pricing) -->
+        <div class="section-title">Ordered Items Summary</div>
         <div class="items-table-container">
           <table class="items-table">
             <thead>
               <tr>
-                <th class="text-center" style="width: 6%;">#</th>
-                <th style="width: 22%;">Order No</th>
-                <th style="width: 32%;">Customer / Party</th>
-                <th class="text-center" style="width: 15%;">Order Date</th>
-                <th class="text-center" style="width: 15%;">Expected Delivery</th>
-                <th class="text-center" style="width: 10%;">Priority</th>
+                <th style="width: 60%;">Item Name</th>
+                <th class="text-center" style="width: 20%;">Qty</th>
+                <th class="text-center" style="width: 20%;">Free</th>
               </tr>
             </thead>
             <tbody>
-              {{pendingOrdersRows}}
+              {{itemsRows}}
             </tbody>
           </table>
         </div>
 
-        <!-- Action Box -->
-        <div class="action-box">
-          <div class="action-title">📌 Warehouse Action Required</div>
-          <div>Please initiate packing and warehouse processing for dispatch fulfillment.</div>
+        <!-- Remarks / Instructions -->
+        <div class="remarks-box">
+          <div style="font-weight: 700; margin-bottom: 2px;">📌 Status Note / Remarks:</div>
+          <div>{{remarks}}</div>
         </div>
       </div>
 

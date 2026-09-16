@@ -40,37 +40,63 @@ function getServiceToken() {
 
 /**
  * Triggers an automated email via message-service HTTP endpoint.
+ * Accepts a single email string or an array of email strings.
  * @param {object} params
- * @param {string} params.recipient
+ * @param {string|string[]} params.recipient
  * @param {string} params.templateName
  * @param {object} [params.templateParams]
  */
 async function shootAutoEmail({ recipient, templateName, templateParams = {} }) {
-  try {
-    const token = getServiceToken();
-    const url = `${MESSAGE_SERVICE_URL.replace(/\/$/, '')}/api/auto-emails/trigger`;
-    const response = await axios.post(
-      url,
-      {
-        recipient,
-        templateName,
-        templateParams,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        timeout: 10000,
-      }
-    );
-    return response.data;
-  } catch (err) {
-    console.error(
-      `[emailHelper] Failed to trigger auto-email (${templateName}) to ${recipient} via message-service: ${err.message}`
-    );
+  if (!recipient || (Array.isArray(recipient) && recipient.length === 0)) {
     return null;
   }
+
+  const rawList = Array.isArray(recipient) ? recipient : String(recipient).split(',');
+  const recipients = Array.from(
+    new Set(
+      rawList
+        .map((r) => (typeof r === 'string' ? r.trim() : ''))
+        .filter((r) => Boolean(r && r.includes('@')))
+    )
+  );
+
+  if (recipients.length === 0) return null;
+
+  const token = getServiceToken();
+  const url = `${MESSAGE_SERVICE_URL.replace(/\/$/, '')}/api/auto-emails/trigger`;
+
+  const results = await Promise.allSettled(
+    recipients.map(async (toEmail) => {
+      try {
+        const response = await axios.post(
+          url,
+          {
+            recipient: toEmail,
+            templateName,
+            templateParams: {
+              ...templateParams,
+              recipient: toEmail,
+            },
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            timeout: 10000,
+          }
+        );
+        return response.data;
+      } catch (err) {
+        console.error(
+          `[emailHelper] Failed to trigger auto-email (${templateName}) to ${toEmail} via message-service: ${err.message}`
+        );
+        return null;
+      }
+    })
+  );
+
+  return results.map((r) => (r.status === 'fulfilled' ? r.value : null)).filter(Boolean);
 }
 
 module.exports = {

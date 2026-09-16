@@ -40,8 +40,12 @@ import {
   largeModalBackdropClass,
   largeModalPanelClass,
 } from "@/components/portal/shared/modalLayout";
-import { LargeModalPortal } from "@/components/portal/shared/LargeModalPortal";
 import { ConfirmRemoveKitItemModal } from "@/components/portal/shared/ConfirmRemoveKitItemModal";
+import { LargeModalPortal } from "@/components/portal/shared/LargeModalPortal";
+import {
+  WorkflowEmailControls,
+  type WorkflowEmailOptions,
+} from "@/components/portal/shared/WorkflowEmailControls";
 
 type ApprovalLineStatus =
   | "fully_approved"
@@ -246,6 +250,12 @@ export function ApprovalModal({
 
   const isAmending = isAmendingStandard || isAmendingFinance;
   const syncOrderedToApproved = mode !== "finance";
+
+  const [emailOptions, setEmailOptions] = useState<WorkflowEmailOptions>({
+    send_email: false,
+    send_to_party: false,
+    recipients: [],
+  });
 
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
   const { data: partyData } = useGetPartyQuery(partyId ?? "", {
@@ -1048,6 +1058,7 @@ export function ApprovalModal({
           approval_items: approvalItemsPayload,
           contact_number: selectedContacts,
           contact_name: selectedContactNames,
+          email_options: emailOptions,
         }).unwrap();
 
         toast.success("Order and approval updated successfully.");
@@ -1173,6 +1184,7 @@ export function ApprovalModal({
               approval_items: approvalItemsPayload,
               approval_notes: approvalNotes.trim() || undefined,
               approved_total_amount: approvedTotal,
+              email_options: emailOptions,
             },
           }).unwrap();
 
@@ -1271,6 +1283,7 @@ export function ApprovalModal({
                 remarks: bucket.remarks,
               })),
             ],
+            email_options: emailOptions,
           };
 
           if (mode === "finance") {
@@ -2081,6 +2094,21 @@ export function ApprovalModal({
                   </div>
                 </div>
               )}
+
+              {/* Workflow Email Controls */}
+              <WorkflowEmailControls
+                order={detail || { party: partyData, _id: orderId }}
+                party={partyData}
+                scope={
+                  mode === "finance"
+                    ? "finance_approve"
+                    : mode === "account"
+                      ? "account_approve"
+                      : "admin_approve"
+                }
+                value={emailOptions}
+                onChange={setEmailOptions}
+              />
 
               {/* Notes field */}
               <div className="space-y-1">
