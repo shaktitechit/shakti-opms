@@ -47,6 +47,14 @@ export function publicNotificationServiceOrigin(): string {
 }
 
 /**
+ * Messages, emails, and communication queues are proxied by opms-backend (`/api/messages`, `/api/emails`, etc.).
+ * Backends reach message-service via `MESSAGE_SERVICE_URL` (internal docker service only).
+ */
+export function publicMessageServiceOrigin(): string {
+  return publicApiOrigin();
+}
+
+/**
  * Web Push VAPID public key (`NEXT_PUBLIC_VAPID_PUBLIC_KEY`).
  * Must match backend `VAPID_PUBLIC_KEY`. Falls back to API fetch when empty.
  */
