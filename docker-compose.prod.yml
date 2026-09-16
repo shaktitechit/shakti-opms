@@ -8,11 +8,13 @@
 #
 # All secrets and public origins come from `.env.docker` — nothing sensitive here.
 
-name: opms
+name: ${COMPOSE_PROJECT_NAME:-opms}
 
 x-env-file: &env_file
-  - path: .env.docker
-    required: true
+  - path: ${ENV_FILE:-.env.docker}
+    required: false
+  - path: .env
+    required: false
 
 services:
 
