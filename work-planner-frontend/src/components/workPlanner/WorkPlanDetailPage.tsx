@@ -23,6 +23,7 @@ import {
   Briefcase,
   Trash2,
   MessageSquare,
+  Mail,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -44,6 +45,7 @@ import {
 } from "@/store/api/workPlannerApiSlice";
 import { isManager, readSessionFromStorage } from "@/utils/authStorage";
 import type {
+  DayEndPayload,
   WorkPlanRecord,
   WorkPlanVisitRecord,
   WorkPlanWorkRecord,
@@ -74,6 +76,9 @@ import { CompleteWorkModal } from "./CompleteWorkModal";
 import { NextVisitPlanModal } from "./NextVisitPlanModal";
 import { RejectWorkPlanModal } from "./RejectWorkPlanModal";
 import { ExpenseListSection } from "./ExpenseListSection";
+import { DayEndSection } from "./DayEndSection";
+import { DayEndMailModal } from "./DayEndMailModal";
+import { DayEndViewModal } from "./DayEndViewModal";
 
 interface WorkPlanDetailPageProps {
   planId: string;
@@ -114,7 +119,8 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   const [nextVisitTarget, setNextVisitTarget] = useState<WorkPlanVisitRecord | null>(null);
 
   const [rejectPlanModalOpen, setRejectPlanModalOpen] = useState(false);
-  const [completePlanModalOpen, setCompletePlanModalOpen] = useState(false);
+  const [dayEndMailModalOpen, setDayEndMailModalOpen] = useState(false);
+  const [dayEndViewModalOpen, setDayEndViewModalOpen] = useState(false);
 
   // Plan Actions
   async function handleSubmitPlan() {
@@ -157,15 +163,11 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
     }
   }
 
-  async function handleCompletePlanConfirm() {
+  async function handleSendAndCompleteDayEnd(payload: DayEndPayload) {
     setActionLoading(true);
     try {
-      await completePlanMut(planId).unwrap();
-      toast.success("Work plan completed successfully");
-      setCompletePlanModalOpen(false);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to complete plan";
-      toast.error(msg);
+      await completePlanMut({ id: planId, body: payload }).unwrap();
+      await loadPlan();
     } finally {
       setActionLoading(false);
     }
@@ -302,26 +304,37 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
             <button
               type="button"
               disabled={!canCompletePlan || actionLoading}
-              onClick={() => setCompletePlanModalOpen(true)}
+              onClick={() => setDayEndMailModalOpen(true)}
               title={
                 !canCompletePlan
                   ? !canCompleteChildAction
                     ? workPlanWindowHint(plan.plan_date)
                     : visitsPlan
-                    ? "Complete all visits before completing the work plan"
+                    ? "Complete all visits before submitting Day End"
                     : taskPlan
-                    ? "Complete all tasks before completing the work plan"
+                    ? "Complete all tasks before submitting Day End"
                     : ""
-                  : "Mark work plan as completed"
+                  : "Submit Day End and complete work plan"
               }
               className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold transition shadow-xs ${
                 canCompletePlan
-                  ? "bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                  ? "bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 cursor-pointer"
                   : "bg-surface-muted border border-border text-muted cursor-not-allowed"
               }`}
             >
               <CheckCircle2 className="h-4 w-4" />
-              Complete Work Plan
+              Day End
+            </button>
+          )}
+
+          {isCompleted && plan.day_end && (
+            <button
+              type="button"
+              onClick={() => setDayEndViewModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition cursor-pointer"
+            >
+              <Mail className="h-4 w-4" />
+              View Day End Email
             </button>
           )}
 
@@ -349,10 +362,10 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs space-y-1.5">
           <div className="flex items-center gap-2 font-bold text-amber-600 dark:text-amber-400">
             <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
-            <span>Important Notice Before Completing Work Plan</span>
+            <span>Important Notice Before Day End Submission</span>
           </div>
           <p className="text-muted">
-            Please make sure all field visits/tasks for this day are added and completed before clicking <strong>Complete Work Plan</strong>. Completing visits, tasks, and work plans must be done within their allowed 3-day window. Once completed, field visits and tasks cannot be added or edited.
+            Please make sure all field visits/tasks for this day are added and completed before clicking <strong>Day End</strong>. Completing visits, tasks, and work plans must be done within their allowed 3-day window. Once Day End is submitted, an email report is sent to managers and visits/tasks cannot be added or edited.
           </p>
           <p className="text-muted font-medium pt-0.5">
             ℹ️ {workPlanWindowHint(plan.plan_date)}
@@ -750,6 +763,19 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
         </div>
       )}
 
+      {/* Section 4: Day End Section */}
+      {!leavePlan && (
+        <DayEndSection
+          plan={plan}
+          isCompleted={isCompleted}
+          canCompletePlan={canCompletePlan}
+          canCompleteChildAction={canCompleteChildAction}
+          actionLoading={actionLoading}
+          onOpenMailModal={() => setDayEndMailModalOpen(true)}
+          onOpenViewModal={() => setDayEndViewModalOpen(true)}
+        />
+      )}
+
 
       {/* Modals */}
       {visitModalOpen && (
@@ -898,48 +924,25 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
         />
       )}
 
-      {completePlanModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-xl space-y-4">
-            <div className="flex items-center gap-3 text-emerald-500">
-              <CheckCircle2 className="h-6 w-6" />
-              <h3 className="text-base font-bold text-foreground">Complete Work Plan</h3>
-            </div>
-            <p className="text-xs text-muted">
-              Are you sure you want to mark this work plan as completed?
-            </p>
+      <DayEndMailModal
+        planId={planId}
+        plan={plan}
+        sessionUser={sessionUser}
+        isOpen={dayEndMailModalOpen}
+        onClose={() => setDayEndMailModalOpen(false)}
+        onCompleteSuccess={() => {
+          setDayEndMailModalOpen(false);
+          loadPlan();
+        }}
+        onSendAndComplete={handleSendAndCompleteDayEnd}
+        loading={actionLoading}
+      />
 
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs space-y-1">
-              <div className="font-bold flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
-                <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
-                <span>Important Warning</span>
-              </div>
-              <p className="text-muted text-[11px] leading-relaxed">
-                Completing this work plan will lock all field visits and work tasks from further edits. ℹ️ {workPlanWindowHint(plan.plan_date)}
-              </p>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                disabled={actionLoading}
-                onClick={() => setCompletePlanModalOpen(false)}
-                className="rounded-lg border border-border bg-card px-4 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={actionLoading}
-                onClick={handleCompletePlanConfirm}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition"
-              >
-                {actionLoading ? "Completing..." : "Confirm & Complete"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DayEndViewModal
+        dayEnd={plan.day_end}
+        isOpen={dayEndViewModalOpen}
+        onClose={() => setDayEndViewModalOpen(false)}
+      />
     </div>
   );
 }

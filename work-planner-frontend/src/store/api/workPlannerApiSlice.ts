@@ -1,6 +1,13 @@
 import { baseApi } from "./baseApi";
 import { WORK_PLANNER_SERVICE_URL } from "@/lib/env";
-import type { WorkPlanExpenseRecord, WorkPlanRecord, WorkPlannerStats } from "@/types/workPlanner";
+import type {
+  DayEndDraftResponse,
+  DayEndPayload,
+  WorkPlanDayEndAttachment,
+  WorkPlanExpenseRecord,
+  WorkPlanRecord,
+  WorkPlannerStats,
+} from "@/types/workPlanner";
 
 function normalizePaginatedResponse<T>(res: any): {
   data: T[];
@@ -150,13 +157,37 @@ export const workPlannerApiSlice = baseApi.injectEndpoints({
       transformResponse: (res: any) => res.data || res,
       invalidatesTags: (_result, _error, { id }) => [{ type: "WorkPlan", id }, { type: "WorkPlan", id: "LIST" }, "WorkPlannerStats"],
     }),
-    completePlan: builder.mutation<WorkPlanRecord, string>({
-      query: (id) => ({
-        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/${id}/complete`,
+    completePlan: builder.mutation<
+      WorkPlanRecord,
+      string | { id: string; body?: DayEndPayload }
+    >({
+      query: (arg) => {
+        const id = typeof arg === "string" ? arg : arg.id;
+        const body = typeof arg === "string" ? undefined : arg.body;
+        return {
+          url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/${id}/complete`,
+          method: "POST",
+          body,
+        };
+      },
+      transformResponse: (res: any) => res.data || res,
+      invalidatesTags: (_result, _error, arg) => {
+        const id = typeof arg === "string" ? arg : arg.id;
+        return [{ type: "WorkPlan", id }, { type: "WorkPlan", id: "LIST" }, "WorkPlannerStats"];
+      },
+    }),
+    getDayEndDraft: builder.query<DayEndDraftResponse, string>({
+      query: (id) => `${WORK_PLANNER_SERVICE_URL}/api/work-planner/${id}/day-end-draft`,
+      transformResponse: (res: any) => res.data || res,
+      providesTags: (_result, _error, id) => [{ type: "WorkPlan", id }],
+    }),
+    uploadWorkPlanAttachment: builder.mutation<WorkPlanDayEndAttachment, FormData>({
+      query: (body) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/attachments/upload`,
         method: "POST",
+        body,
       }),
       transformResponse: (res: any) => res.data || res,
-      invalidatesTags: (_result, _error, id) => [{ type: "WorkPlan", id }, { type: "WorkPlan", id: "LIST" }, "WorkPlannerStats"],
     }),
     // Visits
     addVisit: builder.mutation<WorkPlanRecord, { planId: string; body: unknown }>({
@@ -372,4 +403,7 @@ export const {
   useApproveAllExpensesMutation,
   useRejectAllExpensesMutation,
   useUploadExpenseReceiptMutation,
+  useGetDayEndDraftQuery,
+  useLazyGetDayEndDraftQuery,
+  useUploadWorkPlanAttachmentMutation,
 } = workPlannerApiSlice;

@@ -7,8 +7,13 @@ const { getModels } = require('../../data/mongoRegistry');
 const { toPlain } = require('../../utils/mongoJson');
 const { ApiError } = require('../../utils/ApiError');
 const activityService = require('../activity/activity.service');
-const notificationService = require('../notifications/notification.service');
-const { sendWorkPlanCompletedEmail } = require('./workPlanNotification.service');
+const {
+  sendWorkPlanCompletedEmail,
+  sendCustomDayEndEmail,
+  getWorkPlannerManagers,
+  renderVisitsTable,
+  renderTasksTable,
+} = require('./workPlanNotification.service');
 const {
   EDITABLE_PLAN_STATUSES,
   EDITABLE_EXPENSE_STATUSES,
@@ -149,6 +154,7 @@ async function loadPlanOrThrow(id) {
     .populate('sales_user', 'name email department')
     .populate('approved_by', 'name email')
     .populate('discussed_manager_id', 'name email department')
+    .populate('day_end.attachments')
     .lean();
   if (!plan) throw new ApiError(404, 'Work plan not found');
   return plan;
@@ -199,6 +205,12 @@ function buildExpenseTotals(expenses) {
 
 async function getWithVisits(id) {
   const plan = await loadPlanOrThrow(id);
+  const { withFreshViewUrl } = require('../../services/fileManagement');
+  if (plan.day_end && Array.isArray(plan.day_end.attachments)) {
+    plan.day_end.attachments = await Promise.all(
+      plan.day_end.attachments.map((att) => withFreshViewUrl(att))
+    );
+  }
   const [visits, works, expenses] = await Promise.all([loadVisits(id), loadWorks(id), loadExpenses(id)]);
   const totals = buildExpenseTotals(expenses);
   return { ...toPlain(plan), visits, works, expenses, ...totals };
@@ -230,7 +242,7 @@ async function maybeCompleteWorkPlan(planId, user) {
   return;
 }
 
-async function completePlan(id, user) {
+async function completePlan(id, user, dayEndData = null) {
   const { WorkPlan } = getModels();
   const plan = await WorkPlan.findOne({ _id: id, deletedAt: null });
   if (!plan) throw new ApiError(404, 'Work plan not found');
@@ -250,15 +262,125 @@ async function completePlan(id, user) {
 
   plan.status = 'completed';
   plan.updated_by = userId(user);
-  await plan.save();
-  await logActivity(user, id, 'status_changed', 'Work plan marked completed');
 
-  // Trigger completion notification emails to Work Plan portal managers from executive's email
-  sendWorkPlanCompletedEmail(id, user).catch((err) =>
-    console.error('[workPlanner.service] completion email error:', err?.message || err)
-  );
+  if (dayEndData && typeof dayEndData === 'object') {
+    const validAttachmentIds = Array.isArray(dayEndData.attachment_ids)
+      ? dayEndData.attachment_ids.filter((aid) => aid && mongoose.Types.ObjectId.isValid(aid))
+      : [];
+
+    plan.day_end = {
+      completed_at: new Date(),
+      from_email: dayEndData.from_email || user.email,
+      to_email: dayEndData.to_email || '',
+      cc_emails: Array.isArray(dayEndData.cc_emails)
+        ? dayEndData.cc_emails.map((e) => String(e).trim()).filter(Boolean)
+        : [],
+      subject: dayEndData.subject || `Day End Report — ${user.name || user.email}`,
+      body_html: dayEndData.body_html || '',
+      attachments: validAttachmentIds,
+    };
+  }
+
+  await plan.save();
+  await logActivity(user, id, 'status_changed', 'Work plan marked completed via Day End');
+
+  // Trigger completion notification emails
+  if (dayEndData && dayEndData.to_email) {
+    sendCustomDayEndEmail(id, user, dayEndData).catch((err) =>
+      console.error('[workPlanner.service] Day End custom email error:', err?.message || err)
+    );
+  } else {
+    sendWorkPlanCompletedEmail(id, user).catch((err) =>
+      console.error('[workPlanner.service] completion email error:', err?.message || err)
+    );
+  }
 
   return get(id, user);
+}
+
+async function getDayEndDraft(id, user) {
+  const plan = await loadPlanOrThrow(id);
+  assertCanView(plan, user);
+
+  const [visits, works, expenses] = await Promise.all([
+    loadVisits(id),
+    loadWorks(id),
+    loadExpenses(id),
+  ]);
+
+  const managers = await getWorkPlannerManagers();
+  const managerList = managers.map((m) => ({
+    _id: String(m._id),
+    name: m.name || m.email.split('@')[0],
+    email: m.email,
+    department: m.department || '',
+  }));
+
+  // Primary recipient: discussed manager if available, else first manager in roster
+  let firstManagerEmail = '';
+  if (plan.discussed_manager_id && plan.discussed_manager_id.email) {
+    firstManagerEmail = plan.discussed_manager_id.email;
+  } else if (managerList.length > 0) {
+    firstManagerEmail = managerList[0].email;
+  }
+
+  // CC list: all managers excluding the primary recipient
+  const ccEmails = managerList
+    .map((m) => m.email)
+    .filter((email) => email && email.toLowerCase() !== firstManagerEmail.toLowerCase());
+
+  const executiveName = user.name || user.email?.split('@')[0] || 'Executive';
+  const executiveEmail = user.email || '';
+  const fromAddress = `${executiveName} <${executiveEmail}>`;
+
+  const planDateStr = plan.plan_date
+    ? new Date(plan.plan_date).toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      })
+    : new Date().toLocaleDateString('en-GB');
+
+  const subject = `Day End Report — ${executiveName} (${planDateStr})`;
+  const expensesTotal = expenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+
+  const visitsTableHtml = renderVisitsTable(visits);
+  const tasksTableHtml = renderTasksTable(works);
+
+  const defaultHtmlBody = `
+<div style="font-family: Arial, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #1e293b;">
+  <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+    <h2 style="margin: 0 0 12px 0; color: #0f172a; font-size: 18px;">Day End Report — Summary</h2>
+    <p style="margin: 4px 0; font-size: 14px;"><strong>Executive:</strong> ${executiveName} (${executiveEmail})</p>
+    <p style="margin: 4px 0; font-size: 14px;"><strong>Plan Date:</strong> ${planDateStr}</p>
+    <p style="margin: 4px 0; font-size: 14px;"><strong>Plan Type:</strong> ${plan.plan_type || 'Visits'} | <strong>Location:</strong> ${plan.location || 'N/A'}</p>
+    <p style="margin: 4px 0; font-size: 14px;"><strong>Total Expenses Logged:</strong> ₹${expensesTotal.toLocaleString('en-IN')}</p>
+  </div>
+
+  <h3 style="color: #0f172a; font-size: 16px; border-bottom: 2px solid #0284c7; padding-bottom: 6px; margin-top: 24px;">Field Visits (${visits.length})</h3>
+  ${visitsTableHtml}
+
+  <h3 style="color: #0f172a; font-size: 16px; border-bottom: 2px solid #059669; padding-bottom: 6px; margin-top: 24px;">Tasks / Work Items (${works.length})</h3>
+  ${tasksTableHtml}
+
+  <h3 style="color: #0f172a; font-size: 16px; border-bottom: 2px solid #475569; padding-bottom: 6px; margin-top: 24px;">Key Highlights & Day End Remarks</h3>
+  <p style="font-size: 14px; color: #334155; padding: 12px; background: #f1f5f9; border-radius: 6px;">
+    ${plan.remarks ? plan.remarks : 'Please add any specific highlights, order wins, follow-ups, or escalations here...'}
+  </p>
+</div>
+  `.trim();
+
+  return {
+    plan_id: String(plan._id),
+    plan_date: plan.plan_date,
+    from: fromAddress,
+    from_email: executiveEmail,
+    to: firstManagerEmail,
+    cc: ccEmails,
+    subject,
+    body_html: defaultHtmlBody,
+    managers: managerList,
+  };
 }
 
 async function list(query = {}, user) {
@@ -2004,4 +2126,5 @@ module.exports = {
   addWork,
   updateWork,
   removeWork,
+  getDayEndDraft,
 };

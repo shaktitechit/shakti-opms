@@ -253,8 +253,54 @@ export type WorkPlanRecord = {
   expense_total?: number;
   expense_approved_total?: number;
   visit_expense_totals?: Record<string, number>;
+  day_end?: WorkPlanDayEnd;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type WorkPlanDayEndAttachment = {
+  _id: string;
+  original_name?: string;
+  file_name?: string;
+  mime_type?: string;
+  size?: number;
+  url?: string;
+};
+
+export type WorkPlanDayEnd = {
+  completed_at?: string;
+  from_email?: string;
+  to_email?: string;
+  cc_emails?: string[];
+  subject?: string;
+  body_html?: string;
+  attachments?: WorkPlanDayEndAttachment[];
+};
+
+export type DayEndDraftResponse = {
+  plan_id: string;
+  plan_date: string;
+  from: string;
+  from_email: string;
+  to: string;
+  cc: string[];
+  subject: string;
+  body_html: string;
+  managers: Array<{
+    _id: string;
+    name: string;
+    email: string;
+    department?: string;
+  }>;
+};
+
+export type DayEndPayload = {
+  from_email?: string;
+  to_email: string;
+  cc_emails?: string[];
+  subject: string;
+  body_html: string;
+  attachment_ids?: string[];
 };
 
 export type WorkPlannerStats = {

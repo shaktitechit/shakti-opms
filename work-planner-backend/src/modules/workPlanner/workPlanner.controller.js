@@ -50,7 +50,11 @@ exports.reject = asyncHandler(async (req, res) => {
 });
 
 exports.complete = asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await service.completePlan(req.params.id, req.user) });
+  res.json({ success: true, data: await service.completePlan(req.params.id, req.user, req.body) });
+});
+
+exports.getDayEndDraft = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await service.getDayEndDraft(req.params.id, req.user) });
 });
 
 
@@ -229,6 +233,20 @@ exports.uploadExpenseReceipt = asyncHandler(async (req, res) => {
     req.file,
     'work_plan_expense',
     req.body.plan_id || 'expense'
+  );
+  res.status(201).json({ success: true, data: attachment });
+});
+
+exports.uploadAttachment = asyncHandler(async (req, res) => {
+  if (!req.file) {
+    res.status(400);
+    throw new Error('No file uploaded');
+  }
+  const { uploadMulterFile } = require('../../services/fileManagement');
+  const attachment = await uploadMulterFile(
+    req.file,
+    'work_plan_day_end',
+    req.body.resourceId || req.body.plan_id || null
   );
   res.status(201).json({ success: true, data: attachment });
 });

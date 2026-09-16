@@ -21,12 +21,14 @@ router.use(requireAuth);
 router.use(requireWorkPlannerAccess);
 
 router.post('/expenses/upload', upload.single('file'), controller.uploadExpenseReceipt);
+router.post('/attachments/upload', upload.single('file'), controller.uploadAttachment);
 router.get('/', controller.list);
 router.get('/stats', controller.stats);
 router.get('/expenses', controller.listAllExpenses);
 router.post('/', controller.create);
 
 router.get('/:id', controller.get);
+router.get('/:id/day-end-draft', controller.getDayEndDraft);
 router.patch('/:id', controller.update);
 router.delete('/:id', controller.remove);
 
