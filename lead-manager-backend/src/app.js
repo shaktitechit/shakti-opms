@@ -14,6 +14,7 @@ const leadRoutes = require('./modules/leads/lead.routes');
 const leadMasterRoutes = require('./modules/leads/leadMaster.routes');
 const quotationRoutes = require('./modules/quotations/quotation.routes');
 const attachmentRoutes = require('./modules/attachments/attachment.routes');
+const termsAndConditionsRoutes = require('./modules/terms_and_conditions/terms_and_conditions.routes');
 const { proxyToMessageService } = require('./utils/proxyToMessageService');
 const { proxyToNotificationService } = require('./utils/proxyToNotificationService');
 
@@ -33,6 +34,7 @@ app.use('/api/leads', leadRoutes);
 app.use('/api/lead-masters', leadMasterRoutes);
 app.use('/api/quotations', quotationRoutes);
 app.use('/api/attachments', attachmentRoutes);
+app.use('/api/terms-and-conditions', termsAndConditionsRoutes);
 app.use('/api/notifications', proxyToNotificationService);
 app.use('/api/emails', proxyToMessageService);
 app.use('/api/messages', proxyToMessageService);

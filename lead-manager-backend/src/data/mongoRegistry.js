@@ -441,6 +441,7 @@ function registerModels() {
         is_default: { type: Boolean, default: false, index: true },
         created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        deletedAt: { type: Date, default: null, index: true },
       },
       { timestamps: true }
     );
@@ -454,7 +455,12 @@ function registerModels() {
         terms_and_conditions_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TermsAndConditions', required: true, index: true },
         section_heading: { type: String, trim: true },
         text: { type: String, required: true, trim: true },
+        sequence: { type: Number, default: 1 },
         sort_order: { type: Number, default: 0 },
+        is_active: { type: Boolean, default: true, index: true },
+        created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        deletedAt: { type: Date, default: null, index: true },
       },
       { timestamps: true }
     );
