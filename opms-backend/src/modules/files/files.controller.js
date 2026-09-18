@@ -14,8 +14,16 @@ const mongoose = require('mongoose');
 async function findAttachmentRecord(fileId) {
   if (!fileId) return null;
   const models = getModels();
-  const Attachment = models.Attachment;
-  const OrderDueSheet = models.OrderDueSheet;
+  const {
+    Attachment,
+    OrderDueSheet,
+    OrderDispatch,
+    OrderDelivery,
+    OrderReturn,
+    Order,
+    Quotation,
+    Lead,
+  } = models;
 
   let att = null;
   if (mongoose.Types.ObjectId.isValid(fileId)) {
@@ -35,16 +43,72 @@ async function findAttachmentRecord(fileId) {
         }
       }
     }
-    if (!att && Attachment) {
-      att = await Attachment.findOne({ entity_id: fileId }).sort({ createdAt: -1 }).lean();
+    if (!att && OrderDispatch) {
+      const dispatch = await OrderDispatch.findById(fileId).lean();
+      if (dispatch) {
+        if (dispatch.bill_document && Attachment) {
+          att = await Attachment.findById(dispatch.bill_document).lean();
+        }
+        if (!att && Attachment) {
+          att = await Attachment.findOne({ entity_id: dispatch._id })
+            .sort({ createdAt: -1 })
+            .lean();
+        }
+      }
+    }
+    if (!att && OrderDelivery) {
+      const delivery = await OrderDelivery.findById(fileId).lean();
+      if (delivery && delivery.proof_document && Attachment) {
+        att = await Attachment.findById(delivery.proof_document).lean();
+      }
+    }
+    if (!att && OrderReturn) {
+      const retDoc = await OrderReturn.findById(fileId).lean();
+      if (retDoc && retDoc.document && Attachment) {
+        att = await Attachment.findById(retDoc.document).lean();
+      }
+    }
+    if (!att && Order) {
+      const order = await Order.findById(fileId).lean();
+      if (order && Attachment) {
+        att = await Attachment.findOne({
+          $or: [{ entity_id: order._id }, { order: order._id }],
+        })
+          .sort({ createdAt: -1 })
+          .lean();
+      }
+    }
+    if (!att && Quotation) {
+      const quot = await Quotation.findById(fileId).lean();
+      if (quot && Attachment) {
+        att = await Attachment.findOne({
+          $or: [{ entity_id: quot._id }, { quotation: quot._id }],
+        })
+          .sort({ createdAt: -1 })
+          .lean();
+      }
+    }
+    if (!att && Lead) {
+      const lead = await Lead.findById(fileId).lean();
+      if (lead && Attachment) {
+        att = await Attachment.findOne({
+          $or: [{ entity_id: lead._id }, { lead: lead._id }],
+        })
+          .sort({ createdAt: -1 })
+          .lean();
+      }
     }
     if (!att && Attachment) {
       att = await Attachment.findOne({
         $or: [
+          { entity_id: fileId },
+          { order: fileId },
           { filename: fileId },
           { url: new RegExp(fileId, 'i') },
         ],
-      }).sort({ createdAt: -1 }).lean();
+      })
+        .sort({ createdAt: -1 })
+        .lean();
     }
   } else if (Attachment) {
     att = await Attachment.findOne({
@@ -54,7 +118,9 @@ async function findAttachmentRecord(fileId) {
         { storage_path: new RegExp(fileId, 'i') },
         { url: new RegExp(fileId, 'i') },
       ],
-    }).sort({ createdAt: -1 }).lean();
+    })
+      .sort({ createdAt: -1 })
+      .lean();
   }
 
   return att;
