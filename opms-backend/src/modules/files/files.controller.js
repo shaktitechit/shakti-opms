@@ -21,9 +21,32 @@ const mongoose = require('mongoose');
  * If the param is NOT a valid ObjectId (already an FM fileId), pass through.
  */
 async function resolveFmFileId(fileId) {
+  if (!fileId) return fileId;
+
   if (mongoose.Types.ObjectId.isValid(fileId)) {
-    const { Attachment } = getModels();
-    const att = await Attachment.findById(fileId).lean();
+    const models = getModels();
+    const Attachment = models.Attachment;
+    const OrderDueSheet = models.OrderDueSheet;
+
+    let att = null;
+
+    if (Attachment) {
+      att = await Attachment.findById(fileId).lean();
+    }
+
+    if (!att && OrderDueSheet) {
+      const dueSheet = await OrderDueSheet.findById(fileId).lean();
+      if (dueSheet && dueSheet.document && Attachment) {
+        att = await Attachment.findById(dueSheet.document).lean();
+      }
+    }
+
+    if (!att && Attachment) {
+      att = await Attachment.findOne({ entity_id: fileId })
+        .sort({ createdAt: -1 })
+        .lean();
+    }
+
     if (att) {
       if (att.url) {
         const match = String(att.url).match(/\/api\/files\/([^/?#]+)/);
@@ -31,13 +54,15 @@ async function resolveFmFileId(fileId) {
           return match[1];
         }
       }
-      if (att.key) {
-        const parts = String(att.key).split("/");
+      const keyVal = att.key || att.file_id || att.fileId || att.file_key;
+      if (keyVal) {
+        const parts = String(keyVal).split("/");
         const lastPart = parts[parts.length - 1];
         if (lastPart) return lastPart;
       }
     }
   }
+
   return fileId;
 }
 
