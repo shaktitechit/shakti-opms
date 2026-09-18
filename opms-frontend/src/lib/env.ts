@@ -109,16 +109,19 @@ export function resolveFileUrl(url: string): string {
 /**
  * Fetches a file blob with auth handling. For `/api/files/` routes, passes `token` via query string
  * so 302 redirects to MinIO/S3 presigned URLs won't include an Authorization header (which S3 rejects).
+ * Direct presigned URLs (containing X-Amz-Signature) are fetched without Authorization headers.
  */
 export async function fetchFileBlob(url: string, token?: string | null): Promise<Response> {
   let fetchUrl = resolveFileUrl(url);
   const headers: Record<string, string> = {};
 
-  if (token) {
+  const isPresignedUrl = /X-Amz-|X-Amz-Signature|X-Amz-Credential/i.test(fetchUrl);
+
+  if (token && !isPresignedUrl) {
     if (fetchUrl.includes("/api/files/")) {
       const sep = fetchUrl.includes("?") ? "&" : "?";
       fetchUrl = `${fetchUrl}${sep}token=${encodeURIComponent(token)}`;
-    } else {
+    } else if (fetchUrl.startsWith(publicApiOrigin()) || fetchUrl.startsWith("/")) {
       headers.Authorization = `Bearer ${token}`;
     }
   }
