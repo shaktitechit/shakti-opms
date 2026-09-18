@@ -12,68 +12,96 @@ const { ApiError } = require('../../utils/ApiError');
 const mongoose = require('mongoose');
 
 async function findAttachmentRecord(fileId) {
-  if (!fileId || !mongoose.Types.ObjectId.isValid(fileId)) return null;
+  if (!fileId) return null;
   const models = getModels();
   const Attachment = models.Attachment;
   const OrderDueSheet = models.OrderDueSheet;
 
   let att = null;
-  if (Attachment) {
-    att = await Attachment.findById(fileId).lean();
-  }
-
-  if (!att && OrderDueSheet) {
-    const dueSheet = await OrderDueSheet.findById(fileId).lean();
-    if (dueSheet) {
-      if (dueSheet.document && Attachment) {
-        att = await Attachment.findById(dueSheet.document).lean();
-      }
-      if (!att && Attachment) {
-        att = await Attachment.findOne({ entity_id: dueSheet._id })
-          .sort({ createdAt: -1 })
-          .lean();
+  if (mongoose.Types.ObjectId.isValid(fileId)) {
+    if (Attachment) {
+      att = await Attachment.findById(fileId).lean();
+    }
+    if (!att && OrderDueSheet) {
+      const dueSheet = await OrderDueSheet.findById(fileId).lean();
+      if (dueSheet) {
+        if (dueSheet.document && Attachment) {
+          att = await Attachment.findById(dueSheet.document).lean();
+        }
+        if (!att && Attachment) {
+          att = await Attachment.findOne({ entity_id: dueSheet._id })
+            .sort({ createdAt: -1 })
+            .lean();
+        }
       }
     }
-  }
-
-  if (!att && Attachment) {
-    att = await Attachment.findOne({ entity_id: fileId }).sort({ createdAt: -1 }).lean();
+    if (!att && Attachment) {
+      att = await Attachment.findOne({ entity_id: fileId }).sort({ createdAt: -1 }).lean();
+    }
+    if (!att && Attachment) {
+      att = await Attachment.findOne({
+        $or: [
+          { filename: fileId },
+          { url: new RegExp(fileId, 'i') },
+        ],
+      }).sort({ createdAt: -1 }).lean();
+    }
+  } else if (Attachment) {
+    att = await Attachment.findOne({
+      $or: [
+        { filename: fileId },
+        { key: new RegExp(fileId, 'i') },
+        { storage_path: new RegExp(fileId, 'i') },
+        { url: new RegExp(fileId, 'i') },
+      ],
+    }).sort({ createdAt: -1 }).lean();
   }
 
   return att;
 }
 
-function resolveTargetFmId(fileId, att) {
-  if (!att) return fileId;
-  const entityIdStr = String(att.entity_id || att.order || att._id || '');
+function getCandidates(fileId, att) {
+  const candidates = [];
+  if (fileId) candidates.push(fileId);
 
-  if (att.filename && !String(att.filename).includes('/')) {
-    return String(att.filename);
-  }
-  if (att.fileId && !String(att.fileId).includes('/')) {
-    return String(att.fileId);
-  }
+  if (!att) return candidates;
+
+  if (att.filename) candidates.push(String(att.filename));
+  if (att.fileId) candidates.push(String(att.fileId));
 
   const keyVal = att.key || att.storage_path || att.file_key;
   if (keyVal) {
-    const parts = String(keyVal).split('/');
+    const keyStr = String(keyVal);
+    candidates.push(keyStr);
+
+    const parts = keyStr.split('/');
     const lastPart = parts[parts.length - 1];
-    if (lastPart && lastPart !== entityIdStr && lastPart !== String(att._id || '')) {
-      return lastPart;
+    if (lastPart) {
+      candidates.push(lastPart);
+      const dotIdx = lastPart.lastIndexOf('.');
+      if (dotIdx > 0) {
+        candidates.push(lastPart.substring(0, dotIdx));
+      }
     }
   }
 
   if (att.url) {
     const match = String(att.url).match(/\/api\/files\/([^/?#]+)/);
     if (match && match[1] && match[1] !== 'view' && match[1] !== 'download') {
-      const candidate = match[1];
-      if (candidate !== entityIdStr && candidate !== String(att._id || '')) {
-        return candidate;
-      }
+      candidates.push(match[1]);
     }
   }
 
-  return fileId;
+  const unique = [];
+  const seen = new Set();
+  for (const c of candidates) {
+    if (c && typeof c === 'string' && !seen.has(c)) {
+      seen.add(c);
+      unique.push(c);
+    }
+  }
+
+  return unique;
 }
 
 const FILE_NOT_FOUND_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
@@ -92,31 +120,26 @@ exports.redirectToViewUrl = asyncHandler(async (req, res) => {
   const fileId = req.params.fileId;
   const att = await findAttachmentRecord(fileId);
 
-  if (att && att.url && /^https?:\/\//i.test(att.url) && !att.url.includes('/api/files/')) {
-    return res.redirect(302, att.url);
+  if (att && att.url && /^https?:\/\//i.test(att.url) && !att.url.includes(`/api/files/${fileId}`)) {
+    if (att.url.includes('minio') || att.url.includes('X-Amz-') || !att.url.includes('/api/files/')) {
+      return res.redirect(302, att.url);
+    }
   }
 
-  const targetFmId = resolveTargetFmId(fileId, att);
+  const candidates = getCandidates(fileId, att);
 
-  try {
-    const presignedUrl = await getViewPresignedUrl(targetFmId);
-    if (presignedUrl) {
-      return res.redirect(302, presignedUrl);
-    }
-  } catch (_fmErr) {
-    if (targetFmId !== fileId) {
-      try {
-        const presignedUrl = await getViewPresignedUrl(fileId);
-        if (presignedUrl) {
-          return res.redirect(302, presignedUrl);
-        }
-      } catch (_e) {
-        // continue
+  for (const candidate of candidates) {
+    try {
+      const presignedUrl = await getViewPresignedUrl(candidate);
+      if (presignedUrl) {
+        return res.redirect(302, presignedUrl);
       }
+    } catch (_err) {
+      // try next candidate
     }
   }
 
-  if (att && att.url && !att.url.includes(`/api/files/${fileId}/view`)) {
+  if (att && att.url && /^https?:\/\//i.test(att.url) && !att.url.includes(`/api/files/${fileId}/view`)) {
     return res.redirect(302, att.url);
   }
 
@@ -133,31 +156,26 @@ exports.redirectToDownloadUrl = asyncHandler(async (req, res) => {
   const fileId = req.params.fileId;
   const att = await findAttachmentRecord(fileId);
 
-  if (att && att.url && /^https?:\/\//i.test(att.url) && !att.url.includes('/api/files/')) {
-    return res.redirect(302, att.url);
+  if (att && att.url && /^https?:\/\//i.test(att.url) && !att.url.includes(`/api/files/${fileId}`)) {
+    if (att.url.includes('minio') || att.url.includes('X-Amz-') || !att.url.includes('/api/files/')) {
+      return res.redirect(302, att.url);
+    }
   }
 
-  const targetFmId = resolveTargetFmId(fileId, att);
+  const candidates = getCandidates(fileId, att);
 
-  try {
-    const presignedUrl = await getDownloadPresignedUrl(targetFmId);
-    if (presignedUrl) {
-      return res.redirect(302, presignedUrl);
-    }
-  } catch (_fmErr) {
-    if (targetFmId !== fileId) {
-      try {
-        const presignedUrl = await getDownloadPresignedUrl(fileId);
-        if (presignedUrl) {
-          return res.redirect(302, presignedUrl);
-        }
-      } catch (_e) {
-        // continue
+  for (const candidate of candidates) {
+    try {
+      const presignedUrl = await getDownloadPresignedUrl(candidate);
+      if (presignedUrl) {
+        return res.redirect(302, presignedUrl);
       }
+    } catch (_err) {
+      // try next candidate
     }
   }
 
-  if (att && att.url && !att.url.includes(`/api/files/${fileId}/download`)) {
+  if (att && att.url && /^https?:\/\//i.test(att.url) && !att.url.includes(`/api/files/${fileId}/download`)) {
     return res.redirect(302, att.url);
   }
 
