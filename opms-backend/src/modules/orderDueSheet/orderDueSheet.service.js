@@ -284,7 +284,7 @@ async function getCurrentByOrder(orderId) {
     .sort({ createdAt: -1 })
     .lean();
 
-  if (!row) throw new ApiError(404, 'No current due sheet for this order');
+  if (!row) return null;
   return decorateDueSheet(row);
 }
 
