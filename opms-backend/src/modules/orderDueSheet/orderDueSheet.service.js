@@ -197,10 +197,17 @@ function dueSheetQuery() {
     .populate('updated_by', 'name username department');
 }
 
+function getBaseUrl() {
+  if (API_PUBLIC_BASE_URL && !API_PUBLIC_BASE_URL.includes('localhost')) {
+    return API_PUBLIC_BASE_URL.replace(/\/$/, '');
+  }
+  return 'https://api.medicaent.in';
+}
+
 async function attachDocumentFromFile(file, entityId, user, remarks = '') {
   const fileId = await uploadMulterFile(file, 'order_due_sheet', String(entityId));
   const meta = await getFileMeta(fileId);
-  const base = FILE_DOCUMENT_LINKS_RELATIVE ? '' : API_PUBLIC_BASE_URL;
+  const base = getBaseUrl();
 
   const attachment = await attachmentService.create({
     filename: fileId,

@@ -36,10 +36,17 @@ function resolveFileId(item) {
   return null;
 }
 
+function getBaseUrl() {
+  if (API_PUBLIC_BASE_URL && !API_PUBLIC_BASE_URL.includes('localhost')) {
+    return API_PUBLIC_BASE_URL.replace(/\/$/, '');
+  }
+  return 'https://api.medicaent.in';
+}
+
 function ensureViewUrl(item) {
   if (!item) return item;
   const obj = typeof item.toObject === 'function' ? item.toObject() : { ...item };
-  const base = FILE_DOCUMENT_LINKS_RELATIVE ? '' : API_PUBLIC_BASE_URL;
+  const base = getBaseUrl();
   const targetId = obj.filename || obj.fileId || obj._id;
   if (targetId && (!obj.url || obj.url.includes('minio.spspl.com') || !obj.url.includes('/api/files/'))) {
     obj.url = `${base}/api/files/${targetId}/view`;
@@ -71,7 +78,7 @@ exports.create = asyncHandler(async (req, res) => {
 
     const fileId = await uploadMulterFile(req.file, entity_type, entity_id);
     const meta = await getFileMeta(fileId);
-    const base = FILE_DOCUMENT_LINKS_RELATIVE ? '' : API_PUBLIC_BASE_URL;
+    const base = getBaseUrl();
 
     body.filename = fileId;
     body.storage_path = meta.objectKey || fileId;

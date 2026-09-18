@@ -26,7 +26,24 @@ async function findAttachmentRecord(fileId) {
   } = models;
 
   let att = null;
-  if (mongoose.Types.ObjectId.isValid(fileId)) {
+
+  // 1. Direct query on Attachment collection for filename, key, storage_path, or url match
+  if (Attachment) {
+    att = await Attachment.findOne({
+      $or: [
+        { filename: fileId },
+        { fileId: fileId },
+        { key: new RegExp(fileId, 'i') },
+        { storage_path: new RegExp(fileId, 'i') },
+        { url: new RegExp(fileId, 'i') },
+      ],
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+  }
+
+  // 2. Entity lookups if fileId is a valid ObjectId
+  if (!att && mongoose.Types.ObjectId.isValid(fileId)) {
     if (Attachment) {
       att = await Attachment.findById(fileId).lean();
     }
@@ -103,24 +120,11 @@ async function findAttachmentRecord(fileId) {
         $or: [
           { entity_id: fileId },
           { order: fileId },
-          { filename: fileId },
-          { url: new RegExp(fileId, 'i') },
         ],
       })
         .sort({ createdAt: -1 })
         .lean();
     }
-  } else if (Attachment) {
-    att = await Attachment.findOne({
-      $or: [
-        { filename: fileId },
-        { key: new RegExp(fileId, 'i') },
-        { storage_path: new RegExp(fileId, 'i') },
-        { url: new RegExp(fileId, 'i') },
-      ],
-    })
-      .sort({ createdAt: -1 })
-      .lean();
   }
 
   return att;
