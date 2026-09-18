@@ -11,6 +11,7 @@ import {
 import { useAppSelector } from "@/store";
 import { useDeleteAttachmentMutation, useCreateAttachmentMutation } from "@/store/api";
 import { toast } from "@/lib/toast";
+import { fetchFileBlob, resolveFileUrl } from "@/lib/env";
 import { mutationRejectedMessage } from "@/lib/mutationMessages";
 
 type AttachmentsTabProps = {
@@ -142,12 +143,17 @@ export default function AttachmentsTab({
 
   const handleDownload = async (fileUrl: string, fileName: string) => {
     try {
-      const response = await fetch(fileUrl, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      if (!response.ok) throw new Error("Failed to download file");
+      const response = await fetchFileBlob(fileUrl, token);
+      if (!response.ok) {
+        if (response.status === 404) {
+          toast.error(
+            "Document file is not found on storage server. Please use 'Replace' to upload a new document."
+          );
+        } else {
+          toast.error(`Failed to download file (${response.status})`);
+        }
+        return;
+      }
       const blob = await response.blob();
       const blobUrl = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -170,7 +176,7 @@ export default function AttachmentsTab({
   const handleView = (att: { url: string; original_name?: string; mime_type?: string }) => {
     void openPreview({
       name: String(att.original_name ?? "Attachment"),
-      url: String(att.url),
+      url: resolveFileUrl(String(att.url)),
       mime: String(att.mime_type ?? ""),
     });
   };

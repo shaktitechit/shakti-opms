@@ -165,7 +165,16 @@ export default function AttachmentsTab({
   const handleDownload = async (fileUrl: string, fileName: string) => {
     try {
       const response = await fetchFileBlob(fileUrl, token);
-      if (!response.ok) throw new Error("Failed to download file");
+      if (!response.ok) {
+        if (response.status === 404) {
+          toast.error(
+            "Document file is not found on storage server. Please use 'Replace' to upload a new document."
+          );
+        } else {
+          toast.error(`Failed to download file (${response.status})`);
+        }
+        return;
+      }
       const blob = await response.blob();
       const blobUrl = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
