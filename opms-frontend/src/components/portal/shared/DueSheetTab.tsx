@@ -216,7 +216,16 @@ export function DueSheetTab({ orderId, onUploadSuccess }: DueSheetTabProps) {
   const handleDownload = async (fileUrl: string, fileName: string) => {
     try {
       const response = await fetchFileBlob(fileUrl, token);
-      if (!response.ok) throw new Error("Failed to download file");
+      if (!response.ok) {
+        if (response.status === 404) {
+          toast.error(
+            "Document file is not found on storage server. Please use 'Replace' to upload a new document."
+          );
+        } else {
+          toast.error(`Failed to download file (${response.status})`);
+        }
+        return;
+      }
       const blob = await response.blob();
       const blobUrl = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -619,31 +628,38 @@ export function DueSheetTab({ orderId, onUploadSuccess }: DueSheetTabProps) {
                       {formatDate(sheet.sheet_date)} · {userLabel(sheet.created_by)}
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {doc && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleView(doc)}
-                          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-white/10 dark:text-slate-300"
-                        >
-                          View
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDownload(doc.url, doc.name)}
-                          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-white/10 dark:text-slate-300"
-                        >
-                          Download
-                        </button>
-                      </>
-                    )}
-                    <button
-                      type="button"
-                      disabled={isDeleting}
-                      onClick={() => handleDelete(id, sheetNo)}
-                      className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 disabled:opacity-50 dark:border-rose-500/30 dark:text-rose-400"
-                    >
+                    <div className="flex flex-wrap gap-2">
+                      {doc && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleView(doc)}
+                            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5"
+                          >
+                            View
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDownload(doc.url, doc.name)}
+                            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/5"
+                          >
+                            Download
+                          </button>
+                        </>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setReplaceTargetId(id)}
+                        className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50 dark:border-blue-500/30 dark:bg-slate-955 dark:text-blue-400"
+                      >
+                        Replace
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isDeleting}
+                        onClick={() => handleDelete(id, sheetNo)}
+                        className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-700 hover:bg-rose-50 disabled:opacity-50 dark:border-rose-500/30 dark:text-rose-400"
+                      >
                       Delete
                     </button>
                   </div>

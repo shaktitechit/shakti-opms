@@ -179,7 +179,17 @@ export function useFilePreview(token: string | null | undefined) {
 
       try {
         const response = await fetchFileBlob(doc.url, token);
-        if (!response.ok) throw new Error("Failed to view file");
+        if (!response.ok) {
+          if (response.status === 404) {
+            toast.error(
+              "Document file is not found on storage server. Please use 'Replace' to upload a new document."
+            );
+          } else {
+            toast.error(`Failed to view file (${response.status})`);
+          }
+          closePreview();
+          return;
+        }
         const blob = await response.blob();
         if (previewBlobRef.current) {
           URL.revokeObjectURL(previewBlobRef.current);
