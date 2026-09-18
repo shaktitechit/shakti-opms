@@ -28,15 +28,29 @@ const SHEET_NF = 'Order due sheet not found';
 
 function resolveFileIdFromDoc(doc) {
   if (!doc) return null;
+  const entityIdStr = String(doc.entity_id || doc.order || doc._id || '');
+
+  if (doc.filename && !String(doc.filename).includes('/')) {
+    return String(doc.filename);
+  }
+  if (doc.fileId && !String(doc.fileId).includes('/')) {
+    return String(doc.fileId);
+  }
+
   if (doc.key) {
     const parts = String(doc.key).split('/');
     const last = parts[parts.length - 1];
-    if (last) return last;
+    if (last && last !== entityIdStr && last !== String(doc._id || '')) {
+      return last;
+    }
   }
   if (doc.url) {
     const match = String(doc.url).match(/\/(?:api\/)?files\/([^/?#]+)/);
     if (match && match[1] && match[1] !== 'view' && match[1] !== 'download') {
-      return match[1];
+      const candidate = match[1];
+      if (candidate !== entityIdStr && candidate !== String(doc._id || '')) {
+        return candidate;
+      }
     }
   }
   return null;
@@ -186,9 +200,18 @@ function dueSheetQuery() {
 async function attachDocumentFromFile(file, entityId, user, remarks = '') {
   const fileId = await uploadMulterFile(file, 'order_due_sheet', String(entityId));
   const meta = await getFileMeta(fileId);
+  let viewUrl = null;
+  try {
+    viewUrl = await getViewPresignedUrl(fileId);
+  } catch (_err) {
+    // Fallback
+  }
+
   const base = FILE_DOCUMENT_LINKS_RELATIVE ? '' : API_PUBLIC_BASE_URL;
 
   const attachment = await attachmentService.create({
+    filename: fileId,
+    storage_path: meta.objectKey || fileId,
     original_name: meta.originalName || file.originalname,
     file_name: meta.originalName || file.originalname,
     mime_type: meta.mimeType || file.mimetype,
@@ -196,7 +219,7 @@ async function attachDocumentFromFile(file, entityId, user, remarks = '') {
     storage_provider: 'minio',
     bucket: meta.bucket || 'company-files',
     key: meta.objectKey || fileId,
-    url: `${base}/api/files/${fileId}/view`,
+    url: viewUrl || `${base}/api/files/${fileId}/view`,
     entity_type: 'order_due_sheet',
     entity_id: String(entityId),
     remarks: remarks || 'Order due sheet document',

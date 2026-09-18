@@ -43,33 +43,48 @@ async function findAttachmentRecord(fileId) {
   return att;
 }
 
+function resolveTargetFmId(fileId, att) {
+  if (!att) return fileId;
+  const entityIdStr = String(att.entity_id || att.order || att._id || '');
+
+  if (att.filename && !String(att.filename).includes('/')) {
+    return String(att.filename);
+  }
+  if (att.fileId && !String(att.fileId).includes('/')) {
+    return String(att.fileId);
+  }
+
+  const keyVal = att.key || att.storage_path || att.file_key;
+  if (keyVal) {
+    const parts = String(keyVal).split('/');
+    const lastPart = parts[parts.length - 1];
+    if (lastPart && lastPart !== entityIdStr && lastPart !== String(att._id || '')) {
+      return lastPart;
+    }
+  }
+
+  if (att.url) {
+    const match = String(att.url).match(/\/api\/files\/([^/?#]+)/);
+    if (match && match[1] && match[1] !== 'view' && match[1] !== 'download') {
+      const candidate = match[1];
+      if (candidate !== entityIdStr && candidate !== String(att._id || '')) {
+        return candidate;
+      }
+    }
+  }
+
+  return fileId;
+}
+
 exports.redirectToViewUrl = asyncHandler(async (req, res) => {
   const fileId = req.params.fileId;
   const att = await findAttachmentRecord(fileId);
 
-  let targetFmId = fileId;
-
-  if (att) {
-    if (att.url && /^https?:\/\//i.test(att.url) && !att.url.includes('/api/files/')) {
-      return res.redirect(302, att.url);
-    }
-
-    if (att.url) {
-      const match = String(att.url).match(/\/api\/files\/([^/?#]+)/);
-      if (match && match[1] && match[1] !== "view" && match[1] !== "download") {
-        targetFmId = match[1];
-      }
-    }
-
-    if (targetFmId === fileId) {
-      const keyVal = att.key || att.file_id || att.fileId || att.file_key;
-      if (keyVal) {
-        const parts = String(keyVal).split("/");
-        const lastPart = parts[parts.length - 1];
-        if (lastPart) targetFmId = lastPart;
-      }
-    }
+  if (att && att.url && /^https?:\/\//i.test(att.url) && !att.url.includes('/api/files/')) {
+    return res.redirect(302, att.url);
   }
+
+  const targetFmId = resolveTargetFmId(fileId, att);
 
   try {
     const presignedUrl = await getViewPresignedUrl(targetFmId);
@@ -100,29 +115,11 @@ exports.redirectToDownloadUrl = asyncHandler(async (req, res) => {
   const fileId = req.params.fileId;
   const att = await findAttachmentRecord(fileId);
 
-  let targetFmId = fileId;
-
-  if (att) {
-    if (att.url && /^https?:\/\//i.test(att.url) && !att.url.includes('/api/files/')) {
-      return res.redirect(302, att.url);
-    }
-
-    if (att.url) {
-      const match = String(att.url).match(/\/api\/files\/([^/?#]+)/);
-      if (match && match[1] && match[1] !== "view" && match[1] !== "download") {
-        targetFmId = match[1];
-      }
-    }
-
-    if (targetFmId === fileId) {
-      const keyVal = att.key || att.file_id || att.fileId || att.file_key;
-      if (keyVal) {
-        const parts = String(keyVal).split("/");
-        const lastPart = parts[parts.length - 1];
-        if (lastPart) targetFmId = lastPart;
-      }
-    }
+  if (att && att.url && /^https?:\/\//i.test(att.url) && !att.url.includes('/api/files/')) {
+    return res.redirect(302, att.url);
   }
+
+  const targetFmId = resolveTargetFmId(fileId, att);
 
   try {
     const presignedUrl = await getDownloadPresignedUrl(targetFmId);

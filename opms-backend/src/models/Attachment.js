@@ -8,6 +8,8 @@ const attachmentSchema = new mongoose.Schema(
   {
     original_name: { type: String, required: true },
     file_name: { type: String, required: true },
+    filename: { type: String },
+    storage_path: { type: String },
 
     mime_type: { type: String, required: true },
     size: { type: Number, required: true },

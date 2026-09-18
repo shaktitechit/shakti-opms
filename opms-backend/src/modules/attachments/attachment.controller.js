@@ -9,15 +9,28 @@ const { API_PUBLIC_BASE_URL, FILE_DOCUMENT_LINKS_RELATIVE } = require('../../con
 
 function resolveFileId(item) {
   if (!item) return null;
+  const entityIdStr = String(item.entity_id || item.order || item._id || '');
+
+  if (item.filename && !String(item.filename).includes('/')) {
+    return String(item.filename);
+  }
+  if (item.fileId && !String(item.fileId).includes('/')) {
+    return String(item.fileId);
+  }
   if (item.key) {
     const parts = String(item.key).split('/');
     const last = parts[parts.length - 1];
-    if (last) return last;
+    if (last && last !== entityIdStr && last !== String(item._id || '')) {
+      return last;
+    }
   }
   if (item.url) {
     const match = String(item.url).match(/\/(?:api\/)?files\/([^/?#]+)/);
     if (match && match[1] && match[1] !== 'view' && match[1] !== 'download') {
-      return match[1];
+      const candidate = match[1];
+      if (candidate !== entityIdStr && candidate !== String(item._id || '')) {
+        return candidate;
+      }
     }
   }
   return null;
@@ -64,9 +77,17 @@ exports.create = asyncHandler(async (req, res) => {
 
     const fileId = await uploadMulterFile(req.file, entity_type, entity_id);
     const meta = await getFileMeta(fileId);
+    let viewUrl = null;
+    try {
+      viewUrl = await getViewPresignedUrl(fileId);
+    } catch (_err) {
+      // Fallback
+    }
 
     const base = FILE_DOCUMENT_LINKS_RELATIVE ? '' : API_PUBLIC_BASE_URL;
 
+    body.filename = fileId;
+    body.storage_path = meta.objectKey || fileId;
     body.original_name = meta.originalName || req.file.originalname;
     body.file_name = meta.originalName || req.file.originalname;
     body.mime_type = meta.mimeType || req.file.mimetype;
@@ -74,7 +95,7 @@ exports.create = asyncHandler(async (req, res) => {
     body.storage_provider = 'minio';
     body.bucket = meta.bucket || 'company-files';
     body.key = meta.objectKey || fileId;
-    body.url = `${base}/api/files/${fileId}/view`;
+    body.url = viewUrl || `${base}/api/files/${fileId}/view`;
   }
 
   const created = await service.create(body, req.user);

@@ -16,6 +16,8 @@ async function create(body, user) {
   const doc = await getModels().Attachment.create({
     original_name: body.original_name || 'file',
     file_name: body.file_name || body.original_name || 'file',
+    filename: body.filename || body.fileId || '',
+    storage_path: body.storage_path || body.key || '',
     mime_type: body.mime_type || 'application/octet-stream',
     size: Number(body.size ?? 0),
     storage_provider: body.storage_provider || 'local',
