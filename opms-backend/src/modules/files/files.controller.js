@@ -213,10 +213,7 @@ exports.redirectToViewUrl = asyncHandler(async (req, res) => {
     return res.redirect(302, att.url);
   }
 
-  if (req.headers.accept && req.headers.accept.includes('application/json')) {
-    throw new ApiError(404, 'File not found or file-management service unable to resolve view URL');
-  }
-
+  // Always serve SVG placeholder with HTTP 200 for view requests when file payload is missing
   res.setHeader('Content-Type', 'image/svg+xml');
   res.setHeader('Cache-Control', 'no-cache');
   return res.status(200).send(FILE_NOT_FOUND_SVG);
