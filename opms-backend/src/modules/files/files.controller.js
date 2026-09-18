@@ -76,6 +76,18 @@ function resolveTargetFmId(fileId, att) {
   return fileId;
 }
 
+const FILE_NOT_FOUND_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
+  <rect width="100%" height="100%" fill="#f8fafc"/>
+  <rect x="2" y="2" width="596" height="396" rx="12" fill="none" stroke="#e2e8f0" stroke-width="4"/>
+  <g transform="translate(250, 110)">
+    <circle cx="50" cy="50" r="45" fill="#fee2e2"/>
+    <path d="M35 35 L65 65 M65 35 L35 65" stroke="#ef4444" stroke-width="6" stroke-linecap="round"/>
+  </g>
+  <text x="300" y="240" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="600" fill="#1e293b" text-anchor="middle">Document File Not Found</text>
+  <text x="300" y="275" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#64748b" text-anchor="middle">This file record has no binary file payload stored on object storage.</text>
+  <text x="300" y="300" font-family="system-ui, -apple-system, sans-serif" font-size="13" fill="#94a3b8" text-anchor="middle">Please re-upload or replace this attachment.</text>
+</svg>`;
+
 exports.redirectToViewUrl = asyncHandler(async (req, res) => {
   const fileId = req.params.fileId;
   const att = await findAttachmentRecord(fileId);
@@ -108,7 +120,13 @@ exports.redirectToViewUrl = asyncHandler(async (req, res) => {
     return res.redirect(302, att.url);
   }
 
-  throw new ApiError(404, 'File not found or file-management service unable to resolve view URL');
+  if (req.headers.accept && req.headers.accept.includes('application/json')) {
+    throw new ApiError(404, 'File not found or file-management service unable to resolve view URL');
+  }
+
+  res.setHeader('Content-Type', 'image/svg+xml');
+  res.setHeader('Cache-Control', 'no-cache');
+  return res.status(200).send(FILE_NOT_FOUND_SVG);
 });
 
 exports.redirectToDownloadUrl = asyncHandler(async (req, res) => {
