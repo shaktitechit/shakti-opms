@@ -93,7 +93,11 @@ export function resolveFileUrl(url: string): string {
       if (
         u.hostname === "localhost" ||
         u.hostname === "127.0.0.1" ||
-        u.pathname.startsWith("/api")
+        u.hostname === "minio" ||
+        u.hostname.startsWith("172.") ||
+        u.hostname.startsWith("192.168.") ||
+        u.pathname.includes("/api/files/") ||
+        u.pathname.startsWith("/api/")
       ) {
         return `${publicApiOrigin()}${u.pathname}${u.search}${u.hash}`;
       }

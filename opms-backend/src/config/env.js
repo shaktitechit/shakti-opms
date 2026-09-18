@@ -93,13 +93,8 @@ module.exports = {
   FILE_MANAGEMENT_API_KEY: process.env.FILE_MANAGEMENT_API_KEY || '',
   FILE_DOCUMENT_LINKS_RELATIVE: (() => {
     const raw = process.env.FILE_DOCUMENT_LINKS_RELATIVE;
-    if (raw === 'true') return true;
     if (raw === 'false') return false;
-    const apiPublicBase = (process.env.API_PUBLIC_BASE_URL ?? '').trim();
-    if (/^same-origin$/i.test(apiPublicBase) || /^relative$/i.test(apiPublicBase)) return true;
-    if (/^https?:\/\//i.test(apiPublicBase)) return false;
-    if (process.env.NODE_ENV === 'production') return true;
-    return false;
+    return true;
   })(),
   API_PUBLIC_BASE_URL: (() => {
     const raw = (process.env.API_PUBLIC_BASE_URL ?? '').trim();
