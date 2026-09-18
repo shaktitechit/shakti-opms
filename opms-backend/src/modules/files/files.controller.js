@@ -10,70 +10,112 @@ const {
 const { getModels } = require('../../data/mongoRegistry');
 const mongoose = require('mongoose');
 
-/**
- * Resolve the FM fileId from what was passed.
- *
- * `invoice_file` (and similar) stores an Attachment ObjectId.
- * The Attachment's `url` field contains the actual FM fileId, e.g.
- *   "http://localhost:5000/api/files/<fmFileId>/view"
- * We extract <fmFileId> from that URL.
- *
- * If the param is NOT a valid ObjectId (already an FM fileId), pass through.
- */
-async function resolveFmFileId(fileId) {
-  if (!fileId) return fileId;
+async function findAttachmentRecord(fileId) {
+  if (!fileId || !mongoose.Types.ObjectId.isValid(fileId)) return null;
+  const models = getModels();
+  const Attachment = models.Attachment;
+  const OrderDueSheet = models.OrderDueSheet;
 
-  if (mongoose.Types.ObjectId.isValid(fileId)) {
-    const models = getModels();
-    const Attachment = models.Attachment;
-    const OrderDueSheet = models.OrderDueSheet;
-
-    let att = null;
-
-    if (Attachment) {
-      att = await Attachment.findById(fileId).lean();
-    }
-
-    if (!att && OrderDueSheet) {
-      const dueSheet = await OrderDueSheet.findById(fileId).lean();
-      if (dueSheet && dueSheet.document && Attachment) {
-        att = await Attachment.findById(dueSheet.document).lean();
-      }
-    }
-
-    if (!att && Attachment) {
-      att = await Attachment.findOne({ entity_id: fileId })
-        .sort({ createdAt: -1 })
-        .lean();
-    }
-
-    if (att) {
-      if (att.url) {
-        const match = String(att.url).match(/\/api\/files\/([^/?#]+)/);
-        if (match && match[1] && match[1] !== "view" && match[1] !== "download") {
-          return match[1];
-        }
-      }
-      const keyVal = att.key || att.file_id || att.fileId || att.file_key;
-      if (keyVal) {
-        const parts = String(keyVal).split("/");
-        const lastPart = parts[parts.length - 1];
-        if (lastPart) return lastPart;
-      }
+  let att = null;
+  if (Attachment) {
+    att = await Attachment.findById(fileId).lean();
+  }
+  if (!att && OrderDueSheet) {
+    const dueSheet = await OrderDueSheet.findById(fileId).lean();
+    if (dueSheet && dueSheet.document && Attachment) {
+      att = await Attachment.findById(dueSheet.document).lean();
     }
   }
-
-  return fileId;
+  if (!att && Attachment) {
+    att = await Attachment.findOne({ entity_id: fileId }).sort({ createdAt: -1 }).lean();
+  }
+  return att;
 }
 
 exports.redirectToViewUrl = asyncHandler(async (req, res) => {
-  const fmId = await resolveFmFileId(req.params.fileId);
-  const url = await getViewPresignedUrl(fmId);
-  res.redirect(302, url);
+  const fileId = req.params.fileId;
+  const att = await findAttachmentRecord(fileId);
+
+  if (att) {
+    if (att.url && /^https?:\/\//i.test(att.url)) {
+      return res.redirect(302, att.url);
+    }
+
+    if (att.url) {
+      const match = String(att.url).match(/\/api\/files\/([^/?#]+)/);
+      if (match && match[1] && match[1] !== "view" && match[1] !== "download" && match[1] !== fileId) {
+        try {
+          const url = await getViewPresignedUrl(match[1]);
+          if (url) return res.redirect(302, url);
+        } catch (_err) {
+          // continue fallback
+        }
+      }
+    }
+
+    const keyVal = att.key || att.file_id || att.fileId || att.file_key;
+    if (keyVal) {
+      const parts = String(keyVal).split("/");
+      const lastPart = parts[parts.length - 1];
+      if (lastPart && lastPart !== fileId) {
+        try {
+          const url = await getViewPresignedUrl(lastPart);
+          if (url) return res.redirect(302, url);
+        } catch (_err) {
+          // continue fallback
+        }
+      }
+    }
+
+    if (att.url && !att.url.includes(`/api/files/${fileId}/`)) {
+      return res.redirect(302, att.url);
+    }
+  }
+
+  const url = await getViewPresignedUrl(fileId);
+  return res.redirect(302, url);
 });
 
 exports.redirectToDownloadUrl = asyncHandler(async (req, res) => {
-  const fmId = await resolveFmFileId(req.params.fileId);
-  const url = await getDownloadPresignedUrl(fmId);
-  res.redirect(302, url);
+  const fileId = req.params.fileId;
+  const att = await findAttachmentRecord(fileId);
+
+  if (att) {
+    if (att.url && /^https?:\/\//i.test(att.url)) {
+      return res.redirect(302, att.url);
+    }
+
+    if (att.url) {
+      const match = String(att.url).match(/\/api\/files\/([^/?#]+)/);
+      if (match && match[1] && match[1] !== "view" && match[1] !== "download" && match[1] !== fileId) {
+        try {
+          const url = await getDownloadPresignedUrl(match[1]);
+          if (url) return res.redirect(302, url);
+        } catch (_err) {
+          // continue fallback
+        }
+      }
+    }
+
+    const keyVal = att.key || att.file_id || att.fileId || att.file_key;
+    if (keyVal) {
+      const parts = String(keyVal).split("/");
+      const lastPart = parts[parts.length - 1];
+      if (lastPart && lastPart !== fileId) {
+        try {
+          const url = await getDownloadPresignedUrl(lastPart);
+          if (url) return res.redirect(302, url);
+        } catch (_err) {
+          // continue fallback
+        }
+      }
+    }
+
+    if (att.url && !att.url.includes(`/api/files/${fileId}/`)) {
+      return res.redirect(302, att.url);
+    }
+  }
+
+  const url = await getDownloadPresignedUrl(fileId);
+  return res.redirect(302, url);
 });
