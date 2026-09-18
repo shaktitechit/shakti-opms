@@ -8,6 +8,7 @@ const {
   getDownloadPresignedUrl,
 } = require('../../services/fileManagement/index');
 const { getModels } = require('../../data/mongoRegistry');
+const { ApiError } = require('../../utils/ApiError');
 const mongoose = require('mongoose');
 
 async function findAttachmentRecord(fileId) {
@@ -20,15 +21,25 @@ async function findAttachmentRecord(fileId) {
   if (Attachment) {
     att = await Attachment.findById(fileId).lean();
   }
+
   if (!att && OrderDueSheet) {
     const dueSheet = await OrderDueSheet.findById(fileId).lean();
-    if (dueSheet && dueSheet.document && Attachment) {
-      att = await Attachment.findById(dueSheet.document).lean();
+    if (dueSheet) {
+      if (dueSheet.document && Attachment) {
+        att = await Attachment.findById(dueSheet.document).lean();
+      }
+      if (!att && Attachment) {
+        att = await Attachment.findOne({ entity_id: dueSheet._id })
+          .sort({ createdAt: -1 })
+          .lean();
+      }
     }
   }
+
   if (!att && Attachment) {
     att = await Attachment.findOne({ entity_id: fileId }).sort({ createdAt: -1 }).lean();
   }
+
   return att;
 }
 
@@ -36,86 +47,104 @@ exports.redirectToViewUrl = asyncHandler(async (req, res) => {
   const fileId = req.params.fileId;
   const att = await findAttachmentRecord(fileId);
 
+  let targetFmId = fileId;
+
   if (att) {
-    if (att.url && /^https?:\/\//i.test(att.url)) {
+    if (att.url && /^https?:\/\//i.test(att.url) && !att.url.includes('/api/files/')) {
       return res.redirect(302, att.url);
     }
 
     if (att.url) {
       const match = String(att.url).match(/\/api\/files\/([^/?#]+)/);
-      if (match && match[1] && match[1] !== "view" && match[1] !== "download" && match[1] !== fileId) {
-        try {
-          const url = await getViewPresignedUrl(match[1]);
-          if (url) return res.redirect(302, url);
-        } catch (_err) {
-          // continue fallback
-        }
+      if (match && match[1] && match[1] !== "view" && match[1] !== "download") {
+        targetFmId = match[1];
       }
     }
 
-    const keyVal = att.key || att.file_id || att.fileId || att.file_key;
-    if (keyVal) {
-      const parts = String(keyVal).split("/");
-      const lastPart = parts[parts.length - 1];
-      if (lastPart && lastPart !== fileId) {
-        try {
-          const url = await getViewPresignedUrl(lastPart);
-          if (url) return res.redirect(302, url);
-        } catch (_err) {
-          // continue fallback
-        }
+    if (targetFmId === fileId) {
+      const keyVal = att.key || att.file_id || att.fileId || att.file_key;
+      if (keyVal) {
+        const parts = String(keyVal).split("/");
+        const lastPart = parts[parts.length - 1];
+        if (lastPart) targetFmId = lastPart;
       }
-    }
-
-    if (att.url && !att.url.includes(`/api/files/${fileId}/`)) {
-      return res.redirect(302, att.url);
     }
   }
 
-  const url = await getViewPresignedUrl(fileId);
-  return res.redirect(302, url);
+  try {
+    const presignedUrl = await getViewPresignedUrl(targetFmId);
+    if (presignedUrl) {
+      return res.redirect(302, presignedUrl);
+    }
+  } catch (_fmErr) {
+    if (targetFmId !== fileId) {
+      try {
+        const presignedUrl = await getViewPresignedUrl(fileId);
+        if (presignedUrl) {
+          return res.redirect(302, presignedUrl);
+        }
+      } catch (_e) {
+        // continue
+      }
+    }
+  }
+
+  if (att && att.url && !att.url.includes(`/api/files/${fileId}/view`)) {
+    return res.redirect(302, att.url);
+  }
+
+  throw new ApiError(404, 'File not found or file-management service unable to resolve view URL');
 });
 
 exports.redirectToDownloadUrl = asyncHandler(async (req, res) => {
   const fileId = req.params.fileId;
   const att = await findAttachmentRecord(fileId);
 
+  let targetFmId = fileId;
+
   if (att) {
-    if (att.url && /^https?:\/\//i.test(att.url)) {
+    if (att.url && /^https?:\/\//i.test(att.url) && !att.url.includes('/api/files/')) {
       return res.redirect(302, att.url);
     }
 
     if (att.url) {
       const match = String(att.url).match(/\/api\/files\/([^/?#]+)/);
-      if (match && match[1] && match[1] !== "view" && match[1] !== "download" && match[1] !== fileId) {
-        try {
-          const url = await getDownloadPresignedUrl(match[1]);
-          if (url) return res.redirect(302, url);
-        } catch (_err) {
-          // continue fallback
-        }
+      if (match && match[1] && match[1] !== "view" && match[1] !== "download") {
+        targetFmId = match[1];
       }
     }
 
-    const keyVal = att.key || att.file_id || att.fileId || att.file_key;
-    if (keyVal) {
-      const parts = String(keyVal).split("/");
-      const lastPart = parts[parts.length - 1];
-      if (lastPart && lastPart !== fileId) {
-        try {
-          const url = await getDownloadPresignedUrl(lastPart);
-          if (url) return res.redirect(302, url);
-        } catch (_err) {
-          // continue fallback
-        }
+    if (targetFmId === fileId) {
+      const keyVal = att.key || att.file_id || att.fileId || att.file_key;
+      if (keyVal) {
+        const parts = String(keyVal).split("/");
+        const lastPart = parts[parts.length - 1];
+        if (lastPart) targetFmId = lastPart;
       }
-    }
-
-    if (att.url && !att.url.includes(`/api/files/${fileId}/`)) {
-      return res.redirect(302, att.url);
     }
   }
 
-  const url = await getDownloadPresignedUrl(fileId);
-  return res.redirect(302, url);
+  try {
+    const presignedUrl = await getDownloadPresignedUrl(targetFmId);
+    if (presignedUrl) {
+      return res.redirect(302, presignedUrl);
+    }
+  } catch (_fmErr) {
+    if (targetFmId !== fileId) {
+      try {
+        const presignedUrl = await getDownloadPresignedUrl(fileId);
+        if (presignedUrl) {
+          return res.redirect(302, presignedUrl);
+        }
+      } catch (_e) {
+        // continue
+      }
+    }
+  }
+
+  if (att && att.url && !att.url.includes(`/api/files/${fileId}/download`)) {
+    return res.redirect(302, att.url);
+  }
+
+  throw new ApiError(404, 'File not found or file-management service unable to resolve download URL');
 });
