@@ -29,7 +29,7 @@ import {
   useListTransportAgentsQuery,
   usePatchDispatchMutation,
 } from "@/store/api";
-import { publicApiOrigin } from "@/lib/env";
+import { fetchFileBlob, publicApiOrigin, resolveFileUrl } from "@/lib/env";
 import { toast } from "@/lib/toast";
 import { mutationRejectedMessage } from "@/lib/mutationMessages";
 import { useAppSelector } from "@/store/hooks";
@@ -73,12 +73,6 @@ function formatDateOnly(v: unknown): string {
   const d = v instanceof Date ? v : new Date(String(v));
   if (Number.isNaN(d.getTime())) return String(v);
   return d.toLocaleDateString();
-}
-
-function resolveFileUrl(url: string): string {
-  if (/^https?:\/\//i.test(url)) return url;
-  const normalized = url.startsWith("/") ? url : `/${url}`;
-  return `${publicApiOrigin()}${normalized}`;
 }
 
 function billDocumentMeta(
@@ -382,9 +376,7 @@ export function AccountDispatchesTab({
   const handleDownloadBillDocument = useCallback(
     async (fileUrl: string, fileName: string) => {
       try {
-        const response = await fetch(resolveFileUrl(fileUrl), {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
+        const response = await fetchFileBlob(fileUrl, token);
         if (!response.ok) throw new Error("Failed to download file");
         const blob = await response.blob();
         const blobUrl = window.URL.createObjectURL(blob);

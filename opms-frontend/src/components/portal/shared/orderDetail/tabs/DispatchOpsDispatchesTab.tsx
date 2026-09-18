@@ -18,7 +18,7 @@ import {
 } from "../accountDispatchAvailability";
 import { useAppSelector } from "@/store/hooks";
 import { hasOpmsRole } from "@/lib/opmsAuth";
-import { publicApiOrigin } from "@/lib/env";
+import { fetchFileBlob, publicApiOrigin, resolveFileUrl } from "@/lib/env";
 import { CreateAccountDispatchModal } from "../modals/CreateAccountDispatchModal";
 import {
   CreateTransportModal,
@@ -40,12 +40,6 @@ function pickList(raw: unknown): Record<string, unknown>[] {
     if (Array.isArray(o.data)) return o.data as Record<string, unknown>[];
   }
   return [];
-}
-
-function resolveFileUrl(url: string): string {
-  if (/^https?:\/\//i.test(url)) return url;
-  const normalized = url.startsWith("/") ? url : `/${url}`;
-  return `${publicApiOrigin()}${normalized}`;
 }
 
 function billDocumentMeta(
@@ -204,9 +198,7 @@ export function DispatchOpsDispatchesTab({
   const handleDownloadBillDocument = useCallback(
     async (fileUrl: string, fileName: string) => {
       try {
-        const response = await fetch(resolveFileUrl(fileUrl), {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
+        const response = await fetchFileBlob(fileUrl, token);
         if (!response.ok) throw new Error("Failed to download file");
         const blob = await response.blob();
         const blobUrl = window.URL.createObjectURL(blob);

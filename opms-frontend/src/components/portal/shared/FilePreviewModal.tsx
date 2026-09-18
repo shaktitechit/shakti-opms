@@ -4,6 +4,8 @@ import { LargeModalPortal } from "./LargeModalPortal";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "@/lib/toast";
 
+import { fetchFileBlob } from "@/lib/env";
+
 export type PreviewFile = {
   name: string;
   url: string;
@@ -176,9 +178,7 @@ export function useFilePreview(token: string | null | undefined) {
       setPreviewBlobUrl(null);
 
       try {
-        const response = await fetch(doc.url, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
+        const response = await fetchFileBlob(doc.url, token);
         if (!response.ok) throw new Error("Failed to view file");
         const blob = await response.blob();
         if (previewBlobRef.current) {

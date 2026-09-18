@@ -12,7 +12,7 @@ import {
   useFilePreview,
   type PreviewFile,
 } from "@/components/portal/shared/FilePreviewModal";
-import { publicApiOrigin } from "@/lib/env";
+import { fetchFileBlob, publicApiOrigin, resolveFileUrl } from "@/lib/env";
 import { mutationRejectedMessage } from "@/lib/mutationMessages";
 import { toast } from "@/lib/toast";
 import { useAppSelector } from "@/store";
@@ -43,12 +43,6 @@ function pickList(raw: unknown): DueSheetRow[] {
   return [];
 }
 
-function resolveFileUrl(url: string): string {
-  if (/^https?:\/\//i.test(url)) return url;
-  const normalized = url.startsWith("/") ? url : `/${url}`;
-  return `${publicApiOrigin()}${normalized}`;
-}
-
 function formatDate(v: unknown): string {
   if (v == null || v === "") return "—";
   const d = v instanceof Date ? v : new Date(String(v));
@@ -77,16 +71,33 @@ function documentMeta(document: unknown): {
   mime: string;
   size: number;
 } | null {
-  if (!document || typeof document !== "object") return null;
-  const doc = document as Record<string, unknown>;
-  const url = String(doc.url ?? "");
-  if (!url) return null;
-  return {
-    name: String(doc.original_name ?? doc.file_name ?? "Due sheet"),
-    url: resolveFileUrl(url),
-    mime: String(doc.mime_type ?? ""),
-    size: Number(doc.size ?? 0),
-  };
+  if (!document) return null;
+
+  if (typeof document === "string") {
+    return {
+      name: "Due sheet document",
+      url: resolveFileUrl(`/api/files/${document}/view`),
+      mime: "",
+      size: 0,
+    };
+  }
+
+  if (typeof document === "object") {
+    const doc = document as Record<string, unknown>;
+    const rawUrl = String(doc.url ?? "");
+    const fileId = String(doc._id ?? doc.key ?? "");
+    const targetUrl = rawUrl || (fileId ? `/api/files/${fileId}/view` : "");
+    if (!targetUrl) return null;
+
+    return {
+      name: String(doc.original_name ?? doc.file_name ?? "Due sheet"),
+      url: resolveFileUrl(targetUrl),
+      mime: String(doc.mime_type ?? ""),
+      size: Number(doc.size ?? 0),
+    };
+  }
+
+  return null;
 }
 
 function statusBadge(status: unknown, isCurrent: boolean) {
@@ -204,9 +215,7 @@ export function DueSheetTab({ orderId, onUploadSuccess }: DueSheetTabProps) {
 
   const handleDownload = async (fileUrl: string, fileName: string) => {
     try {
-      const response = await fetch(fileUrl, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await fetchFileBlob(fileUrl, token);
       if (!response.ok) throw new Error("Failed to download file");
       const blob = await response.blob();
       const blobUrl = window.URL.createObjectURL(blob);

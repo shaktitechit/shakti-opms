@@ -81,3 +81,48 @@ export function resolvePublicAssetUrl(path: string): string {
   }
   return path.startsWith("/") ? path : `/${path}`;
 }
+
+/**
+ * Resolves a file/attachment URL to an absolute URL using the correct public API origin.
+ */
+export function resolveFileUrl(url: string): string {
+  if (!url) return "";
+  try {
+    if (/^https?:\/\//i.test(url)) {
+      const u = new URL(url);
+      if (
+        u.hostname === "localhost" ||
+        u.hostname === "127.0.0.1" ||
+        u.pathname.startsWith("/api")
+      ) {
+        return `${publicApiOrigin()}${u.pathname}${u.search}${u.hash}`;
+      }
+      return url;
+    }
+  } catch {
+    // fallback if URL parsing fails
+  }
+  const normalized = url.startsWith("/") ? url : `/${url}`;
+  return `${publicApiOrigin()}${normalized}`;
+}
+
+/**
+ * Fetches a file blob with auth handling. For `/api/files/` routes, passes `token` via query string
+ * so 302 redirects to MinIO/S3 presigned URLs won't include an Authorization header (which S3 rejects).
+ */
+export async function fetchFileBlob(url: string, token?: string | null): Promise<Response> {
+  let fetchUrl = resolveFileUrl(url);
+  const headers: Record<string, string> = {};
+
+  if (token) {
+    if (fetchUrl.includes("/api/files/")) {
+      const sep = fetchUrl.includes("?") ? "&" : "?";
+      fetchUrl = `${fetchUrl}${sep}token=${encodeURIComponent(token)}`;
+    } else {
+      headers.Authorization = `Bearer ${token}`;
+    }
+  }
+
+  return fetch(fetchUrl, { headers });
+}
+

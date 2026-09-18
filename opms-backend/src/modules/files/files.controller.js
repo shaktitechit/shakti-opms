@@ -25,15 +25,16 @@ async function resolveFmFileId(fileId) {
     const { Attachment } = getModels();
     const att = await Attachment.findById(fileId).lean();
     if (att) {
-      // Try extracting FM fileId from the stored url:
-      //   .../api/files/<fmFileId>/view  or  .../api/files/<fmFileId>/download
       if (att.url) {
-        const match = String(att.url).match(/\/api\/files\/([^/]+)\//);
-        if (match && match[1]) return match[1];
+        const match = String(att.url).match(/\/api\/files\/([^/?#]+)/);
+        if (match && match[1] && match[1] !== "view" && match[1] !== "download") {
+          return match[1];
+        }
       }
-      // Fallback: if key looks like a short hex ID (not a path), use it
-      if (att.key && !String(att.key).includes('/')) {
-        return att.key;
+      if (att.key) {
+        const parts = String(att.key).split("/");
+        const lastPart = parts[parts.length - 1];
+        if (lastPart) return lastPart;
       }
     }
   }
