@@ -7,7 +7,7 @@ const { toPlain } = require('../../utils/mongoJson');
 const { ApiError } = require('../../utils/ApiError');
 const { softDeleteActiveById, restoreSoftDeletedById, listDeletedLean } = require('../../utils/mongoSoftDelete');
 const { generateDueSheetNo } = require('../../utils/generateDueSheetNo');
-const { uploadMulterFile, getFileMeta } = require('../../services/fileManagement/index');
+const { uploadMulterFile, getFileMeta, getViewPresignedUrl } = require('../../services/fileManagement/index');
 const { API_PUBLIC_BASE_URL, FILE_DOCUMENT_LINKS_RELATIVE } = require('../../config/fileManagement');
 const activityService = require('../activity/activity.service');
 const attachmentService = require('../attachments/attachment.service');
@@ -25,6 +25,41 @@ const {
 } = require('../orders/order.constants');
 
 const SHEET_NF = 'Order due sheet not found';
+
+function resolveFileIdFromDoc(doc) {
+  if (!doc) return null;
+  if (doc.key) {
+    const parts = String(doc.key).split('/');
+    const last = parts[parts.length - 1];
+    if (last) return last;
+  }
+  if (doc.url) {
+    const match = String(doc.url).match(/\/(?:api\/)?files\/([^/?#]+)/);
+    if (match && match[1] && match[1] !== 'view' && match[1] !== 'download') {
+      return match[1];
+    }
+  }
+  return null;
+}
+
+async function decorateDueSheet(row) {
+  if (!row) return row;
+  const plain = toPlain(row);
+  if (plain.document && typeof plain.document === 'object') {
+    const fileId = resolveFileIdFromDoc(plain.document);
+    if (fileId) {
+      try {
+        const freshUrl = await getViewPresignedUrl(fileId);
+        if (freshUrl) {
+          plain.document.url = freshUrl;
+        }
+      } catch (_err) {
+        // Fall back to stored URL if FM lookup fails
+      }
+    }
+  }
+  return plain;
+}
 
 function formatEmailDate(value) {
   if (!value) return 'N/A';
@@ -229,13 +264,13 @@ async function list({ order, status, is_current } = {}) {
     .find(q)
     .sort({ createdAt: -1 })
     .lean();
-  return rows.map(toPlain);
+  return Promise.all(rows.map(decorateDueSheet));
 }
 
 async function get(id) {
   const row = await dueSheetQuery().findById(id).lean();
   if (!row) throw new ApiError(404, SHEET_NF);
-  return toPlain(row);
+  return decorateDueSheet(row);
 }
 
 async function getCurrentByOrder(orderId) {
@@ -250,7 +285,7 @@ async function getCurrentByOrder(orderId) {
     .lean();
 
   if (!row) throw new ApiError(404, 'No current due sheet for this order');
-  return toPlain(row);
+  return decorateDueSheet(row);
 }
 
 async function create(body, user, options = {}) {
@@ -427,7 +462,7 @@ async function listDeleted({ order } = {}) {
     { path: 'document' },
     { path: 'created_by', select: 'name username department' },
   ]);
-  return populated.map(toPlain);
+  return Promise.all(populated.map(decorateDueSheet));
 }
 
 async function softDelete(id, user) {

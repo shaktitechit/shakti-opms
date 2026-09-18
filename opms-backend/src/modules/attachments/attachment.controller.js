@@ -4,15 +4,53 @@
  */
 const asyncHandler = require('../../utils/asyncHandler');
 const service = require('./attachment.service');
-const { uploadMulterFile, getFileMeta } = require('../../services/fileManagement/index');
+const { uploadMulterFile, getFileMeta, getViewPresignedUrl } = require('../../services/fileManagement/index');
 const { API_PUBLIC_BASE_URL, FILE_DOCUMENT_LINKS_RELATIVE } = require('../../config/fileManagement');
 
+function resolveFileId(item) {
+  if (!item) return null;
+  if (item.key) {
+    const parts = String(item.key).split('/');
+    const last = parts[parts.length - 1];
+    if (last) return last;
+  }
+  if (item.url) {
+    const match = String(item.url).match(/\/(?:api\/)?files\/([^/?#]+)/);
+    if (match && match[1] && match[1] !== 'view' && match[1] !== 'download') {
+      return match[1];
+    }
+  }
+  return null;
+}
+
+async function withFreshViewUrl(item) {
+  if (!item) return item;
+  const obj = typeof item.toObject === 'function' ? item.toObject() : { ...item };
+  const fileId = resolveFileId(obj);
+  if (!fileId) return obj;
+
+  try {
+    const freshUrl = await getViewPresignedUrl(fileId);
+    if (freshUrl) {
+      obj.url = freshUrl;
+    }
+  } catch (_err) {
+    // Keep stored url if FM lookup fails
+  }
+  return obj;
+}
+
 exports.list = asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await service.list(req.query) });
+  const data = await service.list(req.query);
+  res.json({
+    success: true,
+    data: await Promise.all(data.map(withFreshViewUrl)),
+  });
 });
 
 exports.get = asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await service.get(req.params.id) });
+  const data = await service.get(req.params.id);
+  res.json({ success: true, data: await withFreshViewUrl(data) });
 });
 
 exports.create = asyncHandler(async (req, res) => {
@@ -39,7 +77,8 @@ exports.create = asyncHandler(async (req, res) => {
     body.url = `${base}/api/files/${fileId}/view`;
   }
 
-  res.status(201).json({ success: true, data: await service.create(body, req.user) });
+  const created = await service.create(body, req.user);
+  res.status(201).json({ success: true, data: await withFreshViewUrl(created) });
 });
 
 exports.remove = asyncHandler(async (req, res) => {
@@ -51,5 +90,9 @@ exports.restore = asyncHandler(async (req, res) => {
 });
 
 exports.listDeleted = asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await service.listDeleted(req.query) });
+  const data = await service.listDeleted(req.query);
+  res.json({
+    success: true,
+    data: await Promise.all(data.map(withFreshViewUrl)),
+  });
 });
