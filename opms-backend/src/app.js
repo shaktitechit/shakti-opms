@@ -113,8 +113,8 @@ app.use('/api/communication', proxyToMessageService);
 app.use('/api/reminders', reminderRoutes);
 app.use('/api/transport-plans', transportPlannerRoutes);
 app.use('/api/terms-and-conditions', termsAndConditionsRoutes);
-app.use('/api', proxyToNotificationService);
 app.use('/api', filesRoutes);
+app.use('/api', proxyToNotificationService);
 
 app.use(notFound);
 app.use(errorMiddleware);
