@@ -200,13 +200,6 @@ function dueSheetQuery() {
 async function attachDocumentFromFile(file, entityId, user, remarks = '') {
   const fileId = await uploadMulterFile(file, 'order_due_sheet', String(entityId));
   const meta = await getFileMeta(fileId);
-  let viewUrl = null;
-  try {
-    viewUrl = await getViewPresignedUrl(fileId);
-  } catch (_err) {
-    // Fallback
-  }
-
   const base = FILE_DOCUMENT_LINKS_RELATIVE ? '' : API_PUBLIC_BASE_URL;
 
   const attachment = await attachmentService.create({
@@ -219,7 +212,7 @@ async function attachDocumentFromFile(file, entityId, user, remarks = '') {
     storage_provider: 'minio',
     bucket: meta.bucket || 'company-files',
     key: meta.objectKey || fileId,
-    url: viewUrl || `${base}/api/files/${fileId}/view`,
+    url: `${base}/api/files/${fileId}/view`,
     entity_type: 'order_due_sheet',
     entity_id: String(entityId),
     remarks: remarks || 'Order due sheet document',

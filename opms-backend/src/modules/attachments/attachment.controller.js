@@ -36,19 +36,13 @@ function resolveFileId(item) {
   return null;
 }
 
-async function withFreshViewUrl(item) {
+function ensureViewUrl(item) {
   if (!item) return item;
   const obj = typeof item.toObject === 'function' ? item.toObject() : { ...item };
-  const fileId = resolveFileId(obj);
-  if (!fileId) return obj;
-
-  try {
-    const freshUrl = await getViewPresignedUrl(fileId);
-    if (freshUrl) {
-      obj.url = freshUrl;
-    }
-  } catch (_err) {
-    // Keep stored url if FM lookup fails
+  const base = FILE_DOCUMENT_LINKS_RELATIVE ? '' : API_PUBLIC_BASE_URL;
+  const targetId = obj.filename || obj.fileId || obj._id;
+  if (targetId && (!obj.url || obj.url.includes('minio.spspl.com') || !obj.url.includes('/api/files/'))) {
+    obj.url = `${base}/api/files/${targetId}/view`;
   }
   return obj;
 }
@@ -57,13 +51,13 @@ exports.list = asyncHandler(async (req, res) => {
   const data = await service.list(req.query);
   res.json({
     success: true,
-    data: await Promise.all(data.map(withFreshViewUrl)),
+    data: data.map(ensureViewUrl),
   });
 });
 
 exports.get = asyncHandler(async (req, res) => {
   const data = await service.get(req.params.id);
-  res.json({ success: true, data: await withFreshViewUrl(data) });
+  res.json({ success: true, data: ensureViewUrl(data) });
 });
 
 exports.create = asyncHandler(async (req, res) => {
@@ -77,13 +71,6 @@ exports.create = asyncHandler(async (req, res) => {
 
     const fileId = await uploadMulterFile(req.file, entity_type, entity_id);
     const meta = await getFileMeta(fileId);
-    let viewUrl = null;
-    try {
-      viewUrl = await getViewPresignedUrl(fileId);
-    } catch (_err) {
-      // Fallback
-    }
-
     const base = FILE_DOCUMENT_LINKS_RELATIVE ? '' : API_PUBLIC_BASE_URL;
 
     body.filename = fileId;
@@ -95,11 +82,11 @@ exports.create = asyncHandler(async (req, res) => {
     body.storage_provider = 'minio';
     body.bucket = meta.bucket || 'company-files';
     body.key = meta.objectKey || fileId;
-    body.url = viewUrl || `${base}/api/files/${fileId}/view`;
+    body.url = `${base}/api/files/${fileId}/view`;
   }
 
   const created = await service.create(body, req.user);
-  res.status(201).json({ success: true, data: await withFreshViewUrl(created) });
+  res.status(201).json({ success: true, data: ensureViewUrl(created) });
 });
 
 exports.remove = asyncHandler(async (req, res) => {
@@ -114,6 +101,6 @@ exports.listDeleted = asyncHandler(async (req, res) => {
   const data = await service.listDeleted(req.query);
   res.json({
     success: true,
-    data: await Promise.all(data.map(withFreshViewUrl)),
+    data: data.map(ensureViewUrl),
   });
 });
