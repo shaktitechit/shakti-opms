@@ -13,7 +13,12 @@ export const partyApiSlice = baseApi.injectEndpoints({
             if (v !== undefined && v !== null && v !== "") query.append(k, String(v));
           });
         }
-        return `${PARTY_SERVICE_URL}/api/parties?${query.toString()}`;
+        const qStr = query.toString();
+        const path = qStr ? `parties?${qStr}` : "parties";
+        if (PARTY_SERVICE_URL && /^https?:\/\//i.test(PARTY_SERVICE_URL)) {
+          return `${PARTY_SERVICE_URL.replace(/\/$/, "")}/api/${path}`;
+        }
+        return path;
       },
       transformResponse: (res: any) => {
         const rawData = res?.data ?? res;
@@ -31,7 +36,12 @@ export const partyApiSlice = baseApi.injectEndpoints({
           : [{ type: "Party", id: "LIST" }],
     }),
     getPartyById: builder.query<PartyRecord, string>({
-      query: (id) => `${PARTY_SERVICE_URL}/api/parties/${id}`,
+      query: (id) => {
+        if (PARTY_SERVICE_URL && /^https?:\/\//i.test(PARTY_SERVICE_URL)) {
+          return `${PARTY_SERVICE_URL.replace(/\/$/, "")}/api/parties/${id}`;
+        }
+        return `parties/${id}`;
+      },
       transformResponse: (res: any) => res?.data ?? res,
       providesTags: (_result, _error, id) => [{ type: "Party", id }],
     }),

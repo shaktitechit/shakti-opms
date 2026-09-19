@@ -30,7 +30,7 @@ interface DayEndRichEditorProps {
 }
 
 const TEXT_COLORS = [
-  { label: "Default", color: "#1e293b" },
+  { label: "Default", color: "inherit" },
   { label: "Blue", color: "#2563eb" },
   { label: "Emerald", color: "#059669" },
   { label: "Amber", color: "#d97706" },
@@ -241,12 +241,16 @@ export function DayEndRichEditor({
                   key={c.label}
                   type="button"
                   onClick={() => {
-                    exec("foreColor", c.color);
+                    if (c.color === "inherit") {
+                      exec("removeFormat");
+                    } else {
+                      exec("foreColor", c.color);
+                    }
                     setColorPickerOpen(false);
                   }}
                   title={c.label}
-                  className="h-5 w-5 rounded-full border border-black/20 transition hover:scale-110"
-                  style={{ backgroundColor: c.color }}
+                  className="h-5 w-5 rounded-full border border-border transition hover:scale-110 flex items-center justify-center text-[9px] font-bold"
+                  style={{ backgroundColor: c.color === "inherit" ? "var(--foreground)" : c.color }}
                 />
               ))}
             </div>

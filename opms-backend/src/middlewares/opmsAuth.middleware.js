@@ -41,23 +41,48 @@ function getOpmsPortalAccess(user) {
   );
 }
 
-function getOpmsAccessRoles(user) {
+function getOpmsAccessRole(user) {
+  if (!user) return null;
   const portalAccess = getOpmsPortalAccess(user);
-  if (!portalAccess || !Array.isArray(portalAccess.access_roles)) return [];
-  return portalAccess.access_roles
-    .map((r) => String(r || '').trim().toLowerCase())
-    .filter(Boolean);
+  let rawRole = null;
+
+  if (portalAccess) {
+    if (Array.isArray(portalAccess.access_roles) && portalAccess.access_roles.length > 0) {
+      rawRole = portalAccess.access_roles[0];
+    } else if (portalAccess.access_role) {
+      rawRole = portalAccess.access_role;
+    } else if (portalAccess.role) {
+      rawRole = portalAccess.role;
+    }
+  }
+
+  if (!rawRole) {
+    if (user.access_role) rawRole = user.access_role;
+    else if (Array.isArray(user.access_roles) && user.access_roles.length > 0) rawRole = user.access_roles[0];
+    else if (user.role) rawRole = user.role;
+    else if (Array.isArray(user.roles) && user.roles.length > 0) rawRole = user.roles[0];
+    else if (Array.isArray(user.role_codes) && user.role_codes.length > 0) rawRole = user.role_codes[0];
+  }
+
+  if (!rawRole) return null;
+  const normalized = String(rawRole).trim().toLowerCase();
+  return OPMS_ACCESS_ROLES.includes(normalized) ? normalized : normalized;
+}
+
+function getOpmsAccessRoles(user) {
+  const role = getOpmsAccessRole(user);
+  return role ? [role] : [];
 }
 
 function hasOpmsAccess(user) {
-  return getOpmsAccessRoles(user).length > 0;
+  return Boolean(getOpmsAccessRole(user));
 }
 
 function hasOpmsRole(user, ...roles) {
   const allowed = roles.flat().map((r) => String(r || '').trim().toLowerCase()).filter(Boolean);
   if (!allowed.length) return false;
-  const userRoles = getOpmsAccessRoles(user);
-  return allowed.some((role) => userRoles.includes(role));
+  const userRole = getOpmsAccessRole(user);
+  return userRole ? allowed.includes(userRole) : false;
 }
 
 function hasAnyOpmsRole(user, roleList) {
@@ -67,15 +92,9 @@ function hasAnyOpmsRole(user, roleList) {
 
 /**
  * Single role string for workflow/flag actor metadata.
- * Priority: super_admin > admin > finance > account > dispatch > sales.
  */
 function primaryOpmsRole(user) {
-  const roles = getOpmsAccessRoles(user);
-  if (!roles.length) return null;
-  for (const preferred of OPMS_ROLE_PRIORITY) {
-    if (roles.includes(preferred)) return preferred;
-  }
-  return roles[0];
+  return getOpmsAccessRole(user);
 }
 
 function isOpmsAdmin(user) {
@@ -122,6 +141,7 @@ module.exports = {
   OPMS_ACCESS_ROLES,
   OPMS_ROLE_PRIORITY,
   getOpmsPortalAccess,
+  getOpmsAccessRole,
   getOpmsAccessRoles,
   hasOpmsAccess,
   hasOpmsRole,

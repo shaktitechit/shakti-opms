@@ -132,13 +132,21 @@ export const workPlannerApiSlice = baseApi.injectEndpoints({
       transformResponse: (res: any) => res.data || res,
       invalidatesTags: [{ type: "WorkPlan", id: "LIST" }, "WorkPlannerStats"],
     }),
-    submitPlan: builder.mutation<WorkPlanRecord, string>({
-      query: (id) => ({
-        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/${id}/submit`,
-        method: "POST",
-      }),
+    submitPlan: builder.mutation<WorkPlanRecord, { id: string; body?: any } | string>({
+      query: (arg) => {
+        const id = typeof arg === "string" ? arg : arg.id;
+        const body = typeof arg === "string" ? undefined : arg.body;
+        return {
+          url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/${id}/submit`,
+          method: "POST",
+          body,
+        };
+      },
       transformResponse: (res: any) => res.data || res,
-      invalidatesTags: (_result, _error, id) => [{ type: "WorkPlan", id }, { type: "WorkPlan", id: "LIST" }, "WorkPlannerStats"],
+      invalidatesTags: (_result, _error, arg) => {
+        const id = typeof arg === "string" ? arg : arg.id;
+        return [{ type: "WorkPlan", id }, { type: "WorkPlan", id: "LIST" }, "WorkPlannerStats"];
+      },
     }),
     approvePlan: builder.mutation<WorkPlanRecord, string>({
       query: (id) => ({

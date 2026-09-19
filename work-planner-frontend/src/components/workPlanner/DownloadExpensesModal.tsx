@@ -32,6 +32,7 @@ import {
 import { calculateDateRange, type DateFilterPreset, toYmdString } from "./DashboardDateFilter";
 import { usePdfCompanyLetterhead } from "./pdfCompanyLetterhead";
 import { downloadPdfReport } from "./exportPdfReport";
+import { downloadExcelReport } from "./exportExcelReport";
 import { readSessionFromStorage } from "@/utils/authStorage";
 
 export type DownloadExpensesModalProps = {
@@ -57,6 +58,7 @@ export function DownloadExpensesModal({
 }: DownloadExpensesModalProps) {
   const letterhead = usePdfCompanyLetterhead();
   const [downloading, setDownloading] = useState(false);
+  const [downloadingExcel, setDownloadingExcel] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<WorkPlanExpenseRecord[]>([]);
@@ -299,6 +301,76 @@ export function DownloadExpensesModal({
     }
   }
 
+  async function exportExcel() {
+    setDownloadingExcel(true);
+    try {
+      const columns = [
+        { key: "rowNum", label: "#" },
+        { key: "expense_date", label: "Date" },
+        { key: "sales_user", label: "Executive / Representative" },
+        { key: "category", label: "Category" },
+        { key: "sub_category", label: "Sub Category" },
+        { key: "amount", label: "Amount (₹)" },
+        { key: "payment_mode", label: "Payment Mode" },
+        { key: "vendor_name", label: "Vendor Name" },
+        { key: "bill_number", label: "Bill / Invoice #" },
+        { key: "bill_date", label: "Bill Date" },
+        { key: "visit_party", label: "Linked Visit / Party" },
+        { key: "odometer", label: "Odometer Readings" },
+        { key: "status", label: "Status" },
+        { key: "description", label: "Description / Purpose" },
+      ];
+
+      const rows = filteredItems.map((r, i) => {
+        const odo =
+          r.start_reading != null || r.closing_reading != null
+            ? `${r.start_reading ?? "—"} -> ${r.closing_reading ?? "—"}`
+            : "—";
+        const visitParty = r.work_plan_visit
+          ? typeof r.work_plan_visit === "object"
+            ? r.work_plan_visit.party_name || (r.work_plan_visit.party as any)?.party_name || "Visit"
+            : "Visit"
+          : "—";
+
+        const userName =
+          typeof r.work_plan === "object"
+            ? salesUserLabel(r.work_plan.sales_user)
+            : typeof r.sales_user === "object"
+            ? salesUserLabel(r.sales_user)
+            : "—";
+
+        return {
+          rowNum: i + 1,
+          expense_date: formatPlanDate(r.expense_date),
+          sales_user: userName,
+          category: r.category || "Other",
+          sub_category: r.sub_category || "—",
+          amount: Number(r.amount) || 0,
+          payment_mode: r.payment_mode || "Cash",
+          vendor_name: r.vendor_name || "—",
+          bill_number: r.bill_number || "—",
+          bill_date: formatPlanDate(r.bill_date),
+          visit_party: visitParty,
+          odometer: odo,
+          status: (r.status || "draft").toUpperCase(),
+          description: r.description || "—",
+        };
+      });
+
+      downloadExcelReport({
+        filename: `expense_claims_report_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        sheetName: "Expense Claims",
+        title: "Expense Claims Master Sheet",
+        columns,
+        rows,
+      });
+    } catch (err) {
+      console.error("Export Excel failed:", err);
+    } finally {
+      setDownloadingExcel(false);
+    }
+  }
+
   async function exportPdf() {
     setDownloadingPdf(true);
     try {
@@ -451,6 +523,15 @@ export function DownloadExpensesModal({
             >
               <Download className="h-4 w-4" />
               {downloading ? "Exporting…" : "Export CSV"}
+            </button>
+            <button
+              type="button"
+              disabled={downloadingExcel || filteredItems.length === 0}
+              onClick={exportExcel}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-teal-600/40 bg-teal-600 text-white px-3.5 py-1.5 text-xs font-semibold hover:bg-teal-700 disabled:opacity-50 transition shadow-xs"
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              {downloadingExcel ? "Generating Excel…" : "Export Excel (.xlsx)"}
             </button>
             <button
               type="button"
@@ -784,10 +865,19 @@ export function DownloadExpensesModal({
               type="button"
               disabled={downloading || filteredItems.length === 0}
               onClick={exportCsv}
+              className="inline-flex items-center gap-1 rounded bg-surface-muted border border-border px-3 py-1 text-xs font-semibold text-foreground hover:bg-card disabled:opacity-50 transition"
+            >
+              <Download className="h-3.5 w-3.5 text-muted" />
+              Export CSV
+            </button>
+            <button
+              type="button"
+              disabled={downloadingExcel || filteredItems.length === 0}
+              onClick={exportExcel}
               className="inline-flex items-center gap-1 rounded bg-teal-600 px-3 py-1 text-xs font-semibold text-white hover:bg-teal-700 disabled:opacity-50 transition"
             >
-              <Download className="h-3.5 w-3.5" />
-              Export CSV
+              <FileSpreadsheet className="h-3.5 w-3.5" />
+              Export Excel (.xlsx)
             </button>
           </div>
         </div>

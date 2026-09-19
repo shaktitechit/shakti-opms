@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:where(.dark, .dark *));
+@variant dark (&:where(.dark, .dark *));
 
 @theme {
   --color-background: var(--background);
@@ -47,7 +47,8 @@
   --primary-foreground: #ffffff;
 }
 
-:root.dark {
+:root.dark,
+.dark {
   color-scheme: dark;
   --background: #090d16;
   --foreground: #f8fafc;
@@ -62,56 +63,68 @@
 }
 
 /* Color Accent Theme Variants */
-:root[data-theme-color="violet"] {
+:root[data-theme-color="violet"],
+[data-theme-color="violet"] {
   --primary: #7c3aed;
   --primary-hover: #6d28d9;
 }
-:root.dark[data-theme-color="violet"] {
+:root.dark[data-theme-color="violet"],
+.dark[data-theme-color="violet"] {
   --primary: #8b5cf6;
   --primary-hover: #a78bfa;
 }
 
-:root[data-theme-color="indigo"] {
+:root[data-theme-color="indigo"],
+[data-theme-color="indigo"] {
   --primary: #4f46e5;
   --primary-hover: #4338ca;
 }
-:root.dark[data-theme-color="indigo"] {
+:root.dark[data-theme-color="indigo"],
+.dark[data-theme-color="indigo"] {
   --primary: #6366f1;
   --primary-hover: #818cf8;
 }
 
-:root[data-theme-color="blue"] {
+:root[data-theme-color="blue"],
+[data-theme-color="blue"] {
   --primary: #2563eb;
   --primary-hover: #1d4ed8;
 }
-:root.dark[data-theme-color="blue"] {
+:root.dark[data-theme-color="blue"],
+.dark[data-theme-color="blue"] {
   --primary: #3b82f6;
   --primary-hover: #60a5fa;
 }
 
-:root[data-theme-color="emerald"] {
+:root[data-theme-color="emerald"],
+[data-theme-color="emerald"] {
   --primary: #059669;
   --primary-hover: #047857;
 }
-:root.dark[data-theme-color="emerald"] {
+:root.dark[data-theme-color="emerald"],
+.dark[data-theme-color="emerald"] {
   --primary: #10b981;
   --primary-hover: #34d399;
 }
 
-:root[data-theme-color="rose"] {
+:root[data-theme-color="rose"],
+[data-theme-color="rose"] {
   --primary: #e11d48;
   --primary-hover: #be123c;
 }
-:root.dark[data-theme-color="rose"] {
+:root.dark[data-theme-color="rose"],
+.dark[data-theme-color="rose"] {
   --primary: #f43f5e;
   --primary-hover: #fb7185;
 }
 
-:root[data-theme-color="amber"] {
+:root[data-theme-color="amber"],
+[data-theme-color="amber"] {
   --primary: #d97706;
   --primary-hover: #b45309;
 }
-:root.dark[data-theme-color="amber"] {
+:root.dark[data-theme-color="amber"],
+.dark[data-theme-color="amber"] {
   --primary: #f59e0b;
   --primary-hover: #fbbf24;
 }
@@ -123,7 +136,26 @@ body {
   font-family: var(--font-geist-sans);
 }
 
+/* Ensure native select popup options use themed background and text */
+select option {
+  background-color: var(--card);
+  color: var(--foreground);
+}
+
+/* Dark mode adjustments for HTML5 date indicators */
+.dark input[type="date"]::-webkit-calendar-picker-indicator,
+.dark input[type="time"]::-webkit-calendar-picker-indicator,
+.dark input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.85);
+}
+
+/* Rich editor container text color fallback in dark mode */
+.day-end-rich-content {
+  color: var(--foreground);
+}
+
 ::selection {
   background: color-mix(in srgb, var(--primary) 30%, transparent);
   color: var(--foreground);
 }
+

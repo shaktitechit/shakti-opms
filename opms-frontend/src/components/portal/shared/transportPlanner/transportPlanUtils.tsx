@@ -48,8 +48,14 @@ export function agentLabel(
     | undefined
 ): string {
   if (!agent) return "—";
-  if (typeof agent === "string") return agent;
-  return agent.agent_name || agent.agent_code || agent._id || "—";
+  if (typeof agent === "string") {
+    if (/^[0-9a-fA-F]{24}$/.test(agent)) return "—";
+    return agent;
+  }
+  const name = agent.agent_name || agent.agent_code;
+  if (name && !/^[0-9a-fA-F]{24}$/.test(name)) return name;
+  if (agent._id && !/^[0-9a-fA-F]{24}$/.test(agent._id)) return agent._id;
+  return "—";
 }
 
 export function partyLabel(

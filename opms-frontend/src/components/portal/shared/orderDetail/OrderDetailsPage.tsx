@@ -351,12 +351,14 @@ export default function OrderDetailsPage({
 
   const agentNameById = useMemo(() => {
     const map = new Map<string, string>();
-    const list = Array.isArray(agentsQ.data) ? agentsQ.data : [];
+    const list = pickList(agentsQ.data);
     for (const a of list) {
       if (!a || typeof a !== "object") continue;
       const id = String(a._id || a.id || "");
-      const name = a.agent_name || a.agent_code || id;
-      if (id && name) map.set(id, name);
+      const name = String(a.agent_name || a.agent_code || "");
+      if (id && name && !/^[0-9a-fA-F]{24}$/.test(name)) {
+        map.set(id, name);
+      }
     }
     return map;
   }, [agentsQ.data]);
@@ -364,9 +366,10 @@ export default function OrderDetailsPage({
   const resolveAgentName = useCallback(
     (agentVal: unknown): string => {
       if (!agentVal) return "";
-      const label = agentLabel(agentVal as any);
-      if (label && label !== "—" && !/^[0-9a-fA-F]{24}$/.test(label)) {
-        return label;
+      if (typeof agentVal === "object" && agentVal !== null) {
+        const obj = agentVal as Record<string, unknown>;
+        const name = String(obj.agent_name || obj.agent_code || "");
+        if (name && !/^[0-9a-fA-F]{24}$/.test(name)) return name;
       }
       const rawId =
         typeof agentVal === "string"
@@ -375,7 +378,11 @@ export default function OrderDetailsPage({
       if (rawId && agentNameById.has(rawId)) {
         return agentNameById.get(rawId)!;
       }
-      return label !== "—" ? label : "";
+      const label = agentLabel(agentVal as any);
+      if (label && label !== "—" && !/^[0-9a-fA-F]{24}$/.test(label)) {
+        return label;
+      }
+      return "";
     },
     [agentNameById],
   );

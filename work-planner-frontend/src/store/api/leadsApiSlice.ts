@@ -13,7 +13,12 @@ export const leadsApiSlice = baseApi.injectEndpoints({
             if (v !== undefined && v !== null && v !== "") query.append(k, String(v));
           });
         }
-        return `${LEAD_MANAGER_SERVICE_URL}/api/leads?${query.toString()}`;
+        const qStr = query.toString();
+        const path = qStr ? `leads?${qStr}` : "leads";
+        if (LEAD_MANAGER_SERVICE_URL && /^https?:\/\//i.test(LEAD_MANAGER_SERVICE_URL)) {
+          return `${LEAD_MANAGER_SERVICE_URL.replace(/\/$/, "")}/api/${path}`;
+        }
+        return path;
       },
       transformResponse: (res: any) => {
         const rawData = res?.data ?? res;

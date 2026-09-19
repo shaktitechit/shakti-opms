@@ -102,6 +102,7 @@ async function list({
   }
   const rows = await getModels()
     .TransportShipment.find(q)
+    .populate('transport_agent', 'agent_code agent_name agent_type mobile status')
     .populate({
       path: 'order',
       select: 'order_no party customer grand_total',
@@ -150,7 +151,10 @@ async function list({
 }
 
 async function get(id) {
-  const row = await getModels().TransportShipment.findById(id).lean();
+  const row = await getModels()
+    .TransportShipment.findById(id)
+    .populate('transport_agent', 'agent_code agent_name agent_type mobile status')
+    .lean();
   if (!row) throw new ApiError(404, TR_NF);
   return toPlain(row);
 }

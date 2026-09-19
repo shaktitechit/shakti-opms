@@ -308,8 +308,8 @@ export async function downloadPdfReport({
   let isZebra = false;
 
   for (const row of rows) {
-    const isParentRow = String(row._rowType || "").includes("PARENT");
-    const isChildRow = String(row._rowType || "").includes("CHILD");
+    const isPlanRow = String(row._rowType || "").includes("PLAN") || String(row.rowType || "").includes("PLAN");
+    const isItemRow = String(row._rowType || "").includes("VISIT") || String(row._rowType || "").includes("TASK");
 
     const cellLines = columns.map((col, i) => {
       const val = row[col.key];
@@ -331,7 +331,7 @@ export async function downloadPdfReport({
     }
 
     // Row Background
-    if (isParentRow) {
+    if (isPlanRow) {
       doc.setFillColor(241, 245, 249);
       doc.rect(marginX, y, usableWidth, rowHeight, "F");
     } else if (isZebra) {
@@ -345,10 +345,10 @@ export async function downloadPdfReport({
       const align = col.align || "left";
       const textX = align === "right" ? x + colWidths[i] - 1.5 : align === "center" ? x + colWidths[i] / 2 : x + 1.5;
 
-      if (isParentRow) {
+      if (isPlanRow) {
         doc.setFont("helvetica", "bold");
         doc.setTextColor(30, 58, 95);
-      } else if (isChildRow) {
+      } else if (isItemRow) {
         doc.setFont("helvetica", "normal");
         doc.setTextColor(51, 65, 85);
       } else {

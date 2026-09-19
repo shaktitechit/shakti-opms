@@ -226,8 +226,8 @@ async function sendWorkPlanCompletedEmail(planId, executiveUser) {
     const executiveEmail = executiveUser.email;
     const fromAddress = `${executiveName} <${executiveEmail}>`;
 
-    const baseUrl = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
-    const workPlanUrl = `${baseUrl}/work-plans`;
+    const baseUrl = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
+    const workPlanUrl = baseUrl ? `${baseUrl}/work-plans` : '';
 
     const visitsTableHtml = renderVisitsTable(visits);
     const tasksTableHtml = renderTasksTable(workItems);
@@ -376,10 +376,199 @@ async function sendCustomDayEndEmail(planId, executiveUser, dayEndData = {}) {
   }
 }
 
+/**
+ * Dispatches a Work Plan Creation notification email created via the rich mail composer panel or standard submission.
+ *
+ * @param {string} planId
+ * @param {object} user - User object of user creating/submitting plan
+ * @param {object} creationMailData - { to_email, cc_emails, subject, body_html, attachment_ids }
+ */
+async function sendCustomWorkPlanCreationEmail(planId, user, creationMailData = {}) {
+  try {
+    const { User, WorkPlan } = getModels();
+    let senderUser = user;
+    if ((!senderUser || !senderUser.email) && (user?._id || user?.id)) {
+      const uId = user._id || user.id;
+      senderUser = (await User.findById(uId).lean()) || user;
+    }
+
+    if (!senderUser || !senderUser.email) {
+      logger.warn(`[WorkPlanNotification] Missing user email for plan creation email on planId ${planId}`);
+      return;
+    }
+
+    const plan = await WorkPlan.findOne({ _id: planId, deletedAt: null }).lean();
+    if (!plan) {
+      logger.warn(`[WorkPlanNotification] Plan not found for id ${planId}`);
+      return;
+    }
+
+    const rawTo = creationMailData.to_email || creationMailData.toEmail;
+    const rawCc = creationMailData.cc_emails || creationMailData.ccEmails;
+    const rawBody = creationMailData.body_html || creationMailData.bodyHtml;
+    const rawAtts = creationMailData.attachment_ids || creationMailData.attachmentIds;
+
+    let recipient = typeof rawTo === 'string' ? rawTo.trim() : '';
+    let ccList = Array.isArray(rawCc)
+      ? rawCc.map((e) => String(e).trim()).filter(Boolean)
+      : [];
+
+    if (!recipient) {
+      const managers = await getWorkPlannerManagers();
+      const managerEmails = managers.map((m) => m.email).filter(Boolean);
+
+      const targetUserObj = plan.sales_user && typeof plan.sales_user === 'object' ? plan.sales_user : null;
+      if (targetUserObj && targetUserObj.email && String(targetUserObj._id || targetUserObj.id) !== String(senderUser._id || senderUser.id)) {
+        recipient = targetUserObj.email;
+        if (ccList.length === 0) {
+          ccList = managerEmails.filter((m) => m.toLowerCase() !== recipient.toLowerCase());
+        }
+      } else if (plan.is_discussed_with_manager && plan.discussed_manager_id) {
+        const discussedManager = managers.find((m) => String(m._id || m.id) === String(plan.discussed_manager_id));
+        if (discussedManager && discussedManager.email) {
+          recipient = discussedManager.email;
+          if (ccList.length === 0) {
+            ccList = managerEmails.filter((m) => m.toLowerCase() !== recipient.toLowerCase());
+          }
+        }
+      }
+
+      if (!recipient && managerEmails.length > 0) {
+        recipient = managerEmails[0];
+        if (ccList.length === 0) {
+          ccList = managerEmails.slice(1);
+        }
+      }
+    }
+
+    if (!recipient) {
+      logger.warn(`[WorkPlanNotification] No recipient email resolved for plan creation email on plan ${planId}`);
+      return;
+    }
+
+    const { WorkPlanVisit, WorkPlanWork } = getModels();
+
+    const [visits, workItems] = await Promise.all([
+      WorkPlanVisit.find({ work_plan: planId, deletedAt: null }).sort({ sequence: 1 }).lean(),
+      WorkPlanWork.find({ work_plan: planId, deletedAt: null }).sort({ sequence: 1 }).lean(),
+    ]);
+
+    const userName = senderUser.name || senderUser.email.split('@')[0];
+    const fromAddress = `${userName} <${senderUser.email}>`;
+    const planDateStr = plan.plan_date
+      ? new Date(plan.plan_date).toISOString().split('T')[0]
+      : 'N/A';
+
+    const baseUrl = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
+    const workPlanUrl = baseUrl ? `${baseUrl}/work-plans` : '';
+
+    const visitsTableHtml = renderVisitsTable(visits);
+    const tasksTableHtml = renderTasksTable(workItems);
+
+    const managers = await getWorkPlannerManagers();
+    const primaryManager = managers.find((m) => m.email === recipient);
+    const recipientName = primaryManager ? (primaryManager.name || recipient.split('@')[0]) : recipient.split('@')[0];
+
+    const templateData = {
+      subject: creationMailData.subject?.trim() || `New Work Plan Created — ${userName} (${planDateStr})`,
+      recipientName,
+      executiveName: userName,
+      executiveEmail: senderUser.email,
+      planDate: planDateStr,
+      planType: plan.plan_type || 'N/A',
+      location: plan.location || 'N/A',
+      remarks: plan.remarks || 'None',
+      discussedManagerName: plan.discussed_manager_name || (plan.is_discussed_with_manager ? 'Manager' : ''),
+      discussionMethod: plan.discussion_method || '',
+      visitsCount: String(visits.length),
+      workCount: String(workItems.length),
+      visitsTableHtml,
+      tasksTableHtml,
+      bodyHtml: rawBody || '',
+      workPlanUrl,
+    };
+
+    let emailAttachments = [];
+    if (Array.isArray(rawAtts) && rawAtts.length > 0) {
+      const { Attachment } = getModels();
+      const { getViewPresignedUrl } = require('../../services/fileManagement');
+      const attachmentDocs = await Attachment.find({ _id: { $in: rawAtts } }).lean();
+
+      emailAttachments = await Promise.all(
+        attachmentDocs.map(async (att) => {
+          const fileId = att.filename;
+          let freshUrl = att.url;
+          if (fileId && !String(fileId).includes('/')) {
+            try {
+              freshUrl = await getViewPresignedUrl(fileId);
+            } catch (err) {
+              logger.warn(`[WorkPlanNotification] Failed to get fresh presigned URL for attachment ${att._id}: ${err.message}`);
+            }
+          }
+
+          if (freshUrl && freshUrl.startsWith('http')) {
+            try {
+              const fileRes = await axios.get(freshUrl, {
+                responseType: 'arraybuffer',
+                timeout: 20000,
+              });
+              const buffer = Buffer.from(fileRes.data);
+              return {
+                filename: att.original_name || att.filename || 'attachment.pdf',
+                content: buffer.toString('base64'),
+                contentType: att.mime_type || 'application/octet-stream',
+              };
+            } catch (dlErr) {
+              logger.error(`[WorkPlanNotification] Could not download attachment content for ${att._id}: ${dlErr.message}`);
+            }
+          }
+
+          return {
+            filename: att.original_name || att.filename || 'attachment.pdf',
+            path: freshUrl,
+            contentType: att.mime_type || 'application/octet-stream',
+          };
+        })
+      );
+    }
+
+    if (rawBody && rawBody.trim()) {
+      await emailHelper.sendEmail(
+        recipient,
+        creationMailData.subject?.trim() || `New Work Plan Created — ${userName} (${planDateStr})`,
+        '',
+        rawBody,
+        emailAttachments,
+        ccList,
+        fromAddress
+      );
+      logger.info(
+        `[WorkPlanNotification] Sent Work Plan creation custom email to ${recipient} (CC: ${ccList.join(', ') || 'none'}, Attachments: ${emailAttachments.length}) from ${fromAddress}`
+      );
+    } else {
+      await emailHelper.sendTemplateEmail(
+        recipient,
+        'work_plan_created',
+        templateData,
+        emailAttachments,
+        ccList,
+        fromAddress
+      );
+      logger.info(
+        `[WorkPlanNotification] Sent Work Plan creation template email to ${recipient} (CC: ${ccList.join(', ') || 'none'}, Attachments: ${emailAttachments.length}) from ${fromAddress}`
+      );
+    }
+  } catch (err) {
+    logger.error(`[WorkPlanNotification] Error sending Work Plan creation email for plan ${planId}: ${err.message}`);
+  }
+}
+
 module.exports = {
   getWorkPlannerManagers,
   sendWorkPlanCompletedEmail,
   sendCustomDayEndEmail,
+  sendCustomWorkPlanCreationEmail,
   renderVisitsTable,
   renderTasksTable,
 };
+

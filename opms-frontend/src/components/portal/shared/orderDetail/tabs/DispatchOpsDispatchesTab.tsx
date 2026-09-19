@@ -610,14 +610,16 @@ export function DispatchOpsDispatchesTab({
                                   : null);
 
                               if (agentObj) {
+                                const code = agentObj.agent_code && !/^[0-9a-fA-F]{24}$/.test(String(agentObj.agent_code)) ? String(agentObj.agent_code) : "";
+                                const name = agentObj.agent_name && !/^[0-9a-fA-F]{24}$/.test(String(agentObj.agent_name)) ? String(agentObj.agent_name) : "";
                                 return (
                                   <>
                                     <span className="font-mono font-semibold text-slate-900 dark:text-slate-100 block">
-                                      {String(agentObj.agent_code || "—")}
+                                      {code || name || "—"}
                                     </span>
-                                    {agentObj.agent_name && (
+                                    {name && code && name !== code && (
                                       <span className="text-xs text-slate-600 dark:text-slate-300 block mt-0.5">
-                                        {String(agentObj.agent_name)}
+                                        {name}
                                       </span>
                                     )}
                                     {agentObj.agent_type && (

@@ -41,6 +41,7 @@ import {
 import { calculateDateRange, type DateFilterPreset, toYmdString } from "./DashboardDateFilter";
 import { usePdfCompanyLetterhead } from "./pdfCompanyLetterhead";
 import { downloadPdfReport } from "./exportPdfReport";
+import { downloadExcelReport } from "./exportExcelReport";
 import { readSessionFromStorage } from "@/utils/authStorage";
 
 export type DownloadWorkPlansModalProps = {
@@ -59,6 +60,7 @@ export function DownloadWorkPlansModal({
 }: DownloadWorkPlansModalProps) {
   const letterhead = usePdfCompanyLetterhead();
   const [downloading, setDownloading] = useState(false);
+  const [downloadingExcel, setDownloadingExcel] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [loading, setLoading] = useState(false);
   const [plans, setPlans] = useState<WorkPlanRecord[]>([]);
@@ -166,7 +168,7 @@ export function DownloadWorkPlansModal({
     setCollapsedPlanIds(newCollapsedMap);
   };
 
-  // Processed Parent Plans with their Child Visits and Tasks
+  // Processed Work Plans with their Field Visits and Tasks
   const filteredPlanTree = useMemo(() => {
     return plans
       .map((plan) => {
@@ -197,9 +199,9 @@ export function DownloadWorkPlansModal({
           return null;
         }
 
-        // Process Child Visits
+        // Process Visits
         const rawVisits: WorkPlanVisitRecord[] = plan.visits || [];
-        const childVisits = rawVisits
+        const visits = rawVisits
           .map((v, vIdx) => {
             const partyObj = typeof v.party === "object" && v.party !== null ? (v.party as Record<string, unknown>) : null;
             const partyName = v.party_name || (partyObj?.party_name as string) || "Visit";
@@ -255,9 +257,9 @@ export function DownloadWorkPlansModal({
             return true;
           });
 
-        // Process Child Work Tasks
+        // Process Work Tasks
         const rawWorks: WorkPlanWorkRecord[] = plan.works || [];
-        const childTasks = rawWorks
+        const tasks = rawWorks
           .map((w, wIdx) => {
             const startTime = w.planned_start_time ? formatTime(w.planned_start_time) : "";
             const endTime = w.planned_end_time ? formatTime(w.planned_end_time) : "";
@@ -287,12 +289,12 @@ export function DownloadWorkPlansModal({
             return true;
           });
 
-        // If partyTitleQuery or contactQuery is active and plan has no matching child visits/tasks, check parent
-        if ((partyTitleQuery || contactQuery) && childVisits.length === 0 && childTasks.length === 0) {
+        // If partyTitleQuery or contactQuery is active and plan has no matching visits/tasks, check plan details
+        if ((partyTitleQuery || contactQuery) && visits.length === 0 && tasks.length === 0) {
           return null;
         }
 
-        // Global Search Filter matching Parent or Child fields
+        // Global Search Filter matching Plan, Visit or Task fields
         const q = searchQuery.trim().toLowerCase();
         let matchesSearch = true;
         if (q) {
@@ -311,7 +313,7 @@ export function DownloadWorkPlansModal({
           ).toLowerCase();
           const discMethod = (plan.discussion_method || "").toLowerCase();
 
-          const parentMatch =
+          const planMatch =
             userStr.includes(q) ||
             locStr.includes(q) ||
             remStr.includes(q) ||
@@ -320,7 +322,7 @@ export function DownloadWorkPlansModal({
             discMgr.includes(q) ||
             discMethod.includes(q);
 
-          const visitMatch = childVisits.some(
+          const visitMatch = visits.some(
             (v) =>
               v.partyName.toLowerCase().includes(q) ||
               v.contactInfo.toLowerCase().includes(q) ||
@@ -329,14 +331,14 @@ export function DownloadWorkPlansModal({
               v.checklistNotes.toLowerCase().includes(q)
           );
 
-          const taskMatch = childTasks.some(
+          const taskMatch = tasks.some(
             (w) =>
               w.title.toLowerCase().includes(q) ||
               w.description.toLowerCase().includes(q) ||
               w.remarks.toLowerCase().includes(q)
           );
 
-          matchesSearch = parentMatch || visitMatch || taskMatch;
+          matchesSearch = planMatch || visitMatch || taskMatch;
         }
 
         if (!matchesSearch) return null;
@@ -357,8 +359,8 @@ export function DownloadWorkPlansModal({
               : "") ||
             "",
           discussionMethod: plan.discussion_method || "",
-          childVisits,
-          childTasks,
+          visits,
+          tasks,
           totalVisits: plan.visit_count ?? (plan.visits?.length || 0),
           totalTasks: plan.work_count ?? (plan.works?.length || 0),
         };
@@ -377,11 +379,11 @@ export function DownloadWorkPlansModal({
   const summaryMetrics = useMemo(() => {
     const totalPlans = filteredPlanTree.length;
     const totalVisits = filteredPlanTree.reduce(
-      (sum, p) => sum + p.childVisits.length,
+      (sum, p) => sum + p.visits.length,
       0
     );
     const totalTasks = filteredPlanTree.reduce(
-      (sum, p) => sum + p.childTasks.length,
+      (sum, p) => sum + p.tasks.length,
       0
     );
     const completedPlans = filteredPlanTree.filter((p) => p.planStatus === "completed").length;
@@ -413,7 +415,7 @@ export function DownloadWorkPlansModal({
 
   if (!open) return null;
 
-  // Export Hierarchical Parent-Child CSV
+  // Export Hierarchical Work Plans CSV
   function exportCsv() {
     setDownloading(true);
     try {
@@ -439,13 +441,13 @@ export function DownloadWorkPlansModal({
       const rows: Array<Array<string | number>> = [];
 
       filteredPlanTree.forEach((p, pIdx) => {
-        const parentRowIndex = pIdx + 1;
+        const planIndex = pIdx + 1;
         const execName = salesUserLabel(p.salesUser);
 
-        // 1. Parent Work Plan Row
+        // 1. Work Plan Row
         rows.push([
-          parentRowIndex,
-          "PARENT WORK PLAN",
+          planIndex,
+          "WORK PLAN",
           formatPlanDate(p.planDate),
           `"${execName.replace(/"/g, '""')}"`,
           p.isDiscussedWithManager ? "Yes" : "No",
@@ -462,11 +464,11 @@ export function DownloadWorkPlansModal({
           "N/A",
         ]);
 
-        // 2. Child Visits Rows
-        p.childVisits.forEach((v, vIdx) => {
+        // 2. Field Visits Rows
+        p.visits.forEach((v, vIdx) => {
           rows.push([
-            `${parentRowIndex}.${vIdx + 1}`,
-            "CHILD VISIT",
+            `${planIndex}.${vIdx + 1}`,
+            "FIELD VISIT",
             formatPlanDate(p.planDate),
             `"${execName.replace(/"/g, '""')}"`,
             "—",
@@ -484,11 +486,11 @@ export function DownloadWorkPlansModal({
           ]);
         });
 
-        // 3. Child Work Tasks Rows
-        p.childTasks.forEach((w, wIdx) => {
+        // 3. Work Tasks Rows
+        p.tasks.forEach((w, wIdx) => {
           rows.push([
-            `${parentRowIndex}.${p.childVisits.length + wIdx + 1}`,
-            "CHILD TASK",
+            `${planIndex}.${p.visits.length + wIdx + 1}`,
+            "WORK TASK",
             formatPlanDate(p.planDate),
             `"${execName.replace(/"/g, '""')}"`,
             "—",
@@ -526,39 +528,38 @@ export function DownloadWorkPlansModal({
     }
   }
 
-  async function exportPdf() {
-    setDownloadingPdf(true);
+  async function exportExcel() {
+    setDownloadingExcel(true);
     try {
       const rows: Array<Record<string, string | number | null | undefined>> = [];
-      let parentRowIndex = 0;
+      let planIndex = 0;
 
       filteredPlanTree.forEach((p) => {
-        parentRowIndex += 1;
+        planIndex += 1;
         const execName = salesUserLabel(p.salesUser);
 
-        // 1. Parent Plan Row
         const discSummary = p.isDiscussedWithManager
           ? `Discussed with ${p.discussedManagerName || "Manager"} (${formatDiscussionMethod(p.discussionMethod)})`
           : "";
+
+        // 1. Work Plan Row
         rows.push({
-          _rowType: "PARENT PLAN",
-          hierarchyId: `${parentRowIndex}`,
-          rowType: "PARENT PLAN",
+          hierarchyId: `${planIndex}`,
+          rowType: "WORK PLAN",
           date: formatPlanDate(p.planDate),
           executive: execName,
-          activity: p.planType === "Visits" ? `Visits Plan (${p.childVisits.length} Visits)` : `Tasks Plan (${p.childTasks.length} Tasks)`,
+          activity: p.planType === "Visits" ? `Visits Plan (${p.visits.length} Visits)` : `Tasks Plan (${p.tasks.length} Tasks)`,
           details: [p.planRemarks, discSummary].filter(Boolean).join(" | ") || "—",
           plannedTime: "Full Day",
           status: p.planStatus.toUpperCase(),
           remarks: [p.planRemarks, discSummary].filter(Boolean).join(" | ") || "—",
         });
 
-        // 2. Child Visits Rows
-        p.childVisits.forEach((v, vIdx) => {
+        // 2. Field Visits Rows
+        p.visits.forEach((v, vIdx) => {
           rows.push({
-            _rowType: "CHILD VISIT",
-            hierarchyId: `${parentRowIndex}.${vIdx + 1}`,
-            rowType: "CHILD VISIT",
+            hierarchyId: `${planIndex}.${vIdx + 1}`,
+            rowType: "FIELD VISIT",
             date: formatPlanDate(p.planDate),
             executive: execName,
             activity: `Field Visit: ${v.partyName}`,
@@ -569,12 +570,95 @@ export function DownloadWorkPlansModal({
           });
         });
 
-        // 3. Child Work Tasks Rows
-        p.childTasks.forEach((w, wIdx) => {
+        // 3. Work Tasks Rows
+        p.tasks.forEach((w, wIdx) => {
           rows.push({
-            _rowType: "CHILD TASK",
-            hierarchyId: `${parentRowIndex}.${p.childVisits.length + wIdx + 1}`,
-            rowType: "CHILD TASK",
+            hierarchyId: `${planIndex}.${p.visits.length + wIdx + 1}`,
+            rowType: "WORK TASK",
+            date: formatPlanDate(p.planDate),
+            executive: execName,
+            activity: `Work Task: ${w.title}`,
+            details: w.description || "—",
+            plannedTime: w.plannedTime || "—",
+            status: w.status.toUpperCase(),
+            remarks: w.remarks || "—",
+          });
+        });
+      });
+
+      downloadExcelReport({
+        filename: `work_plans_report_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        sheetName: "Work Plans Tree",
+        title: "Work Plans Master Report",
+        columns: [
+          { key: "hierarchyId", label: "#" },
+          { key: "rowType", label: "Record Level" },
+          { key: "date", label: "Plan Date" },
+          { key: "executive", label: "Executive / Representative" },
+          { key: "activity", label: "Activity / Purpose / Title" },
+          { key: "details", label: "Contact / Address / Details" },
+          { key: "plannedTime", label: "Schedule / Time" },
+          { key: "status", label: "Status" },
+          { key: "remarks", label: "Remarks / Outcome" },
+        ],
+        rows,
+      });
+    } catch (err) {
+      console.error("Export Excel failed:", err);
+    } finally {
+      setDownloadingExcel(false);
+    }
+  }
+
+  async function exportPdf() {
+    setDownloadingPdf(true);
+    try {
+      const rows: Array<Record<string, string | number | null | undefined>> = [];
+      let planIndex = 0;
+
+      filteredPlanTree.forEach((p) => {
+        planIndex += 1;
+        const execName = salesUserLabel(p.salesUser);
+
+        // 1. Work Plan Row
+        const discSummary = p.isDiscussedWithManager
+          ? `Discussed with ${p.discussedManagerName || "Manager"} (${formatDiscussionMethod(p.discussionMethod)})`
+          : "";
+        rows.push({
+          _rowType: "WORK PLAN",
+          hierarchyId: `${planIndex}`,
+          rowType: "WORK PLAN",
+          date: formatPlanDate(p.planDate),
+          executive: execName,
+          activity: p.planType === "Visits" ? `Visits Plan (${p.visits.length} Visits)` : `Tasks Plan (${p.tasks.length} Tasks)`,
+          details: [p.planRemarks, discSummary].filter(Boolean).join(" | ") || "—",
+          plannedTime: "Full Day",
+          status: p.planStatus.toUpperCase(),
+          remarks: [p.planRemarks, discSummary].filter(Boolean).join(" | ") || "—",
+        });
+
+        // 2. Field Visits Rows
+        p.visits.forEach((v, vIdx) => {
+          rows.push({
+            _rowType: "FIELD VISIT",
+            hierarchyId: `${planIndex}.${vIdx + 1}`,
+            rowType: "FIELD VISIT",
+            date: formatPlanDate(p.planDate),
+            executive: execName,
+            activity: `Field Visit: ${v.partyName}`,
+            details: `${v.contactInfo ? v.contactInfo + " | " : ""}${v.address}`,
+            plannedTime: v.plannedTime || "—",
+            status: v.status.toUpperCase(),
+            remarks: `${v.outcome ? "Outcome: " + v.outcome : ""}${v.checklistNotes ? " Notes: " + v.checklistNotes : ""}` || "—",
+          });
+        });
+
+        // 3. Work Tasks Rows
+        p.tasks.forEach((w, wIdx) => {
+          rows.push({
+            _rowType: "WORK TASK",
+            hierarchyId: `${planIndex}.${p.visits.length + wIdx + 1}`,
+            rowType: "WORK TASK",
             date: formatPlanDate(p.planDate),
             executive: execName,
             activity: `Work Task: ${w.title}`,
@@ -605,14 +689,14 @@ export function DownloadWorkPlansModal({
         letterhead,
         filename: `work_plans_report_${new Date().toISOString().slice(0, 10)}.pdf`,
         title: "Work Plans Master Report",
-        subtitle: `Parent Work Plans & Child Visits/Tasks Master Sheet`,
+        subtitle: `Work Plans & Field Activity Master Sheet`,
         downloadedBy,
         timestamp,
         filterPanel: activeFilterPanel,
         metadata: [
-          { label: "Total Parent Plans", value: String(summaryMetrics.totalPlans) },
-          { label: "Child Visits", value: String(summaryMetrics.totalVisits) },
-          { label: "Child Tasks", value: String(summaryMetrics.totalTasks) },
+          { label: "Total Work Plans", value: String(summaryMetrics.totalPlans) },
+          { label: "Field Visits", value: String(summaryMetrics.totalVisits) },
+          { label: "Work Tasks", value: String(summaryMetrics.totalTasks) },
         ],
         columns: [
           { key: "hierarchyId", label: "#", width: 0.6, align: "left" },
@@ -655,14 +739,14 @@ export function DownloadWorkPlansModal({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-bold text-foreground">
-                  Work Plans Master Report (Parent Plan & Child Visits/Tasks View)
+                  Work Plans Master Report (Work Plans & Field Activity View)
                 </h2>
                 <span className="rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
                   Google Sheet Tree Mode
                 </span>
               </div>
               <p className="text-xs text-muted">
-                Displaying {summaryMetrics.totalPlans} Parent Work Plans with {summaryMetrics.totalVisits} Child Visits and {summaryMetrics.totalTasks} Child Tasks
+                Displaying {summaryMetrics.totalPlans} Work Plans with {summaryMetrics.totalVisits} Field Visits and {summaryMetrics.totalTasks} Work Tasks
               </p>
             </div>
           </div>
@@ -745,6 +829,15 @@ export function DownloadWorkPlansModal({
             </button>
             <button
               type="button"
+              disabled={downloadingExcel || filteredPlanTree.length === 0}
+              onClick={exportExcel}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-600/40 bg-emerald-600 text-white px-3.5 py-1.5 text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50 transition shadow-xs"
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              {downloadingExcel ? "Generating Excel…" : "Export Excel (.xlsx)"}
+            </button>
+            <button
+              type="button"
               disabled={downloadingPdf || filteredPlanTree.length === 0}
               onClick={exportPdf}
               className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50 transition shadow-xs"
@@ -770,7 +863,7 @@ export function DownloadWorkPlansModal({
               <div className="flex items-center gap-2">
                 <Filter className="h-4 w-4 text-primary" />
                 <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">
-                  Work Plan & Child Activity Filter Panel
+                  Work Plan & Field Activity Filter Panel
                 </h4>
                 {activeFiltersCount > 0 && (
                   <span className="text-[11px] text-muted">({activeFiltersCount} active filters)</span>
@@ -911,12 +1004,12 @@ export function DownloadWorkPlansModal({
           </div>
         )}
 
-        {/* Parent Work Plan + Child Visits / Tasks Google Sheet Table */}
+        {/* Work Plan + Visits / Tasks Table */}
         <div className="flex-1 overflow-auto bg-card">
           {loading ? (
             <div className="flex h-64 items-center justify-center text-xs text-muted gap-2">
               <RefreshCw className="h-4 w-4 animate-spin text-primary" />
-              Loading work plans & child items…
+              Loading work plans & items…
             </div>
           ) : filteredPlanTree.length === 0 ? (
             <div className="flex h-64 flex-col items-center justify-center text-muted p-6 text-center">
@@ -979,11 +1072,11 @@ export function DownloadWorkPlansModal({
                     const parentId = p.planId || `p-${pIdx}`;
                     const isCollapsed = Boolean(collapsedPlanIds[parentId]);
                     const parentRowIndex = pIdx + 1;
-                    const totalChildren = p.childVisits.length + p.childTasks.length;
+                    const totalItems = p.visits.length + p.tasks.length;
 
                     return (
                       <tbody key={parentId} className="contents">
-                        {/* PARENT WORK PLAN ROW */}
+                        {/* WORK PLAN ROW */}
                         <tr className="border-t-2 border-b border-border bg-surface-muted/90 font-semibold text-foreground hover:bg-surface-muted transition select-none">
                           {/* 0. Index & Toggle */}
                           <td className="border-r border-border px-3 py-2.5 text-center font-mono font-bold bg-surface-muted/60">
@@ -991,9 +1084,9 @@ export function DownloadWorkPlansModal({
                               type="button"
                               onClick={() => togglePlanCollapse(parentId)}
                               className="flex items-center justify-center gap-1 w-full text-foreground hover:text-primary"
-                              title={isCollapsed ? "Expand child visits & tasks" : "Collapse child visits & tasks"}
+                              title={isCollapsed ? "Expand visits & tasks" : "Collapse visits & tasks"}
                             >
-                              {totalChildren > 0 ? (
+                              {totalItems > 0 ? (
                                 isCollapsed ? (
                                   <ChevronRight className="h-4 w-4 text-primary shrink-0" />
                                 ) : (
@@ -1061,22 +1154,22 @@ export function DownloadWorkPlansModal({
 
                           {/* 10. Checklist */}
                           <td className="px-3 py-2.5 text-muted text-[11px]">
-                            {totalChildren > 0
-                              ? `${p.childVisits.length} visits, ${p.childTasks.length} tasks`
+                            {totalItems > 0
+                              ? `${p.visits.length} visits, ${p.tasks.length} tasks`
                               : "No items"}
                           </td>
                         </tr>
 
-                        {/* CHILD VISITS & TASKS ROWS (rendered when not collapsed) */}
+                        {/* VISITS & TASKS ROWS (rendered when not collapsed) */}
                         {!isCollapsed && (
                           <>
-                            {/* Child Visits */}
-                            {p.childVisits.map((v, vIdx) => (
+                            {/* Field Visits */}
+                            {p.visits.map((v, vIdx) => (
                               <tr
                                 key={v.id}
                                 className="bg-card hover:bg-surface-muted/60 transition border-b border-border/50"
                               >
-                                {/* 0. Child Index */}
+                                {/* 0. Item Index */}
                                 <td className="border-r border-border/60 px-3 py-2 text-center text-muted font-mono text-[11px] bg-surface-muted/30 pl-4">
                                   {parentRowIndex}.{vIdx + 1}
                                 </td>
@@ -1139,15 +1232,15 @@ export function DownloadWorkPlansModal({
                               </tr>
                             ))}
 
-                            {/* Child Work Tasks */}
-                            {p.childTasks.map((w, wIdx) => (
+                            {/* Work Tasks */}
+                            {p.tasks.map((w, wIdx) => (
                               <tr
                                 key={w.id}
                                 className="bg-card hover:bg-surface-muted/60 transition border-b border-border/50"
                               >
-                                {/* 0. Child Index */}
+                                {/* 0. Item Index */}
                                 <td className="border-r border-border/60 px-3 py-2 text-center text-muted font-mono text-[11px] bg-surface-muted/30 pl-4">
-                                  {parentRowIndex}.{p.childVisits.length + wIdx + 1}
+                                  {parentRowIndex}.{p.visits.length + wIdx + 1}
                                 </td>
 
                                 {/* 1. Plan Date */}
@@ -1224,7 +1317,7 @@ export function DownloadWorkPlansModal({
                     const items = [];
 
                     // If plan has no visits and no tasks (e.g. Leave or empty day)
-                    if (p.childVisits.length === 0 && p.childTasks.length === 0) {
+                    if (p.visits.length === 0 && p.tasks.length === 0) {
                       items.push(
                         <tr key={`flat-p-${p.planId}`} className="bg-card hover:bg-surface-muted/60 transition border-b border-border/50">
                           <td className="border-r border-border/60 px-3 py-2 text-center text-muted font-mono text-[11px]">{parentRowIndex}</td>
@@ -1233,7 +1326,7 @@ export function DownloadWorkPlansModal({
                           <td className="border-r border-border/60 px-3 py-2 whitespace-nowrap">
                             <span className="rounded bg-primary/10 text-primary px-2 py-0.5 text-[10px] font-bold">{p.planType} Plan</span>
                           </td>
-                          <td className="border-r border-border/60 px-3 py-2 font-bold text-foreground">{p.planType === "Leave" ? "Leave Day" : "No child activities"}</td>
+                          <td className="border-r border-border/60 px-3 py-2 font-bold text-foreground">{p.planType === "Leave" ? "Leave Day" : "No plan activities"}</td>
                           <td className="border-r border-border/60 px-3 py-2 text-muted">{p.planRemarks || "—"}</td>
                           <td className="border-r border-border/60 px-3 py-2 text-muted">{p.planLocation || "—"}</td>
                           <td className="border-r border-border/60 px-3 py-2 text-muted font-mono text-[10px]">Full Day</td>
@@ -1245,7 +1338,7 @@ export function DownloadWorkPlansModal({
                     }
 
                     // Flat Visits
-                    p.childVisits.forEach((v, vIdx) => {
+                    p.visits.forEach((v, vIdx) => {
                       items.push(
                         <tr key={`flat-v-${v.id}`} className="bg-card hover:bg-surface-muted/60 transition border-b border-border/50">
                           <td className="border-r border-border/60 px-3 py-2 text-center text-muted font-mono text-[11px]">{parentRowIndex}.{vIdx + 1}</td>
@@ -1269,10 +1362,10 @@ export function DownloadWorkPlansModal({
                     });
 
                     // Flat Tasks
-                    p.childTasks.forEach((w, wIdx) => {
+                    p.tasks.forEach((w, wIdx) => {
                       items.push(
                         <tr key={`flat-w-${w.id}`} className="bg-card hover:bg-surface-muted/60 transition border-b border-border/50">
-                          <td className="border-r border-border/60 px-3 py-2 text-center text-muted font-mono text-[11px]">{parentRowIndex}.{p.childVisits.length + wIdx + 1}</td>
+                          <td className="border-r border-border/60 px-3 py-2 text-center text-muted font-mono text-[11px]">{parentRowIndex}.{p.visits.length + wIdx + 1}</td>
                           <td className="border-r border-border/60 px-3 py-2 text-foreground font-semibold whitespace-nowrap">{formatPlanDate(p.planDate)}</td>
                           <td className="border-r border-border/60 px-3 py-2 text-foreground font-semibold whitespace-nowrap">{salesUserLabel(p.salesUser)}</td>
                           <td className="border-r border-border/60 px-3 py-2 whitespace-nowrap">
@@ -1308,24 +1401,33 @@ export function DownloadWorkPlansModal({
               <span className="h-2 w-2 rounded-full bg-emerald-500" />
               Sheet Tree Active
             </span>
-            <span>Total Parent Plans: <strong className="text-foreground">{summaryMetrics.totalPlans}</strong></span>
-            <span>Child Visits: <strong className="text-cyan-600 dark:text-cyan-400">{summaryMetrics.totalVisits}</strong></span>
-            <span>Child Tasks: <strong className="text-purple-600 dark:text-purple-400">{summaryMetrics.totalTasks}</strong></span>
+            <span>Total Work Plans: <strong className="text-foreground">{summaryMetrics.totalPlans}</strong></span>
+            <span>Field Visits: <strong className="text-cyan-600 dark:text-cyan-400">{summaryMetrics.totalVisits}</strong></span>
+            <span>Work Tasks: <strong className="text-purple-600 dark:text-purple-400">{summaryMetrics.totalTasks}</strong></span>
             <span>Completed Plans: <strong className="text-emerald-600 dark:text-emerald-400">{summaryMetrics.completedPlans}</strong></span>
           </div>
 
           <div className="flex items-center gap-2">
             <span className="rounded bg-card border border-border px-2.5 py-1 text-[11px] font-bold text-muted">
-              Sheet1: Work Plans & Child Activities Tree
+              Sheet1: Work Plans & Field Activity
             </span>
             <button
               type="button"
               disabled={downloading || filteredPlanTree.length === 0}
               onClick={exportCsv}
-              className="inline-flex items-center gap-1 rounded bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-50 transition"
+              className="inline-flex items-center gap-1 rounded bg-surface-muted border border-border px-3 py-1 text-xs font-semibold text-foreground hover:bg-card disabled:opacity-50 transition"
             >
-              <Download className="h-3.5 w-3.5" />
+              <Download className="h-3.5 w-3.5 text-muted" />
               Export CSV
+            </button>
+            <button
+              type="button"
+              disabled={downloadingExcel || filteredPlanTree.length === 0}
+              onClick={exportExcel}
+              className="inline-flex items-center gap-1 rounded bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5" />
+              Export Excel (.xlsx)
             </button>
           </div>
         </div>

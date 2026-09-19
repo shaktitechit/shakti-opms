@@ -246,7 +246,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
 
   const isWindowOpen = canAddExpenseForPlanDate(plan.plan_date);
   const windowEnded = isWindowEnded(plan.plan_date);
-  const canCompleteChildAction = managerRole || isWindowOpen;
+  const canCompleteAction = managerRole || isWindowOpen;
   const showStructureActions = managerRole || (!isCompleted && !windowEnded);
 
   const allVisitsFinished =
@@ -264,7 +264,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
 
   const canCompletePlan =
     isPlanned &&
-    canCompleteChildAction &&
+    canCompleteAction &&
     (visitsPlan ? allVisitsFinished : taskPlan ? allTasksFinished : true);
 
   return (
@@ -307,7 +307,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
               onClick={() => setDayEndMailModalOpen(true)}
               title={
                 !canCompletePlan
-                  ? !canCompleteChildAction
+                  ? !canCompleteAction
                     ? workPlanWindowHint(plan.plan_date)
                     : visitsPlan
                     ? "Complete all visits before submitting Day End"
@@ -480,7 +480,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
             )}
           </div>
 
-          {!canCompleteChildAction && !isCompleted && (
+          {!canCompleteAction && !isCompleted && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-2 font-medium">
               <span>ℹ️ {visitWindowHint(plan.plan_date)}</span>
             </div>
@@ -557,11 +557,11 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                           {!v.check_in_time && (
                             <button
                               type="button"
-                              disabled={!canCompleteChildAction}
+                              disabled={!canCompleteAction}
                               onClick={() => handleCheckIn(vId)}
-                              title={!canCompleteChildAction ? visitWindowHint(plan.plan_date) : "Check In"}
+                              title={!canCompleteAction ? visitWindowHint(plan.plan_date) : "Check In"}
                               className={`rounded px-2.5 py-1 text-xs font-semibold transition ${
-                                canCompleteChildAction
+                                canCompleteAction
                                   ? "bg-primary text-primary-foreground hover:bg-primary-hover"
                                   : "bg-surface-muted border border-border text-muted cursor-not-allowed"
                               }`}
@@ -572,11 +572,11 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                           {v.check_in_time && !v.check_out_time && (
                             <button
                               type="button"
-                              disabled={!canCompleteChildAction}
+                              disabled={!canCompleteAction}
                               onClick={() => handleCheckOut(vId)}
-                              title={!canCompleteChildAction ? visitWindowHint(plan.plan_date) : "Check Out"}
+                              title={!canCompleteAction ? visitWindowHint(plan.plan_date) : "Check Out"}
                               className={`rounded px-2.5 py-1 text-xs font-semibold transition ${
-                                canCompleteChildAction
+                                canCompleteAction
                                   ? "bg-amber-600 text-white hover:bg-amber-700"
                                   : "bg-surface-muted border border-border text-muted cursor-not-allowed"
                               }`}
@@ -587,11 +587,11 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                           {v.status !== "completed" && (
                             <button
                               type="button"
-                              disabled={!canCompleteChildAction}
+                              disabled={!canCompleteAction}
                               onClick={() => setCompleteVisitTarget(v)}
-                              title={!canCompleteChildAction ? visitWindowHint(plan.plan_date) : "Complete visit"}
+                              title={!canCompleteAction ? visitWindowHint(plan.plan_date) : "Complete visit"}
                               className={`rounded px-2.5 py-1 text-xs font-semibold transition ${
-                                canCompleteChildAction
+                                canCompleteAction
                                   ? "bg-emerald-600 text-white hover:bg-emerald-700"
                                   : "bg-surface-muted border border-border text-muted cursor-not-allowed"
                               }`}
@@ -664,7 +664,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
             )}
           </div>
 
-          {!canCompleteChildAction && !isCompleted && (
+          {!canCompleteAction && !isCompleted && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-2 font-medium">
               <span>ℹ️ {taskWindowHint(plan.plan_date)}</span>
             </div>
@@ -710,11 +710,11 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                         {w.status !== "completed" && (
                           <button
                             type="button"
-                            disabled={!canCompleteChildAction}
+                            disabled={!canCompleteAction}
                             onClick={() => setCompleteWorkTarget(w)}
-                            title={!canCompleteChildAction ? taskWindowHint(plan.plan_date) : "Complete task"}
+                            title={!canCompleteAction ? taskWindowHint(plan.plan_date) : "Complete task"}
                             className={`rounded px-2.5 py-1 text-xs font-semibold transition ${
-                              canCompleteChildAction
+                              canCompleteAction
                                 ? "bg-emerald-600 text-white hover:bg-emerald-700"
                                 : "bg-surface-muted border border-border text-muted cursor-not-allowed"
                             }`}
@@ -769,7 +769,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
           plan={plan}
           isCompleted={isCompleted}
           canCompletePlan={canCompletePlan}
-          canCompleteChildAction={canCompleteChildAction}
+          canCompleteAction={canCompleteAction}
           actionLoading={actionLoading}
           onOpenMailModal={() => setDayEndMailModalOpen(true)}
           onOpenViewModal={() => setDayEndViewModalOpen(true)}

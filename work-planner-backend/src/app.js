@@ -13,6 +13,8 @@ const { notFound } = require('./middlewares/notFound.middleware');
 const workPlannerRoutes = require('./modules/workPlanner/workPlanner.routes');
 const { proxyToNotificationService } = require('./utils/proxyToNotificationService');
 const { proxyToMessageService } = require('./utils/proxyToMessageService');
+const { proxyToPartyService } = require('./utils/proxyToPartyService');
+const { proxyToLeadManagerService } = require('./utils/proxyToLeadManagerService');
 
 const app = express();
 
@@ -27,6 +29,8 @@ app.get('/health', (req, res) => {
 });
 
 app.use('/api/work-planner', workPlannerRoutes);
+app.use('/api/parties', proxyToPartyService);
+app.use('/api/leads', proxyToLeadManagerService);
 app.use('/api/notifications', proxyToNotificationService);
 app.use('/api/emails', proxyToMessageService);
 app.use('/api/messages', proxyToMessageService);

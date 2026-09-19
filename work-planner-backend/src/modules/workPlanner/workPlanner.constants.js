@@ -131,26 +131,44 @@ function isExpenseReceiptRequired(amount) {
  */
 function isManager(user) {
   if (!user) return false;
+  const roles = [
+    ...(Array.isArray(user.roles) ? user.roles : []),
+    ...(Array.isArray(user.role_codes) ? user.role_codes : []),
+    user.role,
+    user.department,
+  ].filter(Boolean).map((r) => String(r).toLowerCase());
+
+  if (roles.some((r) => ['super_admin', 'admin', 'manager'].includes(r))) return true;
+
   const portalAccess = Array.isArray(user.portals)
-    ? user.portals.find((p) => p.portal_code === 'work_planner')
+    ? user.portals.find((p) => p && String(p.portal_code || '').toLowerCase() === 'work_planner')
     : null;
   if (portalAccess && Array.isArray(portalAccess.access_roles)) {
-    return portalAccess.access_roles.includes('manager');
+    return portalAccess.access_roles.some((r) =>
+      ['manager', 'admin', 'super_admin'].includes(String(r).toLowerCase())
+    );
   }
   return false;
 }
 
-/**
- * Executive role on work_planner portal.
- * Evaluates portal assignment `work_planner` role `executive`.
- */
 function isExecutive(user) {
   if (!user) return false;
+  const roles = [
+    ...(Array.isArray(user.roles) ? user.roles : []),
+    ...(Array.isArray(user.role_codes) ? user.role_codes : []),
+    user.role,
+    user.department,
+  ].filter(Boolean).map((r) => String(r).toLowerCase());
+
+  if (roles.some((r) => ['executive', 'sales'].includes(r))) return true;
+
   const portalAccess = Array.isArray(user.portals)
-    ? user.portals.find((p) => p.portal_code === 'work_planner')
+    ? user.portals.find((p) => p && String(p.portal_code || '').toLowerCase() === 'work_planner')
     : null;
   if (portalAccess && Array.isArray(portalAccess.access_roles)) {
-    return portalAccess.access_roles.includes('executive');
+    return portalAccess.access_roles.some((r) =>
+      ['executive', 'sales'].includes(String(r).toLowerCase())
+    );
   }
   return false;
 }

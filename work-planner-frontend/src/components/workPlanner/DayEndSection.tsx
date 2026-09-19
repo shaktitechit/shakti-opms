@@ -25,7 +25,7 @@ interface DayEndSectionProps {
   plan: WorkPlanRecord;
   isCompleted: boolean;
   canCompletePlan: boolean;
-  canCompleteChildAction: boolean;
+  canCompleteAction: boolean;
   actionLoading: boolean;
   onOpenMailModal: () => void;
   onOpenViewModal: () => void;
@@ -70,7 +70,7 @@ export function DayEndSection({
   plan,
   isCompleted,
   canCompletePlan,
-  canCompleteChildAction,
+  canCompleteAction,
   actionLoading,
   onOpenMailModal,
   onOpenViewModal,
@@ -313,7 +313,7 @@ export function DayEndSection({
               onClick={onOpenMailModal}
               title={
                 !canCompletePlan
-                  ? !canCompleteChildAction
+                  ? !canCompleteAction
                     ? workPlanWindowHint(plan.plan_date)
                     : "Complete all visits and tasks before submitting Day End"
                   : "Submit Day End Report"

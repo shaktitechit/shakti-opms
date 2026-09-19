@@ -37,7 +37,7 @@ exports.remove = asyncHandler(async (req, res) => {
 });
 
 exports.submit = asyncHandler(async (req, res) => {
-  res.json({ success: true, data: await service.submit(req.params.id, req.user) });
+  res.json({ success: true, data: await service.submit(req.params.id, req.user, req.body || {}) });
 });
 
 exports.approve = asyncHandler(async (req, res) => {

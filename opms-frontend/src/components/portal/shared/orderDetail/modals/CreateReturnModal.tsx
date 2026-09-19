@@ -23,6 +23,7 @@ import {
   nestDispatchLinesForDisplay,
   type DispatchLineDisplay,
 } from "../dispatchKitDisplay";
+import { agentLabel } from "@/components/portal/shared/transportPlanner/transportPlanUtils";
 
 interface CreateReturnModalProps {
   open: boolean;
@@ -699,7 +700,7 @@ export function CreateReturnModal({
                                 "object"
                                 ? activeTransport.transport_agent.agent_name ||
                                   activeTransport.transport_agent.agent_code
-                                : activeTransport.transport_agent) ||
+                                : agentLabel(activeTransport.transport_agent)) ||
                               "—"}
                           </span>
                         </div>

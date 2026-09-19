@@ -21,7 +21,11 @@ function getServiceToken() {
 async function sendEmail(recipient, subject, textBody, htmlBody, attachments = [], cc = [], from = null) {
   try {
     const token = getServiceToken();
-    const url = `${MESSAGE_SERVICE_URL.replace(/\/$/, '')}/api/emails`;
+    const baseUrl = MESSAGE_SERVICE_URL || process.env.MESSAGE_SERVICE_URL || '';
+    if (!baseUrl) {
+      throw new Error('MESSAGE_SERVICE_URL environment variable is not set');
+    }
+    const url = `${baseUrl.replace(/\/$/, '')}/api/emails`;
     const response = await axios.post(
       url,
       {
@@ -51,7 +55,11 @@ async function sendEmail(recipient, subject, textBody, htmlBody, attachments = [
 async function sendTemplateEmail(recipient, templateName, templateData = {}, attachments = [], cc = [], from = null) {
   try {
     const token = getServiceToken();
-    const url = `${MESSAGE_SERVICE_URL.replace(/\/$/, '')}/api/emails`;
+    const baseUrl = MESSAGE_SERVICE_URL || process.env.MESSAGE_SERVICE_URL || '';
+    if (!baseUrl) {
+      throw new Error('MESSAGE_SERVICE_URL environment variable is not set');
+    }
+    const url = `${baseUrl.replace(/\/$/, '')}/api/emails`;
     const response = await axios.post(
       url,
       {

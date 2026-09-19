@@ -1,17 +1,17 @@
 export const AUTH_SERVICE_URL =
-  process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || "http://localhost:7003";
+  process.env.NEXT_PUBLIC_AUTH_SERVICE_URL || "";
 
 export const WORK_PLANNER_SERVICE_URL =
-  process.env.NEXT_PUBLIC_WORK_PLANNER_SERVICE_URL || "http://localhost:7007";
+  process.env.NEXT_PUBLIC_WORK_PLANNER_SERVICE_URL || "";
 
 export const PRODUCT_SERVICE_URL =
-  process.env.NEXT_PUBLIC_PRODUCT_SERVICE_URL || "http://localhost:7005";
+  process.env.NEXT_PUBLIC_PRODUCT_SERVICE_URL || "";
 
 export const PARTY_SERVICE_URL =
-  process.env.NEXT_PUBLIC_PARTY_SERVICE_URL || "http://localhost:7006";
+  process.env.NEXT_PUBLIC_PARTY_SERVICE_URL || "";
 
 export const LEAD_MANAGER_SERVICE_URL =
-  process.env.NEXT_PUBLIC_LEAD_MANAGER_SERVICE_URL || "http://localhost:7009";
+  process.env.NEXT_PUBLIC_LEAD_MANAGER_SERVICE_URL || "";
 
 /**
  * Notifications are proxied by work-planner-backend (`/api/notifications`).

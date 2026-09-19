@@ -152,6 +152,26 @@ export default function QuotationPdfTemplate({
             page-break-inside: avoid;
           }
         }
+        .quotation-terms-content p {
+          margin: 0;
+          display: inline;
+        }
+        .quotation-terms-content div {
+          margin: 0;
+        }
+        .quotation-terms-content ul {
+          list-style-type: disc;
+          margin: 2px 0;
+          padding-left: 14px;
+        }
+        .quotation-terms-content ol {
+          list-style-type: decimal;
+          margin: 2px 0;
+          padding-left: 14px;
+        }
+        .quotation-terms-content li {
+          margin: 1px 0;
+        }
       `}</style>
 
       <div
@@ -596,10 +616,11 @@ export default function QuotationPdfTemplate({
                   <span style={{ width: "16px", fontWeight: 700, color: "#1e3a5f", flexShrink: 0 }}>
                     {index + 1})
                   </span>
-                  <span
-                    style={{ color: "#334155", wordBreak: "break-word" }}
+                  <div
+                    className="quotation-terms-content"
+                    style={{ color: "#334155", wordBreak: "break-word", flex: 1 }}
                     dangerouslySetInnerHTML={{
-                      __html: term.replace(/^\d+\)\s*/, ""),
+                      __html: term.replace(/^(\d+[\.\)]\s*)+/, ""),
                     }}
                   />
                 </div>

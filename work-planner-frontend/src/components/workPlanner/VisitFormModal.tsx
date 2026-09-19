@@ -158,7 +158,7 @@ export function VisitFormModal({
       limit: 30,
       paginate: "true",
     },
-    { skip: !open || !isExistingLead || !assignedExecutiveId }
+    { skip: !open || !isExistingLead }
   );
 
   const planDateYmd = ymdFromPlanDate(planDate);
@@ -412,8 +412,8 @@ export function VisitFormModal({
               </label>
 
               {isExistingLead && !assignedExecutiveId ? (
-                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  Assign an executive on the work plan first to search their leads.
+                <p className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-800">
+                  Showing all accessible leads. Select an executive on the work plan to filter by specific assignee.
                 </p>
               ) : null}
 
@@ -438,7 +438,7 @@ export function VisitFormModal({
                       if (!partyDropdownOpen) setPartyDropdownOpen(true);
                     }
                   }}
-                  disabled={isSaving || (isExistingLead && !assignedExecutiveId)}
+                  disabled={isSaving}
                   className={`${inputClass} pl-9 pr-8`}
                 />
                 {partyName ? (
@@ -466,7 +466,7 @@ export function VisitFormModal({
                 <p className="mt-1 text-xs text-rose-500">{errors.partyName}</p>
               ) : null}
 
-              {dropdownOpen && !(isExistingLead && !assignedExecutiveId) && (
+              {dropdownOpen && (
                 <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-60 overflow-y-auto rounded-xl border border-border bg-card shadow-xl p-1.5 space-y-1">
                   {isSearchLoading ? (
                     <div className="p-3 text-center text-xs text-muted">

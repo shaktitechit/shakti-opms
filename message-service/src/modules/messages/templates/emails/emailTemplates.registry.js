@@ -29,6 +29,7 @@ const EMAIL_TEMPLATES = {
   LEAD_QUOTATION_REJECTED: 'lead_quotation_rejected',
   PORTAL_ASSIGNED: 'portal_assigned',
   WORK_PLAN_COMPLETED: 'work_plan_completed',
+  WORK_PLAN_CREATED: 'work_plan_created',
 };
 
 function isValidTemplate(templateName) {

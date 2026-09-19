@@ -22,6 +22,7 @@ import {
   Clock,
   Edit3,
   MessageSquare,
+  Mail,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useGetUsersQuery } from "@/store/api/authApiSlice";
@@ -29,6 +30,7 @@ import {
   useLazyGetPlanQuery,
   useCreatePlanMutation,
   useUpdatePlanMutation,
+  useSubmitPlanMutation,
   useAddVisitMutation,
   useUpdateVisitMutation,
   useRemoveVisitMutation,
@@ -47,6 +49,7 @@ import {
 } from "./workPlanUtils";
 import { VisitFormModal } from "./VisitFormModal";
 import { WorkFormModal } from "./WorkFormModal";
+import { WorkPlanCreateMailModal, type CreateEmailPayload } from "./WorkPlanCreateMailModal";
 
 interface WorkPlanFormPageProps {
   planId?: string;
@@ -155,6 +158,15 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
   const [workModalOpen, setWorkModalOpen] = useState(false);
   const [editingWorkIndex, setEditingWorkIndex] = useState<number | null>(null);
 
+  // Creation Email Panel Modal state
+  const [createMailModalOpen, setCreateMailModalOpen] = useState(false);
+  const [pendingPlanData, setPendingPlanData] = useState<{
+    payload: Partial<WorkPlanRecord>;
+    visits: Array<Record<string, any>>;
+    works: Array<Record<string, any>>;
+    displayPlan: WorkPlanRecord;
+  } | null>(null);
+
   // Discussion with manager state
   const [isDiscussedWithManager, setIsDiscussedWithManager] = useState(false);
   const [discussedManagerId, setDiscussedManagerId] = useState<string>("");
@@ -190,6 +202,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
   const [fetchPlan] = useLazyGetPlanQuery();
   const [createPlanMut] = useCreatePlanMutation();
   const [updatePlanMut] = useUpdatePlanMutation();
+  const [submitPlanMut] = useSubmitPlanMutation();
   const [addVisitMut] = useAddVisitMutation();
   const [updateVisitMut] = useUpdateVisitMutation();
   const [removeVisitMut] = useRemoveVisitMutation();
@@ -554,62 +567,188 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
         ...(managerRole && salesUserId ? { sales_user: salesUserId } : {}),
       };
 
-      let targetPlanId = planId;
-      if (isEditing && planId) {
-        await updatePlanMut({ id: planId, body: payload }).unwrap();
-      } else {
-        const created = await createPlanMut(payload).unwrap();
-        targetPlanId = created._id || created.id;
-      }
+      const selectedExec = managerRole && salesUserId
+        ? executives.find((e) => e._id === salesUserId || e.id === salesUserId)
+        : sessionUser;
 
-      if (!targetPlanId) {
-        throw new Error("Failed to obtain work plan ID");
-      }
+      const draftRecord: WorkPlanRecord = {
+        _id: planId,
+        plan_date: planDate,
+        plan_type: planType as WorkPlanRecord["plan_type"],
+        location: location.trim(),
+        remarks: remarks.trim(),
+        is_discussed_with_manager: isDiscussedWithManager,
+        discussed_manager_id:
+          isDiscussedWithManager && !isCustomManager && selectedManager
+            ? ({ _id: selectedManager._id, name: selectedManager.name, email: selectedManager.email } as any)
+            : discussedManagerId || undefined,
+        discussed_manager_name: isDiscussedWithManager
+          ? isCustomManager
+            ? customManagerName.trim()
+            : selectedManager?.name || discussedManagerName.trim() || undefined
+          : undefined,
+        discussion_method: isDiscussedWithManager ? discussionMethod : undefined,
+        sales_user: selectedExec as any,
+        status: "planned",
+        visits: visits.map((v, idx) => ({
+          sequence: idx + 1,
+          party_name: v.party_name || (typeof v.party === "object" ? v.party?.party_name : undefined) || "Client Visit",
+          contact_person: v.contact_person,
+          contact_number: v.contact_number,
+          address: v.address,
+          planned_start_time: v.planned_start_time,
+          status: "pending",
+        })),
+        works: works.map((w, idx) => ({
+          sequence: idx + 1,
+          title: w.title,
+          description: w.description,
+          planned_start_time: w.planned_start_time,
+          status: "pending",
+        })),
+      };
 
-      // Post initial/unposted visits if plan type is Visits
-      if (isVisitsPlan(planType) && visits.length > 0) {
-        const unpostedVisits = visits.filter((v) => !v._id && !v.id);
-        for (const v of unpostedVisits) {
-          const partyObj = typeof v.party === "object" ? v.party : null;
-          const visitBody = {
-            party_type: v.party_type || (v.party ? "existing" : "new_party"),
-            party: partyObj ? partyObj._id || partyObj.id : (typeof v.party === "string" ? v.party : undefined),
-            party_name: v.party_name || partyObj?.party_name || "Client Visit",
-            contact_person: v.contact_person || "Contact Person",
-            contact_number: v.contact_number || "+91 98765 43210",
-            contact_email:
-              v.contact_email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v.contact_email).trim())
-                ? String(v.contact_email).trim()
-                : `${(v.contact_person || "contact").toLowerCase().replace(/[^a-z0-9]/g, "") || "contact"}@client.com`,
-            address: v.address || undefined,
-            purpose: v.purpose || undefined,
-            notes: v.notes || undefined,
-            planned_start_time: v.planned_start_time || undefined,
-            planned_end_time: v.planned_end_time || undefined,
-          };
-          await addVisitMut({ planId: targetPlanId, body: visitBody }).unwrap();
-        }
-      }
-
-      // Post initial/unposted tasks if plan type is WFH or WFO
-      if (isWorkTaskPlan(planType) && works.length > 0) {
-        const unpostedWorks = works.filter((w) => !w._id && !w.id);
-        for (const w of unpostedWorks) {
-          const workBody = {
-            title: w.title,
-            description: w.description || undefined,
-            planned_start_time: w.planned_start_time || undefined,
-            planned_end_time: w.planned_end_time || undefined,
-          };
-          await addWorkMut({ planId: targetPlanId, body: workBody }).unwrap();
-        }
-      }
-
-      toast.success(isEditing ? "Work plan updated successfully" : "Work plan created successfully");
-      router.push(`/dashboard/plans/${targetPlanId}`);
+      setPendingPlanData({
+        payload,
+        visits,
+        works,
+        displayPlan: draftRecord,
+      });
+      setCreateMailModalOpen(true);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to save work plan";
+      const msg = err instanceof Error ? err.message : "Failed to prepare work plan";
       toast.error(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleCreateAndSendEmail(emailPayload: CreateEmailPayload) {
+    if (!pendingPlanData) return;
+    setSubmitting(true);
+    try {
+      let targetPlanId = planId;
+
+      if (isEditing && planId) {
+        // Update existing plan
+        await updatePlanMut({ id: planId, body: pendingPlanData.payload }).unwrap();
+
+        // Post unposted visits
+        if (isVisitsPlan(pendingPlanData.payload.plan_type || "") && pendingPlanData.visits.length > 0) {
+          const unpostedVisits = pendingPlanData.visits.filter((v) => !v._id && !v.id);
+          for (const v of unpostedVisits) {
+            const partyObj = typeof v.party === "object" ? v.party : null;
+            const resolvedPartyType = v.party_type || (v.party ? "existing" : "new_party");
+            const partyId = partyObj ? partyObj._id || partyObj.id : (typeof v.party === "string" ? v.party : undefined);
+            const visitBody: any = {
+              party_type: resolvedPartyType,
+              party_name: v.party_name || partyObj?.party_name || "Client Visit",
+              contact_person: v.contact_person || "Contact Person",
+              contact_number: v.contact_number || "+91 98765 43210",
+              contact_email:
+                v.contact_email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v.contact_email).trim())
+                  ? String(v.contact_email).trim()
+                  : `${(v.contact_person || "contact").toLowerCase().replace(/[^a-z0-9]/g, "") || "contact"}@client.com`,
+              address: v.address || undefined,
+              purpose: v.purpose || undefined,
+              notes: v.notes || undefined,
+              planned_start_time: v.planned_start_time || undefined,
+              planned_end_time: v.planned_end_time || undefined,
+            };
+            if (resolvedPartyType === "existing" && partyId) {
+              visitBody.party = partyId;
+            }
+            await addVisitMut({ planId, body: visitBody }).unwrap();
+          }
+        }
+
+        // Post unposted tasks
+        if (isWorkTaskPlan(pendingPlanData.payload.plan_type || "") && pendingPlanData.works.length > 0) {
+          const unpostedWorks = pendingPlanData.works.filter((w) => !w._id && !w.id);
+          for (const w of unpostedWorks) {
+            const workBody = {
+              title: w.title,
+              description: w.description || undefined,
+              planned_start_time: w.planned_start_time || undefined,
+              planned_end_time: w.planned_end_time || undefined,
+            };
+            await addWorkMut({ planId, body: workBody }).unwrap();
+          }
+        }
+      } else {
+        // Create new plan
+        const created = await createPlanMut(pendingPlanData.payload).unwrap();
+        targetPlanId = created._id || created.id;
+        if (!targetPlanId) throw new Error("Failed to obtain work plan ID");
+
+        // Post visits
+        if (isVisitsPlan(pendingPlanData.payload.plan_type || "") && pendingPlanData.visits.length > 0) {
+          for (const v of pendingPlanData.visits) {
+            const partyObj = typeof v.party === "object" ? v.party : null;
+            const resolvedPartyType = v.party_type || (v.party ? "existing" : "new_party");
+            const partyId = partyObj ? partyObj._id || partyObj.id : (typeof v.party === "string" ? v.party : undefined);
+            const visitBody: any = {
+              party_type: resolvedPartyType,
+              party_name: v.party_name || partyObj?.party_name || "Client Visit",
+              contact_person: v.contact_person || "Contact Person",
+              contact_number: v.contact_number || "+91 98765 43210",
+              contact_email:
+                v.contact_email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v.contact_email).trim())
+                  ? String(v.contact_email).trim()
+                  : `${(v.contact_person || "contact").toLowerCase().replace(/[^a-z0-9]/g, "") || "contact"}@client.com`,
+              address: v.address || undefined,
+              purpose: v.purpose || undefined,
+              notes: v.notes || undefined,
+              planned_start_time: v.planned_start_time || undefined,
+              planned_end_time: v.planned_end_time || undefined,
+            };
+            if (resolvedPartyType === "existing" && partyId) {
+              visitBody.party = partyId;
+            }
+            await addVisitMut({ planId: targetPlanId, body: visitBody }).unwrap();
+          }
+        }
+
+        // Post works
+        if (isWorkTaskPlan(pendingPlanData.payload.plan_type || "") && pendingPlanData.works.length > 0) {
+          for (const w of pendingPlanData.works) {
+            const workBody = {
+              title: w.title,
+              description: w.description || undefined,
+              planned_start_time: w.planned_start_time || undefined,
+              planned_end_time: w.planned_end_time || undefined,
+            };
+            await addWorkMut({ planId: targetPlanId, body: workBody }).unwrap();
+          }
+        }
+      }
+
+      // Submit plan on backend and send mail
+      try {
+        await submitPlanMut({
+          id: targetPlanId!,
+          body: {
+            to_email: emailPayload.toEmail,
+            cc_emails: emailPayload.ccEmails,
+            subject: emailPayload.subject,
+            body_html: emailPayload.bodyHtml,
+            attachment_ids: emailPayload.attachmentIds,
+          },
+        }).unwrap();
+      } catch (submitErr: any) {
+        console.error("Error submitting plan email:", submitErr);
+        const errMsg = submitErr?.data?.message || submitErr?.message || "Failed to submit plan email";
+        toast.error(errMsg);
+        throw submitErr;
+      }
+
+      toast.success(isEditing ? "Work plan updated and email dispatched successfully!" : "Work plan created and email dispatched successfully!");
+      setCreateMailModalOpen(false);
+      router.push("/dashboard/plans");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to save work plan and send email";
+      toast.error(msg);
+      throw err;
     } finally {
       setSubmitting(false);
     }
@@ -1254,10 +1393,19 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
           <button
             type="submit"
             disabled={submitting}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-50 transition shadow-xs"
+            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:opacity-50 transition cursor-pointer"
           >
-            <Save className="h-4 w-4" />
-            {submitting ? "Saving…" : isEditing ? "Update Plan" : "Create Plan"}
+            {isEditing ? (
+              <>
+                <Mail className="h-4 w-4" />
+                {submitting ? "Updating…" : "Update & Mail"}
+              </>
+            ) : (
+              <>
+                <Mail className="h-4 w-4" />
+                {submitting ? "Processing…" : "Create & Mail"}
+              </>
+            )}
           </button>
         </div>
       </form>
@@ -1291,6 +1439,21 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
             setEditingWorkIndex(null);
           }}
           onSubmit={handleWorkSubmit}
+        />
+      )}
+
+      {createMailModalOpen && pendingPlanData && (
+        <WorkPlanCreateMailModal
+          planId={planId}
+          plan={pendingPlanData.displayPlan}
+          sessionUser={sessionUser}
+          isOpen={createMailModalOpen}
+          isEditing={isEditing}
+          onClose={() => {
+            setCreateMailModalOpen(false);
+          }}
+          onCreateAndSend={handleCreateAndSendEmail}
+          loading={submitting}
         />
       )}
     </div>

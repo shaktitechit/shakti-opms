@@ -20,13 +20,19 @@ function toReqUser(doc) {
   const obj = typeof doc.toObject === 'function' ? doc.toObject() : doc;
   const portals = rawPortals.map((p) => {
     const portalObj = p.portal && typeof p.portal === 'object' ? p.portal : null;
+    const rawRoles = Array.isArray(p.access_roles)
+      ? p.access_roles
+      : (p.access_role ? [p.access_role] : []);
+    const normalized = rawRoles
+      .map((r) => String(r || '').trim().toLowerCase())
+      .filter(Boolean);
+    const singleRole = normalized.length > 0 ? [normalized[0]] : [];
+
     return {
       portal_id: portalObj ? String(portalObj._id) : String(p.portal || p.portal_id || ''),
       portal_code: p.portal_code || (portalObj ? portalObj.code : ''),
       portal_name: portalObj ? portalObj.name : (p.portal_name || ''),
-      access_roles: Array.isArray(p.access_roles)
-        ? p.access_roles
-        : (p.access_role ? [p.access_role] : []),
+      access_roles: singleRole,
     };
   });
 

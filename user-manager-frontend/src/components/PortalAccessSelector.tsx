@@ -90,15 +90,10 @@ export function PortalAccessSelector({ token, selectedPortals, onChange }: Porta
     }
   };
 
-  const toggleRoleForPortal = (portalCode: string, role: string) => {
+  const selectRoleForPortal = (portalCode: string, role: string) => {
     const updated = selectedPortals.map((p) => {
       if (p.portal_code !== portalCode) return p;
-      const currentRoles = p.access_roles || [];
-      const hasRole = currentRoles.includes(role);
-      const newRoles = hasRole
-        ? currentRoles.filter((r) => r !== role)
-        : [...currentRoles, role];
-      return { ...p, access_roles: newRoles };
+      return { ...p, access_roles: [role] };
     });
     onChange(updated);
   };
@@ -230,7 +225,7 @@ export function PortalAccessSelector({ token, selectedPortals, onChange }: Porta
                           <button
                             key={role}
                             type="button"
-                            onClick={() => toggleRoleForPortal(portal.code, role)}
+                            onClick={() => selectRoleForPortal(portal.code, role)}
                             className={`rounded-lg px-2.5 py-1 text-3xs font-semibold transition ${
                               hasRole
                                 ? "bg-primary text-white shadow-xs"

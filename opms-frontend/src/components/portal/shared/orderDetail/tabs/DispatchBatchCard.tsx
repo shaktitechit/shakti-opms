@@ -331,9 +331,11 @@ export function DispatchBatchCard({
                     ? transport.transport_agent
                     : null);
                 if (!agentObj) return <span className="font-semibold">—</span>;
+                const name = String(agentObj.agent_name || agentObj.agent_code || "");
+                const displayName = name && !/^[0-9a-fA-F]{24}$/.test(name) ? name : "—";
                 return (
                   <span className="font-semibold text-slate-800 dark:text-slate-200">
-                    {String(agentObj.agent_name || "—")}
+                    {displayName}
                     {agentObj.agent_type
                       ? ` (${formatAgentType(agentObj.agent_type)})`
                       : ""}

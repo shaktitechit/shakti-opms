@@ -116,13 +116,18 @@ async function resolvePortalsForUser(portalsArray) {
     }
 
     if (portalDoc) {
-      const roles = Array.isArray(item.access_roles)
+      const rawRoles = Array.isArray(item.access_roles)
         ? item.access_roles
         : (item.access_role ? [item.access_role] : []);
+      const normalizedRoles = rawRoles
+        .map((r) => String(r || '').trim().toLowerCase())
+        .filter(Boolean);
+      const singleRole = normalizedRoles.length > 0 ? [normalizedRoles[0]] : [];
+
       resolved.push({
         portal: portalDoc._id,
         portal_code: portalDoc.code,
-        access_roles: roles,
+        access_roles: singleRole,
       });
     }
   }

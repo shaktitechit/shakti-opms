@@ -10,6 +10,7 @@ const activityService = require('../activity/activity.service');
 const {
   sendWorkPlanCompletedEmail,
   sendCustomDayEndEmail,
+  sendCustomWorkPlanCreationEmail,
   getWorkPlannerManagers,
   renderVisitsTable,
   renderTasksTable,
@@ -655,7 +656,7 @@ async function remove(id, user) {
   return toPlain(plan.toObject());
 }
 
-async function submit(id, user) {
+async function submit(id, user, body = {}) {
   const { WorkPlan, WorkPlanVisit, WorkPlanWork } = getModels();
   const plan = await WorkPlan.findOne({ _id: id, deletedAt: null });
   if (!plan) throw new ApiError(404, 'Work plan not found');
@@ -679,13 +680,20 @@ async function submit(id, user) {
     }
   }
 
-  plan.status = 'submitted';
+  plan.status = 'planned';
   plan.submitted_at = new Date();
   plan.rejection_reason = undefined;
   plan.updated_by = userId(user);
   await plan.save();
 
-  await logActivity(user, plan._id, 'submitted', 'Work plan submitted for approval');
+  await logActivity(user, plan._id, 'submitted', 'Work plan saved as planned and email dispatched');
+
+  // Trigger creation email notification
+  sendCustomWorkPlanCreationEmail(plan._id, user, body).catch((err) => {
+    const { logger } = require('../../utils/logger');
+    logger.error(`[WorkPlanService] Failed to send creation email for plan ${id}: ${err.message}`);
+  });
+
   return get(plan._id, user);
 }
 

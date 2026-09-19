@@ -94,6 +94,159 @@ async function loadLogo(url?: string): Promise<string | null> {
   }
 }
 
+type StyleState = {
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  color: [number, number, number] | null;
+};
+
+type TextRun = StyleState & {
+  text: string;
+};
+
+type BlockNode = {
+  type: "paragraph" | "list-item";
+  bullet?: string;
+  runs: TextRun[];
+};
+
+function parseColorToRgb(colorStr: string): [number, number, number] | null {
+  if (!colorStr) return null;
+  const str = colorStr.trim().toLowerCase();
+  if (str.startsWith("rgb")) {
+    const match = str.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    if (match) {
+      return [parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10)];
+    }
+  }
+  if (str.startsWith("#")) {
+    let hex = str.slice(1);
+    if (hex.length === 3) {
+      hex = hex.split("").map((c) => c + c).join("");
+    }
+    if (hex.length === 6) {
+      const r = parseInt(hex.slice(0, 2), 16);
+      const g = parseInt(hex.slice(2, 4), 16);
+      const b = parseInt(hex.slice(4, 6), 16);
+      if (!isNaN(r) && !isNaN(g) && !isNaN(b)) {
+        return [r, g, b];
+      }
+    }
+  }
+  return null;
+}
+
+function extractElementColor(elem: HTMLElement): [number, number, number] | null {
+  const colorAttr = elem.getAttribute("color");
+  if (colorAttr) {
+    const parsed = parseColorToRgb(colorAttr);
+    if (parsed) return parsed;
+  }
+  const styleColor = elem.style.color;
+  if (styleColor) {
+    const parsed = parseColorToRgb(styleColor);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+function parseHtmlToBlocks(htmlString: string): BlockNode[] {
+  const cleanHtml = htmlString.replace(/^(\d+[\.\)]\s*)+/, "").trim();
+  if (!cleanHtml) return [];
+
+  if (typeof window === "undefined" || typeof DOMParser === "undefined") {
+    const stripped = cleanHtml.replace(/<[^>]*>/g, "").trim();
+    return [{ type: "paragraph", runs: [{ text: stripped, bold: false, italic: false, underline: false, color: null }] }];
+  }
+
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(`<div>${cleanHtml}</div>`, "text/html");
+  const container = doc.body.firstElementChild || doc.body;
+
+  const blocks: BlockNode[] = [];
+
+  function traverse(node: Node, currentStyle: StyleState, currentBlock: BlockNode) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      let text = node.textContent || "";
+      if (!text) return;
+      text = text.replace(/\u00A0/g, " ");
+      currentBlock.runs.push({
+        text,
+        bold: currentStyle.bold,
+        italic: currentStyle.italic,
+        underline: currentStyle.underline,
+        color: currentStyle.color,
+      });
+      return;
+    }
+
+    if (node.nodeType === Node.ELEMENT_NODE) {
+      const elem = node as HTMLElement;
+      const tag = elem.tagName.toUpperCase();
+
+      const newStyle: StyleState = {
+        bold: currentStyle.bold || tag === "B" || tag === "STRONG",
+        italic: currentStyle.italic || tag === "I" || tag === "EM",
+        underline: currentStyle.underline || tag === "U",
+        color: extractElementColor(elem) || currentStyle.color,
+      };
+
+      if (tag === "BR") {
+        currentBlock.runs.push({ text: "\n", ...newStyle });
+        return;
+      }
+
+      if (tag === "P" || tag === "DIV") {
+        const pBlock: BlockNode = { type: "paragraph", runs: [] };
+        for (const child of Array.from(elem.childNodes)) {
+          traverse(child, newStyle, pBlock);
+        }
+        if (pBlock.runs.length > 0) {
+          blocks.push(pBlock);
+        }
+        return;
+      }
+
+      if (tag === "UL" || tag === "OL") {
+        const isOrdered = tag === "OL";
+        let itemIdx = 1;
+        for (const child of Array.from(elem.childNodes)) {
+          if (child.nodeType === Node.ELEMENT_NODE && (child as HTMLElement).tagName.toUpperCase() === "LI") {
+            const liBlock: BlockNode = {
+              type: "list-item",
+              bullet: isOrdered ? `${itemIdx}. ` : "• ",
+              runs: [],
+            };
+            itemIdx++;
+            for (const liChild of Array.from(child.childNodes)) {
+              traverse(liChild, newStyle, liBlock);
+            }
+            if (liBlock.runs.length > 0) {
+              blocks.push(liBlock);
+            }
+          }
+        }
+        return;
+      }
+
+      for (const child of Array.from(elem.childNodes)) {
+        traverse(child, newStyle, currentBlock);
+      }
+    }
+  }
+
+  const rootBlock: BlockNode = { type: "paragraph", runs: [] };
+  for (const child of Array.from(container.childNodes)) {
+    traverse(child, { bold: false, italic: false, underline: false, color: null }, rootBlock);
+  }
+  if (rootBlock.runs.length > 0) {
+    blocks.push(rootBlock);
+  }
+
+  return blocks;
+}
+
 /**
  * Builds a vector-based jsPDF document for Quotation.
  */
@@ -539,22 +692,131 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
     currentY += 6.5;
 
     for (let i = 0; i < terms.length; i += 1) {
-      const termRaw = terms[i].replace(/^(\d+[\.\)]\s*)+/, "").trim();
-      if (!termRaw) continue;
+      const rawTerm = terms[i];
+      if (!rawTerm || !rawTerm.trim()) continue;
 
-      const prefix = `${i + 1}) `;
-      const wrapped = pdf.splitTextToSize(`${prefix}${termRaw}`, CONTENT_W - 2);
+      const blocks = parseHtmlToBlocks(rawTerm);
+      if (blocks.length === 0) continue;
 
-      for (let l = 0; l < wrapped.length; l += 1) {
-        checkPageBreak(3.5, false);
-        pdf.setFont("helvetica", "normal");
-        pdf.setFontSize(6.5);
-        pdf.setTextColor(...TEXT);
-        pdf.text(wrapped[l], M + 1, currentY);
-        currentY += 3.2;
+      const termNumStr = `${i + 1}) `;
+
+      for (let bIdx = 0; bIdx < blocks.length; bIdx += 1) {
+        const block = blocks[bIdx];
+        const isFirstBlockInTerm = bIdx === 0;
+
+        const tokens: TextRun[] = [];
+        for (const run of block.runs) {
+          if (run.text.includes("\n")) {
+            const parts = run.text.split("\n");
+            for (let p = 0; p < parts.length; p++) {
+              if (p > 0) tokens.push({ ...run, text: "\n" });
+              if (parts[p]) {
+                const words = parts[p].match(/\S+|\s+/g) || [parts[p]];
+                for (const w of words) tokens.push({ ...run, text: w });
+              }
+            }
+          } else {
+            const words = run.text.match(/\S+|\s+/g) || [run.text];
+            for (const w of words) tokens.push({ ...run, text: w });
+          }
+        }
+
+        if (tokens.length === 0) continue;
+
+        let prefixWidth = 0;
+        if (isFirstBlockInTerm) {
+          pdf.setFont("helvetica", "bold");
+          pdf.setFontSize(6.5);
+          prefixWidth = pdf.getTextWidth(termNumStr);
+        }
+
+        let bulletWidth = 0;
+        if (block.type === "list-item" && block.bullet) {
+          pdf.setFont("helvetica", "bold");
+          pdf.setFontSize(6.5);
+          bulletWidth = pdf.getTextWidth(block.bullet);
+        }
+
+        const indentLeft = (isFirstBlockInTerm ? prefixWidth : 0) + (block.type === "list-item" ? bulletWidth + 2 : 0);
+        const maxLineWidth = CONTENT_W - 2 - indentLeft;
+
+        const linesOfTokens: TextRun[][] = [];
+        let currentLine: TextRun[] = [];
+        let currentLineWidth = 0;
+
+        for (const token of tokens) {
+          if (token.text === "\n") {
+            if (currentLine.length > 0) linesOfTokens.push(currentLine);
+            currentLine = [];
+            currentLineWidth = 0;
+            continue;
+          }
+
+          pdf.setFont("helvetica", token.bold && token.italic ? "bolditalic" : token.bold ? "bold" : token.italic ? "italic" : "normal");
+          pdf.setFontSize(6.5);
+          const tw = pdf.getTextWidth(token.text);
+
+          if (currentLineWidth + tw > maxLineWidth && currentLine.length > 0) {
+            linesOfTokens.push(currentLine);
+            currentLine = token.text.trim() ? [token] : [];
+            currentLineWidth = token.text.trim() ? tw : 0;
+          } else {
+            currentLine.push(token);
+            currentLineWidth += tw;
+          }
+        }
+        if (currentLine.length > 0) {
+          linesOfTokens.push(currentLine);
+        }
+
+        for (let lIdx = 0; lIdx < linesOfTokens.length; lIdx += 1) {
+          checkPageBreak(3.5, false);
+
+          const line = linesOfTokens[lIdx];
+          let x = M + 1;
+
+          if (isFirstBlockInTerm && lIdx === 0) {
+            pdf.setFont("helvetica", "bold");
+            pdf.setFontSize(6.5);
+            pdf.setTextColor(...NAVY);
+            pdf.text(termNumStr, x, currentY);
+            x += prefixWidth;
+          } else if (isFirstBlockInTerm) {
+            x += prefixWidth;
+          }
+
+          if (block.type === "list-item" && block.bullet) {
+            if (lIdx === 0) {
+              pdf.setFont("helvetica", "bold");
+              pdf.setFontSize(6.5);
+              pdf.setTextColor(...NAVY);
+              pdf.text(block.bullet, x, currentY);
+            }
+            x += bulletWidth + 2;
+          }
+
+          for (const token of line) {
+            pdf.setFont("helvetica", token.bold && token.italic ? "bolditalic" : token.bold ? "bold" : token.italic ? "italic" : "normal");
+            pdf.setFontSize(6.5);
+            pdf.setTextColor(...(token.color || TEXT));
+            pdf.text(token.text, x, currentY);
+
+            const tw = pdf.getTextWidth(token.text);
+            if (token.underline) {
+              pdf.setDrawColor(...(token.color || TEXT));
+              pdf.setLineWidth(0.15);
+              pdf.line(x, currentY + 0.3, x + tw, currentY + 0.3);
+            }
+
+            x += tw;
+          }
+
+          currentY += 3.2;
+        }
       }
       currentY += 1.5;
     }
+    currentY += 3;
     currentY += 3;
   }
 
