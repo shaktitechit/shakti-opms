@@ -36,6 +36,7 @@ import {
   renderVisitStatusBadge,
   renderWorkStatusBadge,
   planIdOf,
+  isPlanDate3DaysExpired,
 } from "./workPlanUtils";
 import { DownloadTasksVisitsReportModal } from "./DownloadTasksVisitsReportModal";
 import { MarkPendingVisitModal } from "./MarkPendingVisitModal";
@@ -591,12 +592,19 @@ export function TasksVisitsPage() {
                           : renderWorkStatusBadge(item.status)}
                       </td>
 
-                      {/* Direct Row Actions (Disabled when completed) */}
+                      {/* Direct Row Actions (Disabled when completed or > 3 days expired) */}
                       <td className="px-4 py-3 text-right whitespace-nowrap">
                         <div className="flex items-center justify-end gap-1.5">
                           {item.status === "completed" ? (
                             <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                               Completed
+                            </span>
+                          ) : isPlanDate3DaysExpired(item.planDate) ? (
+                            <span
+                              className="text-[10px] font-semibold text-rose-600 dark:text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded"
+                              title="Action period expired (> 3 days)"
+                            >
+                              Expired (&gt;3 days)
                             </span>
                           ) : isVisit ? (
                             <>

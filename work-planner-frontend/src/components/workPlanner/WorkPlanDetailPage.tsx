@@ -61,6 +61,7 @@ import {
   isVisitsPlan,
   isWindowEnded,
   isWorkTaskPlan,
+  isPlanDate3DaysExpired,
   renderPlanStatusBadge,
   renderVisitStatusBadge,
   renderWorkStatusBadge,
@@ -228,10 +229,11 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   const taskPlan = isWorkTaskPlan(plan.plan_type);
   const leavePlan = isLeavePlan(plan.plan_type);
 
+  const is3DaysExpired = isPlanDate3DaysExpired(plan.plan_date);
   const isWindowOpen = canAddExpenseForPlanDate(plan.plan_date);
   const windowEnded = isWindowEnded(plan.plan_date);
-  const canCompleteAction = managerRole || isWindowOpen;
-  const showStructureActions = managerRole || (!isCompleted && !windowEnded);
+  const canCompleteAction = managerRole || (isWindowOpen && !is3DaysExpired);
+  const showStructureActions = managerRole || (!isCompleted && !windowEnded && !is3DaysExpired);
 
   const allowedStatuses = new Set(["pending", "in_progress", "completed"]);
 

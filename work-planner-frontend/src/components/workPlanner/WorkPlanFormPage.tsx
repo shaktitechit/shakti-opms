@@ -45,6 +45,7 @@ import {
   isVisitsPlan,
   isWorkTaskPlan,
   isLeavePlan,
+  isPlanDate3DaysExpired,
   formatTime,
   renderVisitStatusBadge,
   renderWorkStatusBadge,
@@ -348,11 +349,13 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
             }
           }
 
-          // When copying: uncompleted visits are reassigned to this new plan; completed visits are created fresh
+          const isSourceExpired = isPlanDate3DaysExpired(plan.plan_date);
+
+          // When copying: if plan is within 3 days and item is uncompleted, reassign it; if plan > 3 days old or item is completed, create new
           if (Array.isArray(plan.visits)) {
             setVisits(
               plan.visits.map((v: any) => {
-                if (v.status !== "completed") {
+                if (!isSourceExpired && v.status !== "completed") {
                   return { ...v };
                 }
                 const { _id, id, status, check_in_time, check_out_time, outcome, ...rest } = v;
@@ -360,11 +363,10 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
               })
             );
           }
-          // When copying: uncompleted tasks are reassigned to this new plan; completed tasks are created fresh
           if (Array.isArray(plan.works)) {
             setWorks(
               plan.works.map((w: any) => {
-                if (w.status !== "completed") {
+                if (!isSourceExpired && w.status !== "completed") {
                   return { ...w };
                 }
                 const { _id, id, status, outcome, completion_remarks, ...rest } = w;

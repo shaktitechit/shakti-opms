@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { Search, X, CheckSquare, MapPin, Calendar, Clock, AlertCircle } from "lucide-react";
 import { useGetPlansQuery } from "@/store/api/workPlannerApiSlice";
 import type { WorkPlanRecord, WorkPlanVisitRecord, WorkPlanWorkRecord } from "@/types/workPlanner";
-import { renderVisitStatusBadge, renderWorkStatusBadge, formatPlanDate, formatTime } from "./workPlanUtils";
+import { renderVisitStatusBadge, renderWorkStatusBadge, formatPlanDate, formatTime, isPlanDate3DaysExpired } from "./workPlanUtils";
 
 interface SelectPreviousPendingItemsModalProps {
   open: boolean;
@@ -59,6 +59,10 @@ export function SelectPreviousPendingItemsModal({
       }
 
       const pDate = p.plan_date || "";
+      // Exclude items from plans where 3 days period has expired
+      if (isPlanDate3DaysExpired(pDate)) {
+        continue;
+      }
 
       if (mode === "visits" && Array.isArray(p.visits)) {
         for (const v of p.visits) {
