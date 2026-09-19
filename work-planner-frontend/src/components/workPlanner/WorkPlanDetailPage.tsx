@@ -41,7 +41,6 @@ import {
   useAddWorkMutation,
   useUpdateWorkMutation,
   useCompleteVisitMutation,
-  useScheduleNextVisitMutation,
 } from "@/store/api/workPlannerApiSlice";
 import { isManager, readSessionFromStorage } from "@/utils/authStorage";
 import type {
@@ -56,6 +55,8 @@ import {
   formatDiscussionMethod,
   formatPlanDate,
   formatTime,
+  formatAuditUser,
+  isDayEndEligible,
   isLeavePlan,
   isVisitsPlan,
   isWindowEnded,
@@ -73,7 +74,10 @@ import { VisitFormModal } from "./VisitFormModal";
 import { WorkFormModal } from "./WorkFormModal";
 import { CompleteVisitModal } from "./CompleteVisitModal";
 import { CompleteWorkModal } from "./CompleteWorkModal";
-import { NextVisitPlanModal } from "./NextVisitPlanModal";
+import { MarkPendingVisitModal } from "./MarkPendingVisitModal";
+import { MarkPendingWorkModal } from "./MarkPendingWorkModal";
+import { InProgressVisitModal } from "./InProgressVisitModal";
+import { InProgressWorkModal } from "./InProgressWorkModal";
 import { RejectWorkPlanModal } from "./RejectWorkPlanModal";
 import { ExpenseListSection } from "./ExpenseListSection";
 import { DayEndSection } from "./DayEndSection";
@@ -96,8 +100,6 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   const [approvePlanMut] = useApprovePlanMutation();
   const [rejectPlanMut] = useRejectPlanMutation();
   const [completePlanMut] = useCompletePlanMutation();
-  const [checkInMut] = useCheckInMutation();
-  const [checkOutMut] = useCheckOutMutation();
   const [removeVisitMut] = useRemoveVisitMutation();
   const [removeWorkMut] = useRemoveWorkMutation();
   const [addVisitMut] = useAddVisitMutation();
@@ -105,7 +107,6 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   const [addWorkMut] = useAddWorkMutation();
   const [updateWorkMut] = useUpdateWorkMutation();
   const [completeVisitMut] = useCompleteVisitMutation();
-  const [scheduleNextVisitMut] = useScheduleNextVisitMutation();
 
   // Modals state
   const [visitModalOpen, setVisitModalOpen] = useState(false);
@@ -115,8 +116,12 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   const [editingWork, setEditingWork] = useState<WorkPlanWorkRecord | null>(null);
 
   const [completeVisitTarget, setCompleteVisitTarget] = useState<WorkPlanVisitRecord | null>(null);
+  const [pendingVisitTarget, setPendingVisitTarget] = useState<WorkPlanVisitRecord | null>(null);
+  const [inProgressVisitTarget, setInProgressVisitTarget] = useState<WorkPlanVisitRecord | null>(null);
+
   const [completeWorkTarget, setCompleteWorkTarget] = useState<WorkPlanWorkRecord | null>(null);
-  const [nextVisitTarget, setNextVisitTarget] = useState<WorkPlanVisitRecord | null>(null);
+  const [pendingWorkTarget, setPendingWorkTarget] = useState<WorkPlanWorkRecord | null>(null);
+  const [inProgressWorkTarget, setInProgressWorkTarget] = useState<WorkPlanWorkRecord | null>(null);
 
   const [rejectPlanModalOpen, setRejectPlanModalOpen] = useState(false);
   const [dayEndMailModalOpen, setDayEndMailModalOpen] = useState(false);
@@ -170,27 +175,6 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
       await loadPlan();
     } finally {
       setActionLoading(false);
-    }
-  }
-
-  // Visit Actions
-  async function handleCheckIn(visitId: string) {
-    try {
-      await checkInMut({ planId, visitId }).unwrap();
-      toast.success("Checked in to visit");
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Check-in failed";
-      toast.error(msg);
-    }
-  }
-
-  async function handleCheckOut(visitId: string) {
-    try {
-      await checkOutMut({ planId, visitId }).unwrap();
-      toast.success("Checked out of visit");
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Check-out failed";
-      toast.error(msg);
     }
   }
 
@@ -249,23 +233,20 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   const canCompleteAction = managerRole || isWindowOpen;
   const showStructureActions = managerRole || (!isCompleted && !windowEnded);
 
+  const allowedStatuses = new Set(["pending", "in_progress", "completed"]);
+
   const allVisitsFinished =
     visits.length > 0 &&
-    visits.every(
-      (v) =>
-        v.status === "completed" ||
-        v.status === "cancelled" ||
-        v.status === "skipped"
-    );
+    visits.every((v) => v.status && allowedStatuses.has(v.status));
 
   const allTasksFinished =
     works.length > 0 &&
-    works.every((w) => w.status === "completed" || w.status === "cancelled");
+    works.every((w) => w.status && allowedStatuses.has(w.status));
 
   const canCompletePlan =
     isPlanned &&
     canCompleteAction &&
-    (visitsPlan ? allVisitsFinished : taskPlan ? allTasksFinished : true);
+    (visitsPlan ? allVisitsFinished : taskPlan ? allTasksFinished : isDayEndEligible(visits, works));
 
   return (
     <div className="space-y-6 font-sans">
@@ -465,19 +446,6 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                 Field Visits ({visits.length})
               </h2>
             </div>
-            {showStructureActions && (
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingVisit(null);
-                  setVisitModalOpen(true);
-                }}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 transition"
-              >
-                <Plus className="h-4 w-4" />
-                Add Visit
-              </button>
-            )}
           </div>
 
           {!canCompleteAction && !isCompleted && (
@@ -488,7 +456,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
 
           {visits.length === 0 ? (
             <p className="text-xs text-muted py-4 text-center">
-              No field visits logged for this plan yet.{showStructureActions && " Click \u201cAdd Visit\u201d to create one."}
+              No field visits logged for this plan yet.
             </p>
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
@@ -534,77 +502,71 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                       </div>
                     ) : null}
 
-                    {v.check_in_time || v.check_out_time ? (
-                      <div className="flex items-center gap-3 text-xs text-muted font-medium">
-                        <Clock className="h-3.5 w-3.5 text-muted" />
-                        <span>In: {formatTime(v.check_in_time)}</span>
-                        <span>•</span>
-                        <span>Out: {formatTime(v.check_out_time)}</span>
+                    {v.pending_remarks ? (
+                      <div className="rounded-lg bg-slate-500/10 p-2 text-xs text-slate-600 dark:text-slate-400">
+                        <span className="font-semibold">Pending Remarks: </span>
+                        {v.pending_remarks}
+                      </div>
+                    ) : null}
+
+                    {v.in_progress_remarks ? (
+                      <div className="rounded-lg bg-amber-500/10 p-2 text-xs text-amber-600 dark:text-amber-400">
+                        <span className="font-semibold">In-Progress Remarks: </span>
+                        {v.in_progress_remarks}
                       </div>
                     ) : null}
 
                     {v.outcome ? (
-                      <div className="rounded-lg bg-emerald-500/10 p-2.5 text-xs text-emerald-500">
+                      <div className="rounded-lg bg-emerald-500/10 p-2 text-xs text-emerald-600 dark:text-emerald-400">
                         <span className="font-semibold">Outcome: </span>
                         {v.outcome}
                       </div>
                     ) : null}
 
-                    {/* Visit actions */}
-                    {showStructureActions && (
+                    {(v.created_by || v.updated_by) && (
+                      <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted pt-1">
+                        {v.created_by && (
+                          <span>Created by: {formatAuditUser(v.created_by, v.created_by_role)}</span>
+                        )}
+                        {v.updated_by && (
+                          <span>Updated by: {formatAuditUser(v.updated_by, v.updated_by_role)}</span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Visit actions (Hidden once completed) */}
+                    {showStructureActions && v.status !== "completed" && (
                       <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border">
-                        <div className="flex items-center gap-2">
-                          {!v.check_in_time && (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {v.status !== "pending" && (
                             <button
                               type="button"
                               disabled={!canCompleteAction}
-                              onClick={() => handleCheckIn(vId)}
-                              title={!canCompleteAction ? visitWindowHint(plan.plan_date) : "Check In"}
-                              className={`rounded px-2.5 py-1 text-xs font-semibold transition ${
-                                canCompleteAction
-                                  ? "bg-primary text-primary-foreground hover:bg-primary-hover"
-                                  : "bg-surface-muted border border-border text-muted cursor-not-allowed"
-                              }`}
+                              onClick={() => setPendingVisitTarget(v)}
+                              className="rounded bg-slate-500/10 border border-slate-500/20 px-2 py-1 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-500/20 transition disabled:opacity-50"
                             >
-                              Check In
+                              Pending
                             </button>
                           )}
-                          {v.check_in_time && !v.check_out_time && (
+
+                          {v.status !== "in_progress" && (
                             <button
                               type="button"
                               disabled={!canCompleteAction}
-                              onClick={() => handleCheckOut(vId)}
-                              title={!canCompleteAction ? visitWindowHint(plan.plan_date) : "Check Out"}
-                              className={`rounded px-2.5 py-1 text-xs font-semibold transition ${
-                                canCompleteAction
-                                  ? "bg-amber-600 text-white hover:bg-amber-700"
-                                  : "bg-surface-muted border border-border text-muted cursor-not-allowed"
-                              }`}
+                              onClick={() => setInProgressVisitTarget(v)}
+                              className="rounded bg-amber-500/10 border border-amber-500/20 px-2 py-1 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition disabled:opacity-50"
                             >
-                              Check Out
+                              In Progress
                             </button>
                           )}
-                          {v.status !== "completed" && (
-                            <button
-                              type="button"
-                              disabled={!canCompleteAction}
-                              onClick={() => setCompleteVisitTarget(v)}
-                              title={!canCompleteAction ? visitWindowHint(plan.plan_date) : "Complete visit"}
-                              className={`rounded px-2.5 py-1 text-xs font-semibold transition ${
-                                canCompleteAction
-                                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                                  : "bg-surface-muted border border-border text-muted cursor-not-allowed"
-                              }`}
-                            >
-                              Complete
-                            </button>
-                          )}
+
                           <button
                             type="button"
-                            onClick={() => setNextVisitTarget(v)}
-                            className="rounded border border-border px-2 py-1 text-xs font-medium text-foreground hover:bg-card transition"
+                            disabled={!canCompleteAction}
+                            onClick={() => setCompleteVisitTarget(v)}
+                            className="rounded bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-50"
                           >
-                            Schedule Next
+                            Complete
                           </button>
                         </div>
 
@@ -620,14 +582,17 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                           >
                             <Edit3 className="h-3.5 w-3.5" />
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveVisit(vId)}
-                            className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition"
-                            title="Remove visit"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+
+                          {managerRole && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveVisit(vId)}
+                              className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition"
+                              title="Remove visit"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     )}
@@ -649,19 +614,6 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                 Work Tasks ({works.length})
               </h2>
             </div>
-            {showStructureActions && (
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingWork(null);
-                  setWorkModalOpen(true);
-                }}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 transition"
-              >
-                <Plus className="h-4 w-4" />
-                Add Task
-              </button>
-            )}
           </div>
 
           {!canCompleteAction && !isCompleted && (
@@ -672,7 +624,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
 
           {works.length === 0 ? (
             <p className="text-xs text-muted py-4 text-center">
-              No work tasks added to this plan.{showStructureActions && " Click \u201cAdd Task\u201d to log your task."}
+              No work tasks added to this plan.
             </p>
           ) : (
             <div className="space-y-3">
@@ -681,64 +633,108 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                 return (
                   <div
                     key={wId}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface-muted/50 p-3"
+                    className="flex flex-col gap-2 rounded-lg border border-border bg-surface-muted/50 p-3"
                   >
-                    <div className="flex items-center gap-3">
-                      <Briefcase className="h-4 w-4 text-muted" />
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-foreground">
-                            {w.title}
-                          </span>
-                          {renderWorkStatusBadge(w.status)}
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <Briefcase className="h-4 w-4 text-muted" />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-foreground">
+                              {w.title}
+                            </span>
+                            {renderWorkStatusBadge(w.status)}
+                          </div>
+                          {w.description && (
+                            <p className="text-xs text-muted">
+                              {w.description}
+                            </p>
+                          )}
                         </div>
-                        {w.description && (
-                          <p className="text-xs text-muted">
-                            {w.description}
-                          </p>
-                        )}
-                        {w.outcome && (
-                          <p className="text-xs text-emerald-500 font-medium">
-                            Outcome: {w.outcome}
-                          </p>
-                        )}
                       </div>
-                    </div>
 
-                    {showStructureActions && (
-                      <div className="flex items-center gap-2">
-                        {w.status !== "completed" && (
+                      {/* Work Task actions (Hidden once completed) */}
+                      {showStructureActions && w.status !== "completed" && (
+                        <div className="flex items-center gap-2">
+                          {w.status !== "pending" && (
+                            <button
+                              type="button"
+                              disabled={!canCompleteAction}
+                              onClick={() => setPendingWorkTarget(w)}
+                              className="rounded bg-slate-500/10 border border-slate-500/20 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-500/20 transition disabled:opacity-50"
+                            >
+                              Pending
+                            </button>
+                          )}
+
+                          {w.status !== "in_progress" && (
+                            <button
+                              type="button"
+                              disabled={!canCompleteAction}
+                              onClick={() => setInProgressWorkTarget(w)}
+                              className="rounded bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition disabled:opacity-50"
+                            >
+                              In Progress
+                            </button>
+                          )}
+
                           <button
                             type="button"
                             disabled={!canCompleteAction}
                             onClick={() => setCompleteWorkTarget(w)}
-                            title={!canCompleteAction ? taskWindowHint(plan.plan_date) : "Complete task"}
-                            className={`rounded px-2.5 py-1 text-xs font-semibold transition ${
-                              canCompleteAction
-                                ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                                : "bg-surface-muted border border-border text-muted cursor-not-allowed"
-                            }`}
+                            className="rounded bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-50"
                           >
                             Complete
                           </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingWork(w);
+                              setWorkModalOpen(true);
+                            }}
+                            className="rounded p-1 text-muted hover:bg-card hover:text-foreground transition"
+                          >
+                            <Edit3 className="h-3.5 w-3.5" />
+                          </button>
+                          {managerRole && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveWork(wId)}
+                              className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {w.pending_remarks ? (
+                      <p className="text-xs text-slate-600 dark:text-slate-400 font-medium pl-7">
+                        Pending Remarks: {w.pending_remarks}
+                      </p>
+                    ) : null}
+
+                    {w.in_progress_remarks ? (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 font-medium pl-7">
+                        In-Progress Remarks: {w.in_progress_remarks}
+                      </p>
+                    ) : null}
+
+                    {(w.completion_remarks || w.outcome) ? (
+                      <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium pl-7">
+                        Outcome: {w.completion_remarks || w.outcome}
+                      </p>
+                    ) : null}
+
+                    {(w.created_by || w.updated_by) && (
+                      <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted pl-7">
+                        {w.created_by && (
+                          <span>Created by: {formatAuditUser(w.created_by, w.created_by_role)}</span>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingWork(w);
-                            setWorkModalOpen(true);
-                          }}
-                          className="rounded p-1 text-muted hover:bg-card hover:text-foreground transition"
-                        >
-                          <Edit3 className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveWork(wId)}
-                          className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        {w.updated_by && (
+                          <span>Updated by: {formatAuditUser(w.updated_by, w.updated_by_role)}</span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -900,22 +896,110 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
         />
       )}
 
-      {nextVisitTarget && (
-        <NextVisitPlanModal
-          open={Boolean(nextVisitTarget)}
+      {pendingVisitTarget && (
+        <MarkPendingVisitModal
+          open={Boolean(pendingVisitTarget)}
           isSaving={actionLoading}
-          partyLabel={typeof nextVisitTarget.party === "object" ? nextVisitTarget.party?.party_name : nextVisitTarget.party_name}
-          currentPlanDate={plan.plan_date}
-          onClose={() => setNextVisitTarget(null)}
-          onConfirm={async (nextDate) => {
+          partyName={typeof pendingVisitTarget.party === "object" ? pendingVisitTarget.party?.party_name : pendingVisitTarget.party_name}
+          initialRemarks={pendingVisitTarget.pending_remarks}
+          onClose={() => setPendingVisitTarget(null)}
+          onConfirm={async (remarks) => {
             setActionLoading(true);
             try {
-              const vId = nextVisitTarget._id || nextVisitTarget.id || "";
-              await scheduleNextVisitMut({ planId, visitId: vId, plan_date: nextDate }).unwrap();
-              toast.success("Next visit scheduled");
-              setNextVisitTarget(null);
+              const vId = pendingVisitTarget._id || pendingVisitTarget.id || "";
+              await updateVisitMut({
+                planId,
+                visitId: vId,
+                body: { status: "pending", pending_remarks: remarks },
+              }).unwrap();
+              toast.success("Visit marked as Pending");
+              setPendingVisitTarget(null);
             } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : "Failed to schedule next visit";
+              const msg = err instanceof Error ? err.message : "Failed to mark visit pending";
+              toast.error(msg);
+            } finally {
+              setActionLoading(false);
+            }
+          }}
+        />
+      )}
+
+      {inProgressVisitTarget && (
+        <InProgressVisitModal
+          open={Boolean(inProgressVisitTarget)}
+          isSaving={actionLoading}
+          partyName={typeof inProgressVisitTarget.party === "object" ? inProgressVisitTarget.party?.party_name : inProgressVisitTarget.party_name}
+          initialRemarks={inProgressVisitTarget.in_progress_remarks}
+          onClose={() => setInProgressVisitTarget(null)}
+          onConfirm={async (remarks) => {
+            setActionLoading(true);
+            try {
+              const vId = inProgressVisitTarget._id || inProgressVisitTarget.id || "";
+              await updateVisitMut({
+                planId,
+                visitId: vId,
+                body: { status: "in_progress", in_progress_remarks: remarks },
+              }).unwrap();
+              toast.success("Visit marked as In Progress");
+              setInProgressVisitTarget(null);
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : "Failed to mark visit in-progress";
+              toast.error(msg);
+            } finally {
+              setActionLoading(false);
+            }
+          }}
+        />
+      )}
+
+      {pendingWorkTarget && (
+        <MarkPendingWorkModal
+          open={Boolean(pendingWorkTarget)}
+          isSaving={actionLoading}
+          taskTitle={pendingWorkTarget.title}
+          initialRemarks={pendingWorkTarget.pending_remarks}
+          onClose={() => setPendingWorkTarget(null)}
+          onConfirm={async (remarks) => {
+            setActionLoading(true);
+            try {
+              const wId = pendingWorkTarget._id || pendingWorkTarget.id || "";
+              await updateWorkMut({
+                planId,
+                workId: wId,
+                body: { status: "pending", pending_remarks: remarks },
+              }).unwrap();
+              toast.success("Task marked as Pending");
+              setPendingWorkTarget(null);
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : "Failed to mark task pending";
+              toast.error(msg);
+            } finally {
+              setActionLoading(false);
+            }
+          }}
+        />
+      )}
+
+      {inProgressWorkTarget && (
+        <InProgressWorkModal
+          open={Boolean(inProgressWorkTarget)}
+          isSaving={actionLoading}
+          taskTitle={inProgressWorkTarget.title}
+          initialRemarks={inProgressWorkTarget.in_progress_remarks}
+          onClose={() => setInProgressWorkTarget(null)}
+          onConfirm={async (remarks) => {
+            setActionLoading(true);
+            try {
+              const wId = inProgressWorkTarget._id || inProgressWorkTarget.id || "";
+              await updateWorkMut({
+                planId,
+                workId: wId,
+                body: { status: "in_progress", in_progress_remarks: remarks },
+              }).unwrap();
+              toast.success("Task marked as In Progress");
+              setInProgressWorkTarget(null);
+            } catch (err: unknown) {
+              const msg = err instanceof Error ? err.message : "Failed to mark task in-progress";
               toast.error(msg);
             } finally {
               setActionLoading(false);

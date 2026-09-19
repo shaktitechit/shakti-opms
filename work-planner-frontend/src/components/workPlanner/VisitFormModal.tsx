@@ -7,7 +7,7 @@ import type { PartyRecord } from "@/types/party";
 import type { LeadRecord } from "@/types/lead";
 import { useGetPartiesQuery } from "@/store/api/partyApiSlice";
 import { useGetLeadsQuery } from "@/store/api/leadsApiSlice";
-import { formatPlanDate } from "./workPlanUtils";
+import { formatPlanDate, formatAuditUser, formatDateTime } from "./workPlanUtils";
 
 export type VisitFormModalProps = {
   open: boolean;
@@ -718,6 +718,28 @@ export function VisitFormModal({
               className={inputClass}
             />
           </div>
+
+          {initial && (initial.created_by || initial.updated_by || initial.createdAt || initial.updatedAt) && (
+            <div className="rounded-lg border border-border bg-surface-muted/60 p-3 space-y-1.5 text-xs text-muted">
+              <div className="font-semibold text-foreground">Audit Information</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                {(initial.created_by || initial.created_by_role) && (
+                  <div>
+                    <span className="font-medium text-foreground">Created By:</span>{" "}
+                    {formatAuditUser(initial.created_by, initial.created_by_role)}
+                    {initial.createdAt && ` on ${formatDateTime(initial.createdAt)}`}
+                  </div>
+                )}
+                {(initial.updated_by || initial.updated_by_role) && (
+                  <div>
+                    <span className="font-medium text-foreground">Updated By:</span>{" "}
+                    {formatAuditUser(initial.updated_by, initial.updated_by_role)}
+                    {initial.updatedAt && ` on ${formatDateTime(initial.updatedAt)}`}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3 bg-surface-muted/50">

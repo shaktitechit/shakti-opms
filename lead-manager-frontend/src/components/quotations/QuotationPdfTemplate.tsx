@@ -115,13 +115,13 @@ export default function QuotationPdfTemplate({
 
   const custAddress = quotation.address
     ? [
-        quotation.address.address_line_1,
-        quotation.address.city,
-        quotation.address.state,
-        quotation.address.pincode,
-      ]
-        .filter(Boolean)
-        .join(", ")
+      quotation.address.address_line_1,
+      quotation.address.city,
+      quotation.address.state,
+      quotation.address.pincode,
+    ]
+      .filter(Boolean)
+      .join(", ")
     : "";
 
   const signatoryContacts = [
@@ -328,14 +328,14 @@ export default function QuotationPdfTemplate({
                 {quotation.valid_until
                   ? formatDate(String(quotation.valid_until))
                   : quotation.quotation_date
-                  ? formatDate(
+                    ? formatDate(
                       new Date(
                         new Date(quotation.quotation_date).setDate(
                           new Date(quotation.quotation_date).getDate() + (quotation.validity_days || 15)
                         )
                       ).toISOString()
                     )
-                  : ""}{" "}
+                    : ""}{" "}
                 ({quotation.validity_days || 15} Days)
               </span>
             </div>

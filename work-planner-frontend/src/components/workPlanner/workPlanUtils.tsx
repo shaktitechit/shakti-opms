@@ -230,10 +230,62 @@ export function renderExpenseStatusBadge(status: string | undefined) {
   );
 }
 
+function isMongoId(val?: string | null): boolean {
+  if (!val || typeof val !== "string") return false;
+  return /^[0-9a-fA-F]{24}$/.test(val.trim());
+}
+
+export function formatAuditUser(
+  user?: string | { _id?: string; name?: string; email?: string; role?: string } | null,
+  roleField?: string,
+): string {
+  if (!user && !roleField) return "";
+  let name = "";
+  let role = roleField || "";
+
+  if (isMongoId(role)) {
+    role = "";
+  }
+
+  if (typeof user === "string") {
+    if (!isMongoId(user)) {
+      name = user;
+    }
+  } else if (user && typeof user === "object") {
+    name = user.name || user.email || "";
+    if (isMongoId(name)) name = "";
+    if (!role && user.role && !isMongoId(user.role)) {
+      role = user.role;
+    }
+  }
+
+  if (!name && !role) return "";
+  if (name && role) return `${name} (${role})`;
+  return name || role;
+}
+
+export function isDayEndEligible(
+  visits: Array<{ status?: string }> = [],
+  works: Array<{ status?: string }> = [],
+): boolean {
+  const allowedStatuses = new Set(["pending", "in_progress", "completed"]);
+  
+  if (visits.length === 0 && works.length === 0) {
+    return true;
+  }
+
+  const allVisitsEligible = visits.every((v) => v.status && allowedStatuses.has(v.status));
+  const allWorksEligible = works.every((w) => w.status && allowedStatuses.has(w.status));
+
+  return allVisitsEligible && allWorksEligible;
+}
+
 export function renderVisitStatusBadge(status: string | undefined) {
-  const s = (status || "pending") as WorkPlanVisitStatus;
+  const s = (status || "created") as WorkPlanVisitStatus;
   const labels: Record<WorkPlanVisitStatus, string> = {
+    created: "Created",
     pending: "Pending",
+    in_progress: "In Progress",
     checked_in: "Checked In",
     completed: "Completed",
     cancelled: "Cancelled",
@@ -241,16 +293,18 @@ export function renderVisitStatusBadge(status: string | undefined) {
     rescheduled: "Rescheduled",
   };
   const tones: Record<WorkPlanVisitStatus, string> = {
-    pending: "bg-surface-muted text-muted ring-border",
+    created: "bg-sky-500/10 text-sky-600 dark:text-sky-400 ring-sky-500/20",
+    pending: "bg-slate-500/10 text-slate-600 dark:text-slate-400 ring-slate-500/20",
+    in_progress: "bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-amber-500/20",
     checked_in: "bg-amber-500/10 text-amber-500 ring-amber-500/20",
-    completed: "bg-emerald-500/10 text-emerald-500 ring-emerald-500/20",
+    completed: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-emerald-500/20",
     cancelled: "bg-rose-500/10 text-rose-500 ring-rose-500/20",
     skipped: "bg-surface-muted text-muted ring-border",
     rescheduled: "bg-purple-500/10 text-purple-500 ring-purple-500/20",
   };
   return (
     <span
-      className={`inline-flex items-center text-xs font-semibold px-2.5 py-0.5 rounded-full ring-1 ring-inset ${tones[s] || tones.pending}`}
+      className={`inline-flex items-center text-xs font-semibold px-2.5 py-0.5 rounded-full ring-1 ring-inset ${tones[s] || tones.created}`}
     >
       {labels[s] || s}
     </span>
@@ -258,22 +312,30 @@ export function renderVisitStatusBadge(status: string | undefined) {
 }
 
 export function renderWorkStatusBadge(status: string | undefined) {
-  const s = status || "pending";
+  const s = status || "created";
   const map: Record<string, { wrap: string; label: string }> = {
+    created: {
+      wrap: "bg-sky-500/10 text-sky-600 dark:text-sky-400 ring-sky-500/20",
+      label: "Created",
+    },
     pending: {
-      wrap: "bg-surface-muted text-muted ring-border",
+      wrap: "bg-slate-500/10 text-slate-600 dark:text-slate-400 ring-slate-500/20",
       label: "Pending",
     },
     in_progress: {
-      wrap: "bg-amber-500/10 text-amber-500 ring-amber-500/20",
+      wrap: "bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-amber-500/20",
       label: "In Progress",
     },
     completed: {
-      wrap: "bg-emerald-500/10 text-emerald-500 ring-emerald-500/20",
+      wrap: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-emerald-500/20",
       label: "Completed",
     },
+    cancelled: {
+      wrap: "bg-rose-500/10 text-rose-500 ring-rose-500/20",
+      label: "Cancelled",
+    },
   };
-  const meta = map[s] || map.pending;
+  const meta = map[s] || map.created;
   return (
     <span
       className={`inline-flex items-center text-xs font-semibold px-2.5 py-0.5 rounded-full ring-1 ring-inset ${meta.wrap}`}

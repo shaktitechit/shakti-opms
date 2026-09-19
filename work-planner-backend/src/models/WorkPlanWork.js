@@ -20,11 +20,25 @@ const workPlanWorkSchema = new mongoose.Schema(
     planned_end_time: Date,
     status: {
       type: String,
-      enum: ["pending", "completed", "cancelled"],
-      default: "pending",
+      enum: ["created", "pending", "in_progress", "completed", "cancelled"],
+      default: "created",
       index: true,
     },
     completion_remarks: { type: String, trim: true },
+    pending_remarks: { type: String, trim: true },
+    in_progress_remarks: { type: String, trim: true },
+    created_by: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      index: true,
+    },
+    created_by_role: { type: String, trim: true },
+    updated_by: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      index: true,
+    },
+    updated_by_role: { type: String, trim: true },
     deletedAt: { type: Date, default: null, index: true },
   },
   { timestamps: true }

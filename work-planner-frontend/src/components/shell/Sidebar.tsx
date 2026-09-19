@@ -34,6 +34,7 @@ export function Sidebar({
 
   const isDashboardActive = pathname === "/dashboard";
   const isPlansActive = pathname === "/dashboard/plans";
+  const isTasksVisitsActive = pathname.startsWith("/dashboard/tasks-visits");
   const isCalendarActive = pathname.startsWith("/dashboard/plans/calendar");
   const isExpensesActive = pathname.startsWith("/dashboard/expenses");
 
@@ -132,6 +133,21 @@ export function Sidebar({
           >
             <FileText className={`h-4 w-4 shrink-0 ${isPlansActive ? "text-primary" : ""}`} />
             {!desktopCollapsed && <span>Work Plans</span>}
+          </Link>
+
+          {/* Tasks & Visits */}
+          <Link
+            href="/dashboard/tasks-visits"
+            onClick={() => setMobileNavOpen(false)}
+            className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+              isTasksVisitsActive
+                ? "bg-primary/15 border border-primary/30 text-primary font-bold shadow-xs"
+                : "text-muted hover:bg-surface-muted hover:text-foreground border border-transparent"
+            }`}
+            title="Tasks & Field Visits"
+          >
+            <CheckSquare className={`h-4 w-4 shrink-0 ${isTasksVisitsActive ? "text-primary" : ""}`} />
+            {!desktopCollapsed && <span>Tasks & Visits</span>}
           </Link>
 
           {/* Calendar View */}

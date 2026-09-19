@@ -7,7 +7,9 @@ export type WorkPlanStatus =
   | "completed";
 
 export type WorkPlanVisitStatus =
+  | "created"
   | "pending"
+  | "in_progress"
   | "checked_in"
   | "completed"
   | "cancelled"
@@ -191,6 +193,8 @@ export type WorkPlanVisitRecord = {
   check_in_time?: string;
   check_out_time?: string;
   outcome?: string;
+  pending_remarks?: string;
+  in_progress_remarks?: string;
   meeting_with_doctor?: boolean;
   meeting_with_purchase?: boolean;
   meeting_with_finance?: boolean;
@@ -198,6 +202,10 @@ export type WorkPlanVisitRecord = {
   new_product_introduced?: boolean;
   order_received?: boolean;
   next_followup_date?: string;
+  created_by?: string | { _id?: string; name?: string; email?: string; role?: string };
+  created_by_role?: string;
+  updated_by?: string | { _id?: string; name?: string; email?: string; role?: string };
+  updated_by_role?: string;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -211,9 +219,15 @@ export type WorkPlanWorkRecord = {
   description?: string;
   planned_start_time?: string;
   planned_end_time?: string;
-  status: "pending" | "completed" | "cancelled";
+  status: "created" | "pending" | "in_progress" | "completed" | "cancelled";
   completion_remarks?: string;
+  pending_remarks?: string;
+  in_progress_remarks?: string;
   outcome?: string;
+  created_by?: string | { _id?: string; name?: string; email?: string; role?: string };
+  created_by_role?: string;
+  updated_by?: string | { _id?: string; name?: string; email?: string; role?: string };
+  updated_by_role?: string;
   createdAt?: string;
   updatedAt?: string;
 };

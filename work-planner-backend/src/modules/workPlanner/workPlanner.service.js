@@ -32,6 +32,15 @@ function userId(user) {
   return user?._id || user?.id;
 }
 
+function getUserRole(user) {
+  if (!user) return 'Executive';
+  if (user.role) return String(user.role);
+  if (user.user_role) return String(user.user_role);
+  if (Array.isArray(user.roles) && user.roles.length > 0) return String(user.roles[0]);
+  if (Array.isArray(user.role_codes) && user.role_codes.length > 0) return String(user.role_codes[0]);
+  return 'Executive';
+}
+
 /** Aggregate $match needs ObjectId; req.user ids are strings (see toReqUser). */
 function asObjectId(id) {
   if (!id) return null;
@@ -112,15 +121,9 @@ function assertCanEditVisits(plan, user) {
   if (admin) {
     return;
   }
-  // Executive owners may edit visits on planned, draft, rejected, or approved plans.
-  if (!['planned', 'draft', 'rejected', 'approved'].includes(plan.status)) {
+  // Executive owners may edit visits/tasks on planned, draft, rejected, approved, submitted, or completed plans.
+  if (!['planned', 'draft', 'rejected', 'approved', 'submitted', 'completed'].includes(plan.status)) {
     throw new ApiError(400, `Cannot edit visits for a work plan in status "${plan.status}"`);
-  }
-  if (isExpenseAddWindowEnded(plan.plan_date)) {
-    throw new ApiError(
-      400,
-      'Field visits and tasks can no longer be added or modified after the 3-day window has expired',
-    );
   }
 }
 
@@ -165,6 +168,8 @@ async function loadVisits(planId) {
   const { WorkPlanVisit } = getModels();
   const rows = await WorkPlanVisit.find({ work_plan: planId, deletedAt: null })
     .populate('party', 'party_name mobile email contact_person contacts billing_address shipping_address')
+    .populate('created_by', 'name email')
+    .populate('updated_by', 'name email')
     .sort({ sequence: 1 })
     .lean();
   return rows.map(toPlain);
@@ -783,6 +788,38 @@ async function addVisit(planId, body, user) {
     partyDoc?.party_name ||
     undefined;
 
+  const userRole = getUserRole(user);
+
+  const existingVisitId = body._id || body.visit_id || body.id;
+  if (existingVisitId) {
+    const existingVisit = await WorkPlanVisit.findOne({ _id: existingVisitId, deletedAt: null });
+    if (existingVisit) {
+      existingVisit.work_plan = planId;
+      existingVisit.sequence = sequence;
+      if (body.planned_start_time !== undefined) {
+        existingVisit.planned_start_time = body.planned_start_time ? new Date(body.planned_start_time) : undefined;
+      }
+      if (body.planned_end_time !== undefined) {
+        existingVisit.planned_end_time = body.planned_end_time ? new Date(body.planned_end_time) : undefined;
+      }
+      existingVisit.updated_by = userId(user);
+      existingVisit.updated_by_role = userRole;
+      await existingVisit.save();
+
+      if (plan.status === 'rejected') {
+        plan.status = 'draft';
+        plan.rejection_reason = undefined;
+        plan.submitted_at = undefined;
+        plan.updated_by = userId(user);
+        await plan.save();
+      }
+
+      await renumberVisits(planId);
+      await logActivity(user, planId, 'updated', `Visit reassigned (sequence ${sequence})`);
+      return getWithVisits(planId);
+    }
+  }
+
   const visit = await WorkPlanVisit.create({
     work_plan: planId,
     sequence,
@@ -797,7 +834,13 @@ async function addVisit(planId, body, user) {
     planned_end_time: body.planned_end_time ? new Date(body.planned_end_time) : undefined,
     purpose: body.purpose?.trim() || undefined,
     notes: body.notes?.trim() || undefined,
-    status: 'pending',
+    status: body.status || 'created',
+    pending_remarks: body.pending_remarks?.trim() || undefined,
+    in_progress_remarks: body.in_progress_remarks?.trim() || undefined,
+    created_by: userId(user),
+    created_by_role: userRole,
+    updated_by: userId(user),
+    updated_by_role: userRole,
   });
 
   if (plan.status === 'rejected') {
@@ -824,28 +867,32 @@ async function updateVisit(planId, visitId, body, user) {
   if (!visit) throw new ApiError(404, 'Visit not found');
 
   const admin = isAdminDept(user);
-  if (!admin && !['pending', 'rescheduled', 'checked_in'].includes(visit.status)) {
+  if (!admin && !['created', 'pending', 'in_progress', 'rescheduled', 'checked_in', 'completed'].includes(visit.status)) {
     throw new ApiError(400, `Cannot edit a visit in status "${visit.status}"`);
   }
 
-  const nextPartyType =
-    body.party_type !== undefined
-      ? String(body.party_type)
-      : visit.party_type || (visit.party ? 'existing' : 'new_party');
+  if (body.party_type !== undefined || body.party !== undefined) {
+    const nextPartyType =
+      body.party_type !== undefined
+        ? String(body.party_type)
+        : visit.party_type || (visit.party ? 'existing' : 'new_party');
 
-  if (body.party_type !== undefined) visit.party_type = nextPartyType;
+    visit.party_type = nextPartyType;
 
-  if (nextPartyType === 'existing') {
-    const partyId = body.party !== undefined ? body.party : visit.party;
-    if (!partyId) throw new ApiError(400, 'party is required for existing party visits');
-    const partyDoc = await Party.findOne({ _id: partyId, deletedAt: null }).lean();
-    if (!partyDoc) throw new ApiError(404, 'Party not found');
-    visit.party = partyId;
-    if (body.party_name === undefined && !visit.party_name) {
-      visit.party_name = partyDoc.party_name;
+    if (nextPartyType === 'existing') {
+      const partyId = body.party !== undefined ? body.party : visit.party;
+      if (partyId) {
+        const partyDoc = await Party.findOne({ _id: partyId, deletedAt: null }).lean();
+        if (partyDoc) {
+          visit.party = partyId;
+          if (body.party_name === undefined && !visit.party_name) {
+            visit.party_name = partyDoc.party_name;
+          }
+        }
+      }
+    } else {
+      visit.party = undefined;
     }
-  } else {
-    visit.party = undefined;
   }
 
   if (body.party_name !== undefined) visit.party_name = body.party_name?.trim() || undefined;
@@ -864,7 +911,12 @@ async function updateVisit(planId, visitId, body, user) {
   }
   if (body.purpose !== undefined) visit.purpose = body.purpose?.trim() || undefined;
   if (body.notes !== undefined) visit.notes = body.notes?.trim() || undefined;
-  if (body.status !== undefined && isAdminDept(user)) visit.status = body.status;
+  if (body.status !== undefined) visit.status = body.status;
+  if (body.pending_remarks !== undefined) visit.pending_remarks = body.pending_remarks?.trim() || undefined;
+  if (body.in_progress_remarks !== undefined) visit.in_progress_remarks = body.in_progress_remarks?.trim() || undefined;
+
+  visit.updated_by = userId(user);
+  visit.updated_by_role = getUserRole(user);
 
   await visit.save();
 
@@ -891,6 +943,13 @@ async function removeVisit(planId, visitId, user) {
   if (!visit) throw new ApiError(404, 'Visit not found');
 
   const admin = isAdminDept(user);
+  const isManagerCreated = ['Manager', 'Admin', 'Super Admin', 'manager', 'admin', 'super_admin'].includes(
+    String(visit.created_by_role || '').trim()
+  );
+  if (!admin && isManagerCreated) {
+    throw new ApiError(403, 'Visits created by a Manager cannot be removed by an Executive');
+  }
+
   if (!admin && !['pending', 'rescheduled'].includes(visit.status)) {
     throw new ApiError(400, `Cannot delete a visit in status "${visit.status}"`);
   }
@@ -1864,124 +1923,11 @@ async function rejectAllExpenses(planId, body, user) {
   return getWithVisits(planId);
 }
 
-async function scheduleNextVisit(planId, visitId, body, user) {
-  const { WorkPlan, WorkPlanVisit } = getModels();
-  const sourcePlan = await loadPlanOrThrow(planId);
-  assertCanView(sourcePlan, user);
-
-  const sourceVisit = await WorkPlanVisit.findOne({
-    _id: visitId,
-    work_plan: planId,
-    deletedAt: null,
-  }).lean();
-  if (!sourceVisit) throw new ApiError(404, 'Visit not found');
-  if (sourceVisit.status !== 'completed') {
-    throw new ApiError(400, 'Next visit can only be planned from a completed visit');
-  }
-
-  const salesUserId = sourcePlan.sales_user?._id || sourcePlan.sales_user;
-  if (!isAdminDept(user) && !sameId(salesUserId, userId(user))) {
-    throw new ApiError(403, 'Only the plan owner or manager can schedule the next visit');
-  }
-
-  const planDate = startOfDay(body.plan_date);
-  const sourcePlanDate = startOfDay(sourcePlan.plan_date);
-  if (planDate.getTime() === sourcePlanDate.getTime()) {
-    throw new ApiError(400, 'Choose a different date than the current work plan');
-  }
-
-  let target = await WorkPlan.findOne({
-    sales_user: salesUserId,
-    plan_date: planDate,
-    deletedAt: null,
-  });
-
-  let created = false;
-  if (!target) {
-    target = await WorkPlan.create({
-      plan_date: planDate,
-      sales_user: salesUserId,
-      status: 'draft',
-      location: sourcePlan.location || undefined,
-      created_by: userId(user),
-      updated_by: userId(user),
-    });
-    created = true;
-    await logActivity(
-      user,
-      target._id,
-      'created',
-      `Draft work plan created for next visit on ${planDate.toISOString().slice(0, 10)}`,
-    );
-  } else if (target.status === 'completed') {
-    target.status = 'draft';
-    target.updated_by = userId(user);
-    if (!target.location && sourcePlan.location) {
-      target.location = sourcePlan.location;
-    }
-    await target.save();
-  } else if (!target.location && sourcePlan.location) {
-    target.location = sourcePlan.location;
-    target.updated_by = userId(user);
-    await target.save();
-  }
-
-  const maxSeq = await WorkPlanVisit.findOne({ work_plan: target._id, deletedAt: null })
-    .sort({ sequence: -1 })
-    .select('sequence')
-    .lean();
-  const sequence = (maxSeq?.sequence || 0) + 1;
-
-  const newVisit = await WorkPlanVisit.create({
-    work_plan: target._id,
-    sequence,
-    party_type: sourceVisit.party_type || (sourceVisit.party ? 'existing' : 'new_party'),
-    party: sourceVisit.party || undefined,
-    party_name: sourceVisit.party_name || undefined,
-    contact_person: sourceVisit.contact_person || undefined,
-    contact_number: sourceVisit.contact_number || undefined,
-    contact_email: sourceVisit.contact_email || undefined,
-    purpose: sourceVisit.purpose || undefined,
-    notes: sourceVisit.notes || undefined,
-    status: 'pending',
-    actual_check_in: null,
-    actual_check_out: null,
-    outcome: null,
-    next_followup_date: null,
-  });
-
-  if (newVisit.status !== 'pending') {
-    newVisit.status = 'pending';
-    newVisit.actual_check_in = undefined;
-    newVisit.actual_check_out = undefined;
-    newVisit.outcome = undefined;
-    newVisit.next_followup_date = undefined;
-    await newVisit.save();
-  }
-
-  await renumberVisits(target._id);
-  await logActivity(
-    user,
-    target._id,
-    'updated',
-    `New pending visit created from plan ${planId} visit ${visitId}`,
-  );
-
-  const result = await getWithVisits(target._id);
-  return {
-    ...result,
-    _meta: {
-      created,
-      reused: !created,
-      new_visit_id: String(newVisit._id),
-      new_visit_status: 'pending',
-    },
-  };
-}
-
 async function loadWorks(planId) {
   const { WorkPlanWork } = getModels();
   const rows = await WorkPlanWork.find({ work_plan: planId, deletedAt: null })
+    .populate('created_by', 'name email')
+    .populate('updated_by', 'name email')
     .sort({ sequence: 1 })
     .lean();
   return rows.map(toPlain);
@@ -2011,6 +1957,37 @@ async function addWork(planId, body, user) {
     .select('sequence')
     .lean();
   const sequence = body.sequence ? Number(body.sequence) : (maxSeq?.sequence || 0) + 1;
+  const userRole = getUserRole(user);
+
+  const existingWorkId = body._id || body.work_id || body.id;
+  if (existingWorkId) {
+    const existingWork = await WorkPlanWork.findOne({ _id: existingWorkId, deletedAt: null });
+    if (existingWork) {
+      existingWork.work_plan = planId;
+      existingWork.sequence = sequence;
+      if (body.planned_start_time !== undefined) {
+        existingWork.planned_start_time = body.planned_start_time ? new Date(body.planned_start_time) : undefined;
+      }
+      if (body.planned_end_time !== undefined) {
+        existingWork.planned_end_time = body.planned_end_time ? new Date(body.planned_end_time) : undefined;
+      }
+      existingWork.updated_by = userId(user);
+      existingWork.updated_by_role = userRole;
+      await existingWork.save();
+
+      if (plan.status === 'rejected') {
+        plan.status = 'draft';
+        plan.rejection_reason = undefined;
+        plan.submitted_at = undefined;
+        plan.updated_by = userId(user);
+        await plan.save();
+      }
+
+      await renumberWorks(planId);
+      await logActivity(user, planId, 'updated', `Work task reassigned (sequence ${sequence})`);
+      return getWithVisits(planId);
+    }
+  }
 
   await WorkPlanWork.create({
     work_plan: planId,
@@ -2019,7 +1996,13 @@ async function addWork(planId, body, user) {
     description: body.description?.trim() || undefined,
     planned_start_time: body.planned_start_time ? new Date(body.planned_start_time) : undefined,
     planned_end_time: body.planned_end_time ? new Date(body.planned_end_time) : undefined,
-    status: body.status || 'pending',
+    status: body.status || 'created',
+    pending_remarks: body.pending_remarks?.trim() || undefined,
+    in_progress_remarks: body.in_progress_remarks?.trim() || undefined,
+    created_by: userId(user),
+    created_by_role: userRole,
+    updated_by: userId(user),
+    updated_by_role: userRole,
   });
 
   if (plan.status === 'rejected') {
@@ -2053,18 +2036,21 @@ async function updateWork(planId, workId, body, user) {
     work.planned_end_time = body.planned_end_time ? new Date(body.planned_end_time) : undefined;
   }
   if (body.status !== undefined) {
-    if (body.status === 'completed' && !isAdminDept(user) && !isExpenseAddWindowOpen(plan.plan_date)) {
-      throw new ApiError(
-        400,
-        'Tasks can only be completed within the 3-day window from the work plan date',
-      );
-    }
     work.status = body.status;
   }
   if (body.completion_remarks !== undefined) {
     work.completion_remarks = body.completion_remarks?.trim() || undefined;
   }
+  if (body.pending_remarks !== undefined) {
+    work.pending_remarks = body.pending_remarks?.trim() || undefined;
+  }
+  if (body.in_progress_remarks !== undefined) {
+    work.in_progress_remarks = body.in_progress_remarks?.trim() || undefined;
+  }
   if (body.sequence !== undefined) work.sequence = Number(body.sequence);
+
+  work.updated_by = userId(user);
+  work.updated_by_role = getUserRole(user);
 
   await work.save();
 
@@ -2090,6 +2076,14 @@ async function removeWork(planId, workId, user) {
 
   const work = await WorkPlanWork.findOne({ _id: workId, work_plan: planId, deletedAt: null });
   if (!work) throw new ApiError(404, 'Work task not found');
+
+  const admin = isAdminDept(user);
+  const isManagerCreated = ['Manager', 'Admin', 'Super Admin', 'manager', 'admin', 'super_admin'].includes(
+    String(work.created_by_role || '').trim()
+  );
+  if (!admin && isManagerCreated) {
+    throw new ApiError(403, 'Tasks created by a Manager cannot be removed by an Executive');
+  }
 
   work.deletedAt = new Date();
   await work.save();
@@ -2123,7 +2117,6 @@ module.exports = {
   checkIn,
   checkOut,
   completeVisit,
-  scheduleNextVisit,
   listAllExpenses,
   listExpenses,
   addExpense,

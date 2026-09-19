@@ -6,7 +6,9 @@
 import mongoose from "mongoose";
 
 const WORK_PLAN_VISIT_STATUSES = [
+  "created",
   "pending",
+  "in_progress",
   "checked_in",
   "completed",
   "cancelled",
@@ -54,9 +56,23 @@ const workPlanVisitSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: WORK_PLAN_VISIT_STATUSES,
-      default: "pending",
+      default: "created",
       index: true,
     },
+    pending_remarks: { type: String, trim: true },
+    in_progress_remarks: { type: String, trim: true },
+    created_by: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      index: true,
+    },
+    created_by_role: { type: String, trim: true },
+    updated_by: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      index: true,
+    },
+    updated_by_role: { type: String, trim: true },
     actual_check_in: Date,
     actual_check_out: Date,
     outcome: { type: String, trim: true },

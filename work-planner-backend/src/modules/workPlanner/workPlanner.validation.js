@@ -7,6 +7,7 @@ const { ApiError } = require('../../utils/ApiError');
 const {
   PLAN_STATUSES,
   VISIT_STATUSES,
+  WORK_STATUSES,
   VISIT_PARTY_TYPES,
   EXPENSE_CATEGORIES,
   TRAVEL_SUB_CATEGORIES,
@@ -377,8 +378,8 @@ function assertWorkCreate(body) {
   if (body.planned_end_time && isNaN(Date.parse(body.planned_end_time))) {
     throw new ApiError(400, 'Invalid planned_end_time format');
   }
-  if (body.status && !['pending', 'completed', 'cancelled'].includes(body.status)) {
-    throw new ApiError(400, 'status must be pending, completed or cancelled');
+  if (body.status && !WORK_STATUSES.includes(body.status)) {
+    throw new ApiError(400, `status must be one of: ${WORK_STATUSES.join(', ')}`);
   }
 }
 
@@ -405,8 +406,8 @@ function assertWorkUpdate(body) {
       throw new ApiError(400, 'Invalid planned_end_time format');
     }
   }
-  if (body.status !== undefined && !['pending', 'completed', 'cancelled'].includes(body.status)) {
-    throw new ApiError(400, 'status must be pending, completed or cancelled');
+  if (body.status !== undefined && !WORK_STATUSES.includes(body.status)) {
+    throw new ApiError(400, `status must be one of: ${WORK_STATUSES.join(', ')}`);
   }
   if (body.completion_remarks !== undefined && body.completion_remarks !== null) {
     if (typeof body.completion_remarks !== 'string') {

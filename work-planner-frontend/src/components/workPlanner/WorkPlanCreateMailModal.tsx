@@ -255,6 +255,15 @@ export function WorkPlanCreateMailModal({
           : "") ||
         "Manager";
 
+      const getBadgeStyle = (statusStr?: string) => {
+        const s = String(statusStr || "created").toLowerCase().trim();
+        if (s === "completed") return "background-color: #dcfce7; color: #15803d;";
+        if (s === "in_progress") return "background-color: #fef9c3; color: #a16207;";
+        if (s === "cancelled" || s === "rejected") return "background-color: #ffe4e6; color: #be123c;";
+        if (s === "pending") return "background-color: #ffedd5; color: #c2410c;";
+        return "background-color: #e0f2fe; color: #0369a1;";
+      };
+
       let visitsHtml = "";
       if (visits.length > 0) {
         visitsHtml = `
@@ -266,6 +275,7 @@ export function WorkPlanCreateMailModal({
                 <th style="padding: 8px; border: 1px solid #cbd5e1;">Party Name</th>
                 <th style="padding: 8px; border: 1px solid #cbd5e1;">Contact / Person</th>
                 <th style="padding: 8px; border: 1px solid #cbd5e1;">Location / Address</th>
+                <th style="padding: 8px; border: 1px solid #cbd5e1;">Status</th>
                 <th style="padding: 8px; border: 1px solid #cbd5e1;">Planned Schedule</th>
               </tr>
             </thead>
@@ -278,6 +288,7 @@ export function WorkPlanCreateMailModal({
                   <td style="padding: 8px; border: 1px solid #cbd5e1; font-weight: bold; color: #0f172a;">${v.party_name || "N/A"}</td>
                   <td style="padding: 8px; border: 1px solid #cbd5e1;">${v.contact_person || "—"}<br/><small style="color:#64748b">${v.contact_number || ""}</small></td>
                   <td style="padding: 8px; border: 1px solid #cbd5e1;">${v.address || "—"}</td>
+                  <td style="padding: 8px; border: 1px solid #cbd5e1;"><span style="${getBadgeStyle(v.status)}; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 11px;">${String(v.status || "created").replace(/_/g, " ").toUpperCase()}</span></td>
                   <td style="padding: 8px; border: 1px solid #cbd5e1;">${v.planned_start_time || "Full Day"}</td>
                 </tr>
               `
@@ -298,6 +309,7 @@ export function WorkPlanCreateMailModal({
                 <th style="padding: 8px; border: 1px solid #cbd5e1;">#</th>
                 <th style="padding: 8px; border: 1px solid #cbd5e1;">Task Title</th>
                 <th style="padding: 8px; border: 1px solid #cbd5e1;">Description</th>
+                <th style="padding: 8px; border: 1px solid #cbd5e1;">Status</th>
                 <th style="padding: 8px; border: 1px solid #cbd5e1;">Planned Schedule</th>
               </tr>
             </thead>
@@ -309,6 +321,7 @@ export function WorkPlanCreateMailModal({
                   <td style="padding: 8px; border: 1px solid #cbd5e1; font-weight: bold;">${idx + 1}</td>
                   <td style="padding: 8px; border: 1px solid #cbd5e1; font-weight: bold; color: #0f172a;">${t.title || "Task"}</td>
                   <td style="padding: 8px; border: 1px solid #cbd5e1;">${t.description || "—"}</td>
+                  <td style="padding: 8px; border: 1px solid #cbd5e1;"><span style="${getBadgeStyle(t.status)}; padding: 2px 6px; border-radius: 4px; font-weight: bold; font-size: 11px;">${String(t.status || "created").replace(/_/g, " ").toUpperCase()}</span></td>
                   <td style="padding: 8px; border: 1px solid #cbd5e1;">${t.planned_start_time || "Full Day"}</td>
                 </tr>
               `

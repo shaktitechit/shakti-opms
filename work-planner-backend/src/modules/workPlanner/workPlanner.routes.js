@@ -52,7 +52,6 @@ router.delete('/:id/works/:workId', controller.removeWork);
 router.post('/:id/visits/:visitId/check-in', controller.checkIn);
 router.post('/:id/visits/:visitId/check-out', controller.checkOut);
 router.post('/:id/visits/:visitId/complete', controller.completeVisit);
-router.post('/:id/visits/:visitId/schedule-next', controller.scheduleNextVisit);
 
 router.get('/:id/expenses', controller.listExpenses);
 router.post('/:id/expenses', controller.addExpense);

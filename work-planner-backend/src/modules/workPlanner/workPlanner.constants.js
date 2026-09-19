@@ -13,12 +13,22 @@ const PLAN_STATUSES = Object.freeze([
 ]);
 
 const VISIT_STATUSES = Object.freeze([
+  'created',
   'pending',
+  'in_progress',
   'checked_in',
   'completed',
   'cancelled',
   'skipped',
   'rescheduled',
+]);
+
+const WORK_STATUSES = Object.freeze([
+  'created',
+  'pending',
+  'in_progress',
+  'completed',
+  'cancelled',
 ]);
 
 const TERMINAL_VISIT_STATUSES = Object.freeze(['completed', 'cancelled', 'skipped']);
@@ -184,6 +194,7 @@ function isSalesDept(user) {
 module.exports = {
   PLAN_STATUSES,
   VISIT_STATUSES,
+  WORK_STATUSES,
   TERMINAL_VISIT_STATUSES,
   EDITABLE_PLAN_STATUSES,
   VISIT_PARTY_TYPES,

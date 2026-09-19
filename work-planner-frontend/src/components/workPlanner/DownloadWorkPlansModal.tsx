@@ -237,7 +237,7 @@ export function DownloadWorkPlansModal({
               address: address || "—",
               plannedTime,
               actualTime,
-              status: v.status || "pending",
+              status: v.status || "created",
               outcome: v.outcome || "—",
               checklistNotes,
               purpose: v.purpose || "Field Visit",
@@ -271,7 +271,7 @@ export function DownloadWorkPlansModal({
               title: w.title || `Task #${wIdx + 1}`,
               description: w.description || "Work Task",
               plannedTime,
-              status: w.status || "pending",
+              status: w.status || "created",
               remarks: w.completion_remarks || w.outcome || "—",
             };
           })

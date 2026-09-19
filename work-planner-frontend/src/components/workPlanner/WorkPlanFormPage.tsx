@@ -46,10 +46,13 @@ import {
   isWorkTaskPlan,
   isLeavePlan,
   formatTime,
+  renderVisitStatusBadge,
+  renderWorkStatusBadge,
 } from "./workPlanUtils";
 import { VisitFormModal } from "./VisitFormModal";
 import { WorkFormModal } from "./WorkFormModal";
 import { WorkPlanCreateMailModal, type CreateEmailPayload } from "./WorkPlanCreateMailModal";
+import { SelectPreviousPendingItemsModal } from "./SelectPreviousPendingItemsModal";
 
 interface WorkPlanFormPageProps {
   planId?: string;
@@ -157,6 +160,9 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
 
   const [workModalOpen, setWorkModalOpen] = useState(false);
   const [editingWorkIndex, setEditingWorkIndex] = useState<number | null>(null);
+
+  // Modal state for selecting previous pending/in-progress items
+  const [previousModalMode, setPreviousModalMode] = useState<"visits" | "tasks" | null>(null);
 
   // Creation Email Panel Modal state
   const [createMailModalOpen, setCreateMailModalOpen] = useState(false);
@@ -342,19 +348,25 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
             }
           }
 
-          // Copy visits but strip IDs and status so they are created fresh
+          // When copying: uncompleted visits are reassigned to this new plan; completed visits are created fresh
           if (Array.isArray(plan.visits)) {
             setVisits(
               plan.visits.map((v: any) => {
+                if (v.status !== "completed") {
+                  return { ...v };
+                }
                 const { _id, id, status, check_in_time, check_out_time, outcome, ...rest } = v;
                 return { ...rest };
               })
             );
           }
-          // Copy works but strip IDs and status so they are created fresh
+          // When copying: uncompleted tasks are reassigned to this new plan; completed tasks are created fresh
           if (Array.isArray(plan.works)) {
             setWorks(
               plan.works.map((w: any) => {
+                if (w.status !== "completed") {
+                  return { ...w };
+                }
                 const { _id, id, status, outcome, completion_remarks, ...rest } = w;
                 return { ...rest };
               })
@@ -420,6 +432,12 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
     );
   }, [salesUserId, executives, sessionUser]);
 
+  function isManagerCreatedItem(item?: Record<string, any>): boolean {
+    if (!item) return false;
+    const role = String(item.created_by_role || "").toLowerCase().trim();
+    return ["manager", "admin", "super_admin", "super admin"].includes(role);
+  }
+
   // Visit modal handlers
   async function handleVisitSubmit(body: Record<string, any>) {
     if (isEditing && planId) {
@@ -454,6 +472,11 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
 
   async function handleRemoveVisit(index: number) {
     const v = visits[index];
+    if (!v) return;
+    if (!managerRole && isManagerCreatedItem(v)) {
+      toast.error("Visits created by a Manager cannot be removed by Executives.");
+      return;
+    }
     if (isEditing && planId && (v?._id || v?.id)) {
       if (!confirm("Are you sure you want to remove this visit?")) return;
       try {
@@ -503,6 +526,11 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
 
   async function handleRemoveWork(index: number) {
     const w = works[index];
+    if (!w) return;
+    if (!managerRole && isManagerCreatedItem(w)) {
+      toast.error("Tasks created by a Manager cannot be removed by Executives.");
+      return;
+    }
     if (isEditing && planId && (w?._id || w?.id)) {
       if (!confirm("Are you sure you want to remove this task?")) return;
       try {
@@ -597,14 +625,16 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
           contact_number: v.contact_number,
           address: v.address,
           planned_start_time: v.planned_start_time,
-          status: "pending",
+          status: v.status || "created",
+          created_by_role: v.created_by_role,
         })),
         works: works.map((w, idx) => ({
           sequence: idx + 1,
           title: w.title,
           description: w.description,
           planned_start_time: w.planned_start_time,
-          status: "pending",
+          status: w.status || "created",
+          created_by_role: w.created_by_role,
         })),
       };
 
@@ -633,14 +663,17 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
         // Update existing plan
         await updatePlanMut({ id: planId, body: pendingPlanData.payload }).unwrap();
 
-        // Post unposted visits
+        // Post unposted or reassigned visits
         if (isVisitsPlan(pendingPlanData.payload.plan_type || "") && pendingPlanData.visits.length > 0) {
-          const unpostedVisits = pendingPlanData.visits.filter((v) => !v._id && !v.id);
-          for (const v of unpostedVisits) {
+          const visitsToPost = pendingPlanData.visits.filter(
+            (v) => !v._id && !v.id || (v.work_plan && String(v.work_plan) !== String(planId))
+          );
+          for (const v of visitsToPost) {
             const partyObj = typeof v.party === "object" ? v.party : null;
             const resolvedPartyType = v.party_type || (v.party ? "existing" : "new_party");
             const partyId = partyObj ? partyObj._id || partyObj.id : (typeof v.party === "string" ? v.party : undefined);
             const visitBody: any = {
+              ...(v._id || v.id ? { _id: v._id || v.id } : {}),
               party_type: resolvedPartyType,
               party_name: v.party_name || partyObj?.party_name || "Client Visit",
               contact_person: v.contact_person || "Contact Person",
@@ -662,11 +695,14 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
           }
         }
 
-        // Post unposted tasks
+        // Post unposted or reassigned tasks
         if (isWorkTaskPlan(pendingPlanData.payload.plan_type || "") && pendingPlanData.works.length > 0) {
-          const unpostedWorks = pendingPlanData.works.filter((w) => !w._id && !w.id);
-          for (const w of unpostedWorks) {
+          const worksToPost = pendingPlanData.works.filter(
+            (w) => !w._id && !w.id || (w.work_plan && String(w.work_plan) !== String(planId))
+          );
+          for (const w of worksToPost) {
             const workBody = {
+              ...(w._id || w.id ? { _id: w._id || w.id } : {}),
               title: w.title,
               description: w.description || undefined,
               planned_start_time: w.planned_start_time || undefined,
@@ -688,6 +724,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
             const resolvedPartyType = v.party_type || (v.party ? "existing" : "new_party");
             const partyId = partyObj ? partyObj._id || partyObj.id : (typeof v.party === "string" ? v.party : undefined);
             const visitBody: any = {
+              ...(v._id || v.id ? { _id: v._id || v.id } : {}),
               party_type: resolvedPartyType,
               party_name: v.party_name || partyObj?.party_name || "Client Visit",
               contact_person: v.contact_person || "Contact Person",
@@ -713,6 +750,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
         if (isWorkTaskPlan(pendingPlanData.payload.plan_type || "") && pendingPlanData.works.length > 0) {
           for (const w of pendingPlanData.works) {
             const workBody = {
+              ...(w._id || w.id ? { _id: w._id || w.id } : {}),
               title: w.title,
               description: w.description || undefined,
               planned_start_time: w.planned_start_time || undefined,
@@ -1206,17 +1244,27 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                   Planned Visits ({visits.length})
                 </h3>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingVisitIndex(null);
-                  setVisitModalOpen(true);
-                }}
-                className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Add Visit
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPreviousModalMode("visits")}
+                  className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition shadow-xs cursor-pointer"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Previous Pending Visits
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingVisitIndex(null);
+                    setVisitModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Visit
+                </button>
+              </div>
             </div>
 
             {visits.length === 0 ? (
@@ -1236,11 +1284,12 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                       className="flex items-start justify-between gap-2 rounded-lg border border-border bg-card p-3 shadow-2xs"
                     >
                       <div className="space-y-1">
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <Building2 className="h-3.5 w-3.5 text-muted shrink-0" />
                           <span className="text-xs font-bold text-foreground truncate">
                             {partyName}
                           </span>
+                          {renderVisitStatusBadge(v.status)}
                         </div>
                         {v.purpose && (
                           <p className="text-[11px] text-muted line-clamp-1">
@@ -1272,14 +1321,25 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                         >
                           <Edit3 className="h-3.5 w-3.5" />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveVisit(idx)}
-                          className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500"
-                          title="Remove visit"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        {managerRole || !isManagerCreatedItem(v) ? (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveVisit(idx)}
+                            className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500"
+                            title="Remove visit"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled
+                            className="rounded p-1 text-muted/30 cursor-not-allowed opacity-50"
+                            title="Created by Manager — Executive cannot remove"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -1299,17 +1359,27 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                   Planned Tasks ({works.length})
                 </h3>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingWorkIndex(null);
-                  setWorkModalOpen(true);
-                }}
-                className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Add Task
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPreviousModalMode("tasks")}
+                  className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition shadow-xs cursor-pointer"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Previous Pending Tasks
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingWorkIndex(null);
+                    setWorkModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Task
+                </button>
+              </div>
             </div>
 
             {works.length === 0 ? (
@@ -1326,9 +1396,12 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                     <div className="flex items-center gap-2.5 truncate">
                       <Briefcase className="h-4 w-4 text-muted shrink-0" />
                       <div className="truncate">
-                        <span className="text-xs font-bold text-foreground block truncate">
-                          {w.title}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-bold text-foreground truncate">
+                            {w.title}
+                          </span>
+                          {renderWorkStatusBadge(w.status)}
+                        </div>
                         {w.description && (
                           <p className="text-[11px] text-muted truncate">{w.description}</p>
                         )}
@@ -1353,14 +1426,25 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                       >
                         <Edit3 className="h-3.5 w-3.5" />
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveWork(idx)}
-                        className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500"
-                        title="Remove task"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      {managerRole || !isManagerCreatedItem(w) ? (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveWork(idx)}
+                          className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500"
+                          title="Remove task"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled
+                          className="rounded p-1 text-muted/30 cursor-not-allowed opacity-50"
+                          title="Created by Manager — Executive cannot remove"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1454,6 +1538,27 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
           }}
           onCreateAndSend={handleCreateAndSendEmail}
           loading={submitting}
+        />
+      )}
+
+      {previousModalMode && (
+        <SelectPreviousPendingItemsModal
+          open={Boolean(previousModalMode)}
+          mode={previousModalMode}
+          salesUserId={salesUserId || sessionUser?._id}
+          excludeIds={
+            previousModalMode === "visits"
+              ? visits.map((v) => String(v._id || v.id || "")).filter(Boolean)
+              : works.map((w) => String(w._id || w.id || "")).filter(Boolean)
+          }
+          onClose={() => setPreviousModalMode(null)}
+          onAddItems={(selectedItems) => {
+            if (previousModalMode === "visits") {
+              setVisits((prev) => [...prev, ...selectedItems]);
+            } else {
+              setWorks((prev) => [...prev, ...selectedItems]);
+            }
+          }}
         />
       )}
     </div>

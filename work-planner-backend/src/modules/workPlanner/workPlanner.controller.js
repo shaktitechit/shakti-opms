@@ -126,19 +126,6 @@ exports.completeVisit = asyncHandler(async (req, res) => {
   });
 });
 
-exports.scheduleNextVisit = asyncHandler(async (req, res) => {
-  validation.assertScheduleNextVisit(req.body || {});
-  res.status(201).json({
-    success: true,
-    data: await service.scheduleNextVisit(
-      req.params.id,
-      req.params.visitId,
-      req.body,
-      req.user,
-    ),
-  });
-});
-
 exports.listExpenses = asyncHandler(async (req, res) => {
   res.json({
     success: true,
