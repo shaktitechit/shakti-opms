@@ -62,7 +62,6 @@ function renderVisitsTable(visitsList) {
         '';
       const purpose = v.purpose || 'General';
       const status = (v.status || 'pending').toLowerCase();
-      const outcome = v.outcome || v.notes || '—';
       const time = v.planned_start_time
         ? `${v.planned_start_time}${v.planned_end_time ? ' - ' + v.planned_end_time : ''}`
         : '—';
@@ -70,10 +69,65 @@ function renderVisitsTable(visitsList) {
       let statusBadgeStyle = 'background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1;';
       if (status === 'completed') {
         statusBadgeStyle = 'background-color: #dcfce7; color: #15803d; border: 1px solid #bbf7d0;';
+      } else if (status === 'in_progress') {
+        statusBadgeStyle = 'background-color: #fef3c7; color: #b45309; border: 1px solid #fde68a;';
       } else if (status === 'pending' || status === 'checked_in') {
-        statusBadgeStyle = 'background-color: #fef9c3; color: #854d0e; border: 1px solid #fef08a;';
+        statusBadgeStyle = 'background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1;';
+      } else if (status === 'created') {
+        statusBadgeStyle = 'background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd;';
       } else if (['cancelled', 'skipped'].includes(status)) {
         statusBadgeStyle = 'background-color: #fee2e2; color: #b91c1c; border: 1px solid #fecaca;';
+      }
+
+      let remarksHtml = '—';
+      if (status === 'completed') {
+        const out = v.outcome || v.notes || '';
+        const outHtml = out ? `<div style="color: #15803d; font-weight: 500; margin-bottom: 6px;">${out}</div>` : '';
+
+        const hasChecklist = [
+          v.meeting_with_doctor,
+          v.meeting_with_purchase,
+          v.meeting_with_finance,
+          v.meeting_with_engineer,
+          v.new_product_introduced,
+          v.order_received,
+        ].some((val) => val !== undefined && val !== null);
+
+        let checklistHtml = '';
+        if (hasChecklist) {
+          const renderTag = (label, val) => {
+            const isYes = Boolean(val);
+            const style = isYes
+              ? 'background-color: #dcfce7; color: #166534; border: 1px solid #bbf7d0;'
+              : 'background-color: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0;';
+            return `<span style="display: inline-block; padding: 2px 6px; margin: 2px 4px 2px 0; border-radius: 4px; font-size: 10px; font-weight: 600; ${style}">${label}: ${isYes ? '✓ Yes' : '✗ No'}</span>`;
+          };
+
+          checklistHtml = `
+            <div style="margin-top: 4px; padding-top: 4px; border-top: 1px dashed #cbd5e1;">
+              <div style="font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 2px; letter-spacing: 0.5px;">Checklist:</div>
+              <div>
+                ${renderTag('Doctor', v.meeting_with_doctor)}
+                ${renderTag('Purchase', v.meeting_with_purchase)}
+                ${renderTag('Finance', v.meeting_with_finance)}
+                ${renderTag('Engineer', v.meeting_with_engineer)}
+                ${renderTag('New Product', v.new_product_introduced)}
+                ${renderTag('Order', v.order_received)}
+              </div>
+            </div>
+          `;
+        }
+
+        remarksHtml = outHtml || checklistHtml ? `${outHtml}${checklistHtml}` : '—';
+      } else if (status === 'in_progress') {
+        const inp = v.in_progress_remarks || v.notes || '';
+        remarksHtml = inp ? `<div><span style="color: #b45309; font-weight: 700; font-size: 11px; text-transform: uppercase;">In Progress:</span> <span style="color: #334155;">${inp}</span></div>` : '—';
+      } else if (status === 'pending' || status === 'created') {
+        const pnd = v.pending_remarks || v.notes || '';
+        remarksHtml = pnd ? `<div><span style="color: #475569; font-weight: 700; font-size: 11px; text-transform: uppercase;">Pending Reason:</span> <span style="color: #334155;">${pnd}</span></div>` : (v.notes ? `<span>${v.notes}</span>` : '—');
+      } else {
+        const other = v.outcome || v.in_progress_remarks || v.pending_remarks || v.notes || '';
+        remarksHtml = other || '—';
       }
 
       const formattedStatus = status.replace(/_/g, ' ').toUpperCase();
@@ -96,7 +150,7 @@ function renderVisitsTable(visitsList) {
             </span>
           </td>
           <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px; color: #334155;">
-            ${outcome}
+            ${remarksHtml}
           </td>
         </tr>
       `;
@@ -130,15 +184,33 @@ function renderTasksTable(taskList) {
       const title = t.title || 'Task #' + (i + 1);
       const desc = t.description || '—';
       const status = (t.status || 'pending').toLowerCase();
-      const remarks = t.completion_remarks || t.outcome || '—';
 
       let statusBadgeStyle = 'background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1;';
       if (status === 'completed') {
         statusBadgeStyle = 'background-color: #dcfce7; color: #15803d; border: 1px solid #bbf7d0;';
+      } else if (status === 'in_progress') {
+        statusBadgeStyle = 'background-color: #fef3c7; color: #b45309; border: 1px solid #fde68a;';
       } else if (status === 'pending') {
-        statusBadgeStyle = 'background-color: #fef9c3; color: #854d0e; border: 1px solid #fef08a;';
+        statusBadgeStyle = 'background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1;';
+      } else if (status === 'created') {
+        statusBadgeStyle = 'background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd;';
       } else if (status === 'cancelled') {
         statusBadgeStyle = 'background-color: #fee2e2; color: #b91c1c; border: 1px solid #fecaca;';
+      }
+
+      let remarksHtml = '—';
+      if (status === 'completed') {
+        const out = t.completion_remarks || t.outcome || '';
+        remarksHtml = out ? `<div style="color: #15803d; font-weight: 500;">${out}</div>` : '—';
+      } else if (status === 'in_progress') {
+        const inp = t.in_progress_remarks || '';
+        remarksHtml = inp ? `<div><span style="color: #b45309; font-weight: 700; font-size: 11px; text-transform: uppercase;">In Progress:</span> <span style="color: #334155;">${inp}</span></div>` : '—';
+      } else if (status === 'pending' || status === 'created') {
+        const pnd = t.pending_remarks || '';
+        remarksHtml = pnd ? `<div><span style="color: #475569; font-weight: 700; font-size: 11px; text-transform: uppercase;">Pending Reason:</span> <span style="color: #334155;">${pnd}</span></div>` : '—';
+      } else {
+        const other = t.completion_remarks || t.outcome || t.in_progress_remarks || t.pending_remarks || '';
+        remarksHtml = other || '—';
       }
 
       const formattedStatus = status.replace(/_/g, ' ').toUpperCase();
@@ -157,7 +229,7 @@ function renderTasksTable(taskList) {
             </span>
           </td>
           <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px; color: #334155; width: 22%;">
-            ${remarks}
+            ${remarksHtml}
           </td>
         </tr>
       `;

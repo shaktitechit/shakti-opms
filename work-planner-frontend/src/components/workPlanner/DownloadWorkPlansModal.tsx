@@ -37,6 +37,7 @@ import {
   WORK_PLAN_TYPE_TABS,
   formatTime,
   renderVisitStatusBadge,
+  stripHtml,
 } from "./workPlanUtils";
 import { calculateDateRange, type DateFilterPreset, toYmdString } from "./DashboardDateFilter";
 import { usePdfCompanyLetterhead } from "./pdfCompanyLetterhead";
@@ -549,14 +550,16 @@ export function DownloadWorkPlansModal({
           date: formatPlanDate(p.planDate),
           executive: execName,
           activity: p.planType === "Visits" ? `Visits Plan (${p.visits.length} Visits)` : `Tasks Plan (${p.tasks.length} Tasks)`,
-          details: [p.planRemarks, discSummary].filter(Boolean).join(" | ") || "—",
+          details: [stripHtml(p.planRemarks), discSummary].filter(Boolean).join(" | ") || "—",
           plannedTime: "Full Day",
           status: p.planStatus.toUpperCase(),
-          remarks: [p.planRemarks, discSummary].filter(Boolean).join(" | ") || "—",
+          remarks: [stripHtml(p.planRemarks), discSummary].filter(Boolean).join(" | ") || "—",
         });
 
         // 2. Field Visits Rows
         p.visits.forEach((v, vIdx) => {
+          const outcomeText = v.outcome ? stripHtml(v.outcome) : "";
+          const notesText = v.checklistNotes ? stripHtml(v.checklistNotes) : "";
           rows.push({
             hierarchyId: `${planIndex}.${vIdx + 1}`,
             rowType: "FIELD VISIT",
@@ -566,7 +569,7 @@ export function DownloadWorkPlansModal({
             details: `${v.contactInfo ? v.contactInfo + " | " : ""}${v.address}`,
             plannedTime: v.plannedTime || "—",
             status: v.status.toUpperCase(),
-            remarks: `${v.outcome ? "Outcome: " + v.outcome : ""}${v.checklistNotes ? " Notes: " + v.checklistNotes : ""}` || "—",
+            remarks: `${outcomeText ? "Outcome: " + outcomeText : ""}${notesText ? " Notes: " + notesText : ""}` || "—",
           });
         });
 
@@ -578,10 +581,10 @@ export function DownloadWorkPlansModal({
             date: formatPlanDate(p.planDate),
             executive: execName,
             activity: `Work Task: ${w.title}`,
-            details: w.description || "—",
+            details: stripHtml(w.description) || "—",
             plannedTime: w.plannedTime || "—",
             status: w.status.toUpperCase(),
-            remarks: w.remarks || "—",
+            remarks: stripHtml(w.remarks) || "—",
           });
         });
       });
@@ -639,6 +642,8 @@ export function DownloadWorkPlansModal({
 
         // 2. Field Visits Rows
         p.visits.forEach((v, vIdx) => {
+          const outcomeText = v.outcome ? stripHtml(v.outcome) : "";
+          const notesText = v.checklistNotes ? stripHtml(v.checklistNotes) : "";
           rows.push({
             _rowType: "FIELD VISIT",
             hierarchyId: `${planIndex}.${vIdx + 1}`,
@@ -649,7 +654,7 @@ export function DownloadWorkPlansModal({
             details: `${v.contactInfo ? v.contactInfo + " | " : ""}${v.address}`,
             plannedTime: v.plannedTime || "—",
             status: v.status.toUpperCase(),
-            remarks: `${v.outcome ? "Outcome: " + v.outcome : ""}${v.checklistNotes ? " Notes: " + v.checklistNotes : ""}` || "—",
+            remarks: `${outcomeText ? "Outcome: " + outcomeText : ""}${notesText ? " Notes: " + notesText : ""}` || "—",
           });
         });
 
@@ -662,10 +667,10 @@ export function DownloadWorkPlansModal({
             date: formatPlanDate(p.planDate),
             executive: execName,
             activity: `Work Task: ${w.title}`,
-            details: w.description || "—",
+            details: stripHtml(w.description) || "—",
             plannedTime: w.plannedTime || "—",
             status: w.status.toUpperCase(),
-            remarks: w.remarks || "—",
+            remarks: stripHtml(w.remarks) || "—",
           });
         });
       });

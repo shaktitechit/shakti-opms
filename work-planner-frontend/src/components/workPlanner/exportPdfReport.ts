@@ -3,6 +3,8 @@
  * @module components/workPlanner/exportPdfReport
  */
 
+import { stripHtml } from "./workPlanUtils";
+
 import type { PdfCompanyLetterhead } from "./pdfCompanyLetterhead";
 
 export type PdfReportColumn = {
@@ -313,7 +315,7 @@ export async function downloadPdfReport({
 
     const cellLines = columns.map((col, i) => {
       const val = row[col.key];
-      const text = val == null ? "" : String(val);
+      const text = val == null ? "" : stripHtml(String(val));
       return doc.splitTextToSize(text || "—", colWidths[i] - 2);
     });
 

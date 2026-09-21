@@ -41,8 +41,13 @@ function combinePlanDateAndTime(
 ): string | undefined {
   if (!time) return undefined;
   const ymd = ymdFromPlanDate(planDate) || new Date().toISOString().slice(0, 10);
-  const local = new Date(`${ymd}T${time}`);
-  if (isNaN(local.getTime())) return undefined;
+  const normalizedTime = time.length === 5 ? `${time}:00` : time;
+  const local = new Date(`${ymd}T${normalizedTime}`);
+  if (isNaN(local.getTime())) {
+    const d = new Date(time);
+    if (!isNaN(d.getTime())) return d.toISOString();
+    return time;
+  }
   return local.toISOString();
 }
 

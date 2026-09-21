@@ -132,7 +132,14 @@ export function DayEndMailModal({
 
   // Initialize draft values once fetched or settings loaded
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setBodyHtml("");
+      setSubject("");
+      setToEmail("");
+      setCcEmails([]);
+      setAttachments([]);
+      return;
+    }
 
     const planTypeStr = plan?.plan_type || "Visits";
     const pts = effectiveSettings?.planTypeSettings?.[planTypeStr];
@@ -189,8 +196,8 @@ export function DayEndMailModal({
     }
 
     if (draftData) {
-      if (!subject && draftData.subject) setSubject(draftData.subject);
-      if (!bodyHtml && draftData.body_html) setBodyHtml(draftData.body_html);
+      setSubject((prev) => prev || draftData.subject || "");
+      setBodyHtml((prev) => prev || draftData.body_html || "");
     }
   }, [isOpen, draftData, effectiveSettings, plan, availableManagers]);
 

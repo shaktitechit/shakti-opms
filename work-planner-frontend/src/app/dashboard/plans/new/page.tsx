@@ -8,7 +8,8 @@ function NewPlanPageContent() {
   const searchParams = useSearchParams();
   const editId = searchParams.get("edit") || undefined;
   const copyId = searchParams.get("copy") || undefined;
-  return <WorkPlanFormPage planId={editId} copyId={copyId} />;
+  const targetDate = searchParams.get("date") || undefined;
+  return <WorkPlanFormPage planId={editId} copyId={copyId} initialDate={targetDate} />;
 }
 
 export default function NewPlanPage() {

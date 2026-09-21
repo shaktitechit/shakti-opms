@@ -60,9 +60,24 @@ import { WorkFormModal } from "./WorkFormModal";
 import { WorkPlanCreateMailModal, type CreateEmailPayload } from "./WorkPlanCreateMailModal";
 import { SelectPreviousPendingItemsModal } from "./SelectPreviousPendingItemsModal";
 
+function extractErrorMessage(err: unknown, fallbackMsg: string): string {
+  if (!err) return fallbackMsg;
+  if (typeof err === "string") return err;
+  if (typeof err === "object") {
+    const e = err as any;
+    if (e.data?.message && typeof e.data.message === "string") return e.data.message;
+    if (e.data?.error && typeof e.data.error === "string") return e.data.error;
+    if (e.message && typeof e.message === "string") return e.message;
+    if (e.error && typeof e.error === "string") return e.error;
+  }
+  if (err instanceof Error) return err.message;
+  return fallbackMsg;
+}
+
 interface WorkPlanFormPageProps {
   planId?: string;
   copyId?: string;
+  initialDate?: string;
 }
 
 interface ExecutiveUser {
@@ -129,7 +144,7 @@ function hasWorkPlannerManagerAccess(u: ExecutiveUser): boolean {
   return roles.some((r) => String(r).toLowerCase().trim() === "manager");
 }
 
-export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
+export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPageProps) {
   const router = useRouter();
   const [existingPlanId, setExistingPlanId] = useState<string | null>(planId || null);
   const [detectedPlan, setDetectedPlan] = useState<WorkPlanRecord | null>(null);
@@ -143,6 +158,8 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
   const sessionUser = readSessionFromStorage()?.user;
   const managerRole = isManager(sessionUser);
   const prevFetchedKey = useRef<string>("");
+  const copiedVisitsRef = useRef<any[]>([]);
+  const copiedWorksRef = useRef<any[]>([]);
 
   const minPlanDate = useMemo(() => {
     const d = new Date();
@@ -156,7 +173,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
   const [loading, setLoading] = useState(Boolean(planId));
   const [submitting, setSubmitting] = useState(false);
 
-  const [planDate, setPlanDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [planDate, setPlanDate] = useState(() => initialDate || new Date().toISOString().split("T")[0]);
   const [planType, setPlanType] = useState<string>("Visits");
   const [location, setLocation] = useState("");
   const [remarks, setRemarks] = useState("");
@@ -521,26 +538,26 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
 
           // When copying: if plan is within 3 days and item is uncompleted, reassign it; if plan > 3 days old or item is completed, create new
           if (Array.isArray(plan.visits)) {
-            setVisits(
-              plan.visits.map((v: any) => {
-                if (!isSourceExpired && v.status !== "completed") {
-                  return { ...v };
-                }
-                const { _id, id, status, check_in_time, check_out_time, outcome, ...rest } = v;
-                return { ...rest };
-              })
-            );
+            const mappedVisits = plan.visits.map((v: any) => {
+              if (!isSourceExpired && v.status !== "completed") {
+                return { ...v };
+              }
+              const { _id, id, status, check_in_time, check_out_time, outcome, ...rest } = v;
+              return { ...rest };
+            });
+            copiedVisitsRef.current = mappedVisits;
+            setVisits(mappedVisits);
           }
           if (Array.isArray(plan.works)) {
-            setWorks(
-              plan.works.map((w: any) => {
-                if (!isSourceExpired && w.status !== "completed") {
-                  return { ...w };
-                }
-                const { _id, id, status, outcome, completion_remarks, ...rest } = w;
-                return { ...rest };
-              })
-            );
+            const mappedWorks = plan.works.map((w: any) => {
+              if (!isSourceExpired && w.status !== "completed") {
+                return { ...w };
+              }
+              const { _id, id, status, outcome, completion_remarks, ...rest } = w;
+              return { ...rest };
+            });
+            copiedWorksRef.current = mappedWorks;
+            setWorks(mappedWorks);
           }
         }
       } catch (err: unknown) {
@@ -555,7 +572,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
 
   // Effect: Auto-fetch existing work plan for selected date and target executive if already created
   useEffect(() => {
-    if (planId || copyId || !planDate || !targetUserId) return;
+    if (planId || !planDate || !targetUserId) return;
 
     const currentKey = `${planDate}_${targetUserId}`;
     if (prevFetchedKey.current === currentKey) return;
@@ -572,7 +589,10 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
 
         if (!isMounted) return;
 
-        const foundPlans = res?.data || [];
+        const rawPlans = res?.data || [];
+        const foundPlans = rawPlans.filter(
+          (p: any) => String(p.status) !== "deleted" && !p.deletedAt && !p.is_deleted
+        );
         if (foundPlans.length > 0) {
           const found = foundPlans[0];
           const foundId = String(found._id || found.id || "").trim();
@@ -580,86 +600,142 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
           prevFetchedKey.current = currentKey;
 
           // Fetch full plan with visits & works
-          const fullPlan = await fetchPlan(foundId).unwrap();
+          let fullPlan: WorkPlanRecord | null = null;
+          try {
+            fullPlan = await fetchPlan(foundId).unwrap();
+          } catch {
+            fullPlan = null;
+          }
+
           if (!isMounted) return;
 
-          setExistingPlanId(foundId);
-          setDetectedPlan(fullPlan);
-          setPlanStatus(fullPlan.status || found.status || null);
+          if (fullPlan && String(fullPlan.status) !== "deleted" && !(fullPlan as any).deletedAt) {
+            setExistingPlanId(foundId);
+            setDetectedPlan(fullPlan);
+            setPlanStatus(fullPlan.status || found.status || null);
 
-          if (fullPlan.plan_date) {
-            setPlanDate(new Date(fullPlan.plan_date).toISOString().split("T")[0]);
-          }
-          setPlanType(fullPlan.plan_type || "Visits");
-          setLocation(fullPlan.location || "");
-          setRemarks(fullPlan.remarks || "");
+            if (fullPlan.plan_date) {
+              setPlanDate(new Date(fullPlan.plan_date).toISOString().split("T")[0]);
+            }
+            setPlanType(fullPlan.plan_type || "Visits");
+            setLocation(fullPlan.location || "");
+            setRemarks(fullPlan.remarks || "");
 
-          if (fullPlan.sales_user) {
-            const sUser =
-              typeof fullPlan.sales_user === "object"
-                ? fullPlan.sales_user._id || fullPlan.sales_user.id
-                : fullPlan.sales_user;
-            if (sUser) setSalesUserId(String(sUser));
-          }
+            if (fullPlan.sales_user) {
+              const sUser =
+                typeof fullPlan.sales_user === "object"
+                  ? fullPlan.sales_user._id || fullPlan.sales_user.id
+                  : fullPlan.sales_user;
+              if (sUser) setSalesUserId(String(sUser));
+            }
 
-          // Discussion state
-          const isDiscussed = Boolean(fullPlan.is_discussed_with_manager);
-          setIsDiscussedWithManager(isDiscussed);
-          if (isDiscussed) {
-            const mId =
-              typeof fullPlan.discussed_manager_id === "object"
-                ? fullPlan.discussed_manager_id?._id
-                : fullPlan.discussed_manager_id;
-            const mName =
-              fullPlan.discussed_manager_name ||
-              (typeof fullPlan.discussed_manager_id === "object"
-                ? fullPlan.discussed_manager_id?.name
-                : "") ||
-              "";
-            if (mId) {
-              setDiscussedManagerId(String(mId));
-              setDiscussedManagerName(mName);
+            // Discussion state
+            const isDiscussed = Boolean(fullPlan.is_discussed_with_manager);
+            setIsDiscussedWithManager(isDiscussed);
+            if (isDiscussed) {
+              const mId =
+                typeof fullPlan.discussed_manager_id === "object"
+                  ? fullPlan.discussed_manager_id?._id
+                  : fullPlan.discussed_manager_id;
+              const mName =
+                fullPlan.discussed_manager_name ||
+                (typeof fullPlan.discussed_manager_id === "object"
+                  ? fullPlan.discussed_manager_id?.name
+                  : "") ||
+                "";
+              if (mId) {
+                setDiscussedManagerId(String(mId));
+                setDiscussedManagerName(mName);
+                setIsCustomManager(false);
+                setCustomManagerName("");
+              } else if (mName) {
+                setDiscussedManagerId("");
+                setDiscussedManagerName(mName);
+                setIsCustomManager(true);
+                setCustomManagerName(mName);
+              }
+              if (fullPlan.discussion_method) {
+                setDiscussionMethod(fullPlan.discussion_method as any);
+              }
+            } else {
+              setDiscussedManagerId("");
+              setDiscussedManagerName("");
               setIsCustomManager(false);
               setCustomManagerName("");
-            } else if (mName) {
-              setDiscussedManagerId("");
-              setDiscussedManagerName(mName);
-              setIsCustomManager(true);
-              setCustomManagerName(mName);
+              setDiscussionMethod("on_call");
             }
-            if (fullPlan.discussion_method) {
-              setDiscussionMethod(fullPlan.discussion_method as any);
+
+            if (copyId) {
+              // When copying into an existing active plan: merge existing items with copied items
+              const existingVisits = Array.isArray(fullPlan.visits) ? fullPlan.visits : [];
+              const copiedVisits = copiedVisitsRef.current || [];
+              const mergedVisits = [
+                ...existingVisits,
+                ...copiedVisits.map((cv, idx) => ({
+                  ...cv,
+                  sequence: existingVisits.length + idx + 1,
+                })),
+              ];
+              setVisits(mergedVisits);
+
+              const existingWorks = Array.isArray(fullPlan.works) ? fullPlan.works : [];
+              const copiedWorks = copiedWorksRef.current || [];
+              const mergedWorks = [
+                ...existingWorks,
+                ...copiedWorks.map((cw, idx) => ({
+                  ...cw,
+                  sequence: existingWorks.length + idx + 1,
+                })),
+              ];
+              setWorks(mergedWorks);
+            } else {
+              if (Array.isArray(fullPlan.visits)) {
+                setVisits(fullPlan.visits);
+              } else {
+                setVisits([]);
+              }
+              if (Array.isArray(fullPlan.works)) {
+                setWorks(fullPlan.works);
+              } else {
+                setWorks([]);
+              }
+            }
+
+            if (fullPlan.status === "completed") {
+              toast.error(`Work plan for ${planDate} is Completed. No editing or updating allowed.`, {
+                id: `completed-plan-${foundId}`,
+              });
+            } else {
+              toast.info(
+                copyId
+                  ? `Existing work plan found for ${planDate}. Copied items merged into existing plan.`
+                  : `Existing work plan found for ${planDate}. Loaded plan for Update & Mail.`,
+                {
+                  id: `existing-plan-${foundId}`,
+                }
+              );
             }
           } else {
-            setDiscussedManagerId("");
-            setDiscussedManagerName("");
-            setIsCustomManager(false);
-            setCustomManagerName("");
-            setDiscussionMethod("on_call");
-          }
-
-          if (Array.isArray(fullPlan.visits)) {
-            setVisits(fullPlan.visits);
-          } else {
-            setVisits([]);
-          }
-          if (Array.isArray(fullPlan.works)) {
-            setWorks(fullPlan.works);
-          } else {
-            setWorks([]);
-          }
-
-          if (fullPlan.status === "completed") {
-            toast.error(`Work plan for ${planDate} is Completed. No editing or updating allowed.`, {
-              id: `completed-plan-${foundId}`,
-            });
-          } else {
-            toast.info(`Existing work plan found for ${planDate}. Loaded plan for Update & Mail.`, {
-              id: `existing-plan-${foundId}`,
-            });
+            // Full plan was deleted or not found
+            prevFetchedKey.current = currentKey;
+            if (existingPlanId && !planId) {
+              setExistingPlanId(null);
+              setDetectedPlan(null);
+              setPlanStatus(null);
+              setLocation("");
+              setRemarks("");
+              if (copyId) {
+                setVisits(copiedVisitsRef.current);
+                setWorks(copiedWorksRef.current);
+              } else {
+                setVisits([]);
+                setWorks([]);
+              }
+              toast.info(`No active work plan found for ${planDate}. Switched to Create Work Plan mode.`);
+            }
           }
         } else {
-          // No existing plan for this date -> reset if we previously auto-detected one
+          // No active plan for this date -> reset if we previously auto-detected one
           prevFetchedKey.current = currentKey;
           if (existingPlanId && !planId) {
             setExistingPlanId(null);
@@ -667,9 +743,14 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
             setPlanStatus(null);
             setLocation("");
             setRemarks("");
-            setVisits([]);
-            setWorks([]);
-            toast.info(`No existing work plan found for ${planDate}. Switched to Create Work Plan mode.`);
+            if (copyId) {
+              setVisits(copiedVisitsRef.current);
+              setWorks(copiedWorksRef.current);
+            } else {
+              setVisits([]);
+              setWorks([]);
+            }
+            toast.info(`No active work plan found for ${planDate}. Switched to Create Work Plan mode.`);
           }
         }
       } catch (err) {
@@ -1077,8 +1158,37 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
         }
       } else {
         // Create new plan
-        const created = await createPlanMut(pendingPlanData.payload).unwrap();
-        targetPlanId = created._id || created.id;
+        let created: any = null;
+        try {
+          created = await createPlanMut(pendingPlanData.payload).unwrap();
+        } catch (createErr: any) {
+          const createMsg = extractErrorMessage(createErr, "Failed to create work plan");
+          if (createErr?.status === 409 || createMsg.toLowerCase().includes("already exists")) {
+            toast.info("A work plan already exists for this date. Updating existing plan...", { id: "plan-409-fallback" });
+            const existingRes = await lazyGetPlans({
+              date: pendingPlanData.payload.plan_date,
+              sales_user: targetUserId,
+              limit: 1,
+            }).unwrap();
+            const existingFound = (existingRes?.data || []).find(
+              (p: any) => String(p.status) !== "deleted" && !p.deletedAt
+            );
+            if (existingFound) {
+              const exId = String(existingFound._id || existingFound.id);
+              setExistingPlanId(exId);
+              targetPlanId = exId;
+              await updatePlanMut({ id: exId, body: pendingPlanData.payload }).unwrap();
+            } else {
+              throw createErr;
+            }
+          } else {
+            throw createErr;
+          }
+        }
+
+        if (created) {
+          targetPlanId = created._id || created.id;
+        }
         if (!targetPlanId) throw new Error("Failed to obtain work plan ID");
 
         // Post visits
@@ -1139,7 +1249,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
         }).unwrap();
       } catch (submitErr: any) {
         console.error("Error submitting plan email:", submitErr);
-        const errMsg = submitErr?.data?.message || submitErr?.message || "Failed to submit plan email";
+        const errMsg = extractErrorMessage(submitErr, "Failed to submit plan email");
         toast.error(errMsg);
         throw submitErr;
       }
@@ -1148,7 +1258,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
       setCreateMailModalOpen(false);
       router.push("/dashboard/plans");
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to save work plan and send email";
+      const msg = extractErrorMessage(err, "Failed to save work plan and send email");
       toast.error(msg);
       throw err;
     } finally {
@@ -1249,7 +1359,6 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
               {/* Trigger Button / Display field */}
               <button
                 type="button"
-                disabled={isPlanCompleted}
                 onClick={() => setExecDropdownOpen((prev) => !prev)}
                 className="w-full flex items-center justify-between rounded-lg border border-border bg-surface-muted px-3 py-2.5 text-xs font-medium text-foreground outline-none focus:border-primary transition hover:bg-surface-muted/80 disabled:opacity-60 disabled:cursor-not-allowed"
               >
@@ -1272,7 +1381,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
               </button>
 
               {/* Dropdown Card */}
-              {execDropdownOpen && !isPlanCompleted && (
+              {execDropdownOpen && (
                 <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-xl border border-border bg-card shadow-lg p-2 space-y-2">
                   {/* Search Bar */}
                   <div className="relative">
@@ -1377,7 +1486,6 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
               <input
                 type="date"
                 required
-                disabled={isPlanCompleted}
                 value={planDate}
                 min={minPlanDate}
                 onChange={(e) => setPlanDate(e.target.value)}

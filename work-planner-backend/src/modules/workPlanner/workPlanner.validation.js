@@ -83,19 +83,28 @@ function assertUpdate(body) {
   }
 }
 
+function isValidDateOrTimeString(val) {
+  if (val == null || val === '') return true;
+  if (val instanceof Date && !isNaN(val.getTime())) return true;
+  if (!isNaN(Date.parse(val))) return true;
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    if (/^([01]?\d|2[0-3]):[0-5]\d(:[0-5]\d)?(\s*[AP]M)?$/i.test(trimmed)) return true;
+    if (/^\d{4}-\d{2}-\d{2}/i.test(trimmed)) return true;
+  }
+  return false;
+}
+
 function assertVisitCreate(body) {
   if (!body || typeof body !== 'object') {
     throw new ApiError(400, 'JSON body required');
   }
   const partyType = normalizePartyType(body);
-  if (!partyType) {
+  if (!VISIT_PARTY_TYPES.includes(partyType)) {
     throw new ApiError(400, `party_type must be one of: ${VISIT_PARTY_TYPES.join(', ')}`);
   }
   if (partyType === 'existing') {
-    if (!body.party) throw new ApiError(400, 'party is required for existing party visits');
     assertObjectId(body.party, 'party');
-  } else if (body.party) {
-    throw new ApiError(400, 'party must be omitted for new party / new lead visits');
   }
   assertRequiredContactFields(body);
   if (body.sequence !== undefined) {
@@ -104,10 +113,10 @@ function assertVisitCreate(body) {
       throw new ApiError(400, 'sequence must be a positive integer');
     }
   }
-  if (body.planned_start_time && isNaN(Date.parse(body.planned_start_time))) {
+  if (!isValidDateOrTimeString(body.planned_start_time)) {
     throw new ApiError(400, 'Invalid planned_start_time format');
   }
-  if (body.planned_end_time && isNaN(Date.parse(body.planned_end_time))) {
+  if (!isValidDateOrTimeString(body.planned_end_time)) {
     throw new ApiError(400, 'Invalid planned_end_time format');
   }
   if (body.status && !VISIT_STATUSES.includes(body.status)) {
@@ -148,15 +157,11 @@ function assertVisitUpdate(body) {
       throw new ApiError(400, 'sequence must be a positive integer');
     }
   }
-  if (body.planned_start_time !== undefined && body.planned_start_time !== null) {
-    if (isNaN(Date.parse(body.planned_start_time))) {
-      throw new ApiError(400, 'Invalid planned_start_time format');
-    }
+  if (body.planned_start_time !== undefined && !isValidDateOrTimeString(body.planned_start_time)) {
+    throw new ApiError(400, 'Invalid planned_start_time format');
   }
-  if (body.planned_end_time !== undefined && body.planned_end_time !== null) {
-    if (isNaN(Date.parse(body.planned_end_time))) {
-      throw new ApiError(400, 'Invalid planned_end_time format');
-    }
+  if (body.planned_end_time !== undefined && !isValidDateOrTimeString(body.planned_end_time)) {
+    throw new ApiError(400, 'Invalid planned_end_time format');
   }
   if (body.status !== undefined && !VISIT_STATUSES.includes(body.status)) {
     throw new ApiError(400, `status must be one of: ${VISIT_STATUSES.join(', ')}`);
@@ -185,11 +190,12 @@ function assertCompleteVisit(body) {
   if (!body || typeof body !== 'object') {
     throw new ApiError(400, 'JSON body required');
   }
-  if (!body.outcome || typeof body.outcome !== 'string' || !body.outcome.trim()) {
+  const outcome = typeof body.outcome === 'string' ? body.outcome.trim() : '';
+  if (!outcome) {
     throw new ApiError(400, 'outcome is required');
   }
   for (const key of COMPLETE_VISIT_YES_NO_FIELDS) {
-    if (typeof body[key] !== 'boolean') {
+    if (body[key] !== undefined && typeof body[key] !== 'boolean') {
       throw new ApiError(400, `${key} must be true or false`);
     }
   }
@@ -372,10 +378,10 @@ function assertWorkCreate(body) {
       throw new ApiError(400, 'sequence must be a positive integer');
     }
   }
-  if (body.planned_start_time && isNaN(Date.parse(body.planned_start_time))) {
+  if (!isValidDateOrTimeString(body.planned_start_time)) {
     throw new ApiError(400, 'Invalid planned_start_time format');
   }
-  if (body.planned_end_time && isNaN(Date.parse(body.planned_end_time))) {
+  if (!isValidDateOrTimeString(body.planned_end_time)) {
     throw new ApiError(400, 'Invalid planned_end_time format');
   }
   if (body.status && !WORK_STATUSES.includes(body.status)) {
@@ -396,15 +402,11 @@ function assertWorkUpdate(body) {
       throw new ApiError(400, 'sequence must be a positive integer');
     }
   }
-  if (body.planned_start_time !== undefined && body.planned_start_time !== null) {
-    if (isNaN(Date.parse(body.planned_start_time))) {
-      throw new ApiError(400, 'Invalid planned_start_time format');
-    }
+  if (body.planned_start_time !== undefined && !isValidDateOrTimeString(body.planned_start_time)) {
+    throw new ApiError(400, 'Invalid planned_start_time format');
   }
-  if (body.planned_end_time !== undefined && body.planned_end_time !== null) {
-    if (isNaN(Date.parse(body.planned_end_time))) {
-      throw new ApiError(400, 'Invalid planned_end_time format');
-    }
+  if (body.planned_end_time !== undefined && !isValidDateOrTimeString(body.planned_end_time)) {
+    throw new ApiError(400, 'Invalid planned_end_time format');
   }
   if (body.status !== undefined && !WORK_STATUSES.includes(body.status)) {
     throw new ApiError(400, `status must be one of: ${WORK_STATUSES.join(', ')}`);

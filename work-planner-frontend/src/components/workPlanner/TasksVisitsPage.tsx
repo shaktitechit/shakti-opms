@@ -568,16 +568,32 @@ export function TasksVisitsPage() {
               ? (statusRemarksTarget.raw as WorkPlanVisitRecord).outcome
               : (statusRemarksTarget.raw as WorkPlanWorkRecord).completion_remarks || (statusRemarksTarget.raw as WorkPlanWorkRecord).outcome
           }
+          initialVisitAnswers={
+            statusRemarksTarget.itemType === "visit"
+              ? {
+                  meeting_with_doctor: (statusRemarksTarget.raw as WorkPlanVisitRecord).meeting_with_doctor,
+                  meeting_with_purchase: (statusRemarksTarget.raw as WorkPlanVisitRecord).meeting_with_purchase,
+                  meeting_with_finance: (statusRemarksTarget.raw as WorkPlanVisitRecord).meeting_with_finance,
+                  meeting_with_engineer: (statusRemarksTarget.raw as WorkPlanVisitRecord).meeting_with_engineer,
+                  new_product_introduced: (statusRemarksTarget.raw as WorkPlanVisitRecord).new_product_introduced,
+                  order_received: (statusRemarksTarget.raw as WorkPlanVisitRecord).order_received,
+                }
+              : undefined
+          }
           isSaving={actionSaving}
           onClose={() => setStatusRemarksTarget(null)}
-          onConfirm={async ({ status, remarks }) => {
+          onConfirm={async ({ status, remarks, visitAnswers }) => {
             setActionSaving(true);
             try {
               const planId = statusRemarksTarget.planId;
               const itemId = statusRemarksTarget.id;
               if (statusRemarksTarget.itemType === "visit") {
                 if (status === "completed") {
-                  await completeVisitMut({ planId, visitId: itemId, body: { outcome: remarks } }).unwrap();
+                  await completeVisitMut({
+                    planId,
+                    visitId: itemId,
+                    body: { outcome: remarks, ...(visitAnswers || {}) },
+                  }).unwrap();
                 } else if (status === "pending") {
                   await updateVisitMut({ planId, visitId: itemId, body: { status: "pending", pending_remarks: remarks } }).unwrap();
                 } else if (status === "in_progress") {

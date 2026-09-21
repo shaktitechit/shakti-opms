@@ -79,9 +79,24 @@ import { ExpenseListSection } from "./ExpenseListSection";
 import { DayEndSection } from "./DayEndSection";
 import { DayEndMailModal } from "./DayEndMailModal";
 import { DayEndViewModal } from "./DayEndViewModal";
+import { CopyWorkPlanModal } from "./CopyWorkPlanModal";
 
 interface WorkPlanDetailPageProps {
   planId: string;
+}
+
+function RichTextDisplay({ content, className = "" }: { content?: string; className?: string }) {
+  if (!content) return null;
+  const isHtml = /<[a-z][\s\S]*>/i.test(content);
+  if (isHtml) {
+    return (
+      <div
+        className={`prose prose-xs dark:prose-invert max-w-none break-words ${className}`}
+        dangerouslySetInnerHTML={{ __html: content }}
+      />
+    );
+  }
+  return <div className={`whitespace-pre-line ${className}`}>{content}</div>;
 }
 
 export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
@@ -119,6 +134,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   const [rejectPlanModalOpen, setRejectPlanModalOpen] = useState(false);
   const [dayEndMailModalOpen, setDayEndMailModalOpen] = useState(false);
   const [dayEndViewModalOpen, setDayEndViewModalOpen] = useState(false);
+  const [copyModalOpen, setCopyModalOpen] = useState(false);
 
   // Plan Actions
   async function handleSubmitPlan() {
@@ -313,13 +329,14 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
             </button>
           )}
 
-          <Link
-            href={`/dashboard/plans/new?copy=${planId}`}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition"
+          <button
+            type="button"
+            onClick={() => setCopyModalOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition cursor-pointer"
           >
             <Copy className="h-4 w-4 text-muted" />
             Copy
-          </Link>
+          </button>
           {showStructureActions && (
             <Link
               href={`/dashboard/plans/new?edit=${planId}`}
@@ -374,9 +391,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
             <h3 className="text-xs font-semibold text-muted mb-1">
               Plan Objectives / Remarks
             </h3>
-            <p className="text-xs text-foreground whitespace-pre-line">
-              {plan.remarks}
-            </p>
+            <RichTextDisplay content={plan.remarks} className="text-xs text-foreground" />
           </div>
         ) : null}
 
@@ -498,22 +513,22 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
 
                     {v.pending_remarks ? (
                       <div className="rounded-lg bg-slate-500/10 p-2 text-xs text-slate-600 dark:text-slate-400">
-                        <span className="font-semibold">Pending Remarks: </span>
-                        {v.pending_remarks}
+                        <span className="font-semibold block mb-1">Pending Remarks:</span>
+                        <RichTextDisplay content={v.pending_remarks} />
                       </div>
                     ) : null}
 
                     {v.in_progress_remarks ? (
                       <div className="rounded-lg bg-amber-500/10 p-2 text-xs text-amber-600 dark:text-amber-400">
-                        <span className="font-semibold">In-Progress Remarks: </span>
-                        {v.in_progress_remarks}
+                        <span className="font-semibold block mb-1">In-Progress Remarks:</span>
+                        <RichTextDisplay content={v.in_progress_remarks} />
                       </div>
                     ) : null}
 
                     {v.outcome ? (
                       <div className="rounded-lg bg-emerald-500/10 p-2 text-xs text-emerald-600 dark:text-emerald-400">
-                        <span className="font-semibold">Outcome: </span>
-                        {v.outcome}
+                        <span className="font-semibold block mb-1">Outcome:</span>
+                        <RichTextDisplay content={v.outcome} />
                       </div>
                     ) : null}
 
@@ -660,21 +675,24 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                     </div>
 
                     {w.pending_remarks ? (
-                      <p className="text-xs text-slate-600 dark:text-slate-400 font-medium pl-7">
-                        Pending Remarks: {w.pending_remarks}
-                      </p>
+                      <div className="text-xs text-slate-600 dark:text-slate-400 font-medium pl-7">
+                        <span className="font-semibold">Pending Remarks: </span>
+                        <RichTextDisplay content={w.pending_remarks} className="inline-block" />
+                      </div>
                     ) : null}
 
                     {w.in_progress_remarks ? (
-                      <p className="text-xs text-amber-600 dark:text-amber-400 font-medium pl-7">
-                        In-Progress Remarks: {w.in_progress_remarks}
-                      </p>
+                      <div className="text-xs text-amber-600 dark:text-amber-400 font-medium pl-7">
+                        <span className="font-semibold">In-Progress Remarks: </span>
+                        <RichTextDisplay content={w.in_progress_remarks} className="inline-block" />
+                      </div>
                     ) : null}
 
                     {(w.completion_remarks || w.outcome) ? (
-                      <p className="text-xs text-emerald-600 dark:text-emerald-400 font-medium pl-7">
-                        Outcome: {w.completion_remarks || w.outcome}
-                      </p>
+                      <div className="text-xs text-emerald-600 dark:text-emerald-400 font-medium pl-7">
+                        <span className="font-semibold">Outcome: </span>
+                        <RichTextDisplay content={w.completion_remarks || w.outcome} className="inline-block" />
+                      </div>
                     ) : null}
 
                     {(w.created_by || w.updated_by) && (
@@ -816,9 +834,21 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
               ? (statusRemarksTarget.item as WorkPlanVisitRecord).outcome
               : (statusRemarksTarget.item as WorkPlanWorkRecord).completion_remarks || (statusRemarksTarget.item as WorkPlanWorkRecord).outcome
           }
+          initialVisitAnswers={
+            statusRemarksTarget.type === "visit"
+              ? {
+                  meeting_with_doctor: (statusRemarksTarget.item as WorkPlanVisitRecord).meeting_with_doctor,
+                  meeting_with_purchase: (statusRemarksTarget.item as WorkPlanVisitRecord).meeting_with_purchase,
+                  meeting_with_finance: (statusRemarksTarget.item as WorkPlanVisitRecord).meeting_with_finance,
+                  meeting_with_engineer: (statusRemarksTarget.item as WorkPlanVisitRecord).meeting_with_engineer,
+                  new_product_introduced: (statusRemarksTarget.item as WorkPlanVisitRecord).new_product_introduced,
+                  order_received: (statusRemarksTarget.item as WorkPlanVisitRecord).order_received,
+                }
+              : undefined
+          }
           isSaving={actionLoading}
           onClose={() => setStatusRemarksTarget(null)}
-          onConfirm={async ({ status, remarks }) => {
+          onConfirm={async ({ status, remarks, visitAnswers }) => {
             setActionLoading(true);
             try {
               if (statusRemarksTarget.type === "visit") {
@@ -828,7 +858,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                   await completeVisitMut({
                     planId,
                     visitId: vId,
-                    body: { outcome: remarks },
+                    body: { outcome: remarks, ...(visitAnswers || {}) },
                   }).unwrap();
                 } else if (status === "pending") {
                   await updateVisitMut({
@@ -898,6 +928,22 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
         isOpen={dayEndViewModalOpen}
         onClose={() => setDayEndViewModalOpen(false)}
       />
+
+      {copyModalOpen && (
+        <CopyWorkPlanModal
+          open={copyModalOpen}
+          sourcePlanId={planId}
+          sourcePlanDate={plan.plan_date}
+          sourcePlanType={plan.plan_type}
+          sourceExecutiveName={salesUserLabel(plan.sales_user)}
+          sourceSalesUserId={
+            typeof plan.sales_user === "object" && plan.sales_user
+              ? String(plan.sales_user._id || plan.sales_user.id)
+              : String(plan.sales_user || "")
+          }
+          onClose={() => setCopyModalOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import { stripHtml } from "./workPlanUtils";
+
 export interface ExportExcelColumn {
   key: string;
   label: string;
@@ -153,7 +155,7 @@ function colLetter(index: number): string {
 function cellText(val: unknown): string {
   if (val == null) return "";
   if (typeof val === "boolean") return val ? "TRUE" : "FALSE";
-  return String(val);
+  return stripHtml(String(val));
 }
 
 /** Download a clean .xlsx workbook for the given columns and rows. */

@@ -60,6 +60,33 @@ function parseCsvInts(value) {
     .filter((n) => Number.isFinite(n));
 }
 
+function toValidDate(val, baseDate) {
+  if (val == null || val === '') return undefined;
+  if (val instanceof Date) return isNaN(val.getTime()) ? undefined : val;
+  const d = new Date(val);
+  if (!isNaN(d.getTime())) return d;
+
+  if (typeof val === 'string') {
+    const trimmed = val.trim();
+    const timeMatch = trimmed.match(/^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\s*([AP]M)?$/i);
+    if (timeMatch) {
+      let hours = parseInt(timeMatch[1], 10);
+      const minutes = parseInt(timeMatch[2], 10);
+      const seconds = timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
+      const ampm = timeMatch[4] ? timeMatch[4].toUpperCase() : null;
+
+      if (ampm === 'PM' && hours < 12) hours += 12;
+      if (ampm === 'AM' && hours === 12) hours = 0;
+
+      const base = baseDate ? new Date(baseDate) : new Date();
+      if (isNaN(base.getTime())) return undefined;
+      base.setHours(hours, minutes, seconds, 0);
+      return base;
+    }
+  }
+  return undefined;
+}
+
 /** Date-range (`from`/`to`) or year+month (`years`, `months` 1–12) match on a date field. */
 function planDatePeriodMatch(query = {}, datePath = 'plan_date') {
   if (query.from || query.to) {
@@ -820,10 +847,10 @@ async function addVisit(planId, body, user) {
       existingVisit.work_plan = planId;
       existingVisit.sequence = sequence;
       if (body.planned_start_time !== undefined) {
-        existingVisit.planned_start_time = body.planned_start_time ? new Date(body.planned_start_time) : undefined;
+        existingVisit.planned_start_time = toValidDate(body.planned_start_time, plan.plan_date);
       }
       if (body.planned_end_time !== undefined) {
-        existingVisit.planned_end_time = body.planned_end_time ? new Date(body.planned_end_time) : undefined;
+        existingVisit.planned_end_time = toValidDate(body.planned_end_time, plan.plan_date);
       }
       existingVisit.updated_by = userId(user);
       existingVisit.updated_by_role = userRole;
@@ -853,8 +880,8 @@ async function addVisit(planId, body, user) {
     contact_number: body.contact_number?.trim() || undefined,
     contact_email: body.contact_email?.trim()?.toLowerCase() || undefined,
     contacts: body.contacts,
-    planned_start_time: body.planned_start_time ? new Date(body.planned_start_time) : undefined,
-    planned_end_time: body.planned_end_time ? new Date(body.planned_end_time) : undefined,
+    planned_start_time: toValidDate(body.planned_start_time, plan.plan_date),
+    planned_end_time: toValidDate(body.planned_end_time, plan.plan_date),
     purpose: body.purpose?.trim() || undefined,
     notes: body.notes?.trim() || undefined,
     status: body.status || 'created',
@@ -927,10 +954,10 @@ async function updateVisit(planId, visitId, body, user) {
   if (body.contacts !== undefined) visit.contacts = body.contacts;
   if (body.sequence !== undefined) visit.sequence = Number(body.sequence);
   if (body.planned_start_time !== undefined) {
-    visit.planned_start_time = body.planned_start_time ? new Date(body.planned_start_time) : undefined;
+    visit.planned_start_time = toValidDate(body.planned_start_time, plan.plan_date);
   }
   if (body.planned_end_time !== undefined) {
-    visit.planned_end_time = body.planned_end_time ? new Date(body.planned_end_time) : undefined;
+    visit.planned_end_time = toValidDate(body.planned_end_time, plan.plan_date);
   }
   if (body.purpose !== undefined) visit.purpose = body.purpose?.trim() || undefined;
   if (body.notes !== undefined) visit.notes = body.notes?.trim() || undefined;
@@ -1064,8 +1091,8 @@ async function completeVisit(planId, visitId, body, user) {
   if (!isOwner(plan, user) && !isAdminDept(user)) {
     throw new ApiError(403, 'Only the plan owner can complete visits');
   }
-  if (!['planned', 'approved', 'draft'].includes(plan.status)) {
-    throw new ApiError(400, 'Visits can only be completed on planned work plans');
+  if (!['planned', 'approved', 'draft', 'submitted', 'completed'].includes(plan.status)) {
+    throw new ApiError(400, 'Visits can only be completed on active work plans');
   }
   if (!isAdminDept(user) && !isExpenseAddWindowOpen(plan.plan_date)) {
     throw new ApiError(
@@ -1076,18 +1103,23 @@ async function completeVisit(planId, visitId, body, user) {
 
   const visit = await WorkPlanVisit.findOne({ _id: visitId, work_plan: planId, deletedAt: null });
   if (!visit) throw new ApiError(404, 'Visit not found');
-  if (!['pending', 'checked_in'].includes(visit.status)) {
+  if (!['created', 'pending', 'in_progress', 'checked_in', 'rescheduled', 'completed'].includes(visit.status)) {
     throw new ApiError(400, `Cannot complete a visit in status "${visit.status}"`);
   }
 
+  const outcomeText = typeof body?.outcome === 'string' ? body.outcome.trim() : (body?.outcome ? String(body.outcome).trim() : '');
+  if (!outcomeText) {
+    throw new ApiError(400, 'Outcome / completion remarks are required to complete a visit');
+  }
+
   visit.status = 'completed';
-  visit.outcome = body.outcome.trim();
-  visit.meeting_with_doctor = body.meeting_with_doctor;
-  visit.meeting_with_purchase = body.meeting_with_purchase;
-  visit.meeting_with_finance = body.meeting_with_finance;
-  visit.meeting_with_engineer = body.meeting_with_engineer;
-  visit.new_product_introduced = body.new_product_introduced;
-  visit.order_received = body.order_received;
+  visit.outcome = outcomeText;
+  visit.meeting_with_doctor = Boolean(body.meeting_with_doctor);
+  visit.meeting_with_purchase = Boolean(body.meeting_with_purchase);
+  visit.meeting_with_finance = Boolean(body.meeting_with_finance);
+  visit.meeting_with_engineer = Boolean(body.meeting_with_engineer);
+  visit.new_product_introduced = Boolean(body.new_product_introduced);
+  visit.order_received = Boolean(body.order_received);
   if (!visit.actual_check_out) visit.actual_check_out = new Date();
   if (!visit.actual_check_in) visit.actual_check_in = visit.actual_check_out;
   await visit.save();
@@ -1989,10 +2021,10 @@ async function addWork(planId, body, user) {
       existingWork.work_plan = planId;
       existingWork.sequence = sequence;
       if (body.planned_start_time !== undefined) {
-        existingWork.planned_start_time = body.planned_start_time ? new Date(body.planned_start_time) : undefined;
+        existingWork.planned_start_time = toValidDate(body.planned_start_time, plan.plan_date);
       }
       if (body.planned_end_time !== undefined) {
-        existingWork.planned_end_time = body.planned_end_time ? new Date(body.planned_end_time) : undefined;
+        existingWork.planned_end_time = toValidDate(body.planned_end_time, plan.plan_date);
       }
       existingWork.updated_by = userId(user);
       existingWork.updated_by_role = userRole;
@@ -2017,8 +2049,8 @@ async function addWork(planId, body, user) {
     sequence,
     title: body.title.trim(),
     description: body.description?.trim() || undefined,
-    planned_start_time: body.planned_start_time ? new Date(body.planned_start_time) : undefined,
-    planned_end_time: body.planned_end_time ? new Date(body.planned_end_time) : undefined,
+    planned_start_time: toValidDate(body.planned_start_time, plan.plan_date),
+    planned_end_time: toValidDate(body.planned_end_time, plan.plan_date),
     status: body.status || 'created',
     pending_remarks: body.pending_remarks?.trim() || undefined,
     in_progress_remarks: body.in_progress_remarks?.trim() || undefined,
@@ -2053,10 +2085,10 @@ async function updateWork(planId, workId, body, user) {
   if (body.title !== undefined) work.title = body.title.trim();
   if (body.description !== undefined) work.description = body.description?.trim() || undefined;
   if (body.planned_start_time !== undefined) {
-    work.planned_start_time = body.planned_start_time ? new Date(body.planned_start_time) : undefined;
+    work.planned_start_time = toValidDate(body.planned_start_time, plan.plan_date);
   }
   if (body.planned_end_time !== undefined) {
-    work.planned_end_time = body.planned_end_time ? new Date(body.planned_end_time) : undefined;
+    work.planned_end_time = toValidDate(body.planned_end_time, plan.plan_date);
   }
   if (body.status !== undefined) {
     work.status = body.status;

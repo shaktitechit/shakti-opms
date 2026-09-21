@@ -15,6 +15,34 @@ export const WORK_PLAN_TYPE_TABS = [
   { id: "Work From Office", label: "Work From Office" },
 ] as const;
 
+export function stripHtml(html?: string | null): string {
+  if (!html) return "";
+  if (typeof html !== "string") return String(html);
+  if (!/<[a-z][\s\S]*>/i.test(html)) return html;
+
+  const withNewlines = html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n")
+    .replace(/<\/li>/gi, "\n")
+    .replace(/<\/h[1-6]>/gi, "\n");
+
+  const clean = withNewlines.replace(/<[^>]+>/g, "").trim();
+  if (typeof document !== "undefined") {
+    try {
+      const doc = new DOMParser().parseFromString(clean, "text/html");
+      return doc.documentElement.textContent || clean;
+    } catch {
+      // fallback
+    }
+  }
+  return clean
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"');
+}
+
 export function planTypeOf(planType?: string | null): string {
   return (planType && String(planType).trim()) || "Visits";
 }

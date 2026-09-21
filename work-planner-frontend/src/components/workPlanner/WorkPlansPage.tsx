@@ -22,6 +22,8 @@ import {
   salesUserLabel,
 } from "./workPlanUtils";
 
+import { CopyWorkPlanModal } from "./CopyWorkPlanModal";
+
 export function WorkPlansPage() {
   const searchParams = useSearchParams();
 
@@ -40,6 +42,7 @@ export function WorkPlansPage() {
   const [itemsPerPage] = useState(15);
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [expenseReportOpen, setExpenseReportOpen] = useState(false);
+  const [copyTarget, setCopyTarget] = useState<WorkPlanRecord | null>(null);
 
   const [deletePlanMut] = useDeletePlanMutation();
 
@@ -330,13 +333,14 @@ export function WorkPlansPage() {
                             View
                             <ExternalLink className="h-3 w-3" />
                           </Link>
-                          <Link
-                            href={`/dashboard/plans/new?copy=${id}`}
-                            className="rounded p-1 text-muted hover:bg-primary/10 hover:text-primary transition"
+                          <button
+                            type="button"
+                            onClick={() => setCopyTarget(r)}
+                            className="rounded p-1 text-muted hover:bg-primary/10 hover:text-primary transition cursor-pointer"
                             title="Copy plan"
                           >
                             <Copy className="h-3.5 w-3.5" />
-                          </Link>
+                          </button>
                           {canEdit ? (
                             <button
                               type="button"
@@ -346,7 +350,7 @@ export function WorkPlansPage() {
                                   label: `Plan for ${formatPlanDate(r.plan_date)}`,
                                 })
                               }
-                              className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition"
+                              className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition cursor-pointer"
                               title="Delete plan"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -374,7 +378,7 @@ export function WorkPlansPage() {
                 type="button"
                 disabled={currentPage <= 1 || loading}
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                className="rounded-lg border border-border px-3 py-1 font-medium text-foreground hover:bg-surface-muted disabled:opacity-50 transition"
+                className="rounded-lg border border-border px-3 py-1 font-medium text-foreground hover:bg-surface-muted disabled:opacity-50 transition cursor-pointer"
               >
                 Previous
               </button>
@@ -382,7 +386,7 @@ export function WorkPlansPage() {
                 type="button"
                 disabled={currentPage >= pages || loading}
                 onClick={() => setCurrentPage((p) => Math.min(pages, p + 1))}
-                className="rounded-lg border border-border px-3 py-1 font-medium text-foreground hover:bg-surface-muted disabled:opacity-50 transition"
+                className="rounded-lg border border-border px-3 py-1 font-medium text-foreground hover:bg-surface-muted disabled:opacity-50 transition cursor-pointer"
               >
                 Next
               </button>
@@ -390,6 +394,22 @@ export function WorkPlansPage() {
           </div>
         ) : null}
       </div>
+
+      {copyTarget && (
+        <CopyWorkPlanModal
+          open={Boolean(copyTarget)}
+          sourcePlanId={String(copyTarget._id || copyTarget.id)}
+          sourcePlanDate={copyTarget.plan_date}
+          sourcePlanType={copyTarget.plan_type}
+          sourceExecutiveName={salesUserLabel(copyTarget.sales_user)}
+          sourceSalesUserId={
+            typeof copyTarget.sales_user === "object" && copyTarget.sales_user
+              ? String(copyTarget.sales_user._id || copyTarget.sales_user.id)
+              : String(copyTarget.sales_user || "")
+          }
+          onClose={() => setCopyTarget(null)}
+        />
+      )}
 
       {deleteTarget ? (
         <ConfirmDeleteWorkPlanModal
