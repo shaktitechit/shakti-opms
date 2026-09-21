@@ -11,11 +11,24 @@ const LEGACY_SESSION_KEYS = [
   "shakti.lead_manager.session",
   "medica.auth",
   "shakti.user_manager.session",
+  "shakti.work_planner.session",
+];
+const ALL_SESSION_KEYS = [
+  SESSION_STORAGE_KEY,
+  ...LEGACY_SESSION_KEYS,
 ];
 const COOKIE_KEY = "shakti_session";
 const MEDICA_COOKIE_KEY = "medica_session";
 const DEPT_COOKIE = "shakti_department";
 const ROLES_COOKIE = "shakti_roles";
+const ALL_COOKIES = [
+  COOKIE_KEY,
+  MEDICA_COOKIE_KEY,
+  DEPT_COOKIE,
+  ROLES_COOKIE,
+  "medica_opms_roles",
+  "medica_department_hint",
+];
 
 function getCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
@@ -32,6 +45,9 @@ function setCookie(name: string, value: string, days = 7) {
 function deleteCookie(name: string) {
   if (typeof document === "undefined") return;
   document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`;
+  document.cookie = `${name}=; max-age=0; path=/; SameSite=Lax`;
+  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`;
+  document.cookie = `${name}=; max-age=0; path=/`;
 }
 
 function writeAccessCookies(user: AuthUser) {
@@ -149,9 +165,16 @@ export function readSessionFromStorage(): UserSession | null {
 export function saveSessionToStorage(session: UserSession | null): void {
   if (typeof window === "undefined") return;
   if (!session) {
-    window.localStorage.removeItem(SESSION_STORAGE_KEY);
-    deleteCookie(COOKIE_KEY);
-    deleteCookie(MEDICA_COOKIE_KEY);
+    for (const key of ALL_SESSION_KEYS) {
+      try {
+        window.localStorage.removeItem(key);
+      } catch {
+        /* ignore */
+      }
+    }
+    for (const cookieName of ALL_COOKIES) {
+      deleteCookie(cookieName);
+    }
     clearAccessCookies();
   } else {
     window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));

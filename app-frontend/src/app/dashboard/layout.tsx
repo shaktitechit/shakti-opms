@@ -95,9 +95,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const handleLogout = () => {
     clearSessionFromStorage();
-    document.cookie = "shakti_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     setSession(null);
-    router.push("/");
+    if (typeof window !== "undefined") {
+      window.location.href = "/";
+    } else {
+      router.push("/");
+    }
   };
 
   if (isInitializing) {

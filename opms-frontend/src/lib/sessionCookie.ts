@@ -21,8 +21,19 @@ function setCookie(name: string, value: string, maxAge: number): void {
   )}; Path=/; Max-Age=${String(maxAge)}; SameSite=Lax`;
 }
 
+const ALL_SESSION_KEYS = [
+  "shakti.app.session",
+  "shakti.lead_manager.session",
+  "medica.auth",
+  "shakti.user_manager.session",
+  "shakti.work_planner.session",
+];
+
 function deleteCookie(name: string): void {
   document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
+  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/; SameSite=Lax`;
+  document.cookie = `${name}=; Path=/; Max-Age=0`;
+  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/`;
 }
 
 /** Sync minimal session markers after login/me so middleware can authorize navigations. */
@@ -47,9 +58,7 @@ export function persistSessionMarksFromAuth(input: {
     return;
   }
 
-  deleteCookie(SESSION_COOKIE_NAME);
-  deleteCookie(OPMS_ROLES_COOKIE_NAME);
-  deleteCookie(SHAKTI_SESSION_COOKIE_NAME);
+  clearSessionMarks();
 }
 
 export function clearSessionMarks(): void {
@@ -58,6 +67,18 @@ export function clearSessionMarks(): void {
   deleteCookie(OPMS_ROLES_COOKIE_NAME);
   deleteCookie(DEPT_HINT_COOKIE_NAME);
   deleteCookie(SHAKTI_SESSION_COOKIE_NAME);
+  deleteCookie("shakti_department");
+  deleteCookie("shakti_roles");
+
+  if (typeof window !== "undefined") {
+    for (const key of ALL_SESSION_KEYS) {
+      try {
+        window.localStorage.removeItem(key);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
 }
 
 /** Home path from OPMS portal roles on the user object. */
