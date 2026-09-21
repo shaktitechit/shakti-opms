@@ -23,11 +23,14 @@ import {
   Edit3,
   MessageSquare,
   Mail,
+  AlertTriangle,
+  Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useGetUsersQuery } from "@/store/api/authApiSlice";
 import {
   useLazyGetPlanQuery,
+  useLazyGetPlansQuery,
   useCreatePlanMutation,
   useUpdatePlanMutation,
   useSubmitPlanMutation,
@@ -128,10 +131,18 @@ function hasWorkPlannerManagerAccess(u: ExecutiveUser): boolean {
 
 export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
   const router = useRouter();
-  const isEditing = Boolean(planId);
+  const [existingPlanId, setExistingPlanId] = useState<string | null>(planId || null);
+  const [detectedPlan, setDetectedPlan] = useState<WorkPlanRecord | null>(null);
+  const [checkingExisting, setCheckingExisting] = useState(false);
+  const [planStatus, setPlanStatus] = useState<string | null>(null);
+  const isPlanCompleted = planStatus === "completed" || detectedPlan?.status === "completed";
+
+  const activePlanId = existingPlanId || planId;
+  const isEditing = Boolean(activePlanId);
   const isCopying = Boolean(copyId) && !isEditing;
   const sessionUser = readSessionFromStorage()?.user;
   const managerRole = isManager(sessionUser);
+  const prevFetchedKey = useRef<string>("");
 
   const minPlanDate = useMemo(() => {
     const d = new Date();
@@ -142,7 +153,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
     return `${year}-${month}-${day}`;
   }, []);
 
-  const [loading, setLoading] = useState(isEditing);
+  const [loading, setLoading] = useState(Boolean(planId));
   const [submitting, setSubmitting] = useState(false);
 
   const [planDate, setPlanDate] = useState(() => new Date().toISOString().split("T")[0]);
@@ -209,6 +220,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
   // Fetch all users for executive selection (managers) and manager discussion selection (all users)
   const { data: usersData } = useGetUsersQuery();
   const [fetchPlan] = useLazyGetPlanQuery();
+  const [lazyGetPlans] = useLazyGetPlansQuery();
   const [createPlanMut] = useCreatePlanMutation();
   const [updatePlanMut] = useUpdatePlanMutation();
   const [submitPlanMut] = useSubmitPlanMutation();
@@ -387,6 +399,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
         setLoading(true);
         const plan = await fetchPlan(planId!).unwrap();
         if (plan) {
+          setPlanStatus(plan.status || null);
           if (plan.plan_date) {
             setPlanDate(new Date(plan.plan_date).toISOString().split("T")[0]);
           }
@@ -462,6 +475,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
         setLoading(true);
         const plan = await fetchPlan(copyId!).unwrap();
         if (plan) {
+          setPlanStatus(null);
           setPlanType(plan.plan_type || "Visits");
           setLocation(plan.location || "");
           setRemarks(plan.remarks || "");
@@ -538,6 +552,135 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
     }
     loadSourcePlan();
   }, [copyId, isEditing, fetchPlan]);
+
+  // Effect: Auto-fetch existing work plan for selected date and target executive if already created
+  useEffect(() => {
+    if (planId || copyId || !planDate || !targetUserId) return;
+
+    const currentKey = `${planDate}_${targetUserId}`;
+    if (prevFetchedKey.current === currentKey) return;
+
+    let isMounted = true;
+    async function checkPlanForSelectedDate() {
+      try {
+        setCheckingExisting(true);
+        const res = await lazyGetPlans({
+          date: planDate,
+          sales_user: targetUserId,
+          limit: 1,
+        }).unwrap();
+
+        if (!isMounted) return;
+
+        const foundPlans = res?.data || [];
+        if (foundPlans.length > 0) {
+          const found = foundPlans[0];
+          const foundId = String(found._id || found.id || "").trim();
+          if (!foundId) return;
+          prevFetchedKey.current = currentKey;
+
+          // Fetch full plan with visits & works
+          const fullPlan = await fetchPlan(foundId).unwrap();
+          if (!isMounted) return;
+
+          setExistingPlanId(foundId);
+          setDetectedPlan(fullPlan);
+          setPlanStatus(fullPlan.status || found.status || null);
+
+          if (fullPlan.plan_date) {
+            setPlanDate(new Date(fullPlan.plan_date).toISOString().split("T")[0]);
+          }
+          setPlanType(fullPlan.plan_type || "Visits");
+          setLocation(fullPlan.location || "");
+          setRemarks(fullPlan.remarks || "");
+
+          if (fullPlan.sales_user) {
+            const sUser =
+              typeof fullPlan.sales_user === "object"
+                ? fullPlan.sales_user._id || fullPlan.sales_user.id
+                : fullPlan.sales_user;
+            if (sUser) setSalesUserId(String(sUser));
+          }
+
+          // Discussion state
+          const isDiscussed = Boolean(fullPlan.is_discussed_with_manager);
+          setIsDiscussedWithManager(isDiscussed);
+          if (isDiscussed) {
+            const mId =
+              typeof fullPlan.discussed_manager_id === "object"
+                ? fullPlan.discussed_manager_id?._id
+                : fullPlan.discussed_manager_id;
+            const mName =
+              fullPlan.discussed_manager_name ||
+              (typeof fullPlan.discussed_manager_id === "object"
+                ? fullPlan.discussed_manager_id?.name
+                : "") ||
+              "";
+            if (mId) {
+              setDiscussedManagerId(String(mId));
+              setDiscussedManagerName(mName);
+              setIsCustomManager(false);
+              setCustomManagerName("");
+            } else if (mName) {
+              setDiscussedManagerId("");
+              setDiscussedManagerName(mName);
+              setIsCustomManager(true);
+              setCustomManagerName(mName);
+            }
+            if (fullPlan.discussion_method) {
+              setDiscussionMethod(fullPlan.discussion_method as any);
+            }
+          } else {
+            setDiscussedManagerId("");
+            setDiscussedManagerName("");
+            setIsCustomManager(false);
+            setCustomManagerName("");
+            setDiscussionMethod("on_call");
+          }
+
+          if (Array.isArray(fullPlan.visits)) {
+            setVisits(fullPlan.visits);
+          } else {
+            setVisits([]);
+          }
+          if (Array.isArray(fullPlan.works)) {
+            setWorks(fullPlan.works);
+          } else {
+            setWorks([]);
+          }
+
+          if (fullPlan.status === "completed") {
+            toast.error(`Work plan for ${planDate} is Completed. No editing or updating allowed.`, {
+              id: `completed-plan-${foundId}`,
+            });
+          } else {
+            toast.info(`Existing work plan found for ${planDate}. Loaded plan for Update & Mail.`, {
+              id: `existing-plan-${foundId}`,
+            });
+          }
+        } else {
+          // No existing plan for this date -> reset if we previously auto-detected one
+          prevFetchedKey.current = currentKey;
+          if (existingPlanId && !planId) {
+            setExistingPlanId(null);
+            setDetectedPlan(null);
+            setPlanStatus(null);
+            setLocation("");
+            setRemarks("");
+            setVisits([]);
+            setWorks([]);
+            toast.info(`No existing work plan found for ${planDate}. Switched to Create Work Plan mode.`);
+          }
+        }
+      } catch (err) {
+        console.error("Error checking existing plan by date:", err);
+      } finally {
+        if (isMounted) setCheckingExisting(false);
+      }
+    }
+
+    checkPlanForSelectedDate();
+  }, [planDate, targetUserId, planId, copyId, lazyGetPlans, fetchPlan, existingPlanId]);
 
   // Effect 1: Auto-populate custom work tasks when creating a new plan for Work From Home or Work From Office
   useEffect(() => {
@@ -632,17 +775,21 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
 
   // Visit modal handlers
   async function handleVisitSubmit(body: Record<string, any>) {
-    if (isEditing && planId) {
+    if (isPlanCompleted) {
+      toast.error("This work plan is completed and cannot be edited.");
+      return;
+    }
+    if (isEditing && activePlanId) {
       try {
         if (editingVisitIndex !== null && visits[editingVisitIndex]?._id) {
           const vId = visits[editingVisitIndex]._id || visits[editingVisitIndex].id;
-          await updateVisitMut({ planId, visitId: vId, body }).unwrap();
+          await updateVisitMut({ planId: activePlanId, visitId: vId, body }).unwrap();
           toast.success("Visit updated");
         } else {
-          await addVisitMut({ planId, body }).unwrap();
+          await addVisitMut({ planId: activePlanId, body }).unwrap();
           toast.success("Visit added");
         }
-        const updatedPlan = await fetchPlan(planId).unwrap();
+        const updatedPlan = await fetchPlan(activePlanId).unwrap();
         setVisits(updatedPlan.visits || []);
       } catch (err: any) {
         toast.error(err?.data?.message || err?.message || "Failed to save visit");
@@ -663,18 +810,22 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
   }
 
   async function handleRemoveVisit(index: number) {
+    if (isPlanCompleted) {
+      toast.error("This work plan is completed and cannot be edited.");
+      return;
+    }
     const v = visits[index];
     if (!v) return;
     if (!managerRole && isManagerCreatedItem(v)) {
       toast.error("Visits created by a Manager cannot be removed by Executives.");
       return;
     }
-    if (isEditing && planId && (v?._id || v?.id)) {
+    if (isEditing && activePlanId && (v?._id || v?.id)) {
       if (!confirm("Are you sure you want to remove this visit?")) return;
       try {
-        await removeVisitMut({ planId, visitId: v._id || v.id }).unwrap();
+        await removeVisitMut({ planId: activePlanId, visitId: v._id || v.id }).unwrap();
         toast.success("Visit removed");
-        const updatedPlan = await fetchPlan(planId).unwrap();
+        const updatedPlan = await fetchPlan(activePlanId).unwrap();
         setVisits(updatedPlan.visits || []);
       } catch (err: any) {
         toast.error(err?.data?.message || err?.message || "Failed to remove visit");
@@ -686,17 +837,21 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
 
   // Work task modal handlers
   async function handleWorkSubmit(body: Record<string, any>) {
-    if (isEditing && planId) {
+    if (isPlanCompleted) {
+      toast.error("This work plan is completed and cannot be edited.");
+      return;
+    }
+    if (isEditing && activePlanId) {
       try {
         if (editingWorkIndex !== null && works[editingWorkIndex]?._id) {
           const wId = works[editingWorkIndex]._id || works[editingWorkIndex].id;
-          await updateWorkMut({ planId, workId: wId, body }).unwrap();
+          await updateWorkMut({ planId: activePlanId, workId: wId, body }).unwrap();
           toast.success("Task updated");
         } else {
-          await addWorkMut({ planId, body }).unwrap();
+          await addWorkMut({ planId: activePlanId, body }).unwrap();
           toast.success("Task added");
         }
-        const updatedPlan = await fetchPlan(planId).unwrap();
+        const updatedPlan = await fetchPlan(activePlanId).unwrap();
         setWorks(updatedPlan.works || []);
       } catch (err: any) {
         toast.error(err?.data?.message || err?.message || "Failed to save task");
@@ -717,6 +872,10 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
   }
 
   async function handleRemoveWork(index: number) {
+    if (isPlanCompleted) {
+      toast.error("This work plan is completed and cannot be edited.");
+      return;
+    }
     const w = works[index];
     if (!w) return;
     const isDefaultTask = w.work_type === "default" || w.is_default_task;
@@ -728,12 +887,12 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
       toast.error("Tasks created by a Manager cannot be removed by Executives.");
       return;
     }
-    if (isEditing && planId && (w?._id || w?.id)) {
+    if (isEditing && activePlanId && (w?._id || w?.id)) {
       if (!confirm("Are you sure you want to remove this task?")) return;
       try {
-        await removeWorkMut({ planId, workId: w._id || w.id }).unwrap();
+        await removeWorkMut({ planId: activePlanId, workId: w._id || w.id }).unwrap();
         toast.success("Task removed");
-        const updatedPlan = await fetchPlan(planId).unwrap();
+        const updatedPlan = await fetchPlan(activePlanId).unwrap();
         setWorks(updatedPlan.works || []);
       } catch (err: any) {
         toast.error(err?.data?.message || err?.message || "Failed to remove task");
@@ -745,6 +904,10 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (isPlanCompleted) {
+      toast.error("This work plan is completed and cannot be created or updated.");
+      return;
+    }
     if (!planDate) {
       toast.error("Plan date is required");
       return;
@@ -797,7 +960,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
         : sessionUser;
 
       const draftRecord: WorkPlanRecord = {
-        _id: planId,
+        _id: activePlanId || undefined,
         plan_date: planDate,
         plan_type: planType as WorkPlanRecord["plan_type"],
         location: location.trim(),
@@ -852,18 +1015,22 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
 
   async function handleCreateAndSendEmail(emailPayload: CreateEmailPayload) {
     if (!pendingPlanData) return;
+    if (isPlanCompleted) {
+      toast.error("This work plan is completed and cannot be updated.");
+      return;
+    }
     setSubmitting(true);
     try {
-      let targetPlanId = planId;
+      let targetPlanId = activePlanId;
 
-      if (isEditing && planId) {
+      if (isEditing && targetPlanId) {
         // Update existing plan
-        await updatePlanMut({ id: planId, body: pendingPlanData.payload }).unwrap();
+        await updatePlanMut({ id: targetPlanId, body: pendingPlanData.payload }).unwrap();
 
         // Post unposted or reassigned visits
         if (isVisitsPlan(pendingPlanData.payload.plan_type || "") && pendingPlanData.visits.length > 0) {
           const visitsToPost = pendingPlanData.visits.filter(
-            (v) => !v._id && !v.id || (v.work_plan && String(v.work_plan) !== String(planId))
+            (v) => !v._id && !v.id || (v.work_plan && String(v.work_plan) !== String(targetPlanId))
           );
           for (const v of visitsToPost) {
             const partyObj = typeof v.party === "object" ? v.party : null;
@@ -888,14 +1055,14 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
             if (resolvedPartyType === "existing" && partyId) {
               visitBody.party = partyId;
             }
-            await addVisitMut({ planId, body: visitBody }).unwrap();
+            await addVisitMut({ planId: targetPlanId, body: visitBody }).unwrap();
           }
         }
 
         // Post unposted or reassigned tasks
         if (isWorkTaskPlan(pendingPlanData.payload.plan_type || "") && pendingPlanData.works.length > 0) {
           const worksToPost = pendingPlanData.works.filter(
-            (w) => !w._id && !w.id || (w.work_plan && String(w.work_plan) !== String(planId))
+            (w) => !w._id && !w.id || (w.work_plan && String(w.work_plan) !== String(targetPlanId))
           );
           for (const w of worksToPost) {
             const workBody = {
@@ -905,7 +1072,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
               planned_start_time: w.planned_start_time || undefined,
               planned_end_time: w.planned_end_time || undefined,
             };
-            await addWorkMut({ planId, body: workBody }).unwrap();
+            await addWorkMut({ planId: targetPlanId, body: workBody }).unwrap();
           }
         }
       } else {
@@ -1014,10 +1181,14 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
           </Link>
           <div>
             <h1 className="text-xl font-bold text-foreground">
-              {isEditing ? "Edit Work Plan" : isCopying ? "Copy Work Plan" : "Create Work Plan"}
+              {isPlanCompleted ? "Work Plan (Completed)" : isEditing ? "Edit Work Plan" : isCopying ? "Copy Work Plan" : "Create Work Plan"}
             </h1>
             <p className="text-xs text-muted">
-              {isEditing
+              {isPlanCompleted
+                ? `Work plan for ${planDate} is completed and locked. Creation and updating are disabled.`
+                : detectedPlan
+                ? `Loaded existing work plan for ${planDate} (${detectedPlan.status}). Submitting will update and mail this plan.`
+                : isEditing
                 ? "Update plan dates, executive, location, remarks, visits or tasks"
                 : isCopying
                 ? "Creating a new work plan from a copied template — adjust date, visits, and tasks as needed"
@@ -1026,6 +1197,39 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
           </div>
         </div>
       </div>
+
+      {/* Existing Plan Notice Banner / Completed Lock Banner */}
+      {isPlanCompleted ? (
+        <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 space-y-1 text-xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400 font-bold">
+              <AlertTriangle className="h-4 w-4" />
+              <span>Work Plan Completed — Read Only</span>
+            </div>
+            <span className="rounded-full bg-rose-500/20 px-2.5 py-0.5 text-[10px] font-extrabold text-rose-600 dark:text-rose-400 uppercase">
+              Completed
+            </span>
+          </div>
+          <p className="text-muted">
+            The work plan for <strong>{planDate}</strong> is marked as <strong>Completed</strong>. Creation of new work plans or updating completed work plans for this date is not allowed.
+          </p>
+        </div>
+      ) : detectedPlan ? (
+        <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-4 space-y-1 text-xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 font-bold">
+              <Mail className="h-4 w-4" />
+              <span>Existing Work Plan Found for Selected Date ({planDate})</span>
+            </div>
+            <span className="rounded-full bg-blue-500/20 px-2 py-0.5 text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase">
+              Status: {detectedPlan.status}
+            </span>
+          </div>
+          <p className="text-muted">
+            A work plan already exists for this date. The plan details have been fetched and loaded below. Submitting will <strong>Update &amp; Mail</strong> this work plan.
+          </p>
+        </div>
+      ) : null}
 
       {/* Form Card */}
       <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-card p-6 shadow-xs space-y-6">
@@ -1045,8 +1249,9 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
               {/* Trigger Button / Display field */}
               <button
                 type="button"
+                disabled={isPlanCompleted}
                 onClick={() => setExecDropdownOpen((prev) => !prev)}
-                className="w-full flex items-center justify-between rounded-lg border border-border bg-surface-muted px-3 py-2.5 text-xs font-medium text-foreground outline-none focus:border-primary transition hover:bg-surface-muted/80"
+                className="w-full flex items-center justify-between rounded-lg border border-border bg-surface-muted px-3 py-2.5 text-xs font-medium text-foreground outline-none focus:border-primary transition hover:bg-surface-muted/80 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <div className="flex items-center gap-2.5 overflow-hidden">
                   <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary shrink-0">
@@ -1067,7 +1272,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
               </button>
 
               {/* Dropdown Card */}
-              {execDropdownOpen && (
+              {execDropdownOpen && !isPlanCompleted && (
                 <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-xl border border-border bg-card shadow-lg p-2 space-y-2">
                   {/* Search Bar */}
                   <div className="relative">
@@ -1157,18 +1362,26 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
 
           {/* Plan Date */}
           <div>
-            <label className="mb-1.5 block text-xs font-semibold text-foreground">
-              Plan Date <span className="text-rose-500">*</span>
+            <label className="mb-1.5 flex items-center justify-between text-xs font-semibold text-foreground">
+              <span>
+                Plan Date <span className="text-rose-500">*</span>
+              </span>
+              {checkingExisting && (
+                <span className="text-[11px] font-normal text-primary animate-pulse flex items-center gap-1">
+                  <Clock className="h-3 w-3 animate-spin" /> Checking existing plan…
+                </span>
+              )}
             </label>
             <div className="relative">
               <Calendar className="absolute left-3 top-2.5 h-4 w-4 text-muted" />
               <input
                 type="date"
                 required
+                disabled={isPlanCompleted}
                 value={planDate}
                 min={minPlanDate}
                 onChange={(e) => setPlanDate(e.target.value)}
-                className="w-full rounded-lg border border-border bg-surface-muted pl-9 pr-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary"
+                className="w-full rounded-lg border border-border bg-surface-muted pl-9 pr-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
               />
             </div>
             {minPlanDate && (
@@ -1185,6 +1398,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
             </label>
             <select
               value={planType}
+              disabled={isPlanCompleted}
               onChange={(e) => {
                 const val = e.target.value;
                 setPlanType(val);
@@ -1192,7 +1406,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                 else if (val === "Work From Office" && !location) setLocation("Head Office / Branch Office");
                 else if (val === "Leave") setLocation("");
               }}
-              className="w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary"
+              className="w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {WORK_PLAN_TYPE_TABS.filter((t) => t.id !== "all").map((t) => (
                 <option key={t.id} value={t.id}>
@@ -1213,6 +1427,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
               <MapPin className="absolute left-3 top-2.5 h-4 w-4 text-muted" />
               <input
                 type="text"
+                disabled={isPlanCompleted}
                 placeholder={
                   planType === "Work From Home"
                     ? "e.g. Work From Home / Remote Location"
@@ -1222,7 +1437,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                 }
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
-                className="w-full rounded-lg border border-border bg-surface-muted pl-9 pr-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary"
+                className="w-full rounded-lg border border-border bg-surface-muted pl-9 pr-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
               />
             </div>
           </div>
@@ -1237,6 +1452,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
             <FileText className="absolute left-3 top-3 h-4 w-4 text-muted" />
             <textarea
               rows={3}
+              disabled={isPlanCompleted}
               placeholder={
                 leaveType
                   ? "Reason for leave (casual, medical, vacation, etc.)..."
@@ -1246,7 +1462,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
               }
               value={remarks}
               onChange={(e) => setRemarks(e.target.value)}
-              className="w-full rounded-lg border border-border bg-surface-muted pl-9 pr-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary"
+              className="w-full rounded-lg border border-border bg-surface-muted pl-9 pr-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
             />
           </div>
         </div>
@@ -1265,6 +1481,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input
                     type="checkbox"
+                    disabled={isPlanCompleted}
                     checked={isDiscussedWithManager}
                     onChange={(e) => {
                       if (e.target.checked) {
@@ -1278,7 +1495,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                         }
                       }
                     }}
-                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20 accent-primary cursor-pointer"
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20 accent-primary cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                   <span className="text-xs font-medium text-foreground">Yes</span>
                 </label>
@@ -1286,6 +1503,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input
                     type="checkbox"
+                    disabled={isPlanCompleted}
                     checked={!isDiscussedWithManager}
                     onChange={(e) => {
                       if (e.target.checked) {
@@ -1296,7 +1514,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                         setCustomManagerName("");
                       }
                     }}
-                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20 accent-primary cursor-pointer"
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20 accent-primary cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                   <span className="text-xs font-medium text-foreground">No</span>
                 </label>
@@ -1319,7 +1537,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                     <label className="text-xs font-semibold text-foreground">
                       Discussed Manager <span className="text-rose-500">*</span>
                     </label>
-                    {assignedPlanTypeManager && !showManagerPicker && (
+                    {assignedPlanTypeManager && !showManagerPicker && !isPlanCompleted && (
                       <button
                         type="button"
                         onClick={() => setShowManagerPicker(true)}
@@ -1328,7 +1546,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                         Change Manager
                       </button>
                     )}
-                    {showManagerPicker && (
+                    {showManagerPicker && !isPlanCompleted && (
                       <button
                         type="button"
                         onClick={() => {
@@ -1373,29 +1591,33 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                         </div>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={() => setShowManagerPicker(true)}
-                        className="text-[11px] font-bold text-primary hover:underline shrink-0 cursor-pointer"
-                      >
-                        Change
-                      </button>
+                      {!isPlanCompleted && (
+                        <button
+                          type="button"
+                          onClick={() => setShowManagerPicker(true)}
+                          className="text-[11px] font-bold text-primary hover:underline shrink-0 cursor-pointer"
+                        >
+                          Change
+                        </button>
+                      )}
                     </div>
                   ) : isCustomManager ? (
                     <input
                       type="text"
+                      disabled={isPlanCompleted}
                       placeholder="Enter manager's name..."
                       value={customManagerName}
                       onChange={(e) => setCustomManagerName(e.target.value)}
-                      className="w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary"
+                      className="w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
                       required
                     />
                   ) : (
                     <div className="relative" ref={managerDropdownRef}>
                       <button
                         type="button"
+                        disabled={isPlanCompleted}
                         onClick={() => setManagerDropdownOpen(!managerDropdownOpen)}
-                        className="flex w-full items-center justify-between rounded-lg border border-border bg-surface-muted px-3 py-2 text-left text-xs font-medium text-foreground focus:border-primary focus:outline-none"
+                        className="flex w-full items-center justify-between rounded-lg border border-border bg-surface-muted px-3 py-2 text-left text-xs font-medium text-foreground focus:border-primary focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         <div className="truncate">
                           {selectedManager ? (
@@ -1414,7 +1636,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                         <ChevronDown className="h-4 w-4 text-muted shrink-0 ml-2" />
                       </button>
 
-                      {managerDropdownOpen && (
+                      {managerDropdownOpen && !isPlanCompleted && (
                         <div className="absolute left-0 top-full z-50 mt-1 w-full rounded-xl border border-border bg-card p-2 shadow-xl">
                           <div className="relative mb-2">
                             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted" />
@@ -1488,8 +1710,9 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                   </label>
                   <select
                     value={discussionMethod}
+                    disabled={isPlanCompleted}
                     onChange={(e) => setDiscussionMethod(e.target.value as any)}
-                    className="w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary"
+                    className="w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <option value="on_call">On Call</option>
                     <option value="on_direct_meeting">On Direct Meeting</option>
@@ -1512,32 +1735,34 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                   Planned Visits ({visits.length})
                 </h3>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPreviousModalMode("visits")}
-                  className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition shadow-xs cursor-pointer"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add Previous Pending Visits
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingVisitIndex(null);
-                    setVisitModalOpen(true);
-                  }}
-                  className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add Visit
-                </button>
-              </div>
+              {!isPlanCompleted && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPreviousModalMode("visits")}
+                    className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition shadow-xs cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add Previous Pending Visits
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingVisitIndex(null);
+                      setVisitModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add Visit
+                  </button>
+                </div>
+              )}
             </div>
 
             {visits.length === 0 ? (
               <p className="text-xs text-muted py-3 text-center">
-                No visits added yet. Click &ldquo;Add Visit&rdquo; to add party visits for this plan date.
+                No visits added yet. {isPlanCompleted ? "" : "Click \"Add Visit\" to add party visits for this plan date."}
               </p>
             ) : (
               <div className="grid gap-2.5 sm:grid-cols-2">
@@ -1577,38 +1802,40 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingVisitIndex(idx);
-                            setVisitModalOpen(true);
-                          }}
-                          className="rounded p-1 text-muted hover:bg-surface-muted hover:text-foreground"
-                          title="Edit visit"
-                        >
-                          <Edit3 className="h-3.5 w-3.5" />
-                        </button>
-                        {managerRole || !isManagerCreatedItem(v) ? (
+                      {!isPlanCompleted && (
+                        <div className="flex items-center gap-1 shrink-0">
                           <button
                             type="button"
-                            onClick={() => handleRemoveVisit(idx)}
-                            className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500"
-                            title="Remove visit"
+                            onClick={() => {
+                              setEditingVisitIndex(idx);
+                              setVisitModalOpen(true);
+                            }}
+                            className="rounded p-1 text-muted hover:bg-surface-muted hover:text-foreground"
+                            title="Edit visit"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Edit3 className="h-3.5 w-3.5" />
                           </button>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled
-                            className="rounded p-1 text-muted/30 cursor-not-allowed opacity-50"
-                            title="Created by Manager — Executive cannot remove"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
+                          {managerRole || !isManagerCreatedItem(v) ? (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveVisit(idx)}
+                              className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500"
+                              title="Remove visit"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled
+                              className="rounded p-1 text-muted/30 cursor-not-allowed opacity-50"
+                              title="Created by Manager — Executive cannot remove"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1627,32 +1854,34 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                   Planned Tasks ({works.length})
                 </h3>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPreviousModalMode("tasks")}
-                  className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition shadow-xs cursor-pointer"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add Previous Pending Tasks
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingWorkIndex(null);
-                    setWorkModalOpen(true);
-                  }}
-                  className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add Task
-                </button>
-              </div>
+              {!isPlanCompleted && (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPreviousModalMode("tasks")}
+                    className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition shadow-xs cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add Previous Pending Tasks
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingWorkIndex(null);
+                      setWorkModalOpen(true);
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add Task
+                  </button>
+                </div>
+              )}
             </div>
 
             {works.length === 0 ? (
               <p className="text-xs text-muted py-3 text-center">
-                No work tasks added yet. Click &ldquo;Add Task&rdquo; to add tasks for this plan date.
+                No work tasks added yet. {isPlanCompleted ? "" : "Click \"Add Task\" to add tasks for this plan date."}
               </p>
             ) : (
               <div className="space-y-2">
@@ -1698,42 +1927,44 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingWorkIndex(idx);
-                            setWorkModalOpen(true);
-                          }}
-                          className="rounded p-1 text-muted hover:bg-surface-muted hover:text-foreground"
-                          title="Edit task"
-                        >
-                          <Edit3 className="h-3.5 w-3.5" />
-                        </button>
-                        {canRemove ? (
+                      {!isPlanCompleted && (
+                        <div className="flex items-center gap-1 shrink-0">
                           <button
                             type="button"
-                            onClick={() => handleRemoveWork(idx)}
-                            className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500"
-                            title="Remove task"
+                            onClick={() => {
+                              setEditingWorkIndex(idx);
+                              setWorkModalOpen(true);
+                            }}
+                            className="rounded p-1 text-muted hover:bg-surface-muted hover:text-foreground"
+                            title="Edit task"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Edit3 className="h-3.5 w-3.5" />
                           </button>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled
-                            className="rounded p-1 text-muted/30 cursor-not-allowed opacity-50"
-                            title={
-                              isDefaultTask
-                                ? "Default task — cannot be removed"
-                                : "Created by Manager — Executive cannot remove"
-                            }
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
+                          {canRemove ? (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveWork(idx)}
+                              className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500"
+                              title="Remove task"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled
+                              className="rounded p-1 text-muted/30 cursor-not-allowed opacity-50"
+                              title={
+                                isDefaultTask
+                                  ? "Default task — cannot be removed"
+                                  : "Created by Manager — Executive cannot remove"
+                              }
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -1765,10 +1996,19 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
           </Link>
           <button
             type="submit"
-            disabled={submitting}
-            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:opacity-50 transition cursor-pointer"
+            disabled={submitting || checkingExisting || isPlanCompleted}
+            className={`inline-flex items-center gap-2 rounded-lg px-5 py-2 text-xs font-bold text-white shadow-xs transition ${
+              isPlanCompleted
+                ? "bg-gray-400 dark:bg-gray-700 cursor-not-allowed opacity-60"
+                : "bg-emerald-600 hover:bg-emerald-700 cursor-pointer"
+            }`}
           >
-            {isEditing ? (
+            {isPlanCompleted ? (
+              <>
+                <Lock className="h-4 w-4" />
+                Completed (Locked)
+              </>
+            ) : isEditing ? (
               <>
                 <Mail className="h-4 w-4" />
                 {submitting ? "Updating…" : "Update & Mail"}
@@ -1817,7 +2057,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
 
       {createMailModalOpen && pendingPlanData && (
         <WorkPlanCreateMailModal
-          planId={planId}
+          planId={activePlanId || undefined}
           plan={pendingPlanData.displayPlan}
           sessionUser={sessionUser}
           isOpen={createMailModalOpen}
