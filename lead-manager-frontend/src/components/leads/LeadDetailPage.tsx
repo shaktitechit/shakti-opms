@@ -1228,7 +1228,7 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
                           </span>
                           <span className="text-xs text-slate-400">•</span>
                           <span className="text-xs font-semibold text-slate-900 dark:text-white">
-                            {q.subject || "Medical Equipment Quotation"}
+                            {q.subject || "Quotation Proposal"}
                           </span>
                           <span
                             className={`rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide flex items-center gap-1 ${

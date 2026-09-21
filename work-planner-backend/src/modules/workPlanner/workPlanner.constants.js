@@ -97,16 +97,15 @@ function isExpenseAddWindowOpen(planDate, now = new Date()) {
   const pMonth = pDate.getUTCMonth();
   const pDay = pDate.getUTCDate();
 
-  const nDate = new Date(now);
-  const nYear = nDate.getFullYear();
-  const nMonth = nDate.getMonth();
-  const nDay = nDate.getDate();
+  const nowIST = new Date(new Date(now).getTime() + 5.5 * 60 * 60 * 1000);
+  const nYear = nowIST.getUTCFullYear();
+  const nMonth = nowIST.getUTCMonth();
+  const nDay = nowIST.getUTCDate();
 
-  const start = new Date(Date.UTC(pYear, pMonth, pDay, 0, 0, 0, 0));
   const end = new Date(Date.UTC(pYear, pMonth, pDay + (EXPENSE_ADD_WINDOW_DAYS - 1), 23, 59, 59, 999));
   const current = new Date(Date.UTC(nYear, nMonth, nDay, 12, 0, 0, 0));
 
-  return current.getTime() >= start.getTime() && current.getTime() <= end.getTime();
+  return current.getTime() <= end.getTime();
 }
 
 function isExpenseAddWindowEnded(planDate, now = new Date()) {
@@ -118,10 +117,10 @@ function isExpenseAddWindowEnded(planDate, now = new Date()) {
   const pMonth = pDate.getUTCMonth();
   const pDay = pDate.getUTCDate();
 
-  const nDate = new Date(now);
-  const nYear = nDate.getFullYear();
-  const nMonth = nDate.getMonth();
-  const nDay = nDate.getDate();
+  const nowIST = new Date(new Date(now).getTime() + 5.5 * 60 * 60 * 1000);
+  const nYear = nowIST.getUTCFullYear();
+  const nMonth = nowIST.getUTCMonth();
+  const nDay = nowIST.getUTCDate();
 
   const end = new Date(
     Date.UTC(pYear, pMonth, pDay + (EXPENSE_ADD_WINDOW_DAYS - 1), 23, 59, 59, 999),

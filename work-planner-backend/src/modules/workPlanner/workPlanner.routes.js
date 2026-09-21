@@ -25,6 +25,9 @@ router.use(requireWorkPlannerAccess);
 
 router.post('/expenses/upload', upload.single('file'), controller.uploadExpenseReceipt);
 router.post('/attachments/upload', upload.single('file'), controller.uploadAttachment);
+router.get('/user-settings/:userId', controller.getUserSettings);
+router.put('/user-settings/:userId', requireWorkPlannerRole('manager'), controller.updateUserSettings);
+
 router.get('/', controller.list);
 router.get('/stats', controller.stats);
 router.get('/expenses', controller.listAllExpenses);

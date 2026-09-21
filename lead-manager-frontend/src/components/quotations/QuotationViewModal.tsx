@@ -7,7 +7,7 @@
 
 import React, { useRef, useMemo } from "react";
 import { X, Printer, FileText, Lock } from "lucide-react";
-import type { LeadQuotationRecord } from "@/store/api";
+import { useGetCompanyInfoQuery, type LeadQuotationRecord } from "@/store/api";
 import { useAppSelector } from "@/store/hooks";
 import { readSessionFromStorage } from "@/utils/authStorage";
 import QuotationPdfTemplate from "./QuotationPdfTemplate";
@@ -27,6 +27,7 @@ export function QuotationViewModal({
   portalLabel = "Lead Manager",
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const { data: companyData } = useGetCompanyInfoQuery();
   const reduxUser = useAppSelector((s) => s.auth.user);
   const sessionUser = useMemo(() => (typeof window !== "undefined" ? readSessionFromStorage()?.user || null : null), []);
   const authUser = (reduxUser || sessionUser) as any;
@@ -160,6 +161,7 @@ export function QuotationViewModal({
                     const { buildQuotationPdf } = await import("./buildQuotationPdf");
                     const pdf = await buildQuotationPdf({
                       quotation,
+                      company: companyData as any,
                       portalLabel,
                       downloadedBy,
                     });

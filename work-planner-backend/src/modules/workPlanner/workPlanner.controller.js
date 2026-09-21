@@ -264,3 +264,11 @@ exports.viewAttachment = asyncHandler(async (req, res) => {
     throw _err;
   }
 });
+
+exports.getUserSettings = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await service.getUserSettings(req.params.userId, req.user) });
+});
+
+exports.updateUserSettings = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await service.updateUserSettings(req.params.userId, req.body || {}, req.user) });
+});

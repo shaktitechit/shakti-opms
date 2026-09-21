@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Building2,
   Briefcase,
@@ -15,6 +16,7 @@ import {
   MapPin,
   CheckSquare,
   FileText,
+  MessageSquare,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -39,12 +41,7 @@ import {
   isPlanDate3DaysExpired,
 } from "./workPlanUtils";
 import { DownloadTasksVisitsReportModal } from "./DownloadTasksVisitsReportModal";
-import { MarkPendingVisitModal } from "./MarkPendingVisitModal";
-import { InProgressVisitModal } from "./InProgressVisitModal";
-import { CompleteVisitModal, type CompleteVisitPayload } from "./CompleteVisitModal";
-import { MarkPendingWorkModal } from "./MarkPendingWorkModal";
-import { InProgressWorkModal } from "./InProgressWorkModal";
-import { CompleteWorkModal } from "./CompleteWorkModal";
+import { ItemStatusRemarksModal } from "./ItemStatusRemarksModal";
 
 export interface DisplayTaskVisitItem {
   id: string;
@@ -66,13 +63,15 @@ export interface DisplayTaskVisitItem {
 }
 
 export function TasksVisitsPage() {
+  const searchParams = useSearchParams();
   const user = readSessionFromStorage()?.user;
   const managerRole = isManager(user);
 
   // Filter States
+  const initialSearch = searchParams.get("search") || searchParams.get("q") || "";
   const [categoryFilter, setCategoryFilter] = useState<"all" | "visits" | "tasks">("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [searchQuery, setSearchQuery] = useState<string>(initialSearch);
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -82,14 +81,7 @@ export function TasksVisitsPage() {
   const [reportModalOpen, setReportModalOpen] = useState(false);
 
   // Action targets
-  const [pendingVisitTarget, setPendingVisitTarget] = useState<WorkPlanVisitRecord | null>(null);
-  const [inProgressVisitTarget, setInProgressVisitTarget] = useState<WorkPlanVisitRecord | null>(null);
-  const [completeVisitTarget, setCompleteVisitTarget] = useState<WorkPlanVisitRecord | null>(null);
-
-  const [pendingWorkTarget, setPendingWorkTarget] = useState<WorkPlanWorkRecord | null>(null);
-  const [inProgressWorkTarget, setInProgressWorkTarget] = useState<WorkPlanWorkRecord | null>(null);
-  const [completeWorkTarget, setCompleteWorkTarget] = useState<WorkPlanWorkRecord | null>(null);
-
+  const [statusRemarksTarget, setStatusRemarksTarget] = useState<DisplayTaskVisitItem | null>(null);
   const [actionSaving, setActionSaving] = useState(false);
 
   // Mutations
@@ -210,109 +202,7 @@ export function TasksVisitsPage() {
     return filteredItems.slice(start, start + itemsPerPage);
   }, [filteredItems, currentPage, itemsPerPage]);
 
-  // Visit Action Confirmation Handlers
-  const handlePendingVisitConfirm = async (remarks: string) => {
-    if (!pendingVisitTarget) return;
-    setActionSaving(true);
-    try {
-      const planId = String(pendingVisitTarget.work_plan || "");
-      const visitId = String(pendingVisitTarget._id || pendingVisitTarget.id || "");
-      await updateVisitMut({ planId, visitId, body: { status: "pending", pending_remarks: remarks } }).unwrap();
-      toast.success("Visit marked as pending");
-      setPendingVisitTarget(null);
-      loadData();
-    } catch (err: any) {
-      toast.error(err?.data?.message || err?.message || "Failed to mark visit pending");
-    } finally {
-      setActionSaving(false);
-    }
-  };
 
-  const handleInProgressVisitConfirm = async (remarks: string) => {
-    if (!inProgressVisitTarget) return;
-    setActionSaving(true);
-    try {
-      const planId = String(inProgressVisitTarget.work_plan || "");
-      const visitId = String(inProgressVisitTarget._id || inProgressVisitTarget.id || "");
-      await updateVisitMut({ planId, visitId, body: { status: "in_progress", in_progress_remarks: remarks } }).unwrap();
-      toast.success("Visit marked in-progress");
-      setInProgressVisitTarget(null);
-      loadData();
-    } catch (err: any) {
-      toast.error(err?.data?.message || err?.message || "Failed to mark visit in-progress");
-    } finally {
-      setActionSaving(false);
-    }
-  };
-
-  const handleCompleteVisitConfirm = async (payload: CompleteVisitPayload) => {
-    if (!completeVisitTarget) return;
-    setActionSaving(true);
-    try {
-      const planId = String(completeVisitTarget.work_plan || "");
-      const visitId = String(completeVisitTarget._id || completeVisitTarget.id || "");
-      await completeVisitMut({ planId, visitId, body: payload }).unwrap();
-      toast.success("Visit marked as completed");
-      setCompleteVisitTarget(null);
-      loadData();
-    } catch (err: any) {
-      toast.error(err?.data?.message || err?.message || "Failed to complete visit");
-    } finally {
-      setActionSaving(false);
-    }
-  };
-
-  // Work Task Action Confirmation Handlers
-  const handlePendingWorkConfirm = async (remarks: string) => {
-    if (!pendingWorkTarget) return;
-    setActionSaving(true);
-    try {
-      const planId = String(pendingWorkTarget.work_plan || "");
-      const workId = String(pendingWorkTarget._id || pendingWorkTarget.id || "");
-      await updateWorkMut({ planId, workId, body: { status: "pending", pending_remarks: remarks } }).unwrap();
-      toast.success("Task marked as pending");
-      setPendingWorkTarget(null);
-      loadData();
-    } catch (err: any) {
-      toast.error(err?.data?.message || err?.message || "Failed to mark task pending");
-    } finally {
-      setActionSaving(false);
-    }
-  };
-
-  const handleInProgressWorkConfirm = async (remarks: string) => {
-    if (!inProgressWorkTarget) return;
-    setActionSaving(true);
-    try {
-      const planId = String(inProgressWorkTarget.work_plan || "");
-      const workId = String(inProgressWorkTarget._id || inProgressWorkTarget.id || "");
-      await updateWorkMut({ planId, workId, body: { status: "in_progress", in_progress_remarks: remarks } }).unwrap();
-      toast.success("Task marked in-progress");
-      setInProgressWorkTarget(null);
-      loadData();
-    } catch (err: any) {
-      toast.error(err?.data?.message || err?.message || "Failed to mark task in-progress");
-    } finally {
-      setActionSaving(false);
-    }
-  };
-
-  const handleCompleteWorkConfirm = async (remarks: string) => {
-    if (!completeWorkTarget) return;
-    setActionSaving(true);
-    try {
-      const planId = String(completeWorkTarget.work_plan || "");
-      const workId = String(completeWorkTarget._id || completeWorkTarget.id || "");
-      await updateWorkMut({ planId, workId, body: { status: "completed", completion_remarks: remarks } }).unwrap();
-      toast.success("Task marked as completed");
-      setCompleteWorkTarget(null);
-      loadData();
-    } catch (err: any) {
-      toast.error(err?.data?.message || err?.message || "Failed to complete task");
-    } finally {
-      setActionSaving(false);
-    }
-  };
 
   const STATUS_TABS = [
     { id: "all", label: "All Statuses" },
@@ -606,67 +496,15 @@ export function TasksVisitsPage() {
                             >
                               Expired (&gt;3 days)
                             </span>
-                          ) : isVisit ? (
-                            <>
-                              {item.status !== "pending" && (
-                                <button
-                                  type="button"
-                                  onClick={() => setPendingVisitTarget(item.raw as WorkPlanVisitRecord)}
-                                  className="rounded bg-slate-500/10 border border-slate-500/20 px-2 py-0.5 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-500/20 transition cursor-pointer"
-                                >
-                                  Pending
-                                </button>
-                              )}
-
-                              {item.status !== "in_progress" && (
-                                <button
-                                  type="button"
-                                  onClick={() => setInProgressVisitTarget(item.raw as WorkPlanVisitRecord)}
-                                  className="rounded bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition cursor-pointer"
-                                >
-                                  In Progress
-                                </button>
-                              )}
-
-                              <button
-                                type="button"
-                                onClick={() => setCompleteVisitTarget(item.raw as WorkPlanVisitRecord)}
-                                className="rounded bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-emerald-700 transition cursor-pointer"
-                              >
-                                Complete
-                              </button>
-                            </>
                           ) : (
-                            /* Work Task Status Actions */
-                            <>
-                              {item.status !== "pending" && (
-                                <button
-                                  type="button"
-                                  onClick={() => setPendingWorkTarget(item.raw as WorkPlanWorkRecord)}
-                                  className="rounded bg-slate-500/10 border border-slate-500/20 px-2 py-0.5 text-[11px] font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-500/20 transition cursor-pointer"
-                                >
-                                  Pending
-                                </button>
-                              )}
-
-                              {item.status !== "in_progress" && (
-                                <button
-                                  type="button"
-                                  onClick={() => setInProgressWorkTarget(item.raw as WorkPlanWorkRecord)}
-                                  className="rounded bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition cursor-pointer"
-                                >
-                                  In Progress
-                                </button>
-                              )}
-
-                              <button
-                                type="button"
-                                onClick={() => setCompleteWorkTarget(item.raw as WorkPlanWorkRecord)}
-                                className="rounded bg-emerald-600 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-emerald-700 transition cursor-pointer"
-                              >
-                                Complete
-                              </button>
-                            </>
+                            <button
+                              type="button"
+                              onClick={() => setStatusRemarksTarget(item)}
+                              className="inline-flex items-center gap-1 rounded bg-primary/10 border border-primary/20 px-2.5 py-1 text-[11px] font-bold text-primary hover:bg-primary/20 transition cursor-pointer"
+                            >
+                              <MessageSquare className="h-3 w-3" />
+                              <span>Remarks &amp; Status</span>
+                            </button>
                           )}
 
                           {/* Link to parent Work Plan */}
@@ -716,68 +554,54 @@ export function TasksVisitsPage() {
         )}
       </div>
 
-      {/* Action Modals for Visit Status Updates */}
-      {pendingVisitTarget && (
-        <MarkPendingVisitModal
-          open={Boolean(pendingVisitTarget)}
+      {/* Unified Item Status & Remarks Modal */}
+      {statusRemarksTarget && (
+        <ItemStatusRemarksModal
+          open={Boolean(statusRemarksTarget)}
+          itemType={statusRemarksTarget.itemType}
+          title={statusRemarksTarget.titleOrParty}
+          currentStatus={statusRemarksTarget.status || "created"}
+          initialPendingRemarks={(statusRemarksTarget.raw as any).pending_remarks}
+          initialInProgressRemarks={(statusRemarksTarget.raw as any).in_progress_remarks}
+          initialOutcome={
+            statusRemarksTarget.itemType === "visit"
+              ? (statusRemarksTarget.raw as WorkPlanVisitRecord).outcome
+              : (statusRemarksTarget.raw as WorkPlanWorkRecord).completion_remarks || (statusRemarksTarget.raw as WorkPlanWorkRecord).outcome
+          }
           isSaving={actionSaving}
-          partyName={pendingVisitTarget.party_name}
-          initialRemarks={pendingVisitTarget.pending_remarks}
-          onClose={() => setPendingVisitTarget(null)}
-          onConfirm={handlePendingVisitConfirm}
-        />
-      )}
-
-      {inProgressVisitTarget && (
-        <InProgressVisitModal
-          open={Boolean(inProgressVisitTarget)}
-          isSaving={actionSaving}
-          partyName={inProgressVisitTarget.party_name}
-          initialRemarks={inProgressVisitTarget.in_progress_remarks}
-          onClose={() => setInProgressVisitTarget(null)}
-          onConfirm={handleInProgressVisitConfirm}
-        />
-      )}
-
-      {completeVisitTarget && (
-        <CompleteVisitModal
-          open={Boolean(completeVisitTarget)}
-          isSaving={actionSaving}
-          onClose={() => setCompleteVisitTarget(null)}
-          onConfirm={handleCompleteVisitConfirm}
-        />
-      )}
-
-      {/* Action Modals for Work Task Status Updates */}
-      {pendingWorkTarget && (
-        <MarkPendingWorkModal
-          open={Boolean(pendingWorkTarget)}
-          isSaving={actionSaving}
-          taskTitle={pendingWorkTarget.title}
-          initialRemarks={pendingWorkTarget.pending_remarks}
-          onClose={() => setPendingWorkTarget(null)}
-          onConfirm={handlePendingWorkConfirm}
-        />
-      )}
-
-      {inProgressWorkTarget && (
-        <InProgressWorkModal
-          open={Boolean(inProgressWorkTarget)}
-          isSaving={actionSaving}
-          taskTitle={inProgressWorkTarget.title}
-          initialRemarks={inProgressWorkTarget.in_progress_remarks}
-          onClose={() => setInProgressWorkTarget(null)}
-          onConfirm={handleInProgressWorkConfirm}
-        />
-      )}
-
-      {completeWorkTarget && (
-        <CompleteWorkModal
-          open={Boolean(completeWorkTarget)}
-          isSaving={actionSaving}
-          taskTitle={completeWorkTarget.title}
-          onClose={() => setCompleteWorkTarget(null)}
-          onConfirm={handleCompleteWorkConfirm}
+          onClose={() => setStatusRemarksTarget(null)}
+          onConfirm={async ({ status, remarks }) => {
+            setActionSaving(true);
+            try {
+              const planId = statusRemarksTarget.planId;
+              const itemId = statusRemarksTarget.id;
+              if (statusRemarksTarget.itemType === "visit") {
+                if (status === "completed") {
+                  await completeVisitMut({ planId, visitId: itemId, body: { outcome: remarks } }).unwrap();
+                } else if (status === "pending") {
+                  await updateVisitMut({ planId, visitId: itemId, body: { status: "pending", pending_remarks: remarks } }).unwrap();
+                } else if (status === "in_progress") {
+                  await updateVisitMut({ planId, visitId: itemId, body: { status: "in_progress", in_progress_remarks: remarks } }).unwrap();
+                }
+                toast.success(`Visit status updated to ${status.replace("_", " ")}`);
+              } else {
+                if (status === "completed") {
+                  await updateWorkMut({ planId, workId: itemId, body: { status: "completed", completion_remarks: remarks, outcome: remarks } }).unwrap();
+                } else if (status === "pending") {
+                  await updateWorkMut({ planId, workId: itemId, body: { status: "pending", pending_remarks: remarks } }).unwrap();
+                } else if (status === "in_progress") {
+                  await updateWorkMut({ planId, workId: itemId, body: { status: "in_progress", in_progress_remarks: remarks } }).unwrap();
+                }
+                toast.success(`Task status updated to ${status.replace("_", " ")}`);
+              }
+              setStatusRemarksTarget(null);
+              loadData();
+            } catch (err: any) {
+              toast.error(err?.data?.message || err?.message || "Failed to update status");
+            } finally {
+              setActionSaving(false);
+            }
+          }}
         />
       )}
 

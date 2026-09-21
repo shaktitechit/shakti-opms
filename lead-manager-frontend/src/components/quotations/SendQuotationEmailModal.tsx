@@ -232,7 +232,7 @@ export function SendQuotationEmailModal({
       setCcExtra("");
 
       const refNo = quotation.ref_no || quotation.quotation_no;
-      const initialSubject = `Quotation ${refNo} - ${quotation.subject || "Medical Equipment Proposal"} | ${companyDisplayName}`;
+      const initialSubject = `Quotation ${refNo} - ${quotation.subject || "Quotation Proposal"} | ${companyDisplayName}`;
       setSubject(initialSubject);
 
       const sigName = quotation.signatory_name || "Sales Team";
@@ -247,7 +247,7 @@ export function SendQuotationEmailModal({
 
       const defaultBody = `Dear ${quotation.customer_name || lead?.name || "Sir/Madam"},
 
-Please find attached our quotation ${refNo} for ${quotation.subject || "Medical Equipment Proposal"} — ${lead?.company_name || lead?.name || quotation.customer_name || ""}.
+Please find attached our quotation ${refNo} for ${quotation.subject || "Quotation Proposal"} — ${lead?.company_name || lead?.name || quotation.customer_name || ""}.
 This quotation is valid until ${validUntilStr}.
 
 We look forward to your confirmation.

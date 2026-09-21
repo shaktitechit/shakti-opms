@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -10,8 +11,11 @@ import {
   DollarSign,
   FileText,
   LayoutGrid,
+  Users,
   X,
 } from "lucide-react";
+import type { UserSession } from "@/types/workPlanner";
+import { isManager, readSessionFromStorage } from "@/utils/authStorage";
 
 export function Sidebar({
   mobileNavOpen,
@@ -19,15 +23,30 @@ export function Sidebar({
   desktopCollapsed,
   setDesktopCollapsed,
   companyInfo,
+  session,
 }: {
   mobileNavOpen: boolean;
   setMobileNavOpen: (open: boolean) => void;
   desktopCollapsed: boolean;
   setDesktopCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
   companyInfo?: any;
+  session?: UserSession | null;
 }) {
   const pathname = usePathname();
   const lgW = desktopCollapsed ? "lg:w-[64px] lg:min-w-[64px]" : "lg:w-[14.5rem] lg:min-w-[14.5rem]";
+
+  const [activeUser, setActiveUser] = useState(session?.user || null);
+
+  useEffect(() => {
+    if (session?.user) {
+      setActiveUser(session.user);
+    } else {
+      const s = readSessionFromStorage();
+      if (s?.user) setActiveUser(s.user);
+    }
+  }, [session]);
+
+  const managerRole = isManager(activeUser);
 
   const companyLogoUrl = companyInfo?.logo_url || process.env.NEXT_PUBLIC_COMPANY_LOGO_URL || "";
   const companyTitle = companyInfo?.trade_name || companyInfo?.legal_name || process.env.NEXT_PUBLIC_COMPANY_NAME || "Portal";
@@ -37,6 +56,7 @@ export function Sidebar({
   const isTasksVisitsActive = pathname.startsWith("/dashboard/tasks-visits");
   const isCalendarActive = pathname.startsWith("/dashboard/plans/calendar");
   const isExpensesActive = pathname.startsWith("/dashboard/expenses");
+  const isAssignedUsersActive = pathname.startsWith("/dashboard/assigned-users");
 
   return (
     <>
@@ -179,6 +199,30 @@ export function Sidebar({
             <DollarSign className={`h-4 w-4 shrink-0 ${isExpensesActive ? "text-primary" : ""}`} />
             {!desktopCollapsed && <span>Expense Claims</span>}
           </Link>
+
+          {/* Assigned Users (Manager Access) */}
+          {managerRole && (
+            <Link
+              href="/dashboard/assigned-users"
+              onClick={() => setMobileNavOpen(false)}
+              className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+                isAssignedUsersActive
+                  ? "bg-primary/15 border border-primary/30 text-primary font-bold shadow-xs"
+                  : "text-muted hover:bg-surface-muted hover:text-foreground border border-transparent"
+              }`}
+              title="Assigned Users (Manager)"
+            >
+              <Users className={`h-4 w-4 shrink-0 ${isAssignedUsersActive ? "text-primary" : ""}`} />
+              {!desktopCollapsed && (
+                <div className="flex items-center justify-between flex-1 min-w-0">
+                  <span className="truncate">Assigned Users</span>
+                  <span className="ml-1 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-primary/20 text-primary shrink-0">
+                    Manager
+                  </span>
+                </div>
+              )}
+            </Link>
+          )}
         </div>
 
         {/* Footer Collapse Toggle */}

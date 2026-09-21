@@ -31,7 +31,17 @@ export const authApiSlice = baseApi.injectEndpoints({
       }),
     }),
     getUsers: builder.query<
-      Array<{ _id: string; id?: string; name: string; email: string; department?: string }>,
+      Array<{
+        _id: string;
+        id?: string;
+        name: string;
+        email: string;
+        department?: string;
+        roles?: unknown;
+        role_codes?: unknown;
+        role_names?: unknown;
+        portals?: unknown;
+      }>,
       void
     >({
       query: () => `${AUTH_SERVICE_URL}/api/users`,

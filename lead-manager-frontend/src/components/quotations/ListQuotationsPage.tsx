@@ -450,7 +450,7 @@ export function ListQuotationsPage({
 
                       {/* Subject */}
                       <td className="px-5 py-4 max-w-xs truncate text-slate-700 dark:text-slate-300">
-                        {q.subject || "Medical Equipment Proposal"}
+                        {q.subject || "Quotation Proposal"}
                       </td>
 
                       {/* Date & Validity */}

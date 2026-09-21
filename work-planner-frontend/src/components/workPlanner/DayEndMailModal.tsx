@@ -24,7 +24,9 @@ import { DayEndRichEditor } from "./DayEndRichEditor";
 import {
   useGetDayEndDraftQuery,
   useUploadWorkPlanAttachmentMutation,
+  useGetUserSettingsQuery,
 } from "@/store/api/workPlannerApiSlice";
+import { getUserWorkPlannerSettings } from "@/utils/userWorkPlannerSettings";
 import type {
   DayEndPayload,
   WorkPlanDayEndAttachment,
@@ -96,6 +98,23 @@ export function DayEndMailModal({
 
   const [uploadAttachmentMut] = useUploadWorkPlanAttachmentMutation();
 
+  // Fetch user settings for plan type manager/CC lookup
+  const targetUserObj =
+    typeof plan?.sales_user === "object" && plan?.sales_user ? plan.sales_user : null;
+  const targetExecId = targetUserObj
+    ? String(targetUserObj._id || targetUserObj.id || "")
+    : String((sessionUser as any)?._id || (sessionUser as any)?.id || "");
+
+  const { data: dbUserSettings } = useGetUserSettingsQuery(targetExecId, {
+    skip: !isOpen || !targetExecId,
+  });
+
+  const effectiveSettings = useMemo(() => {
+    if (dbUserSettings) return dbUserSettings;
+    if (targetExecId) return getUserWorkPlannerSettings(targetExecId);
+    return null;
+  }, [dbUserSettings, targetExecId]);
+
   // Form State
   const [toEmail, setToEmail] = useState("");
   const [ccEmails, setCcEmails] = useState<string[]>([]);
@@ -107,23 +126,77 @@ export function DayEndMailModal({
   const [uploadingFiles, setUploadingFiles] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  // Initialize draft values once fetched
-  useEffect(() => {
-    if (draftData) {
-      if (!toEmail) setToEmail(draftData.to || "");
-      if (ccEmails.length === 0 && draftData.cc) setCcEmails(draftData.cc);
-      if (!subject) setSubject(draftData.subject || "");
-      if (!bodyHtml) setBodyHtml(draftData.body_html || "");
-    }
+  const availableManagers = useMemo(() => {
+    return draftData?.managers || [];
   }, [draftData]);
+
+  // Initialize draft values once fetched or settings loaded
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const planTypeStr = plan?.plan_type || "Visits";
+    const pts = effectiveSettings?.planTypeSettings?.[planTypeStr];
+    const ptsManagerEmail = pts?.assignedManagerEmail;
+    const globalManagerEmail = effectiveSettings?.assignedManagerEmail;
+
+    // Priority for TO recipient:
+    // 1. Plan-type assigned manager email
+    // 2. Global assigned manager email
+    // 3. Draft TO email / discussed manager email / first manager in roster
+    const chosenTo =
+      ptsManagerEmail ||
+      globalManagerEmail ||
+      draftData?.to ||
+      (plan?.discussed_manager_id && typeof plan.discussed_manager_id === "object"
+        ? plan.discussed_manager_id.email
+        : "") ||
+      availableManagers[0]?.email ||
+      "";
+
+    if (chosenTo && (!toEmail || toEmail !== chosenTo)) {
+      setToEmail(chosenTo);
+    } else if (!toEmail && draftData?.to) {
+      setToEmail(draftData.to);
+    }
+
+    // CC Field: Use plan type CC emails (or global CC if plan type CC is empty) + draft CC
+    const ptsCc = pts?.ccEmails || [];
+    const globalCc = effectiveSettings?.ccEmails || [];
+    const configuredCc = ptsCc.length > 0 ? ptsCc : globalCc;
+
+    const activeFrom = (sessionUser?.email || draftData?.from_email || "").toLowerCase().trim();
+    const normTo = (chosenTo || toEmail || "").toLowerCase().trim();
+    const combinedCcSet = new Set<string>();
+
+    configuredCc.forEach((emailStr: string) => {
+      const norm = String(emailStr).trim().toLowerCase();
+      if (norm && norm !== normTo && norm !== activeFrom) {
+        combinedCcSet.add(norm);
+      }
+    });
+
+    if (draftData?.cc && Array.isArray(draftData.cc)) {
+      draftData.cc.forEach((emailStr: string) => {
+        const norm = String(emailStr).trim().toLowerCase();
+        if (norm && norm !== normTo && norm !== activeFrom) {
+          combinedCcSet.add(norm);
+        }
+      });
+    }
+
+    if (ccEmails.length === 0 && combinedCcSet.size > 0) {
+      setCcEmails(Array.from(combinedCcSet));
+    }
+
+    if (draftData) {
+      if (!subject && draftData.subject) setSubject(draftData.subject);
+      if (!bodyHtml && draftData.body_html) setBodyHtml(draftData.body_html);
+    }
+  }, [isOpen, draftData, effectiveSettings, plan, availableManagers]);
 
   // Fallback initial values if draft hasn't loaded yet
   const fromName = sessionUser?.name || "Executive";
   const fromEmail = sessionUser?.email || draftData?.from_email || "";
-
-  const availableManagers = useMemo(() => {
-    return draftData?.managers || [];
-  }, [draftData]);
 
   // Handle adding CC tag
   const handleAddCc = (emailToAdd: string) => {

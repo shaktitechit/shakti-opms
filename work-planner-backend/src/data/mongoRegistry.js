@@ -403,6 +403,12 @@ function registerModels() {
     mongoose.model('WorkPlanExpense', workPlanExpenseSchema);
   }
 
+  // UserWorkPlannerSettings schema
+  if (!mongoose.models.UserWorkPlannerSettings) {
+    const userWorkPlannerSettingsSchema = require('../models/UserWorkPlannerSettings');
+    mongoose.model('UserWorkPlannerSettings', userWorkPlannerSettingsSchema);
+  }
+
   _cached = {
     User: mongoose.model('User'),
     CompanyInfo: mongoose.models.CompanyInfo || null,
@@ -414,6 +420,7 @@ function registerModels() {
     WorkPlanVisit: mongoose.model('WorkPlanVisit'),
     WorkPlanWork: mongoose.model('WorkPlanWork'),
     WorkPlanExpense: mongoose.model('WorkPlanExpense'),
+    UserWorkPlannerSettings: mongoose.model('UserWorkPlannerSettings'),
   };
 
   return _cached;

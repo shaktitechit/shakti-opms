@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Download, RefreshCw, Search, FileSpreadsheet, Eye, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -24,14 +25,16 @@ import {
 } from "./workPlanUtils";
 
 export function ExpensesPage() {
+  const searchParams = useSearchParams();
   const sessionUser = readSessionFromStorage()?.user;
   const sessionToken = readSessionFromStorage()?.token;
   const managerRole = isManager(sessionUser);
   const { previewDoc, previewBlobUrl, previewLoading, openPreview, closePreview, downloadFile } =
     useFilePreview(sessionToken);
 
+  const initialSearch = searchParams.get("search") || searchParams.get("q") || "";
   const [statusFilter, setStatusFilter] = useState("all");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [currentPage, setCurrentPage] = useState(1);

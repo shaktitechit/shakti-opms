@@ -9,6 +9,7 @@ import {
   Mail,
   ShieldCheck,
   User,
+  Settings,
 } from "lucide-react";
 import { isManager, readSessionFromStorage } from "@/utils/authStorage";
 import {
@@ -17,6 +18,7 @@ import {
 } from "@/store/api/authApiSlice";
 import { resolveRoleLabels } from "@/utils/resolveRoleLabels";
 import { PasswordChangePanel } from "@/components/profile/PasswordChangePanel";
+import { UserSettingsPage } from "@/components/workPlanner/UserSettingsPage";
 import type { AuthUser, UserSession } from "@/types/workPlanner";
 
 function formatLabel(code: string): string {
@@ -27,7 +29,7 @@ function formatLabel(code: string): string {
     .join(" ");
 }
 
-type Tab = "overview" | "password";
+type Tab = "overview" | "work_planner" | "password";
 
 export default function ProfilePage() {
   const [tab, setTab] = useState<Tab>("overview");
@@ -66,7 +68,7 @@ export default function ProfilePage() {
   const portals = Array.isArray(user.portals) ? user.portals : [];
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto pb-10 font-sans">
+    <div className="space-y-6 max-w-5xl mx-auto pb-10 font-sans">
       <div className="rounded-2xl border border-border bg-card p-6 sm:p-8 shadow-sm">
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-5">
           <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-primary/10 border border-primary/20 text-2xl font-black text-primary shadow-sm">
@@ -111,6 +113,18 @@ export default function ProfilePage() {
         </button>
         <button
           type="button"
+          onClick={() => setTab("work_planner")}
+          className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold transition ${
+            tab === "work_planner"
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "text-muted hover:text-foreground hover:bg-surface-muted"
+          }`}
+        >
+          <Settings className="h-3.5 w-3.5" />
+          Work Planner Settings
+        </button>
+        <button
+          type="button"
           onClick={() => setTab("password")}
           className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold transition ${
             tab === "password"
@@ -128,6 +142,12 @@ export default function ProfilePage() {
           onChangePassword={async ({ currentPassword, newPassword }) => {
             await changePassword({ currentPassword, newPassword }).unwrap();
           }}
+        />
+      ) : tab === "work_planner" ? (
+        <UserSettingsPage
+          userId={String(user._id || (user as any).id || "")}
+          hideBreadcrumb={true}
+          readOnly={true}
         />
       ) : (
         <>

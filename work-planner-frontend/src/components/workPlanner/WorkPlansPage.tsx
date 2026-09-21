@@ -30,9 +30,10 @@ export function WorkPlansPage() {
 
   const initialStatus = searchParams.get("status") || "all";
   const initialPlanType = searchParams.get("plan_type") || "all";
+  const initialSearch = searchParams.get("search") || searchParams.get("q") || "";
   const [statusFilter, setStatusFilter] = useState(initialStatus);
   const [planTypeFilter, setPlanTypeFilter] = useState(initialPlanType);
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [currentPage, setCurrentPage] = useState(1);

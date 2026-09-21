@@ -142,34 +142,19 @@ export function Sidebar({
             {!desktopCollapsed && <span>Portals</span>}
           </Link>
 
-          {/* Departments Manager */}
+          {/* Departments & Roles Hub */}
           <Link
             href="/dashboard/departments"
             onClick={() => setMobileNavOpen(false)}
             className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
-              isDepartmentsActive
+              isDepartmentsActive || isRolesActive
                 ? "bg-primary/15 border border-primary/30 text-primary font-bold shadow-xs"
                 : "text-muted hover:bg-surface-muted hover:text-foreground border border-transparent"
             }`}
-            title="Departments Manager"
+            title="Departments & Roles Manager"
           >
-            <Building2 className={`h-4 w-4 shrink-0 ${isDepartmentsActive ? "text-primary" : ""}`} />
-            {!desktopCollapsed && <span>Departments</span>}
-          </Link>
-
-          {/* Roles Manager */}
-          <Link
-            href="/dashboard/roles"
-            onClick={() => setMobileNavOpen(false)}
-            className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
-              isRolesActive
-                ? "bg-primary/15 border border-primary/30 text-primary font-bold shadow-xs"
-                : "text-muted hover:bg-surface-muted hover:text-foreground border border-transparent"
-            }`}
-            title="Roles Manager"
-          >
-            <ShieldCheck className={`h-4 w-4 shrink-0 ${isRolesActive ? "text-primary" : ""}`} />
-            {!desktopCollapsed && <span>Roles</span>}
+            <Building2 className={`h-4 w-4 shrink-0 ${isDepartmentsActive || isRolesActive ? "text-primary" : ""}`} />
+            {!desktopCollapsed && <span>Departments & Roles</span>}
           </Link>
 
           {/* Company Info */}

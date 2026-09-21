@@ -6,6 +6,7 @@
 
 import type { LeadQuotationRecord } from "@/store/api";
 import { formatCompanyAddress } from "@/components/portal/shared/pdfCompanyLetterhead";
+import { resolvePublicAssetUrl } from "@/lib/env";
 
 type JsPDF = InstanceType<(typeof import("jspdf"))["jsPDF"]>;
 
@@ -302,7 +303,9 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
   const refNumber = quotation.ref_no || quotation.quotation_no || "";
   const quotationDate = formatDate(quotation.quotation_date);
 
-  const logoData = await loadLogo(company?.logo_url);
+  const logoRaw = company?.logo_url || (quotation as any)?.company_logo || (quotation as any)?.logo_url || "";
+  const logoUrl = logoRaw ? resolvePublicAssetUrl(logoRaw) : "";
+  const logoData = await loadLogo(logoUrl);
 
   let currentY = M;
 
@@ -314,9 +317,19 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
 
     if (logoData) {
       try {
-        pdf.addImage(logoData, "PNG", M, logoY, logoW, logoH, undefined, "FAST");
+        const formatMatch = logoData.match(/^data:image\/(png|jpeg|jpg|webp);/i);
+        const imgFormat = formatMatch
+          ? formatMatch[1].toUpperCase() === "JPG"
+            ? "JPEG"
+            : formatMatch[1].toUpperCase()
+          : "PNG";
+        pdf.addImage(logoData, imgFormat, M, logoY, logoW, logoH, undefined, "FAST");
       } catch {
-        // Fallback gracefully
+        try {
+          pdf.addImage(logoData, M, logoY, logoW, logoH);
+        } catch {
+          // Fallback gracefully
+        }
       }
     }
 

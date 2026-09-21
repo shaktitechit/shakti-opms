@@ -24,7 +24,9 @@ import {
   useGetDayEndDraftQuery,
   useUploadWorkPlanAttachmentMutation,
   useSubmitPlanMutation,
+  useGetUserSettingsQuery,
 } from "@/store/api/workPlannerApiSlice";
+import { getUserWorkPlannerSettings } from "@/utils/userWorkPlannerSettings";
 import type {
   WorkPlanRecord,
   WorkPlanDayEndAttachment,
@@ -160,6 +162,15 @@ export function WorkPlanCreateMailModal({
     return targetExecutiveEmail.toLowerCase().trim() !== sessionUser.email.toLowerCase().trim();
   }, [targetExecutiveEmail, sessionUser?.email]);
 
+  const targetExecId = targetUserObj ? String(targetUserObj._id || targetUserObj.id || "") : String((sessionUser as any)?._id || (sessionUser as any)?.id || "");
+  const { data: dbUserSettings } = useGetUserSettingsQuery(targetExecId, { skip: !isOpen || !targetExecId });
+
+  const effectiveSettings = useMemo(() => {
+    if (dbUserSettings) return dbUserSettings;
+    if (targetExecId) return getUserWorkPlannerSettings(targetExecId);
+    return null;
+  }, [dbUserSettings, targetExecId]);
+
   // Generate initial HTML Body for Work Plan Creation & default recipient email fields
   useEffect(() => {
     if (!isOpen || !plan) return;
@@ -203,6 +214,10 @@ export function WorkPlanCreateMailModal({
     const planTypeStr = plan.plan_type || "Visits";
     const actionStr = isEditing ? "Updated" : "Created";
 
+    const pts = effectiveSettings?.planTypeSettings?.[planTypeStr];
+    const ptsManagerEmail = pts?.assignedManagerEmail;
+    const globalManagerEmail = effectiveSettings?.assignedManagerEmail;
+
     let activeTo = "";
 
     if (isManagerCreatingForExecutive && targetExecutiveEmail) {
@@ -216,11 +231,18 @@ export function WorkPlanCreateMailModal({
         setSubject(`Work Plan ${actionStr} (${planTypeStr}) — ${executiveName} (${planDateStr})`);
       }
 
-      // Priority:
-      // If is_discussed_with_manager is true AND discussedManagerEmail exists -> send to discussed manager.
-      // Else (no discussion OR discussed manager email not found) -> default to first manager in availableManagers.
-      const firstManagerEmail = availableManagers[0]?.email || draftData?.to || "";
-      const chosenTo = (isDiscussed && discussedManagerEmail) ? discussedManagerEmail : firstManagerEmail;
+      // Priority for TO recipient:
+      // 1. Plan-type assigned manager email
+      // 2. Global assigned manager email
+      // 3. Discussed manager email (if discussion was logged)
+      // 4. First manager in available managers roster / draft to email
+      const chosenTo =
+        ptsManagerEmail ||
+        globalManagerEmail ||
+        (isDiscussed && discussedManagerEmail ? discussedManagerEmail : "") ||
+        availableManagers[0]?.email ||
+        draftData?.to ||
+        "";
 
       if (chosenTo && (!toEmail || toEmail !== chosenTo)) {
         setToEmail(chosenTo);
@@ -230,19 +252,23 @@ export function WorkPlanCreateMailModal({
       }
     }
 
-    // CC Field: All managers shall be in CC (excluding primary recipient activeTo and sender fromEmail)
-    if (availableManagers.length > 0) {
-      const activeFrom = fromEmail.toLowerCase().trim();
-      const normTo = activeTo.toLowerCase().trim();
+    // CC Field: Use plan type configured CC emails (or global CC emails if not set)
+    const ptsCc = pts?.ccEmails || [];
+    const globalCc = effectiveSettings?.ccEmails || [];
+    const configuredCc = ptsCc.length > 0 ? ptsCc : globalCc;
 
-      const otherManagers = availableManagers
-        .map((m) => m.email?.trim())
-        .filter((email): email is string =>
-          Boolean(email && email.toLowerCase() !== normTo && email.toLowerCase() !== activeFrom)
-        );
+    const activeFrom = fromEmail.toLowerCase().trim();
+    const normTo = activeTo.toLowerCase().trim();
+    const combinedCcSet = new Set<string>();
 
-      setCcEmails(otherManagers);
-    }
+    configuredCc.forEach((emailStr: string) => {
+      const norm = String(emailStr).trim().toLowerCase();
+      if (norm && norm !== normTo && norm !== activeFrom) {
+        combinedCcSet.add(norm);
+      }
+    });
+
+    setCcEmails(Array.from(combinedCcSet));
 
     if (!bodyHtml) {
       const visits = plan.visits || [];

@@ -322,18 +322,41 @@ async function getDayEndDraft(id, user) {
     department: m.department || '',
   }));
 
-  // Primary recipient: discussed manager if available, else first manager in roster
-  let firstManagerEmail = '';
-  if (plan.discussed_manager_id && plan.discussed_manager_id.email) {
-    firstManagerEmail = plan.discussed_manager_id.email;
-  } else if (managerList.length > 0) {
-    firstManagerEmail = managerList[0].email;
+  const planType = plan.plan_type || 'Visits';
+  const targetUserId = plan.sales_user?._id || plan.sales_user || user._id;
+
+  let userSettings = null;
+  try {
+    userSettings = await getUserSettings(targetUserId, user);
+  } catch (e) {
+    // fallback if user settings not found
   }
 
-  // CC list: all managers excluding the primary recipient
-  const ccEmails = managerList
-    .map((m) => m.email)
-    .filter((email) => email && email.toLowerCase() !== firstManagerEmail.toLowerCase());
+  const pts = userSettings?.planTypeSettings?.[planType];
+  const ptsManagerEmail = pts?.assignedManagerEmail;
+  const globalManagerEmail = userSettings?.assignedManagerEmail;
+
+  // Primary recipient priority:
+  // 1. Plan-type assigned manager email
+  // 2. Global assigned manager email
+  // 3. Discussed manager email
+  // 4. First manager in roster
+  let firstManagerEmail =
+    ptsManagerEmail ||
+    globalManagerEmail ||
+    (plan.discussed_manager_id && plan.discussed_manager_id.email ? plan.discussed_manager_id.email : '') ||
+    (managerList.length > 0 ? managerList[0].email : '');
+
+  // CC list priority:
+  // 1. Plan-type CC emails (if non-empty)
+  // 2. Global CC emails (if non-empty)
+  const ptsCc = pts?.ccEmails || [];
+  const globalCc = userSettings?.ccEmails || [];
+  const configuredCc = ptsCc.length > 0 ? ptsCc : globalCc;
+
+  const ccEmails = configuredCc.filter(
+    (email) => email && email.toLowerCase() !== firstManagerEmail.toLowerCase()
+  );
 
   const executiveName = user.name || user.email?.split('@')[0] || 'Executive';
   const executiveEmail = user.email || '';
@@ -2101,6 +2124,119 @@ async function removeWork(planId, workId, user) {
   return getWithVisits(planId);
 }
 
+async function getUserSettings(targetUserId, currentUser) {
+  const { UserWorkPlannerSettings } = getModels();
+  const uid = asObjectId(targetUserId);
+  if (!uid) {
+    throw new ApiError(400, 'Invalid user ID');
+  }
+
+  let settings = await UserWorkPlannerSettings.findOne({ user: uid })
+    .populate('assigned_manager', 'name email department')
+    .populate('plan_type_settings.assigned_manager', 'name email department')
+    .lean();
+
+  if (!settings) {
+    return {
+      userId: String(targetUserId),
+      assignedManagerId: '',
+      assignedManagerName: '',
+      assignedManagerEmail: '',
+      ccEmails: [],
+      planTypeSettings: {},
+      customWorkTemplates: [],
+    };
+  }
+
+  const managerObj = settings.assigned_manager || {};
+  const planTypeSettingsObj = {};
+  if (Array.isArray(settings.plan_type_settings)) {
+    settings.plan_type_settings.forEach((pts) => {
+      if (pts && pts.plan_type) {
+        const mgr = pts.assigned_manager || {};
+        planTypeSettingsObj[pts.plan_type] = {
+          plan_type: pts.plan_type,
+          assignedManagerId: mgr._id ? String(mgr._id) : (pts.assigned_manager ? String(pts.assigned_manager) : ''),
+          assignedManagerName: mgr.name || '',
+          assignedManagerEmail: mgr.email || '',
+          ccEmails: Array.isArray(pts.cc_emails) ? pts.cc_emails : [],
+        };
+      }
+    });
+  }
+
+  return {
+    userId: String(settings.user),
+    assignedManagerId: managerObj._id ? String(managerObj._id) : (settings.assigned_manager ? String(settings.assigned_manager) : ''),
+    assignedManagerName: managerObj.name || '',
+    assignedManagerEmail: managerObj.email || '',
+    ccEmails: settings.cc_emails || [],
+    planTypeSettings: planTypeSettingsObj,
+    customWorkTemplates: (settings.custom_work_templates || []).map((t) => ({
+      id: String(t._id || t.id),
+      title: t.title,
+      description: t.description || '',
+      planned_start_time: t.planned_start_time || '',
+      planned_end_time: t.planned_end_time || '',
+      work_type: t.work_type || 'default',
+    })),
+    updatedAt: settings.updatedAt,
+  };
+}
+
+async function updateUserSettings(targetUserId, payload, currentUser) {
+  const { UserWorkPlannerSettings } = getModels();
+  const uid = asObjectId(targetUserId);
+  if (!uid) {
+    throw new ApiError(400, 'Invalid user ID');
+  }
+
+  const updateFields = {
+    user: uid,
+    updated_by: userId(currentUser),
+  };
+
+  if (payload.assignedManagerId !== undefined) {
+    updateFields.assigned_manager = payload.assignedManagerId ? asObjectId(payload.assignedManagerId) : null;
+  }
+  if (Array.isArray(payload.ccEmails)) {
+    updateFields.cc_emails = payload.ccEmails.map((e) => String(e).trim().toLowerCase()).filter(Boolean);
+  }
+  if (payload.planTypeSettings && typeof payload.planTypeSettings === 'object') {
+    const ptsList = [];
+    Object.entries(payload.planTypeSettings).forEach(([planType, pts]) => {
+      if (pts && typeof pts === 'object') {
+        ptsList.push({
+          plan_type: planType,
+          assigned_manager: pts.assignedManagerId ? asObjectId(pts.assignedManagerId) : null,
+          cc_emails: Array.isArray(pts.ccEmails) ? pts.ccEmails.map((e) => String(e).trim().toLowerCase()).filter(Boolean) : [],
+        });
+      }
+    });
+    updateFields.plan_type_settings = ptsList;
+  }
+
+  if (Array.isArray(payload.customWorkTemplates)) {
+    updateFields.custom_work_templates = payload.customWorkTemplates.map((t) => ({
+      title: String(t.title || '').trim(),
+      description: String(t.description || '').trim(),
+      planned_start_time: String(t.planned_start_time || '').trim(),
+      planned_end_time: String(t.planned_end_time || '').trim(),
+      work_type: t.work_type === 'optional' ? 'optional' : 'default',
+    }));
+  }
+
+  await UserWorkPlannerSettings.findOneAndUpdate(
+    { user: uid },
+    { $set: updateFields, $setOnInsert: { created_by: userId(currentUser) } },
+    { new: true, upsert: true }
+  );
+
+  await logActivity(currentUser, targetUserId, 'updated_user_settings', `Updated Work Planner settings for user ${targetUserId}`);
+
+  return getUserSettings(targetUserId, currentUser);
+}
+
 module.exports = {
   list,
   get,
@@ -2134,4 +2270,6 @@ module.exports = {
   updateWork,
   removeWork,
   getDayEndDraft,
+  getUserSettings,
+  updateUserSettings,
 };

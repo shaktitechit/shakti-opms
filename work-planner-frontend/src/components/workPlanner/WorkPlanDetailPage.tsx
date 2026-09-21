@@ -73,12 +73,7 @@ import {
 
 import { VisitFormModal } from "./VisitFormModal";
 import { WorkFormModal } from "./WorkFormModal";
-import { CompleteVisitModal } from "./CompleteVisitModal";
-import { CompleteWorkModal } from "./CompleteWorkModal";
-import { MarkPendingVisitModal } from "./MarkPendingVisitModal";
-import { MarkPendingWorkModal } from "./MarkPendingWorkModal";
-import { InProgressVisitModal } from "./InProgressVisitModal";
-import { InProgressWorkModal } from "./InProgressWorkModal";
+import { ItemStatusRemarksModal } from "./ItemStatusRemarksModal";
 import { RejectWorkPlanModal } from "./RejectWorkPlanModal";
 import { ExpenseListSection } from "./ExpenseListSection";
 import { DayEndSection } from "./DayEndSection";
@@ -116,13 +111,10 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   const [workModalOpen, setWorkModalOpen] = useState(false);
   const [editingWork, setEditingWork] = useState<WorkPlanWorkRecord | null>(null);
 
-  const [completeVisitTarget, setCompleteVisitTarget] = useState<WorkPlanVisitRecord | null>(null);
-  const [pendingVisitTarget, setPendingVisitTarget] = useState<WorkPlanVisitRecord | null>(null);
-  const [inProgressVisitTarget, setInProgressVisitTarget] = useState<WorkPlanVisitRecord | null>(null);
-
-  const [completeWorkTarget, setCompleteWorkTarget] = useState<WorkPlanWorkRecord | null>(null);
-  const [pendingWorkTarget, setPendingWorkTarget] = useState<WorkPlanWorkRecord | null>(null);
-  const [inProgressWorkTarget, setInProgressWorkTarget] = useState<WorkPlanWorkRecord | null>(null);
+  const [statusRemarksTarget, setStatusRemarksTarget] = useState<{
+    type: "visit" | "task";
+    item: WorkPlanVisitRecord | WorkPlanWorkRecord;
+  } | null>(null);
 
   const [rejectPlanModalOpen, setRejectPlanModalOpen] = useState(false);
   const [dayEndMailModalOpen, setDayEndMailModalOpen] = useState(false);
@@ -232,8 +224,8 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   const is3DaysExpired = isPlanDate3DaysExpired(plan.plan_date);
   const isWindowOpen = canAddExpenseForPlanDate(plan.plan_date);
   const windowEnded = isWindowEnded(plan.plan_date);
-  const canCompleteAction = managerRole || (isWindowOpen && !is3DaysExpired);
-  const showStructureActions = managerRole || (!isCompleted && !windowEnded && !is3DaysExpired);
+  const canCompleteAction = isWindowOpen && !is3DaysExpired;
+  const showStructureActions = !isCompleted && !windowEnded && !is3DaysExpired;
 
   const allowedStatuses = new Set(["pending", "in_progress", "completed"]);
 
@@ -539,38 +531,15 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                     {/* Visit actions (Hidden once completed) */}
                     {showStructureActions && v.status !== "completed" && (
                       <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {v.status !== "pending" && (
-                            <button
-                              type="button"
-                              disabled={!canCompleteAction}
-                              onClick={() => setPendingVisitTarget(v)}
-                              className="rounded bg-slate-500/10 border border-slate-500/20 px-2 py-1 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-500/20 transition disabled:opacity-50"
-                            >
-                              Pending
-                            </button>
-                          )}
-
-                          {v.status !== "in_progress" && (
-                            <button
-                              type="button"
-                              disabled={!canCompleteAction}
-                              onClick={() => setInProgressVisitTarget(v)}
-                              className="rounded bg-amber-500/10 border border-amber-500/20 px-2 py-1 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition disabled:opacity-50"
-                            >
-                              In Progress
-                            </button>
-                          )}
-
-                          <button
-                            type="button"
-                            disabled={!canCompleteAction}
-                            onClick={() => setCompleteVisitTarget(v)}
-                            className="rounded bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-50"
-                          >
-                            Complete
-                          </button>
-                        </div>
+                        <button
+                          type="button"
+                          disabled={!canCompleteAction}
+                          onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/20 transition disabled:opacity-50 cursor-pointer"
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                          <span>Remarks &amp; Status</span>
+                        </button>
 
                         <div className="flex items-center gap-1">
                           <button
@@ -579,7 +548,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                               setEditingVisit(v);
                               setVisitModalOpen(true);
                             }}
-                            className="rounded p-1 text-muted hover:bg-card hover:text-foreground transition"
+                            className="rounded p-1 text-muted hover:bg-card hover:text-foreground transition cursor-pointer"
                             title="Edit visit"
                           >
                             <Edit3 className="h-3.5 w-3.5" />
@@ -589,7 +558,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                             <button
                               type="button"
                               onClick={() => handleRemoveVisit(vId)}
-                              className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition"
+                              className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition cursor-pointer"
                               title="Remove visit"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -658,35 +627,14 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                       {/* Work Task actions (Hidden once completed) */}
                       {showStructureActions && w.status !== "completed" && (
                         <div className="flex items-center gap-2">
-                          {w.status !== "pending" && (
-                            <button
-                              type="button"
-                              disabled={!canCompleteAction}
-                              onClick={() => setPendingWorkTarget(w)}
-                              className="rounded bg-slate-500/10 border border-slate-500/20 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-500/20 transition disabled:opacity-50"
-                            >
-                              Pending
-                            </button>
-                          )}
-
-                          {w.status !== "in_progress" && (
-                            <button
-                              type="button"
-                              disabled={!canCompleteAction}
-                              onClick={() => setInProgressWorkTarget(w)}
-                              className="rounded bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 text-xs font-semibold text-amber-700 dark:text-amber-300 hover:bg-amber-500/20 transition disabled:opacity-50"
-                            >
-                              In Progress
-                            </button>
-                          )}
-
                           <button
                             type="button"
                             disabled={!canCompleteAction}
-                            onClick={() => setCompleteWorkTarget(w)}
-                            className="rounded bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-700 transition disabled:opacity-50"
+                            onClick={() => setStatusRemarksTarget({ type: "task", item: w })}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-3 py-1 text-xs font-bold text-primary hover:bg-primary/20 transition disabled:opacity-50 cursor-pointer"
                           >
-                            Complete
+                            <MessageSquare className="h-3.5 w-3.5" />
+                            <span>Remarks &amp; Status</span>
                           </button>
                           <button
                             type="button"
@@ -694,7 +642,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                               setEditingWork(w);
                               setWorkModalOpen(true);
                             }}
-                            className="rounded p-1 text-muted hover:bg-card hover:text-foreground transition"
+                            className="rounded p-1 text-muted hover:bg-card hover:text-foreground transition cursor-pointer"
                           >
                             <Edit3 className="h-3.5 w-3.5" />
                           </button>
@@ -702,7 +650,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                             <button
                               type="button"
                               onClick={() => handleRemoveWork(wId)}
-                              className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition"
+                              className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition cursor-pointer"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -849,159 +797,80 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
         />
       )}
 
-      {completeVisitTarget && (
-        <CompleteVisitModal
-          open={Boolean(completeVisitTarget)}
+      {statusRemarksTarget && (
+        <ItemStatusRemarksModal
+          open={Boolean(statusRemarksTarget)}
+          itemType={statusRemarksTarget.type}
+          title={
+            statusRemarksTarget.type === "visit"
+              ? typeof (statusRemarksTarget.item as WorkPlanVisitRecord).party === "object"
+                ? ((statusRemarksTarget.item as WorkPlanVisitRecord).party as any)?.party_name || "Field Visit"
+                : (statusRemarksTarget.item as WorkPlanVisitRecord).party_name || "Field Visit"
+              : (statusRemarksTarget.item as WorkPlanWorkRecord).title || "Work Task"
+          }
+          currentStatus={statusRemarksTarget.item.status || "created"}
+          initialPendingRemarks={statusRemarksTarget.item.pending_remarks}
+          initialInProgressRemarks={statusRemarksTarget.item.in_progress_remarks}
+          initialOutcome={
+            statusRemarksTarget.type === "visit"
+              ? (statusRemarksTarget.item as WorkPlanVisitRecord).outcome
+              : (statusRemarksTarget.item as WorkPlanWorkRecord).completion_remarks || (statusRemarksTarget.item as WorkPlanWorkRecord).outcome
+          }
           isSaving={actionLoading}
-          onClose={() => setCompleteVisitTarget(null)}
-          onConfirm={async (payload) => {
+          onClose={() => setStatusRemarksTarget(null)}
+          onConfirm={async ({ status, remarks }) => {
             setActionLoading(true);
             try {
-              const vId = completeVisitTarget._id || completeVisitTarget.id || "";
-              await completeVisitMut({ planId, visitId: vId, body: payload }).unwrap();
-              toast.success("Visit completed");
-              setCompleteVisitTarget(null);
+              if (statusRemarksTarget.type === "visit") {
+                const v = statusRemarksTarget.item as WorkPlanVisitRecord;
+                const vId = v._id || v.id || "";
+                if (status === "completed") {
+                  await completeVisitMut({
+                    planId,
+                    visitId: vId,
+                    body: { outcome: remarks },
+                  }).unwrap();
+                } else if (status === "pending") {
+                  await updateVisitMut({
+                    planId,
+                    visitId: vId,
+                    body: { status: "pending", pending_remarks: remarks },
+                  }).unwrap();
+                } else if (status === "in_progress") {
+                  await updateVisitMut({
+                    planId,
+                    visitId: vId,
+                    body: { status: "in_progress", in_progress_remarks: remarks },
+                  }).unwrap();
+                }
+                toast.success(`Visit status updated to ${status.replace("_", " ")}`);
+              } else {
+                const w = statusRemarksTarget.item as WorkPlanWorkRecord;
+                const wId = w._id || w.id || "";
+                if (status === "completed") {
+                  await updateWorkMut({
+                    planId,
+                    workId: wId,
+                    body: { status: "completed", completion_remarks: remarks, outcome: remarks },
+                  }).unwrap();
+                } else if (status === "pending") {
+                  await updateWorkMut({
+                    planId,
+                    workId: wId,
+                    body: { status: "pending", pending_remarks: remarks },
+                  }).unwrap();
+                } else if (status === "in_progress") {
+                  await updateWorkMut({
+                    planId,
+                    workId: wId,
+                    body: { status: "in_progress", in_progress_remarks: remarks },
+                  }).unwrap();
+                }
+                toast.success(`Task status updated to ${status.replace("_", " ")}`);
+              }
+              setStatusRemarksTarget(null);
             } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : "Failed to complete visit";
-              toast.error(msg);
-            } finally {
-              setActionLoading(false);
-            }
-          }}
-        />
-      )}
-
-      {completeWorkTarget && (
-        <CompleteWorkModal
-          open={Boolean(completeWorkTarget)}
-          isSaving={actionLoading}
-          taskTitle={completeWorkTarget.title}
-          onClose={() => setCompleteWorkTarget(null)}
-          onConfirm={async (remarks) => {
-            setActionLoading(true);
-            try {
-              const wId = completeWorkTarget._id || completeWorkTarget.id || "";
-              await updateWorkMut({
-                planId,
-                workId: wId,
-                body: { status: "completed", completion_remarks: remarks, outcome: remarks },
-              }).unwrap();
-              toast.success("Task completed");
-              setCompleteWorkTarget(null);
-            } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : "Failed to complete task";
-              toast.error(msg);
-            } finally {
-              setActionLoading(false);
-            }
-          }}
-        />
-      )}
-
-      {pendingVisitTarget && (
-        <MarkPendingVisitModal
-          open={Boolean(pendingVisitTarget)}
-          isSaving={actionLoading}
-          partyName={typeof pendingVisitTarget.party === "object" ? pendingVisitTarget.party?.party_name : pendingVisitTarget.party_name}
-          initialRemarks={pendingVisitTarget.pending_remarks}
-          onClose={() => setPendingVisitTarget(null)}
-          onConfirm={async (remarks) => {
-            setActionLoading(true);
-            try {
-              const vId = pendingVisitTarget._id || pendingVisitTarget.id || "";
-              await updateVisitMut({
-                planId,
-                visitId: vId,
-                body: { status: "pending", pending_remarks: remarks },
-              }).unwrap();
-              toast.success("Visit marked as Pending");
-              setPendingVisitTarget(null);
-            } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : "Failed to mark visit pending";
-              toast.error(msg);
-            } finally {
-              setActionLoading(false);
-            }
-          }}
-        />
-      )}
-
-      {inProgressVisitTarget && (
-        <InProgressVisitModal
-          open={Boolean(inProgressVisitTarget)}
-          isSaving={actionLoading}
-          partyName={typeof inProgressVisitTarget.party === "object" ? inProgressVisitTarget.party?.party_name : inProgressVisitTarget.party_name}
-          initialRemarks={inProgressVisitTarget.in_progress_remarks}
-          onClose={() => setInProgressVisitTarget(null)}
-          onConfirm={async (remarks) => {
-            setActionLoading(true);
-            try {
-              const vId = inProgressVisitTarget._id || inProgressVisitTarget.id || "";
-              await updateVisitMut({
-                planId,
-                visitId: vId,
-                body: { status: "in_progress", in_progress_remarks: remarks },
-              }).unwrap();
-              toast.success("Visit marked as In Progress");
-              setInProgressVisitTarget(null);
-            } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : "Failed to mark visit in-progress";
-              toast.error(msg);
-            } finally {
-              setActionLoading(false);
-            }
-          }}
-        />
-      )}
-
-      {pendingWorkTarget && (
-        <MarkPendingWorkModal
-          open={Boolean(pendingWorkTarget)}
-          isSaving={actionLoading}
-          taskTitle={pendingWorkTarget.title}
-          initialRemarks={pendingWorkTarget.pending_remarks}
-          onClose={() => setPendingWorkTarget(null)}
-          onConfirm={async (remarks) => {
-            setActionLoading(true);
-            try {
-              const wId = pendingWorkTarget._id || pendingWorkTarget.id || "";
-              await updateWorkMut({
-                planId,
-                workId: wId,
-                body: { status: "pending", pending_remarks: remarks },
-              }).unwrap();
-              toast.success("Task marked as Pending");
-              setPendingWorkTarget(null);
-            } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : "Failed to mark task pending";
-              toast.error(msg);
-            } finally {
-              setActionLoading(false);
-            }
-          }}
-        />
-      )}
-
-      {inProgressWorkTarget && (
-        <InProgressWorkModal
-          open={Boolean(inProgressWorkTarget)}
-          isSaving={actionLoading}
-          taskTitle={inProgressWorkTarget.title}
-          initialRemarks={inProgressWorkTarget.in_progress_remarks}
-          onClose={() => setInProgressWorkTarget(null)}
-          onConfirm={async (remarks) => {
-            setActionLoading(true);
-            try {
-              const wId = inProgressWorkTarget._id || inProgressWorkTarget.id || "";
-              await updateWorkMut({
-                planId,
-                workId: wId,
-                body: { status: "in_progress", in_progress_remarks: remarks },
-              }).unwrap();
-              toast.success("Task marked as In Progress");
-              setInProgressWorkTarget(null);
-            } catch (err: unknown) {
-              const msg = err instanceof Error ? err.message : "Failed to mark task in-progress";
+              const msg = err instanceof Error ? err.message : "Failed to update status";
               toast.error(msg);
             } finally {
               setActionLoading(false);

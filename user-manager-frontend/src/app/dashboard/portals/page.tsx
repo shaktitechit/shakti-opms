@@ -336,6 +336,13 @@ export default function PortalsPage() {
                 </div>
 
                 <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
+                  <Link
+                    href={`/dashboard/portals/${portal.code || portal.name}`}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-semibold text-muted hover:text-foreground hover:bg-surface-muted transition"
+                  >
+                    View Details
+                  </Link>
+
                   <button
                     onClick={() => handleOpenEditModal(portal)}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-muted transition"

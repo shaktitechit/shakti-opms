@@ -37,8 +37,10 @@ import {
   useAddWorkMutation,
   useUpdateWorkMutation,
   useRemoveWorkMutation,
+  useGetUserSettingsQuery,
 } from "@/store/api/workPlannerApiSlice";
 import { isManager, readSessionFromStorage } from "@/utils/authStorage";
+import { getUserWorkPlannerSettings } from "@/utils/userWorkPlannerSettings";
 import type { WorkPlanRecord, WorkPlanVisitRecord, WorkPlanWorkRecord } from "@/types/workPlanner";
 import {
   WORK_PLAN_TYPE_TABS,
@@ -132,14 +134,13 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
   const managerRole = isManager(sessionUser);
 
   const minPlanDate = useMemo(() => {
-    if (managerRole) return undefined;
     const d = new Date();
     d.setDate(d.getDate() - 2);
     const year = d.getFullYear();
     const month = String(d.getMonth() + 1).padStart(2, "0");
     const day = String(d.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
-  }, [managerRole]);
+  }, []);
 
   const [loading, setLoading] = useState(isEditing);
   const [submitting, setSubmitting] = useState(false);
@@ -183,6 +184,7 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
   const [discussionMethod, setDiscussionMethod] = useState<"on_call" | "on_direct_meeting" | "on_email" | "other">("on_call");
   const [managerSearch, setManagerSearch] = useState("");
   const [managerDropdownOpen, setManagerDropdownOpen] = useState(false);
+  const [showManagerPicker, setShowManagerPicker] = useState(false);
   const managerDropdownRef = useRef<HTMLDivElement>(null);
 
   // Search & Combobox states for executive selection
@@ -217,7 +219,159 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
   const [updateWorkMut] = useUpdateWorkMutation();
   const [removeWorkMut] = useRemoveWorkMutation();
 
+  // Fetch Target User Work Planner Settings (Manager assignments & custom task templates)
+  const targetUserId = salesUserId || sessionUser?._id || "";
+  const { data: dbUserSettings } = useGetUserSettingsQuery(targetUserId, { skip: !targetUserId });
+
+  const effectiveSettings = useMemo(() => {
+    if (dbUserSettings) return dbUserSettings;
+    if (targetUserId) return getUserWorkPlannerSettings(targetUserId);
+    return null;
+  }, [dbUserSettings, targetUserId]);
+
   const allUsers = useMemo(() => (usersData as ExecutiveUser[]) || [], [usersData]);
+
+  // Resolve assigned manager for current plan type (or fallback to global default manager)
+  const assignedPlanTypeManager = useMemo(() => {
+    if (!effectiveSettings) return null;
+    const pts = effectiveSettings.planTypeSettings?.[planType];
+    const mgrId = pts?.assignedManagerId;
+    const mgrName = pts?.assignedManagerName;
+    const mgrEmail = pts?.assignedManagerEmail;
+
+    if (mgrId || mgrName) {
+      const matched = allUsers.find(
+        (u) => String(u._id || u.id || "") === String(mgrId)
+      );
+      if (matched) {
+        return {
+          _id: String(matched._id || matched.id || ""),
+          name: matched.name,
+          email: matched.email,
+          department: matched.department,
+          isSpecificPlanType: true,
+        };
+      }
+      if (mgrName) {
+        return {
+          _id: mgrId || "",
+          name: mgrName,
+          email: mgrEmail || "",
+          department: "",
+          isSpecificPlanType: true,
+        };
+      }
+    }
+
+    // Fallback to global default manager
+    const globalId = effectiveSettings.assignedManagerId;
+    const globalName = effectiveSettings.assignedManagerName;
+    const globalEmail = effectiveSettings.assignedManagerEmail;
+
+    if (globalId || globalName) {
+      const matched = allUsers.find(
+        (u) => String(u._id || u.id || "") === String(globalId)
+      );
+      if (matched) {
+        return {
+          _id: String(matched._id || matched.id || ""),
+          name: matched.name,
+          email: matched.email,
+          department: matched.department,
+          isSpecificPlanType: false,
+        };
+      }
+      if (globalName) {
+        return {
+          _id: globalId || "",
+          name: globalName,
+          email: globalEmail || "",
+          department: "",
+          isSpecificPlanType: false,
+        };
+      }
+    }
+
+    return null;
+  }, [effectiveSettings, planType, allUsers]);
+
+  const currentDisplayedManager = useMemo(() => {
+    if (isCustomManager && customManagerName) {
+      return {
+        name: customManagerName,
+        email: "Custom Manager",
+        badgeText: "Custom Manager",
+        isSpecificPlanType: false,
+      };
+    }
+
+    if (discussedManagerId) {
+      const matched = allUsers.find(
+        (u) => String(u._id || u.id || "") === String(discussedManagerId)
+      );
+      if (matched) {
+        const isPlanTypeMgr =
+          assignedPlanTypeManager?.isSpecificPlanType &&
+          String(assignedPlanTypeManager._id) === String(matched._id || matched.id);
+        const isDefaultMgr =
+          !assignedPlanTypeManager?.isSpecificPlanType &&
+          assignedPlanTypeManager?._id &&
+          String(assignedPlanTypeManager._id) === String(matched._id || matched.id);
+
+        return {
+          name: matched.name,
+          email: matched.email,
+          badgeText: isPlanTypeMgr
+            ? `${planType} Manager`
+            : isDefaultMgr
+            ? "Default Manager"
+            : "Assigned Manager",
+          isSpecificPlanType: isPlanTypeMgr,
+        };
+      }
+    }
+
+    if (discussedManagerName) {
+      const isPlanTypeMgr =
+        assignedPlanTypeManager?.isSpecificPlanType &&
+        assignedPlanTypeManager.name === discussedManagerName;
+      const isDefaultMgr =
+        !assignedPlanTypeManager?.isSpecificPlanType &&
+        assignedPlanTypeManager?.name === discussedManagerName;
+
+      return {
+        name: discussedManagerName,
+        email: "Reporting Manager",
+        badgeText: isPlanTypeMgr
+          ? `${planType} Manager`
+          : isDefaultMgr
+          ? "Default Manager"
+          : "Discussed Manager",
+        isSpecificPlanType: isPlanTypeMgr,
+      };
+    }
+
+    if (assignedPlanTypeManager) {
+      return {
+        name: assignedPlanTypeManager.name,
+        email: assignedPlanTypeManager.email || "Reporting Manager configured in User Settings",
+        badgeText: assignedPlanTypeManager.isSpecificPlanType
+          ? `${planType} Manager`
+          : "Default Manager",
+        isSpecificPlanType: assignedPlanTypeManager.isSpecificPlanType,
+      };
+    }
+
+    return null;
+  }, [
+    discussedManagerId,
+    discussedManagerName,
+    isCustomManager,
+    customManagerName,
+    assignedPlanTypeManager,
+    allUsers,
+    planType,
+  ]);
 
   // Load roster of executives for manager selection
   useEffect(() => {
@@ -385,6 +539,42 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
     loadSourcePlan();
   }, [copyId, isEditing, fetchPlan]);
 
+  // Effect 1: Auto-populate custom work tasks when creating a new plan for Work From Home or Work From Office
+  useEffect(() => {
+    if (isEditing || isCopying) return;
+    if (isWorkTaskPlan(planType)) {
+      const templates = effectiveSettings?.customWorkTemplates || [];
+      if (templates.length > 0) {
+        const loadedWorks = templates.map((t: any, idx: number) => ({
+          sequence: idx + 1,
+          title: t.title,
+          description: t.description || "",
+          planned_start_time: t.planned_start_time || "",
+          planned_end_time: t.planned_end_time || "",
+          work_type: t.work_type || "default",
+          is_template_task: true,
+          status: "created",
+        }));
+        setWorks(loadedWorks);
+      } else {
+        setWorks([]);
+      }
+    }
+  }, [planType, effectiveSettings, isEditing, isCopying]);
+
+  // Effect 2: Default "Discussed with Manager" to the plan type manager (or global default manager)
+  useEffect(() => {
+    if (isEditing) return;
+    if (assignedPlanTypeManager) {
+      setIsDiscussedWithManager(true);
+      setIsCustomManager(false);
+      setCustomManagerName("");
+      setDiscussedManagerId(assignedPlanTypeManager._id || "");
+      setDiscussedManagerName(assignedPlanTypeManager.name || "");
+      setShowManagerPicker(false);
+    }
+  }, [planType, assignedPlanTypeManager, isEditing]);
+
   // Filter eligible managers for discussion dropdown: strictly only users assigned to work_planner portal with manager access
   const eligibleManagers = useMemo(() => {
     const managers = allUsers.filter(hasWorkPlannerManagerAccess);
@@ -529,6 +719,11 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
   async function handleRemoveWork(index: number) {
     const w = works[index];
     if (!w) return;
+    const isDefaultTask = w.work_type === "default" || w.is_default_task;
+    if (isDefaultTask) {
+      toast.error("Default work tasks cannot be removed.");
+      return;
+    }
     if (!managerRole && isManagerCreatedItem(w)) {
       toast.error("Tasks created by a Manager cannot be removed by Executives.");
       return;
@@ -555,9 +750,9 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
       return;
     }
 
-    if (!managerRole && minPlanDate && planDate < minPlanDate) {
+    if (minPlanDate && planDate < minPlanDate) {
       toast.error(
-        `Executives cannot create or edit work plans for dates earlier than 2 days before today (${minPlanDate}).`
+        `Work plans cannot be created or edited for dates earlier than 2 days before today (${minPlanDate}).`
       );
       return;
     }
@@ -976,9 +1171,9 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
                 className="w-full rounded-lg border border-border bg-surface-muted pl-9 pr-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary"
               />
             </div>
-            {!managerRole && minPlanDate && (
+            {minPlanDate && (
               <p className="mt-1 text-[11px] text-muted font-medium">
-                ℹ️ Executives can schedule work plans from {minPlanDate} onwards (up to 2 days prior to today).
+                ℹ️ Work plans can be scheduled from {minPlanDate} onwards (up to 2 days prior to today).
               </p>
             )}
           </div>
@@ -1058,30 +1253,55 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
 
         {/* Manager Discussion Section */}
         <div className="rounded-xl border border-border bg-surface-muted/30 p-4 space-y-3">
-          <div className="flex items-start justify-between">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={isDiscussedWithManager}
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  setIsDiscussedWithManager(checked);
-                  if (!checked) {
-                    setDiscussedManagerId("");
-                    setDiscussedManagerName("");
-                    setIsCustomManager(false);
-                    setCustomManagerName("");
-                  }
-                }}
-                className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20 accent-primary cursor-pointer"
-              />
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-1.5">
               <div className="flex items-center gap-1.5">
                 <MessageSquare className="h-4 w-4 text-primary" />
                 <span className="text-xs font-semibold text-foreground">
                   Is this Plan discussed with the Manager?
                 </span>
               </div>
-            </label>
+              <div className="flex items-center gap-5 pt-0.5">
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={isDiscussedWithManager}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setIsDiscussedWithManager(true);
+                        if (assignedPlanTypeManager) {
+                          setIsCustomManager(false);
+                          setCustomManagerName("");
+                          setDiscussedManagerId(assignedPlanTypeManager._id || "");
+                          setDiscussedManagerName(assignedPlanTypeManager.name || "");
+                          setShowManagerPicker(false);
+                        }
+                      }
+                    }}
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20 accent-primary cursor-pointer"
+                  />
+                  <span className="text-xs font-medium text-foreground">Yes</span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!isDiscussedWithManager}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setIsDiscussedWithManager(false);
+                        setDiscussedManagerId("");
+                        setDiscussedManagerName("");
+                        setIsCustomManager(false);
+                        setCustomManagerName("");
+                      }
+                    }}
+                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20 accent-primary cursor-pointer"
+                  />
+                  <span className="text-xs font-medium text-foreground">No</span>
+                </label>
+              </div>
+            </div>
             {isDiscussedWithManager && (
               <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                 <Check className="h-3 w-3" />
@@ -1093,29 +1313,75 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
           {isDiscussedWithManager && (
             <div className="pt-2 border-t border-border/60 space-y-3">
               <div className="grid gap-3 sm:grid-cols-2">
-                {/* Manager Selection: Search & Select or Custom */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
+                {/* Manager Selection Display */}
+                <div className="sm:col-span-2 space-y-2">
+                  <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-semibold text-foreground">
                       Discussed Manager <span className="text-rose-500">*</span>
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsCustomManager(!isCustomManager);
-                        if (!isCustomManager) {
-                          setDiscussedManagerId("");
-                        } else {
-                          setCustomManagerName("");
-                        }
-                      }}
-                      className="text-[11px] font-medium text-primary hover:underline"
-                    >
-                      {isCustomManager ? "← Select from List" : "+ Custom Manager"}
-                    </button>
+                    {assignedPlanTypeManager && !showManagerPicker && (
+                      <button
+                        type="button"
+                        onClick={() => setShowManagerPicker(true)}
+                        className="text-[11px] font-medium text-primary hover:underline cursor-pointer"
+                      >
+                        Change Manager
+                      </button>
+                    )}
+                    {showManagerPicker && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCustomManager(!isCustomManager);
+                          if (!isCustomManager) {
+                            setDiscussedManagerId("");
+                          } else {
+                            setCustomManagerName("");
+                          }
+                        }}
+                        className="text-[11px] font-medium text-primary hover:underline cursor-pointer"
+                      >
+                        {isCustomManager ? "← Select from List" : "+ Custom Manager"}
+                      </button>
+                    )}
                   </div>
 
-                  {isCustomManager ? (
+                  {!showManagerPicker && currentDisplayedManager ? (
+                    <div className="rounded-xl border border-border bg-card p-3.5 shadow-2xs flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3 truncate">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary font-bold text-sm shrink-0">
+                          {currentDisplayedManager.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="truncate">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-bold text-foreground truncate">
+                              {currentDisplayedManager.name}
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
+                                currentDisplayedManager.isSpecificPlanType
+                                  ? "bg-primary/15 text-primary border border-primary/20"
+                                  : "bg-blue-500/15 text-blue-500 border border-blue-500/20"
+                              }`}
+                            >
+                              {currentDisplayedManager.badgeText}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-muted truncate">
+                            {currentDisplayedManager.email}
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowManagerPicker(true)}
+                        className="text-[11px] font-bold text-primary hover:underline shrink-0 cursor-pointer"
+                      >
+                        Change
+                      </button>
+                    </div>
+                  ) : isCustomManager ? (
                     <input
                       type="text"
                       placeholder="Enter manager's name..."
@@ -1390,66 +1656,87 @@ export function WorkPlanFormPage({ planId, copyId }: WorkPlanFormPageProps) {
               </p>
             ) : (
               <div className="space-y-2">
-                {works.map((w, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-3 shadow-2xs"
-                  >
-                    <div className="flex items-center gap-2.5 truncate">
-                      <Briefcase className="h-4 w-4 text-muted shrink-0" />
-                      <div className="truncate">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-xs font-bold text-foreground truncate">
-                            {w.title}
-                          </span>
-                          {renderWorkStatusBadge(w.status)}
+                {works.map((w, idx) => {
+                  const isDefaultTask = w.work_type === "default" || w.is_default_task;
+                  const isManagerItem = !managerRole && isManagerCreatedItem(w);
+                  const canRemove = !isDefaultTask && !isManagerItem;
+
+                  return (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-3 shadow-2xs"
+                    >
+                      <div className="flex items-center gap-2.5 truncate">
+                        <Briefcase className="h-4 w-4 text-muted shrink-0" />
+                        <div className="truncate">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-xs font-bold text-foreground truncate">
+                              {w.title}
+                            </span>
+                            {renderWorkStatusBadge(w.status)}
+                            {w.work_type && (
+                              <span
+                                className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase ${
+                                  w.work_type === "optional"
+                                    ? "bg-amber-500/15 text-amber-500 border border-amber-500/20"
+                                    : "bg-primary/15 text-primary border border-primary/20"
+                                }`}
+                              >
+                                {w.work_type === "optional" ? "Optional" : "Default"}
+                              </span>
+                            )}
+                          </div>
+                          {w.description && (
+                            <p className="text-[11px] text-muted truncate">{w.description}</p>
+                          )}
+                          {w.planned_start_time && (
+                            <p className="text-[10px] text-muted flex items-center gap-1 font-medium mt-0.5">
+                              <Clock className="h-3 w-3" />
+                              {formatTime(w.planned_start_time)}
+                            </p>
+                          )}
                         </div>
-                        {w.description && (
-                          <p className="text-[11px] text-muted truncate">{w.description}</p>
-                        )}
-                        {w.planned_start_time && (
-                          <p className="text-[10px] text-muted flex items-center gap-1 font-medium mt-0.5">
-                            <Clock className="h-3 w-3" />
-                            {formatTime(w.planned_start_time)}
-                          </p>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingWorkIndex(idx);
+                            setWorkModalOpen(true);
+                          }}
+                          className="rounded p-1 text-muted hover:bg-surface-muted hover:text-foreground"
+                          title="Edit task"
+                        >
+                          <Edit3 className="h-3.5 w-3.5" />
+                        </button>
+                        {canRemove ? (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveWork(idx)}
+                            className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500"
+                            title="Remove task"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled
+                            className="rounded p-1 text-muted/30 cursor-not-allowed opacity-50"
+                            title={
+                              isDefaultTask
+                                ? "Default task — cannot be removed"
+                                : "Created by Manager — Executive cannot remove"
+                            }
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
                         )}
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingWorkIndex(idx);
-                          setWorkModalOpen(true);
-                        }}
-                        className="rounded p-1 text-muted hover:bg-surface-muted hover:text-foreground"
-                        title="Edit task"
-                      >
-                        <Edit3 className="h-3.5 w-3.5" />
-                      </button>
-                      {managerRole || !isManagerCreatedItem(w) ? (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveWork(idx)}
-                          className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500"
-                          title="Remove task"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled
-                          className="rounded p-1 text-muted/30 cursor-not-allowed opacity-50"
-                          title="Created by Manager — Executive cannot remove"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

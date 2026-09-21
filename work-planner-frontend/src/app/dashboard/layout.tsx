@@ -123,6 +123,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         desktopCollapsed={desktopCollapsed}
         setDesktopCollapsed={setDesktopCollapsed}
         companyInfo={companyInfo}
+        session={session}
       />
 
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">

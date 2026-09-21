@@ -373,6 +373,20 @@ export const workPlannerApiSlice = baseApi.injectEndpoints({
       }),
       transformResponse: (res: any) => res.data || res,
     }),
+    getUserSettings: builder.query<any, string>({
+      query: (userId) => `${WORK_PLANNER_SERVICE_URL}/api/work-planner/user-settings/${userId}`,
+      transformResponse: (res: any) => res.data || res,
+      providesTags: (_result, _error, userId) => [{ type: "WorkPlan" as const, id: `USER_SETTINGS_${userId}` }],
+    }),
+    updateUserSettings: builder.mutation<any, { userId: string; body: any }>({
+      query: ({ userId, body }) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/user-settings/${userId}`,
+        method: "PUT",
+        body,
+      }),
+      transformResponse: (res: any) => res.data || res,
+      invalidatesTags: (_result, _error, { userId }) => [{ type: "WorkPlan" as const, id: `USER_SETTINGS_${userId}` }],
+    }),
   }),
 });
 
@@ -414,4 +428,6 @@ export const {
   useGetDayEndDraftQuery,
   useLazyGetDayEndDraftQuery,
   useUploadWorkPlanAttachmentMutation,
+  useGetUserSettingsQuery,
+  useUpdateUserSettingsMutation,
 } = workPlannerApiSlice;

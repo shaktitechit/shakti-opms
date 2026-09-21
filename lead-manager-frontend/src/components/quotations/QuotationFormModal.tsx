@@ -765,30 +765,30 @@ export function QuotationFormModal({
           const pObj = typeof p.product === "object" && p.product !== null ? (p.product as { _id?: string; product_name?: string; unit?: string; base_price?: number }) : null;
           return {
             product: typeof p.product === "string" ? p.product : pObj?._id,
-            product_name: p.product_name || pObj?.product_name || "Medical Equipment",
+            product_name: p.product_name || pObj?.product_name || "Item / Product",
             description: p.remarks || "",
-            hsn_code: "9018",
+            hsn_code: "",
             quantity: p.quantity || 1,
             unit: p.unit || pObj?.unit || "Nos",
             rate: p.target_price || pObj?.base_price || 0,
-            gst_rate: 5,
+            gst_rate: 18,
           };
         })
       );
-      setSubject(`Offer For ${targetLead.products[0]?.product_name || "Medical Equipment"}`);
+      setSubject(`Offer For ${targetLead.products[0]?.product_name || "Item / Product"}`);
     } else {
       setItems([
         {
-          product_name: targetLead.requirement || "Fresenius Hemodialysis Machine",
+          product_name: targetLead.requirement || "Product / Service Requirement",
           description: "",
-          hsn_code: "9018",
+          hsn_code: "",
           quantity: 1,
           unit: "Nos",
           rate: targetLead.estimated_value || 0,
-          gst_rate: 5,
+          gst_rate: 18,
         },
       ]);
-      setSubject(`Offer For ${targetLead.requirement || "Medical Equipment"}`);
+      setSubject(targetLead.requirement ? `Offer For ${targetLead.requirement}` : "Quotation Proposal");
     }
   };
 
@@ -1000,30 +1000,30 @@ export function QuotationFormModal({
             const pObj = typeof p.product === "object" ? p.product : null;
             return {
               product: typeof p.product === "string" ? p.product : pObj?._id,
-              product_name: p.product_name || pObj?.product_name || "Medical Equipment",
+              product_name: p.product_name || pObj?.product_name || "Item / Product",
               description: p.remarks || "",
-              hsn_code: "9018",
+              hsn_code: "",
               quantity: p.quantity || 1,
               unit: p.unit || pObj?.unit || "Nos",
               rate: p.target_price || pObj?.base_price || 0,
-              gst_rate: 5,
+              gst_rate: 18,
             };
           })
         );
-        setSubject(`Offer For ${lead.products[0]?.product_name || "Medical Equipment"}`);
+        setSubject(`Offer For ${lead.products[0]?.product_name || "Item / Product"}`);
       } else {
         setItems([
           {
-            product_name: lead.requirement || "Fresenius Hemodialysis Machine Fresenius 4008 A",
+            product_name: lead.requirement || "Product / Service Requirement",
             description: "",
-            hsn_code: "9018",
+            hsn_code: "",
             quantity: 1,
             unit: "Nos",
             rate: lead.estimated_value || 0,
-            gst_rate: 5,
+            gst_rate: 18,
           },
         ]);
-        setSubject(`Offer For ${lead.requirement || "Medical Equipment"}`);
+        setSubject(lead.requirement ? `Offer For ${lead.requirement}` : "Quotation Proposal");
       }
       setTerms([]);
     } else {
@@ -1051,16 +1051,16 @@ export function QuotationFormModal({
       setSignatoryDesignation("");
       setItems([
         {
-          product_name: "Medical Equipment / Supplies",
+          product_name: "",
           description: "",
-          hsn_code: "9018",
+          hsn_code: "",
           quantity: 1,
           unit: "Nos",
           rate: 0,
-          gst_rate: 5,
+          gst_rate: 18,
         },
       ]);
-      setSubject("Offer For Medical Equipment");
+      setSubject("");
       setTerms([]);
     }
   }, [open, quotation, lead, autoNextRefNo]);

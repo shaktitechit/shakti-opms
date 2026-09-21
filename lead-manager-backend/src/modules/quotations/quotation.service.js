@@ -47,7 +47,7 @@ function quotationCommonParams(quotation, extras = {}) {
     quotationNo: quotation.quotation_no || '',
     refNo: quotation.ref_no || 'N/A',
     customerName: quotation.customer_name || 'Customer',
-    quotationSubject: quotation.subject || 'Medical Equipment Proposal',
+    quotationSubject: quotation.subject || 'Quotation Proposal',
     grandTotal: formatGrandTotal(quotation.grand_total),
     ...extras,
   };
@@ -739,12 +739,12 @@ async function create(leadIdOrBody, bodyOrUser, userParam) {
       ? body.items
       : [
         {
-          product_name: lead?.requirements || body.subject || 'Medical Equipment / Supplies',
-          hsn_code: '9018',
+          product_name: lead?.requirements || body.subject || 'Item / Product',
+          hsn_code: '',
           quantity: 1,
           unit: 'Nos',
           rate: lead?.estimated_value || 0,
-          gst_rate: 5,
+          gst_rate: 18,
         },
       ]
   );
@@ -760,7 +760,7 @@ async function create(leadIdOrBody, bodyOrUser, userParam) {
     quotation_date: quotationDate,
     valid_until: validUntil,
     validity_days: validityDays,
-    subject: body.subject || `Offer For ${items[0]?.product_name || 'Medical Equipment'}`,
+    subject: body.subject || (items[0]?.product_name ? `Offer For ${items[0].product_name}` : 'Quotation Proposal'),
     customer_name: body.customer_name || (lead ? (lead.organization_name || lead.party_name || `M/s. ${lead.first_name} ${lead.last_name}`.trim()) : 'Customer'),
     kind_attn: body.kind_attn || (lead ? `${lead.first_name} ${lead.last_name}`.trim() : ''),
     phone: body.phone || lead?.phone || '',

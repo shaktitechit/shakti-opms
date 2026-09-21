@@ -10,6 +10,7 @@ import { useGetCompanyInfoQuery, type LeadQuotationRecord } from "@/store/api";
 import { useAppSelector } from "@/store/hooks";
 import { readSessionFromStorage } from "@/utils/authStorage";
 import { formatCompanyAddress } from "@/components/portal/shared/pdfCompanyLetterhead";
+import { resolvePublicAssetUrl } from "@/lib/env";
 
 type Props = {
   quotation: LeadQuotationRecord;
@@ -91,7 +92,12 @@ export default function QuotationPdfTemplate({
 
   const resolvedPortalLabel = portalLabel || "Lead Manager";
 
-  const logoUrl = (company?.logo_url as string) || "";
+  const logoRaw =
+    (company?.logo_url as string) ||
+    (quotation as any)?.company_logo ||
+    (quotation as any)?.logo_url ||
+    "";
+  const logoUrl = logoRaw ? resolvePublicAssetUrl(logoRaw) : "";
 
   const companyRegdAddress = formatCompanyAddress(company as any, quotation.company_regd_address);
 

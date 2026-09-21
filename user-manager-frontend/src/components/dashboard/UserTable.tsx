@@ -38,6 +38,8 @@ export function UserTable({
               <tr className="border-b border-border text-xs text-muted bg-surface-muted font-semibold uppercase tracking-wider">
                 <th className="px-5 py-3.5">User</th>
                 <th className="px-5 py-3.5">Department</th>
+                <th className="px-5 py-3.5">Role</th>
+                <th className="px-5 py-3.5">Portals & Access Roles</th>
                 <th className="px-5 py-3.5 hidden sm:table-cell">Phone</th>
                 <th className="px-5 py-3.5 text-center">Status</th>
                 <th className="px-5 py-3.5 text-right">Actions</th>
@@ -46,7 +48,7 @@ export function UserTable({
             <tbody className="divide-y divide-border text-foreground">
               {users.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-5 py-16 text-center text-sm text-muted">
+                  <td colSpan={7} className="px-5 py-16 text-center text-sm text-muted">
                     No system users match the selected criteria.
                   </td>
                 </tr>
@@ -55,6 +57,22 @@ export function UserTable({
                   const uid = String(u._id || u.id || "");
                   const isActive = u.is_active !== false;
                   const isSelf = uid === currentUserId;
+
+                  const roles = Array.isArray(u.roles) && u.roles.length > 0
+                    ? u.roles
+                    : Array.isArray(u.role_names) && u.role_names.length > 0
+                    ? u.role_names
+                    : Array.isArray(u.role_codes) && u.role_codes.length > 0
+                    ? u.role_codes
+                    : u.role
+                    ? [u.role]
+                    : [];
+
+                  const userPortals = Array.isArray(u.portals) && u.portals.length > 0
+                    ? u.portals
+                    : Array.isArray(u.portal_access) && u.portal_access.length > 0
+                    ? u.portal_access
+                    : [];
 
                   return (
                     <tr key={uid} className="hover:bg-surface-muted transition">
@@ -79,6 +97,71 @@ export function UserTable({
 
                       <td className="px-5 py-3.5">
                         <DeptBadge dept={u.department || "unknown"} />
+                      </td>
+
+                      <td className="px-5 py-3.5">
+                        {roles.length > 0 ? (
+                          <div className="flex flex-wrap gap-1 max-w-[200px]">
+                            {roles.map((r: any, idx: number) => {
+                              const roleName = typeof r === "object" ? (r.name || r.code || String(r)) : String(r);
+                              return (
+                                <span
+                                  key={idx}
+                                  className="inline-flex items-center rounded-md bg-surface-muted border border-border px-2 py-0.5 text-3xs font-medium text-foreground capitalize"
+                                >
+                                  {roleName}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted italic">—</span>
+                        )}
+                      </td>
+
+                      <td className="px-5 py-3.5">
+                        {userPortals.length > 0 ? (
+                          <div className="flex flex-col gap-1.5 max-w-[260px]">
+                            {userPortals.map((p: any, idx: number) => {
+                              const portalName =
+                                p.portal_name ||
+                                p.portal?.name ||
+                                p.portal_code ||
+                                p.portal?.code ||
+                                (typeof p.portal === "string" ? p.portal : "Portal");
+
+                              const accessRoles: string[] = Array.isArray(p.access_roles) && p.access_roles.length > 0
+                                ? p.access_roles
+                                : p.access_role
+                                ? [p.access_role]
+                                : Array.isArray(p.roles) && p.roles.length > 0
+                                ? p.roles
+                                : [];
+
+                              return (
+                                <div key={idx} className="flex items-center gap-1.5 flex-wrap text-2xs">
+                                  <span className="font-semibold text-foreground">{portalName}</span>
+                                  {accessRoles.length > 0 ? (
+                                    <div className="flex flex-wrap gap-1">
+                                      {accessRoles.map((role: string, rIdx: number) => (
+                                        <span
+                                          key={rIdx}
+                                          className="inline-flex items-center rounded-full bg-primary/10 border border-primary/20 text-primary px-1.5 py-0.2 text-3xs font-semibold capitalize"
+                                        >
+                                          {role}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <span className="text-3xs text-muted">(No access role)</span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted italic">—</span>
+                        )}
                       </td>
 
                       <td className="px-5 py-3.5 hidden sm:table-cell text-xs text-muted">
