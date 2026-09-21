@@ -1265,6 +1265,14 @@ function registerModels() {
     { timestamps: true }
   );
 
+  orderSchema.index({ deletedAt: 1, createdAt: -1 });
+  orderSchema.index({ deletedAt: 1, status: 1, createdAt: -1 });
+  orderSchema.index({ deletedAt: 1, workflow_stage: 1, createdAt: -1 });
+  orderSchema.index({ deletedAt: 1, assigned_sales_user: 1, createdAt: -1 });
+  orderSchema.index({ deletedAt: 1, party: 1, createdAt: -1 });
+  orderSchema.index({ deletedAt: 1, order_date: -1 });
+  orderSchema.index({ order_no: 1, deletedAt: 1 });
+  orderSchema.index({ order_number: 1, deletedAt: 1 });
   orderSchema.index({ customer: 1, order_date: -1 });
   orderSchema.index({ workflow_stage: 1, lifecycle_status: 1 });
   orderSchema.index({ current_assignee: 1, workflow_stage: 1 });
@@ -1342,6 +1350,7 @@ function registerModels() {
     { timestamps: true }
   );
   
+  orderStatusHistorySchema.index({ order: 1, createdAt: -1 });
   mongoose.model("OrderStatusHistory", orderStatusHistorySchema);
 
   // --- Schemas from OrderApproval.js ---
@@ -1449,6 +1458,10 @@ function registerModels() {
   );
 
   orderApprovalSchema.index({ order: 1, revision_number: -1 });
+  orderApprovalSchema.index({ order: 1, deletedAt: 1, is_due_sheet_uploaded: 1 });
+  orderApprovalSchema.index({ deletedAt: 1, is_admin_approved: 1 });
+  orderApprovalSchema.index({ deletedAt: 1, is_finance_approved: 1 });
+  orderApprovalSchema.index({ deletedAt: 1, is_account_approved: 1 });
   orderApprovalSchema.plugin(softDeletePlugin);
   mongoose.model("OrderApproval", orderApprovalSchema);
 
@@ -1467,6 +1480,7 @@ function registerModels() {
     { timestamps: true }
   );
 
+  orderAmmendmentUserSchema.index({ order_approval: 1, department: 1, ammended_at: -1 });
   mongoose.model("OrderAmmendmentUser", orderAmmendmentUserSchema);
 
   // --- Schemas from OrderFlag.js ---
@@ -1530,6 +1544,7 @@ function registerModels() {
     { timestamps: true }
   );
   
+  orderFlagSchema.index({ order: 1, status: 1 });
   mongoose.model("OrderFlag", orderFlagSchema);
 
 
@@ -1662,6 +1677,8 @@ function registerModels() {
     { timestamps: true }
   );
 
+  orderDispatchSchema.index({ order: 1, status: 1 });
+  orderDispatchSchema.index({ order: 1, deletedAt: 1 });
   orderDispatchSchema.plugin(softDeletePlugin);
   mongoose.model("OrderDispatch", orderDispatchSchema);
 
@@ -1725,6 +1742,7 @@ function registerModels() {
     { timestamps: true }
   );
 
+  transportShipmentSchema.index({ order: 1, deletedAt: 1, shipment_status: 1, createdAt: -1 });
   transportShipmentSchema.plugin(softDeletePlugin);
   mongoose.model("TransportShipment", transportShipmentSchema);
 
@@ -1762,6 +1780,7 @@ function registerModels() {
     { timestamps: true }
   );
 
+  orderDeliverySchema.index({ order: 1, deletedAt: 1 });
   orderDeliverySchema.plugin(softDeletePlugin);
   mongoose.model("OrderDelivery", orderDeliverySchema);
 
@@ -1833,6 +1852,7 @@ function registerModels() {
   );
 
   orderDueSheetSchema.index({ order: 1, is_current: 1 });
+  orderDueSheetSchema.index({ order: 1, deletedAt: 1, status: 1 });
   orderDueSheetSchema.plugin(softDeletePlugin);
   mongoose.model("OrderDueSheet", orderDueSheetSchema);
 
@@ -1987,6 +2007,8 @@ function registerModels() {
     { timestamps: true }
   );
   
+  activityLogSchema.index({ entity_type: 1, entity_id: 1, createdAt: -1 });
+  activityLogSchema.index({ actor: 1, createdAt: -1 });
   mongoose.model("ActivityLog", activityLogSchema);
 
   // --- Schemas from Notification.js ---

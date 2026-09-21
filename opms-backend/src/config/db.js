@@ -24,6 +24,10 @@ async function connect() {
   const opts = {
     retryWrites: true,
     w: 'majority',
+    maxPoolSize: 50,
+    minPoolSize: 10,
+    serverSelectionTimeoutMS: 5000,
+    socketTimeoutMS: 45000,
     appName: 'opms-backend',
   };
   if (MONGODB_LOOKUP_FAMILY !== undefined) {

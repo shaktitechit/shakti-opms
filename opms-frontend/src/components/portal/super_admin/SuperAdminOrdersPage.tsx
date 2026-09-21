@@ -50,7 +50,7 @@ const STATUS_FILTERS = [
 const PAGE_SIZE = 20;
 
 export default function SuperAdminOrdersPage() {
-  const { data: ordersRaw, isFetching, isError, refetch } = useListOrdersQuery({});
+  const { data: ordersRaw, isFetching, isError, refetch } = useListOrdersQuery({ view: "list" });
   const { data: partiesRaw } = useListPartiesQuery({});
 
   const [search, setSearch] = useState("");

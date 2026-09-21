@@ -17,6 +17,8 @@ import { pickOrders } from "./pickOrders";
 import { PortalBusyOverlay } from "./PortalBusyOverlay";
 import { usePortalDashboardKpi } from "./usePortalDashboardKpi";
 
+import { ORDER_WORKFLOW_LIST_QUERY } from "./orderList/orderWorkflowTabs";
+
 type PortalOverviewShellProps = { portal: PortalKey };
 
 export default function PortalOverviewShell({
@@ -42,7 +44,7 @@ export default function PortalOverviewShell({
     );
   }, [error, isError, skipKpi]);
 
-  const ordersQ = useListOrdersQuery({});
+  const ordersQ = useListOrdersQuery(ORDER_WORKFLOW_LIST_QUERY);
   const orders = pickOrders(ordersQ.data);
 
   const ordersErrToastShown = useRef(false);

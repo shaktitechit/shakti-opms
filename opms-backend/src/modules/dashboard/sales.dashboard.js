@@ -1,21 +1,45 @@
-/**
- * @fileoverview Dashboard KPIs (dashboard slice / sales.dashboard).
- * @module modules/dashboard/sales.dashboard
- */
+const mongoose = require('mongoose');
 const { getModels } = require('../../data/mongoRegistry');
 
 async function forUser(userId) {
-  const orders = await getModels()
-    .Order.find({
-      $or: [{ created_by: userId }, { assigned_sales_user: userId }],
-    })
-    .select('status')
-    .lean();
+  if (!userId) {
+    return { my_orders: 0, draft: 0, pending_submit: 0 };
+  }
+
+  const { Order } = getModels();
+  const userObjectId =
+    typeof userId === 'string' && mongoose.Types.ObjectId.isValid(userId)
+      ? new mongoose.Types.ObjectId(userId)
+      : userId;
+
+  const results = await Order.aggregate([
+    {
+      $match: {
+        deletedAt: null,
+        $or: [{ created_by: userObjectId }, { assigned_sales_user: userObjectId }],
+      },
+    },
+    {
+      $group: {
+        _id: '$status',
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  let total = 0;
+  let draftCount = 0;
+  let submittedCount = 0;
+  for (const row of results) {
+    total += row.count;
+    if (row._id === 'draft') draftCount = row.count;
+    if (row._id === 'submitted') submittedCount = row.count;
+  }
 
   return {
-    my_orders: orders.length,
-    draft: orders.filter((o) => o.status === 'draft').length,
-    pending_submit: orders.filter((o) => o.status === 'draft' || o.status === 'submitted').length,
+    my_orders: total,
+    draft: draftCount,
+    pending_submit: draftCount + submittedCount,
   };
 }
 

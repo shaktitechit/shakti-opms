@@ -15,9 +15,8 @@ async function overview() {
   const [
     totalUsers,
     activeUsers,
-    orders,
+    orderStats,
     openFlags,
-    financeQueue,
     financeSummary,
     dispatchPending,
     vehicleCount,
@@ -25,18 +24,24 @@ async function overview() {
   ] = await Promise.all([
     User.countDocuments({}),
     User.countDocuments({ is_active: { $ne: false } }),
-    Order.find({}).select('status').lean(),
+    Order.aggregate([
+      { $match: { deletedAt: null } },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+    ]),
     OrderFlag.countDocuments({ status: 'open' }),
-    financeService.financeQueue(),
     financeService.summary(),
-    OrderDispatch.countDocuments({ status: 'pending' }),
+    OrderDispatch.countDocuments({ status: 'pending', deletedAt: null }),
     Vehicle.countDocuments({ is_active: { $ne: false } }),
     Driver.countDocuments({ is_active: { $ne: false } }),
   ]);
 
   const ordersByStatus = {};
-  for (const o of orders) {
-    ordersByStatus[o.status] = (ordersByStatus[o.status] || 0) + 1;
+  let totalOrders = 0;
+  for (const s of orderStats) {
+    if (s._id) {
+      ordersByStatus[s._id] = s.count;
+    }
+    totalOrders += s.count;
   }
 
   return {
@@ -45,11 +50,11 @@ async function overview() {
       active: activeUsers,
     },
     orders: {
-      total: orders.length,
+      total: totalOrders,
       by_status: ordersByStatus,
     },
     finance: {
-      queue_size: Array.isArray(financeQueue) ? financeQueue.length : 0,
+      queue_size: financeSummary.awaiting_finance || 0,
       awaiting_finance: financeSummary.awaiting_finance,
     },
     dispatch: {

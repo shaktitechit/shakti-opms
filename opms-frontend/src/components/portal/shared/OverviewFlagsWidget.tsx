@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Flag, ExternalLink, X } from "lucide-react";
-import { useListFlagsQuery, useListOrdersQuery } from "@/store/api";
-import { pickOrders } from "@/components/portal/shared/pickOrders";
+import { useListFlagsQuery } from "@/store/api";
 import { LargeModalBackdrop } from "@/components/portal/shared/LargeModalBackdrop";
 import { largeModalPanelClass } from "@/components/portal/shared/modalLayout";
 
@@ -66,13 +65,11 @@ function extractFlags(raw: unknown): Record<string, unknown>[] {
 function FlagsList({
   currentDepartment,
   relevantFlags,
-  orderNoById,
   isFlagsFetching,
   isFlagsError,
 }: {
   currentDepartment: OverviewFlagsWidgetProps["currentDepartment"];
   relevantFlags: Record<string, unknown>[];
-  orderNoById: Map<string, string>;
   isFlagsFetching: boolean;
   isFlagsError: boolean;
 }) {
@@ -106,8 +103,16 @@ function FlagsList({
     <ul className="space-y-3.5">
       {relevantFlags.map((flag, index) => {
         const flagId = flag._id ?? flag.id ?? String(index);
-        const orderId = String(flag.order || "");
-        const orderNo = orderNoById.get(orderId) || `ID: ${orderId.slice(0, 8)}`;
+        const orderObj =
+          typeof flag.order === "object" && flag.order !== null
+            ? (flag.order as Record<string, unknown>)
+            : null;
+        const orderId = String(orderObj?._id ?? orderObj?.id ?? flag.order ?? "");
+        const orderNo = String(
+          orderObj?.order_no ??
+            orderObj?.order_number ??
+            (orderId ? `#${orderId.slice(-6)}` : "—"),
+        );
         const urlPath = `/${currentDepartment}/order/${orderId}`;
 
         return (
@@ -176,23 +181,6 @@ export function OverviewFlagsWidget({
     isError: isFlagsError,
   } = useListFlagsQuery({});
 
-  const { data: ordersData } = useListOrdersQuery({});
-
-  const orders = useMemo(
-    () => pickOrders(ordersData) as Record<string, unknown>[],
-    [ordersData],
-  );
-
-  const orderNoById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const o of orders) {
-      const id = o._id != null ? String(o._id) : o.id != null ? String(o.id) : "";
-      const ref = String(o.order_no ?? o.order_number ?? "");
-      if (id && ref) map.set(id, ref);
-    }
-    return map;
-  }, [orders]);
-
   const relevantFlags = useMemo(() => {
     const allFlags = extractFlags(flagsData);
     return allFlags.filter((f) => {
@@ -208,7 +196,6 @@ export function OverviewFlagsWidget({
   const listProps = {
     currentDepartment,
     relevantFlags,
-    orderNoById,
     isFlagsFetching,
     isFlagsError,
   };

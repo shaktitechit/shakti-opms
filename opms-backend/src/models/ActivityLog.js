@@ -75,7 +75,9 @@ const activityLogSchema = new mongoose.Schema(
     ip_address: String,
     user_agent: String,
   },
-  { timestamps: true }
 );
+
+activityLogSchema.index({ entity_type: 1, entity_id: 1, createdAt: -1 });
+activityLogSchema.index({ actor: 1, createdAt: -1 });
 
 export default mongoose.model("ActivityLog", activityLogSchema);

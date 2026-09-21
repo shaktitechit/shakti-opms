@@ -558,15 +558,18 @@ const orderSchema = new mongoose.Schema(
  * INDEXES
  * ======================================================= */
 
+orderSchema.index({ deletedAt: 1, createdAt: -1 });
+orderSchema.index({ deletedAt: 1, status: 1, createdAt: -1 });
+orderSchema.index({ deletedAt: 1, workflow_stage: 1, createdAt: -1 });
+orderSchema.index({ deletedAt: 1, assigned_sales_user: 1, createdAt: -1 });
+orderSchema.index({ deletedAt: 1, party: 1, createdAt: -1 });
+orderSchema.index({ deletedAt: 1, order_date: -1 });
+orderSchema.index({ order_no: 1, deletedAt: 1 });
+orderSchema.index({ order_number: 1, deletedAt: 1 });
 orderSchema.index({ customer: 1, order_date: -1 });
 orderSchema.index({ workflow_stage: 1, lifecycle_status: 1 });
 orderSchema.index({ current_assignee: 1, workflow_stage: 1 });
 orderSchema.index({ status: 1, closed_at: -1 });
-orderSchema.index({ status: 1, workflow_stage: 1, createdAt: -1 });
-orderSchema.index({ party: 1, createdAt: -1 });
-orderSchema.index({ order_date: -1 });
-orderSchema.index({ order_no: 1 });
-orderSchema.index({ order_number: 1 });
 
 orderSchema.pre("save", function (next) {
   const doc = this;

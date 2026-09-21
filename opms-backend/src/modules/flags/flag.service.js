@@ -47,7 +47,11 @@ async function recomputeOrderFlagAggregates(orderId, session = null) {
 async function list({ order } = {}) {
   const q = {};
   if (order) q.order = order;
-  const rows = await getModels().OrderFlag.find(q).sort({ createdAt: -1 }).lean();
+  const rows = await getModels()
+    .OrderFlag.find(q)
+    .populate('order', 'order_no order_number customer party')
+    .sort({ createdAt: -1 })
+    .lean();
   return rows.map(toPlain);
 }
 

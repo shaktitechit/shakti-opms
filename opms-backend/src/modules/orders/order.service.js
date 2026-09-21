@@ -677,9 +677,11 @@ async function buildBaseQuery(query = {}, user) {
     } else if (s === 'open_dispatched') {
       // Dispatch Pending: past approval queues, no submitted dispatch yet.
       // Draft dispatches do not advance Order.status into transport statuses.
-      const adminPending = await findOrderIdsWithPendingApproval('admin', getModels());
-      const financePending = await findOrderIdsWithPendingApproval('finance', getModels());
-      const accountPending = await findOrderIdsWithPendingApproval('account', getModels());
+      const [adminPending, financePending, accountPending] = await Promise.all([
+        findOrderIdsWithPendingApproval('admin', getModels()),
+        findOrderIdsWithPendingApproval('finance', getModels()),
+        findOrderIdsWithPendingApproval('account', getModels()),
+      ]);
       const nonDispatchPendingIds = new Set([...adminPending, ...financePending, ...accountPending]);
 
       q.status = {
