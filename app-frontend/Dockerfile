@@ -13,7 +13,7 @@ ENV NEXT_PUBLIC_USER_MANAGER_URL=$NEXT_PUBLIC_USER_MANAGER_URL
 ENV NEXT_PUBLIC_WORK_PLANNER_URL=$NEXT_PUBLIC_WORK_PLANNER_URL
 ENV NEXT_PUBLIC_LEAD_MANAGER_URL=$NEXT_PUBLIC_LEAD_MANAGER_URL
 
-COPY package.json package-lock.json ./
+COPY --chown=node:node package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
@@ -38,13 +38,14 @@ ENV NEXT_PUBLIC_USER_MANAGER_URL=$NEXT_PUBLIC_USER_MANAGER_URL
 ENV NEXT_PUBLIC_WORK_PLANNER_URL=$NEXT_PUBLIC_WORK_PLANNER_URL
 ENV NEXT_PUBLIC_LEAD_MANAGER_URL=$NEXT_PUBLIC_LEAD_MANAGER_URL
 
-COPY package.json package-lock.json ./
+COPY --chown=node:node package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/next.config.ts ./next.config.ts
+COPY --from=builder --chown=node:node /app/.next ./.next
+COPY --from=builder --chown=node:node /app/public ./public
+COPY --from=builder --chown=node:node /app/next.config.ts ./next.config.ts
 
+USER node
 EXPOSE 3000
 
 CMD ["npm", "run", "start"]

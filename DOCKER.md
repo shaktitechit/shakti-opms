@@ -77,7 +77,8 @@ docker compose --env-file .env.docker exec opms-backend npm run seed:users
 ## Environment notes
 
 - **All secrets and credentials live in `.env.docker`** — compose files only reference `${VAR}`.
-- **Redis** in Compose: host port `${REDIS_PORT:-7014}` → container `6379`; services use `REDIS_URL=redis://redis:6379`.
+- **Redis** in Compose: `requirepass` via `REDIS_PASSWORD` (default `changeme` if unset); host bind `127.0.0.1:${REDIS_PORT:-7014}` → `6379`. Compose **always** injects `REDIS_URL=redis://:${REDIS_PASSWORD}@redis:6379` so a stale unauthenticated `REDIS_URL` in `.env.docker` cannot cause `NOAUTH`.
+- **message-service / notification-service** are internal-only (not published on the host); reach them on the Compose network or via nginx.
 - **`NEXT_PUBLIC_*`** values are baked into frontend builds. Change them in `.env.docker`, then rebuild the affected frontend image.
 - **Company branding**: set `COMPANY_NAME` / `NEXT_PUBLIC_COMPANY_*` as fallbacks, or configure via User Manager → Company Information (preferred).
 - **CORS**: add production frontends to `CORS_ORIGINS` (comma-separated).

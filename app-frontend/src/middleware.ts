@@ -8,7 +8,34 @@ import {
   resolveHomeFromUser,
 } from "@/constants/dashboardAccess";
 
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
+/** Aligned with default JWT_EXPIRES_IN=8h */
+const COOKIE_MAX_AGE = 60 * 60 * 8;
+
+function authServiceBase(): string {
+  return (
+    process.env.NEXT_PUBLIC_AUTH_SERVICE_URL ||
+    process.env.AUTH_SERVICE_URL ||
+    "http://localhost:7003"
+  ).replace(/\/+$/, "");
+}
+
+async function exchangeHandoff(code: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${authServiceBase()}/api/auth/handoff/exchange`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      token?: string;
+      data?: { token?: string };
+    };
+    return data.token || data.data?.token || null;
+  } catch {
+    return null;
+  }
+}
 
 function redirectUrl(request: NextRequest, targetPath: string): URL {
   const url = request.nextUrl.clone();
@@ -18,13 +45,52 @@ function redirectUrl(request: NextRequest, targetPath: string): URL {
   return url;
 }
 
-export function middleware(request: NextRequest) {
+function applySessionCookies(
+  response: NextResponse,
+  token: string,
+  department: string,
+  roleCodes: string[],
+) {
+  response.cookies.set("shakti_session", token, {
+    path: "/",
+    maxAge: COOKIE_MAX_AGE,
+    sameSite: "lax",
+  });
+  response.cookies.set("medica_session", token, {
+    path: "/",
+    maxAge: COOKIE_MAX_AGE,
+    sameSite: "lax",
+  });
+  if (department) {
+    response.cookies.set("shakti_department", department, {
+      path: "/",
+      maxAge: COOKIE_MAX_AGE,
+      sameSite: "lax",
+    });
+  }
+  if (roleCodes.length) {
+    response.cookies.set("shakti_roles", roleCodes.join(","), {
+      path: "/",
+      maxAge: COOKIE_MAX_AGE,
+      sameSite: "lax",
+    });
+  }
+}
+
+export async function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
   const cookieToken =
     request.cookies.get("shakti_session")?.value ||
     request.cookies.get("medica_session")?.value;
   const urlToken = searchParams.get("token")?.trim() || "";
-  const effectiveToken = cookieToken || urlToken;
+  const handoffCode = searchParams.get("handoff")?.trim() || "";
+
+  let exchangedToken: string | null = null;
+  if (handoffCode) {
+    exchangedToken = await exchangeHandoff(handoffCode);
+  }
+
+  const effectiveToken = cookieToken || exchangedToken || urlToken;
 
   const claims = effectiveToken ? readJwtClaims(effectiveToken) : null;
   const department =
@@ -42,36 +108,30 @@ export function middleware(request: NextRequest) {
   const isAuthRoute = pathname === "/" || pathname === "/login";
   const isProtectedRoute = pathname.startsWith("/dashboard");
 
+  if (exchangedToken) {
+    const home =
+      resolveHomeFromUser({
+        department,
+        role_codes: roleCodes,
+        roles: roleCodes.length ? ["x"] : claims?.roles || [],
+      }) || (department ? `/dashboard/${department}` : "/dashboard");
+    const clean = request.nextUrl.clone();
+    clean.searchParams.delete("handoff");
+    clean.searchParams.delete("token");
+    const target = isAuthRoute ? home : `${clean.pathname}${clean.search}`;
+    const response = NextResponse.redirect(redirectUrl(request, target));
+    applySessionCookies(response, exchangedToken, department, roleCodes);
+    return response;
+  }
+
   if (isProtectedRoute && urlToken) {
     const response = NextResponse.next();
-    response.cookies.set("shakti_session", urlToken, {
-      path: "/",
-      maxAge: COOKIE_MAX_AGE,
-      sameSite: "lax",
-    });
-    response.cookies.set("medica_session", urlToken, {
-      path: "/",
-      maxAge: COOKIE_MAX_AGE,
-      sameSite: "lax",
-    });
-    if (department) {
-      response.cookies.set("shakti_department", department, {
-        path: "/",
-        maxAge: COOKIE_MAX_AGE,
-        sameSite: "lax",
-      });
-    }
-    if (roleCodes.length) {
-      response.cookies.set("shakti_roles", roleCodes.join(","), {
-        path: "/",
-        maxAge: COOKIE_MAX_AGE,
-        sameSite: "lax",
-      });
-    }
+    applySessionCookies(response, urlToken, department, roleCodes);
     return response;
   }
 
   if (isProtectedRoute && !effectiveToken) {
+    if (handoffCode) return NextResponse.next();
     const target = request.nextUrl.clone();
     target.pathname = "/";
     target.searchParams.set("redirect", pathname);
@@ -103,16 +163,7 @@ export function middleware(request: NextRequest) {
       }) || (department ? `/dashboard/${department}` : "/dashboard");
     const response = NextResponse.redirect(redirectUrl(request, home));
     if (urlToken && !cookieToken) {
-      response.cookies.set("shakti_session", urlToken, {
-        path: "/",
-        maxAge: COOKIE_MAX_AGE,
-        sameSite: "lax",
-      });
-      response.cookies.set("medica_session", urlToken, {
-        path: "/",
-        maxAge: COOKIE_MAX_AGE,
-        sameSite: "lax",
-      });
+      applySessionCookies(response, urlToken, department, roleCodes);
     }
     return response;
   }

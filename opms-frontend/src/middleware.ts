@@ -17,7 +17,34 @@ import {
   parseOpmsRolesCookie,
 } from "@/lib/opmsAuth";
 
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
+/** Aligned with default JWT_EXPIRES_IN=8h */
+const COOKIE_MAX_AGE = 60 * 60 * 8;
+
+function authServiceBase(): string {
+  return (
+    process.env.NEXT_PUBLIC_AUTH_ORIGIN ||
+    process.env.NEXT_PUBLIC_AUTH_SERVICE_URL ||
+    "http://localhost:7003"
+  ).replace(/\/+$/, "");
+}
+
+async function exchangeHandoff(code: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${authServiceBase()}/api/auth/handoff/exchange`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      token?: string;
+      data?: { token?: string };
+    };
+    return data.token || data.data?.token || null;
+  } catch {
+    return null;
+  }
+}
 
 function redirectDashboardLegacy(pathname: string, req: NextRequest) {
   const m = pathname.match(/^\/dashboard\/([^/]+)(\/.*)?$/);
@@ -79,11 +106,31 @@ function applySessionCookies(res: NextResponse, roles: string[], token?: string)
   }
 }
 
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   const dashRedirect = redirectDashboardLegacy(pathname, req);
   if (dashRedirect) return dashRedirect;
+
+  const handoffCode = req.nextUrl.searchParams.get("handoff")?.trim() || "";
+  let exchangedToken: string | null = null;
+  if (handoffCode) {
+    exchangedToken = await exchangeHandoff(handoffCode);
+    if (exchangedToken) {
+      const roles = rolesFromSsoToken(exchangedToken);
+      const clean = req.nextUrl.clone();
+      clean.searchParams.delete("handoff");
+      clean.searchParams.delete("token");
+      const isLoginRoute = pathname === "/login" || pathname === "/";
+      const targetPath =
+        isLoginRoute && roles.length
+          ? resolveHomeFromRoles(roles) ?? "/login"
+          : `${clean.pathname}${clean.search}`;
+      const res = redirectReq(targetPath, req);
+      applySessionCookies(res, roles, exchangedToken);
+      return res;
+    }
+  }
 
   const ssoToken = req.nextUrl.searchParams.get("token")?.trim() || "";
   const ssoRoles = ssoToken ? rolesFromSsoToken(ssoToken) : [];
@@ -131,6 +178,7 @@ export function middleware(req: NextRequest) {
   }
 
   if (protectionHit && !sessionOk) {
+    if (handoffCode) return NextResponse.next();
     const fromTarget = `${pathname}${req.nextUrl.search}`;
     const loginTarget = `/login?from=${encodeURIComponent(fromTarget)}`;
     return redirectReq(loginTarget, req);

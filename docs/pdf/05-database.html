@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>05 — Database Documentation</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    @page { size: A4; margin: 16mm 14mm; }
+    :root {
+      --text: #1a1a1a;
+      --muted: #555;
+      --border: #d0d7de;
+      --code-bg: #f6f8fa;
+      --accent: #0b3d5c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.45;
+      color: var(--text);
+      margin: 0;
+      padding: 0;
+    }
+    .cover {
+      page-break-after: always;
+      padding: 40mm 10mm 20mm;
+      text-align: left;
+    }
+    .cover h1 {
+      font-size: 28pt;
+      color: var(--accent);
+      margin: 0 0 8pt;
+    }
+    .cover .subtitle { font-size: 14pt; color: var(--muted); margin-bottom: 24pt; }
+    .cover .meta { font-size: 10pt; color: var(--muted); }
+    h1, h2, h3, h4 {
+      color: var(--accent);
+      page-break-after: avoid;
+    }
+    h1 { font-size: 18pt; border-bottom: 2px solid var(--accent); padding-bottom: 4pt; margin-top: 22pt; }
+    h2 { font-size: 14pt; margin-top: 16pt; }
+    h3 { font-size: 12pt; }
+    h4 { font-size: 11pt; }
+    p, li { orphans: 3; widows: 3; }
+    a { color: var(--accent); text-decoration: none; }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 10pt 0;
+      font-size: 9pt;
+      page-break-inside: auto;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 4pt 6pt;
+      vertical-align: top;
+      text-align: left;
+    }
+    th { background: #eef3f7; }
+    tr { page-break-inside: avoid; }
+    pre, code {
+      font-family: "IBM Plex Mono", Menlo, Consolas, monospace;
+      font-size: 8.5pt;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8pt;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      page-break-inside: avoid;
+    }
+    code {
+      background: var(--code-bg);
+      padding: 1pt 3pt;
+      border-radius: 3px;
+    }
+    pre code { background: transparent; padding: 0; }
+    blockquote {
+      border-left: 3px solid var(--accent);
+      margin: 8pt 0;
+      padding: 4pt 10pt;
+      color: var(--muted);
+      background: #f8fafc;
+    }
+    .doc-section {
+      page-break-before: always;
+    }
+    .doc-section:first-of-type { page-break-before: auto; }
+    .source-path {
+      font-size: 8pt;
+      color: #888;
+      margin: 0 0 8pt;
+      border-bottom: 1px dashed #ccc;
+      padding-bottom: 4pt;
+    }
+    .mermaid-wrap {
+      margin: 12pt 0;
+      padding: 10pt;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      page-break-inside: avoid;
+      text-align: center;
+    }
+    .mermaid svg { max-width: 100% !important; height: auto !important; }
+    .toc { page-break-after: always; }
+    .toc ul { list-style: none; padding-left: 0; }
+    .toc li { margin: 4pt 0; font-size: 10pt; }
+    .toc .cat { font-weight: 700; margin-top: 10pt; color: var(--accent); }
+    hr { border: none; border-top: 1px solid var(--border); margin: 16pt 0; }
+  </style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>05 — Database Documentation</h1>
+  <p class="subtitle">Complete documentation suite (Markdown → PDF with Mermaid diagrams)</p>
+  <p class="meta">Generated: 2026-09-22</p>
+  <p class="meta">Source: repository <code>docs/</code> directory</p>
+  <p class="meta">Diagrams rendered with Mermaid 11</p>
+</div>
+<nav class="toc">
+  <h1>Table of Contents</h1>
+  <ul>
+    <li>05-database/01-database-overview.md</li>
+<li>05-database/02-schema.md</li>
+<li>05-database/03-collections-or-tables.md</li>
+<li>05-database/04-relationships.md</li>
+<li>05-database/05-indexes.md</li>
+<li>05-database/06-constraints.md</li>
+<li>05-database/07-data-lifecycle.md</li>
+<li>05-database/08-data-dictionary.md</li>
+<li>05-database/09-erd.md</li>
+  </ul>
+</nav><section class="doc-section" data-source="05-database/01-database-overview.md">
+  <p class="source-path">Source: 05-database/01-database-overview.md</p>
+  <h1>Database Overview</h1>
+<h2>Technology</h2>
+<p><strong>MongoDB</strong> via <strong>Mongoose</strong>. No SQL schemas/migrations framework identified.</p>
+<h2>Connection</h2>
+<p>Environment variables: <code>MONGO_URI</code> and/or <code>MONGODB_URI</code> (and sometimes <code>DATABASE_URL</code> fallbacks in code).<br>Optional <code>MONGODB_LOOKUP_FAMILY=4</code> for IPv4 preference (Atlas).</p>
+<h2>Deployment model</h2>
+<p>MongoDB is <strong>external</strong> to Docker Compose (typically Atlas). Containers may reach host Mongo via <code>host.docker.internal</code>.</p>
+<h2>Logical ownership</h2>
+<table>
+<thead>
+<tr>
+<th>Domain</th>
+<th>Primary service writing schemas</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Identity</td>
+<td>auth-service models</td>
+</tr>
+<tr>
+<td>Orders / logistics / fleet</td>
+<td>opms-backend <code>mongoRegistry.js</code></td>
+</tr>
+<tr>
+<td>Products</td>
+<td>product-service (mirrors registry)</td>
+</tr>
+<tr>
+<td>Parties / rates</td>
+<td>party-service (mirrors registry)</td>
+</tr>
+<tr>
+<td>Leads / quotations</td>
+<td>lead-manager-backend</td>
+</tr>
+<tr>
+<td>Work plans</td>
+<td>work-planner-backend</td>
+</tr>
+<tr>
+<td>Notifications / push</td>
+<td>notification-service</td>
+</tr>
+<tr>
+<td>Messages</td>
+<td>message-service</td>
+</tr>
+</tbody></table>
+<p><strong>Inferred:</strong> Services share one database/cluster; registries are duplicated. Treat <strong>auth + opms-backend + lead + work-planner + notification + message</strong> as documentation primaries.</p>
+<h2>Soft-delete</h2>
+<p>Shared plugin: <code>deletedAt</code> default filter. See <a href="07-data-lifecycle.md">Data Lifecycle</a>.</p>
+<h2>Source</h2>
+<ul>
+<li><code>opms-backend/src/data/mongoRegistry.js</code></li>
+<li><code>auth-service/src/models/*</code></li>
+<li>service-specific registries</li>
+</ul>
+
+</section>
+<section class="doc-section" data-source="05-database/02-schema.md">
+  <p class="source-path">Source: 05-database/02-schema.md</p>
+  <h1>Schema Overview</h1>
+<p>Schemas are defined in Mongoose (JavaScript), not separate migration SQL.</p>
+<h2>Canonical order domain</h2>
+<p><code>opms-backend/src/data/mongoRegistry.js</code> — large multi-model file registering Order and related masters.</p>
+<h2>Identity</h2>
+<p><code>auth-service/src/models/User.js</code>, <code>Role.js</code>, <code>Department.js</code>, <code>Portal.js</code>, <code>CompanyInfo.js</code></p>
+<h2>Warning</h2>
+<p><code>opms-backend/docs/OPMS_SCHEMA.md</code> and <code>docs/essentials/*</code> are <strong>partially stale</strong>. Prefer mongoRegistry + workflow modules.</p>
+<h2>Embedded vs referenced</h2>
+<ul>
+<li>Order embeds <code>order_items[]</code></li>
+<li>OrderApproval embeds <code>approval_items[]</code></li>
+<li>Cross-entity links use ObjectId refs (Party, Product, User, …)</li>
+</ul>
+<h2>Related</h2>
+<ul>
+<li><a href="03-collections-or-tables.md">Collections</a></li>
+<li><a href="08-data-dictionary.md">Data Dictionary</a></li>
+</ul>
+
+</section>
+<section class="doc-section" data-source="05-database/03-collections-or-tables.md">
+  <p class="source-path">Source: 05-database/03-collections-or-tables.md</p>
+  <h1>Collections Catalog</h1>
+<p>MongoDB collection names generally follow Mongoose pluralization unless <code>collection:</code> is set (e.g. <code>product_kit_items</code>, <code>party_product_last_rates</code>).</p>
+<h2>Identity (auth-service)</h2>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>User</td>
+<td>Accounts, portals, roles</td>
+</tr>
+<tr>
+<td>Role</td>
+<td>Role catalog</td>
+</tr>
+<tr>
+<td>Department</td>
+<td>Department catalog</td>
+</tr>
+<tr>
+<td>Portal</td>
+<td>Portal catalog + default access_roles</td>
+</tr>
+<tr>
+<td>CompanyInfo</td>
+<td>Branding &amp; legal/tax profile</td>
+</tr>
+</tbody></table>
+<h2>Catalog / counterparty</h2>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Party</td>
+<td>Customer/supplier</td>
+</tr>
+<tr>
+<td>Zone</td>
+<td>Territory grouping</td>
+</tr>
+<tr>
+<td>Warehouse</td>
+<td>Warehouse master</td>
+</tr>
+<tr>
+<td>Customer</td>
+<td>Legacy/alternate customer (<strong>present in registry</strong>)</td>
+</tr>
+<tr>
+<td>Product</td>
+<td>Product / kit</td>
+</tr>
+<tr>
+<td>ProductKitItem</td>
+<td>Kit composition</td>
+</tr>
+<tr>
+<td>ProductGroup / Subgroup / Brand / Manufacturer</td>
+<td>Taxonomy</td>
+</tr>
+<tr>
+<td>Batch</td>
+<td>Inventory batch</td>
+</tr>
+<tr>
+<td>PartyProductMapping / Rate / LastRate</td>
+<td>Pricing</td>
+</tr>
+</tbody></table>
+<h2>Order spine</h2>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Order</td>
+<td>Core order</td>
+</tr>
+<tr>
+<td>OrderWorkflow</td>
+<td>Append-only workflow actions</td>
+</tr>
+<tr>
+<td>OrderStatusHistory</td>
+<td>Status changes</td>
+</tr>
+<tr>
+<td>OrderApproval</td>
+<td>Unified approvals</td>
+</tr>
+<tr>
+<td>OrderAmmendmentUser</td>
+<td>Amendment actors</td>
+</tr>
+<tr>
+<td>OrderFlag</td>
+<td>Flags</td>
+</tr>
+<tr>
+<td>OrderDispatch</td>
+<td>Dispatch</td>
+</tr>
+<tr>
+<td>TransportShipment</td>
+<td>Shipment</td>
+</tr>
+<tr>
+<td>OrderDelivery</td>
+<td>Delivery</td>
+</tr>
+<tr>
+<td>OrderReturn</td>
+<td>Returns</td>
+</tr>
+<tr>
+<td>OrderDueSheet</td>
+<td>Due sheets</td>
+</tr>
+<tr>
+<td>UnbilledOrder</td>
+<td>Unbilled tracking</td>
+</tr>
+<tr>
+<td>Reminder</td>
+<td>Reminders</td>
+</tr>
+<tr>
+<td>Attachment</td>
+<td>File metadata</td>
+</tr>
+<tr>
+<td>ActivityLog</td>
+<td>Activity</td>
+</tr>
+<tr>
+<td>TransportPlan / TransportPlanOrder</td>
+<td>Transport planner</td>
+</tr>
+<tr>
+<td>TransportAgent / Vehicle / Driver</td>
+<td>Fleet</td>
+</tr>
+<tr>
+<td>TermsAndConditions / TermsText</td>
+<td>T&amp;C</td>
+</tr>
+</tbody></table>
+<h2>CRM</h2>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Lead</td>
+<td>Lead</td>
+</tr>
+<tr>
+<td>LeadFollowUp</td>
+<td>Follow-ups</td>
+</tr>
+<tr>
+<td>LeadSource / LeadLostReason</td>
+<td>Masters</td>
+</tr>
+<tr>
+<td>LeadQuotation</td>
+<td>Quotations</td>
+</tr>
+<tr>
+<td>FollowUpDigestLog</td>
+<td>Digest dedupe</td>
+</tr>
+</tbody></table>
+<h2>Work planner</h2>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>WorkPlan</td>
+<td>Daily plan</td>
+</tr>
+<tr>
+<td>WorkPlanVisit / WorkPlanWork / WorkPlanExpense</td>
+<td>Children</td>
+</tr>
+<tr>
+<td>UserWorkPlannerSettings</td>
+<td>Per-user settings</td>
+</tr>
+</tbody></table>
+<h2>Comms</h2>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Notification</td>
+<td>In-app notification</td>
+</tr>
+<tr>
+<td>PushSubscription</td>
+<td>Web push</td>
+</tr>
+<tr>
+<td>Message</td>
+<td>Outbound message log</td>
+</tr>
+</tbody></table>
+
+</section>
+<section class="doc-section" data-source="05-database/04-relationships.md">
+  <p class="source-path">Source: 05-database/04-relationships.md</p>
+  <h1>Relationships</h1>
+<p>Logical relationships (Mongo does not enforce FKs):</p>
+<div class="mermaid-wrap"><div class="mermaid">erDiagram
+  User ||--o{ Order : creates
+  Party ||--o{ Order : customer
+  Product ||--o{ OrderItem : line
+  Order ||--o{ OrderApproval : has
+  Order ||--o{ OrderDispatch : has
+  OrderDispatch ||--o{ TransportShipment : ships
+  Order ||--o{ OrderDelivery : delivers
+  Order ||--o{ OrderFlag : flagged
+  Lead ||--o{ LeadFollowUp : follows
+  Lead ||--o{ LeadQuotation : quotes
+  WorkPlan ||--o{ WorkPlanVisit : visits
+  WorkPlan ||--o{ WorkPlanExpense : expenses
+  User ||--o| UserWorkPlannerSettings : settings
+  User ||--o{ Notification : receives</div></div>
+<h2>Notable refs</h2>
+<ul>
+<li>Order → party, customer, lead, created_by</li>
+<li>OrderApproval → order</li>
+<li>PartyProductRate → party, product, mapping</li>
+<li>Attachment → entity_type + entity_id (polymorphic)</li>
+<li>TransportShipment → transporter ref <strong>without registered Transporter model</strong> (debt)</li>
+</ul>
+<h2>Related</h2>
+<ul>
+<li><a href="09-erd.md">ERD</a></li>
+</ul>
+
+</section>
+<section class="doc-section" data-source="05-database/05-indexes.md">
+  <p class="source-path">Source: 05-database/05-indexes.md</p>
+  <h1>Indexes</h1>
+<p>Important indexes observed in schemas (non-exhaustive):</p>
+<table>
+<thead>
+<tr>
+<th>Model</th>
+<th>Index notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>User</td>
+<td><code>email</code> unique; <code>company_id</code></td>
+</tr>
+<tr>
+<td>Portal</td>
+<td><code>code</code> unique</td>
+</tr>
+<tr>
+<td>Role</td>
+<td><code>code</code> unique</td>
+</tr>
+<tr>
+<td>Order</td>
+<td><code>order_no</code> unique; compound indexes including <code>deletedAt</code></td>
+</tr>
+<tr>
+<td>Party</td>
+<td><code>party_name</code>; sparse <code>gst_no</code>; featured+active</td>
+</tr>
+<tr>
+<td>Product</td>
+<td><code>sku</code> unique sparse; text/<code>searchable_text</code></td>
+</tr>
+<tr>
+<td>ProductSubgroup</td>
+<td>unique <code>(name, group)</code></td>
+</tr>
+<tr>
+<td>Batch</td>
+<td>unique <code>(product, batch_no)</code></td>
+</tr>
+<tr>
+<td>PartyProductMapping</td>
+<td>unique <code>(party, product)</code></td>
+</tr>
+<tr>
+<td>PartyProductLastRate</td>
+<td>unique <code>(party, product)</code></td>
+</tr>
+<tr>
+<td>WorkPlan</td>
+<td>unique <code>(sales_user, plan_date)</code> where <code>deletedAt</code> null</td>
+</tr>
+<tr>
+<td>WorkPlanVisit</td>
+<td>unique <code>(work_plan, sequence)</code></td>
+</tr>
+<tr>
+<td>Lead</td>
+<td><code>lead_no</code> unique</td>
+</tr>
+<tr>
+<td>PushSubscription</td>
+<td><code>endpoint</code> unique</td>
+</tr>
+<tr>
+<td>Message</td>
+<td>indexes on order/recipient/channel/status</td>
+</tr>
+<tr>
+<td>FollowUpDigestLog</td>
+<td>unique kind+user+digest_date trio</td>
+</tr>
+<tr>
+<td>CompanyInfo</td>
+<td><code>is_default</code></td>
+</tr>
+</tbody></table>
+<p><strong>Caveat:</strong> OrderDispatch index referencing <code>status</code> while field is <code>dispatch_status</code> may be incorrect — <strong>Requires confirmation</strong>.</p>
+<h2>Source</h2>
+<p>Schema <code>index: true</code> / <code>schema.index(...)</code> in mongoRegistry and models.</p>
+
+</section>
+<section class="doc-section" data-source="05-database/06-constraints.md">
+  <p class="source-path">Source: 05-database/06-constraints.md</p>
+  <h1>Constraints</h1>
+<h2>Uniqueness</h2>
+<p>See <a href="05-indexes.md">Indexes</a> for unique indexes.</p>
+<h2>Enums (selected)</h2>
+<h3>Order.status</h3>
+<p><code>draft</code>, <code>submitted</code>, <code>sales_approved</code>, <code>finance_review</code>, <code>finance_approved</code>, <code>finance_rejected</code>, <code>account_review</code>, <code>account_approved</code>, <code>account_rejected</code>, <code>dispatch</code>, <code>in_transit</code>, <code>delivered</code>, <code>closed</code>, <code>cancelled</code>, <code>on_hold</code></p>
+<p>Note: <code>closed</code> in schema but absent from transition graph.</p>
+<h3>Lead.status</h3>
+<p><code>new</code>, <code>assigned</code>, <code>contacted</code>, <code>qualified</code>, <code>unqualified</code>, <code>follow_up</code>, <code>quotation</code>, <code>negotiation</code>, <code>won</code>, <code>lost</code>, <code>converted</code></p>
+<h3>WorkPlan.status</h3>
+<p><code>planned</code>, <code>draft</code>, <code>submitted</code>, <code>approved</code>, <code>rejected</code>, <code>completed</code></p>
+<h2>Required fields</h2>
+<p>Vary by model — see Data Dictionary / schema <code>required: true</code>.</p>
+<h2>Application-level constraints</h2>
+<p>Workflow transition graph; flag blocking; portal RBAC — not DB-enforced.</p>
+
+</section>
+<section class="doc-section" data-source="05-database/07-data-lifecycle.md">
+  <p class="source-path">Source: 05-database/07-data-lifecycle.md</p>
+  <h1>Data Lifecycle</h1>
+<h2>Soft-delete</h2>
+<ul>
+<li>Field: <code>deletedAt</code> (Date or null)</li>
+<li>Plugin filters all queries to active docs unless <code>.withDeleted()</code></li>
+<li>Restore clears <code>deletedAt</code></li>
+</ul>
+<h2>Append-only</h2>
+<ul>
+<li><code>OrderWorkflow</code>, <code>OrderStatusHistory</code>, <code>ActivityLog</code> — no soft-delete in typical config</li>
+</ul>
+<h2>Message lifecycle</h2>
+<p><code>pending → queued → sending → sent|failed</code> with attempts metadata</p>
+<h2>Notification lifecycle</h2>
+<p>Created unread → marked read (<code>is_read</code>, <code>read_at</code>)</p>
+<h2>Due sheets</h2>
+<p><code>active</code> → <code>superseded</code> / <code>archived</code>; <code>is_current</code> flag</p>
+<h2>Backup</h2>
+<p><strong>Not identified</strong> automated Mongo backup in repo. Ops must use Atlas/host tooling.</p>
+
+</section>
+<section class="doc-section" data-source="05-database/08-data-dictionary.md">
+  <p class="source-path">Source: 05-database/08-data-dictionary.md</p>
+  <h1>Data Dictionary (selected)</h1>
+<p>Descriptions only where purpose is clear from field names/code. Unknowns marked.</p>
+<table>
+<thead>
+<tr>
+<th>Collection/Model</th>
+<th>Field</th>
+<th>Type</th>
+<th>Required</th>
+<th>Default</th>
+<th>Description</th>
+<th>Relationship</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>User</td>
+<td>email</td>
+<td>String</td>
+<td>yes</td>
+<td>—</td>
+<td>Login identity</td>
+<td>unique</td>
+</tr>
+<tr>
+<td>User</td>
+<td>password</td>
+<td>String</td>
+<td>yes</td>
+<td>—</td>
+<td>Hash (select:false)</td>
+<td>—</td>
+</tr>
+<tr>
+<td>User</td>
+<td>portals</td>
+<td>Array</td>
+<td>no</td>
+<td>[]</td>
+<td>Portal assignments</td>
+<td>→ Portal</td>
+</tr>
+<tr>
+<td>User</td>
+<td>portals.portal_code</td>
+<td>String</td>
+<td>—</td>
+<td>—</td>
+<td>Portal code denorm</td>
+<td>—</td>
+</tr>
+<tr>
+<td>User</td>
+<td>portals.access_roles</td>
+<td>[String]</td>
+<td>—</td>
+<td>—</td>
+<td>Roles in portal</td>
+<td>—</td>
+</tr>
+<tr>
+<td>User</td>
+<td>department</td>
+<td>String</td>
+<td>no</td>
+<td>—</td>
+<td>Department code/name</td>
+<td>—</td>
+</tr>
+<tr>
+<td>User</td>
+<td>is_active</td>
+<td>Boolean</td>
+<td>—</td>
+<td>—</td>
+<td>Active flag</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Portal</td>
+<td>code</td>
+<td>String</td>
+<td>yes</td>
+<td>—</td>
+<td>Unique portal code</td>
+<td>unique</td>
+</tr>
+<tr>
+<td>Portal</td>
+<td>access_roles</td>
+<td>[String]</td>
+<td>—</td>
+<td>—</td>
+<td>Default roles list</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Order</td>
+<td>order_no</td>
+<td>String</td>
+<td>—</td>
+<td>—</td>
+<td>Business number</td>
+<td>unique</td>
+</tr>
+<tr>
+<td>Order</td>
+<td>status</td>
+<td>String enum</td>
+<td>—</td>
+<td>—</td>
+<td>Workflow status</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Order</td>
+<td>lifecycle_status</td>
+<td>String enum</td>
+<td>—</td>
+<td>—</td>
+<td>Lifecycle summary</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Order</td>
+<td>workflow_stage</td>
+<td>String enum</td>
+<td>—</td>
+<td>—</td>
+<td>Stage bucket</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Order</td>
+<td>party</td>
+<td>ObjectId</td>
+<td>—</td>
+<td>—</td>
+<td>Counterparty</td>
+<td>→ Party</td>
+</tr>
+<tr>
+<td>Order</td>
+<td>order_items</td>
+<td>Array</td>
+<td>—</td>
+<td>—</td>
+<td>Line items</td>
+<td>embedded</td>
+</tr>
+<tr>
+<td>Order</td>
+<td>deletedAt</td>
+<td>Date</td>
+<td>—</td>
+<td>null</td>
+<td>Soft-delete</td>
+<td>—</td>
+</tr>
+<tr>
+<td>OrderApproval</td>
+<td>order</td>
+<td>ObjectId</td>
+<td>yes</td>
+<td>—</td>
+<td>Parent order</td>
+<td>→ Order</td>
+</tr>
+<tr>
+<td>OrderApproval</td>
+<td>is_admin_approved</td>
+<td>Boolean</td>
+<td>—</td>
+<td>false</td>
+<td>Admin signature</td>
+<td>—</td>
+</tr>
+<tr>
+<td>OrderApproval</td>
+<td>is_finance_approved</td>
+<td>Boolean</td>
+<td>—</td>
+<td>false</td>
+<td>Finance signature</td>
+<td>—</td>
+</tr>
+<tr>
+<td>OrderApproval</td>
+<td>is_account_approved</td>
+<td>Boolean</td>
+<td>—</td>
+<td>false</td>
+<td>Account signature</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Party</td>
+<td>party_type</td>
+<td>enum</td>
+<td>—</td>
+<td>—</td>
+<td>customer/supplier/both</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Party</td>
+<td>party_name</td>
+<td>String</td>
+<td>—</td>
+<td>—</td>
+<td>Display name</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Product</td>
+<td>product_type</td>
+<td>enum</td>
+<td>—</td>
+<td>—</td>
+<td>individual/kit</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Product</td>
+<td>sku</td>
+<td>String</td>
+<td>—</td>
+<td>—</td>
+<td>SKU</td>
+<td>unique sparse</td>
+</tr>
+<tr>
+<td>Lead</td>
+<td>status</td>
+<td>enum</td>
+<td>—</td>
+<td>—</td>
+<td>Pipeline status</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Lead</td>
+<td>assigned_*</td>
+<td>mixed</td>
+<td>—</td>
+<td>—</td>
+<td>Assignment fields</td>
+<td>→ User</td>
+</tr>
+<tr>
+<td>WorkPlan</td>
+<td>plan_date</td>
+<td>Date</td>
+<td>—</td>
+<td>—</td>
+<td>Plan day</td>
+<td>unique w/ user</td>
+</tr>
+<tr>
+<td>WorkPlan</td>
+<td>status</td>
+<td>enum</td>
+<td>—</td>
+<td>—</td>
+<td>Plan status</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Notification</td>
+<td>is_read</td>
+<td>Boolean</td>
+<td>—</td>
+<td>—</td>
+<td>Read state</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Message</td>
+<td>channel</td>
+<td>enum</td>
+<td>—</td>
+<td>—</td>
+<td>email/whatsapp</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Message</td>
+<td>status</td>
+<td>enum</td>
+<td>—</td>
+<td>—</td>
+<td>Delivery status</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Attachment</td>
+<td>entity_type</td>
+<td>enum</td>
+<td>—</td>
+<td>—</td>
+<td>Owner type</td>
+<td>polymorphic</td>
+</tr>
+<tr>
+<td>Attachment</td>
+<td>entity_id</td>
+<td>ObjectId/String</td>
+<td>—</td>
+<td>—</td>
+<td>Owner id</td>
+<td>—</td>
+</tr>
+</tbody></table>
+<p>Full field lists: see <code>mongoRegistry.js</code> and service models — too large to duplicate verbatim; regenerate from source for audits.</p>
+<h2>Related</h2>
+<ul>
+<li><a href="03-collections-or-tables.md">Collections</a></li>
+</ul>
+
+</section>
+<section class="doc-section" data-source="05-database/09-erd.md">
+  <p class="source-path">Source: 05-database/09-erd.md</p>
+  <h1>ERD</h1>
+<div class="mermaid-wrap"><div class="mermaid">erDiagram
+  COMPANYINFO ||--o{ USER : company
+  USER }o--o{ ROLE : has
+  USER }o--o{ PORTAL : portals
+  PARTY ||--o{ ORDER : orders
+  PRODUCT ||--o{ PARTYPRODUCTRATE : rates
+  PARTY ||--o{ PARTYPRODUCTRATE : rates
+  ORDER ||--o{ ORDERAPPROVAL : approvals
+  ORDER ||--o{ ORDERDISPATCH : dispatches
+  ORDERDISPATCH ||--o{ TRANSPORTSHIPMENT : shipments
+  ORDER ||--o{ ORDERDELIVERY : deliveries
+  ORDER ||--o{ ORDERFLAG : flags
+  ORDER ||--o{ ORDERWORKFLOW : workflow
+  LEAD ||--o{ LEADFOLLOWUP : followups
+  LEAD ||--o{ LEADQUOTATION : quotations
+  WORKPLAN ||--o{ WORKPLANVISIT : visits
+  WORKPLAN ||--o{ WORKPLANWORK : works
+  WORKPLAN ||--o{ WORKPLANEXPENSE : expenses
+  USER ||--o| USERWORKPLANNERSETTINGS : settings
+  USER ||--o{ NOTIFICATION : notifications
+  ORDER ||--o{ MESSAGE : messages</div></div>
+<p>Screenshot: Not available in repository.</p>
+
+</section>
+<script>
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'neutral',
+    securityLevel: 'loose',
+    flowchart: { useMaxWidth: true, htmlLabels: true },
+    er: { useMaxWidth: true },
+    sequence: { useMaxWidth: true },
+  });
+  (async () => {
+    try {
+      await mermaid.run({ querySelector: '.mermaid' });
+      document.documentElement.setAttribute('data-mermaid-ready', 'true');
+    } catch (e) {
+      console.error('mermaid error', e);
+      document.documentElement.setAttribute('data-mermaid-ready', 'error');
+      document.documentElement.setAttribute('data-mermaid-error', String(e && e.message || e));
+    }
+  })();
+</script>
+</body>
+</html>

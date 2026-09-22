@@ -4,6 +4,8 @@
  */
 const express = require('express');
 const multer = require('multer');
+const { requireAuth } = require('../../middlewares/auth.middleware');
+const { requireLeadManagerAccess } = require('../../middlewares/leadManagerAuth.middleware');
 const controller = require('./attachment.controller');
 
 const upload = multer({
@@ -12,6 +14,9 @@ const upload = multer({
 });
 
 const router = express.Router();
+
+router.use(requireAuth);
+router.use(requireLeadManagerAccess);
 
 router.get('/', controller.list);
 router.get('/deleted', controller.listDeleted);

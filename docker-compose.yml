@@ -29,12 +29,14 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    # Host bind localhost-only (not LAN/internet). Prefer Compose network for apps.
     ports:
-      - "${REDIS_PORT:-7014}:6379"
+      - "127.0.0.1:${REDIS_PORT:-7014}:6379"
+    command: [ "redis-server", "--requirepass", "${REDIS_PASSWORD:-changeme}" ]
     volumes:
       - redis_data:/data
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -164,14 +166,16 @@ services:
       dockerfile: Dockerfile
       pull: false
     restart: unless-stopped
-    ports:
-      - "${MESSAGE_SERVICE_PORT:-7011}:${MESSAGE_SERVICE_PORT:-7011}"
+    # Internal only — reach via Compose network / nginx, not host publish
+    expose:
+      - "${MESSAGE_SERVICE_PORT:-7011}"
     env_file: *env_file
     extra_hosts: *extra_hosts
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: ${MESSAGE_SERVICE_PORT:-7011}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # Always build from REDIS_PASSWORD so a stale unauthenticated REDIS_URL in env_file cannot win
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme}@redis:6379
       AUTH_SERVICE_URL: ${AUTH_SERVICE_URL:-http://auth-service:7003}
     depends_on:
       redis:
@@ -189,14 +193,16 @@ services:
       dockerfile: Dockerfile
       pull: false
     restart: unless-stopped
-    ports:
-      - "${NOTIFICATION_SERVICE_PORT:-7012}:${NOTIFICATION_SERVICE_PORT:-7012}"
+    # Internal only — reach via Compose network / nginx, not host publish
+    expose:
+      - "${NOTIFICATION_SERVICE_PORT:-7012}"
     env_file: *env_file
     extra_hosts: *extra_hosts
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: ${NOTIFICATION_SERVICE_PORT:-7012}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # Always build from REDIS_PASSWORD so a stale unauthenticated REDIS_URL in env_file cannot win
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme}@redis:6379
     depends_on:
       redis:
         condition: service_healthy
@@ -220,7 +226,8 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       PORT: ${OPMS_BACKEND_PORT:-7001}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # Always build from REDIS_PASSWORD so a stale unauthenticated REDIS_URL in env_file cannot win
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme}@redis:6379
       AUTH_SERVICE_URL: ${AUTH_SERVICE_URL:-http://auth-service:7003}
       PRODUCT_SERVICE_URL: ${PRODUCT_SERVICE_URL:-http://product-service:7005}
       PARTY_SERVICE_URL: ${PARTY_SERVICE_URL:-http://party-service:7006}

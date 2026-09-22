@@ -8,9 +8,17 @@
 #   1) Keep opms.http-bootstrap enabled (HTTP proxies + ACME webroot)
 #   2) Point DNS A/AAAA for all hosts at this server
 #   3) Issue one multi-SAN cert (see nginx/snippets/opms-ssl.conf)
-#   4) Then:
+#   4) In nginx.conf http{} block, once:
+#        include /etc/nginx/snippets/logging.conf;
+#      (defines log_format opms_main + limit_req_zone for auth login/handoff)
+#   5) Then:
+#        sudo cp nginx/snippets/* /etc/nginx/snippets/
 #        sudo cp nginx/sites-available/opms /etc/nginx/sites-available/opms
 #        sudo nginx -t && sudo systemctl reload nginx
+#   6) Optional hard 15-min IP ban (fail2ban):
+#        sudo cp nginx/fail2ban/filter.d/opms-auth-login.conf /etc/fail2ban/filter.d/
+#        sudo cp nginx/fail2ban/jail.d/opms-auth.conf /etc/fail2ban/jail.d/
+#        sudo fail2ban-client reload
 #
 # listen is "ssl" only (no http2 flag) to avoid
 # "protocol options redefined" warnings with other sites on :443.
@@ -155,6 +163,10 @@ server {
     server_name auth.spspl.com;
     include /etc/nginx/snippets/opms-ssl.conf;
     client_max_body_size 50m;
+    access_log /var/log/nginx/auth.access.log opms_main;
+
+    # Requires http{} include of snippets/logging.conf (log_format + limit_req_zone)
+    include /etc/nginx/snippets/auth-rate-limit.conf;
 
     location ~ ^/api/notifications/stream {
         include /etc/nginx/snippets/proxy-sse.conf;

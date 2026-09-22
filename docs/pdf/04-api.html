@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>04 — API Documentation</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    @page { size: A4; margin: 16mm 14mm; }
+    :root {
+      --text: #1a1a1a;
+      --muted: #555;
+      --border: #d0d7de;
+      --code-bg: #f6f8fa;
+      --accent: #0b3d5c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.45;
+      color: var(--text);
+      margin: 0;
+      padding: 0;
+    }
+    .cover {
+      page-break-after: always;
+      padding: 40mm 10mm 20mm;
+      text-align: left;
+    }
+    .cover h1 {
+      font-size: 28pt;
+      color: var(--accent);
+      margin: 0 0 8pt;
+    }
+    .cover .subtitle { font-size: 14pt; color: var(--muted); margin-bottom: 24pt; }
+    .cover .meta { font-size: 10pt; color: var(--muted); }
+    h1, h2, h3, h4 {
+      color: var(--accent);
+      page-break-after: avoid;
+    }
+    h1 { font-size: 18pt; border-bottom: 2px solid var(--accent); padding-bottom: 4pt; margin-top: 22pt; }
+    h2 { font-size: 14pt; margin-top: 16pt; }
+    h3 { font-size: 12pt; }
+    h4 { font-size: 11pt; }
+    p, li { orphans: 3; widows: 3; }
+    a { color: var(--accent); text-decoration: none; }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 10pt 0;
+      font-size: 9pt;
+      page-break-inside: auto;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 4pt 6pt;
+      vertical-align: top;
+      text-align: left;
+    }
+    th { background: #eef3f7; }
+    tr { page-break-inside: avoid; }
+    pre, code {
+      font-family: "IBM Plex Mono", Menlo, Consolas, monospace;
+      font-size: 8.5pt;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8pt;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      page-break-inside: avoid;
+    }
+    code {
+      background: var(--code-bg);
+      padding: 1pt 3pt;
+      border-radius: 3px;
+    }
+    pre code { background: transparent; padding: 0; }
+    blockquote {
+      border-left: 3px solid var(--accent);
+      margin: 8pt 0;
+      padding: 4pt 10pt;
+      color: var(--muted);
+      background: #f8fafc;
+    }
+    .doc-section {
+      page-break-before: always;
+    }
+    .doc-section:first-of-type { page-break-before: auto; }
+    .source-path {
+      font-size: 8pt;
+      color: #888;
+      margin: 0 0 8pt;
+      border-bottom: 1px dashed #ccc;
+      padding-bottom: 4pt;
+    }
+    .mermaid-wrap {
+      margin: 12pt 0;
+      padding: 10pt;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      page-break-inside: avoid;
+      text-align: center;
+    }
+    .mermaid svg { max-width: 100% !important; height: auto !important; }
+    .toc { page-break-after: always; }
+    .toc ul { list-style: none; padding-left: 0; }
+    .toc li { margin: 4pt 0; font-size: 10pt; }
+    .toc .cat { font-weight: 700; margin-top: 10pt; color: var(--accent); }
+    hr { border: none; border-top: 1px solid var(--border); margin: 16pt 0; }
+  </style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>04 — API Documentation</h1>
+  <p class="subtitle">Complete documentation suite (Markdown → PDF with Mermaid diagrams)</p>
+  <p class="meta">Generated: 2026-09-22</p>
+  <p class="meta">Source: repository <code>docs/</code> directory</p>
+  <p class="meta">Diagrams rendered with Mermaid 11</p>
+</div>
+<nav class="toc">
+  <h1>Table of Contents</h1>
+  <ul>
+    <li>04-api/01-api-overview.md</li>
+<li>04-api/02-authentication.md</li>
+<li>04-api/03-api-conventions.md</li>
+<li>04-api/04-error-handling.md</li>
+<li>04-api/05-endpoints.md</li>
+  </ul>
+</nav><section class="doc-section" data-source="04-api/01-api-overview.md">
+  <p class="source-path">Source: 04-api/01-api-overview.md</p>
+  <h1>API Overview</h1>
+<h2>Style</h2>
+<p>REST over HTTP/JSON. Multipart for file uploads. SSE for notification streams.</p>
+<h2>Public entrypoints (defaults)</h2>
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Base URL (local)</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>opms-backend</td>
+<td><a href="http://localhost:7001">http://localhost:7001</a></td>
+<td>BFF + order domain; Swagger <code>/api-docs</code></td>
+</tr>
+<tr>
+<td>auth-service</td>
+<td><a href="http://localhost:7003">http://localhost:7003</a></td>
+<td>Identity</td>
+</tr>
+<tr>
+<td>product-service</td>
+<td><a href="http://localhost:7005">http://localhost:7005</a></td>
+<td>Catalog</td>
+</tr>
+<tr>
+<td>party-service</td>
+<td><a href="http://localhost:7006">http://localhost:7006</a></td>
+<td>Parties/zones/rates</td>
+</tr>
+<tr>
+<td>work-planner-backend</td>
+<td><a href="http://localhost:7007">http://localhost:7007</a></td>
+<td><code>/api/work-planner</code></td>
+</tr>
+<tr>
+<td>lead-manager-backend</td>
+<td><a href="http://localhost:7009">http://localhost:7009</a></td>
+<td>Leads/quotations</td>
+</tr>
+<tr>
+<td>message-service</td>
+<td><a href="http://localhost:7011">http://localhost:7011</a></td>
+<td>Messaging</td>
+</tr>
+<tr>
+<td>notification-service</td>
+<td><a href="http://localhost:7012">http://localhost:7012</a></td>
+<td>Notifications/push</td>
+</tr>
+</tbody></table>
+<p>Production hostnames: see nginx <code>*.spspl.com</code> / <code>*.medicaent.in</code>.</p>
+<h2>OpenAPI</h2>
+<ul>
+<li><strong>Live:</strong> opms-backend <code>GET /api-docs</code> generated from <code>opms-backend/src/docs/swagger.js</code> + <code>swaggerExtended.js</code> (OpenAPI 3.1)</li>
+<li><strong>Docs copy:</strong> <a href="openapi.yaml">openapi.yaml</a> — inventory of verified routes across services (may be less detailed than Swagger UI for opms-backend schemas)</li>
+</ul>
+<h2>Health</h2>
+<p>All backends: <code>GET /health</code></p>
+<h2>Related</h2>
+<ul>
+<li><a href="02-authentication.md">Authentication</a></li>
+<li><a href="05-endpoints.md">Endpoints</a></li>
+</ul>
+
+</section>
+<section class="doc-section" data-source="04-api/02-authentication.md">
+  <p class="source-path">Source: 04-api/02-authentication.md</p>
+  <h1>API Authentication</h1>
+<h2>Method</h2>
+<p><strong>Bearer JWT</strong> in <code>Authorization: Authorization: Bearer &lt;token&gt;</code> header.</p>
+<h2>Obtain token</h2>
+<pre><code class="language-http">POST /api/auth/login
+Content-Type: application/json
+
+{ &quot;email&quot;: &quot;user@example.com&quot;, &quot;password&quot;: &quot;********&quot; }
+</code></pre>
+<p>Hit auth-service (<code>:7003</code>) or via opms-backend proxy (<code>:7001/api/auth/login</code>).</p>
+<h2>Session introspection</h2>
+<pre><code class="language-http">GET /api/auth/me
+Authorization: Bearer &lt;token&gt;
+</code></pre>
+<h2>Authorization</h2>
+<table>
+<thead>
+<tr>
+<th>Gate</th>
+<th>Applies to</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>requireAuth</code></td>
+<td>Most domain routes</td>
+</tr>
+<tr>
+<td><code>requireOpmsAccess</code></td>
+<td>OPMS domain on opms-backend</td>
+</tr>
+<tr>
+<td><code>requireLeadManagerAccess</code></td>
+<td>Lead Manager mutating/list routes</td>
+</tr>
+<tr>
+<td><code>requireWorkPlannerAccess</code></td>
+<td>Work Planner routes</td>
+</tr>
+<tr>
+<td>Webhook secrets</td>
+<td>Google Sheet / WhatsApp verify</td>
+</tr>
+</tbody></table>
+<h2>Portal requirement (OPMS)</h2>
+<p>User must include <code>portals[]</code> entry <code>{ portal_code: &quot;opms&quot;, access_roles: [...] }</code>.</p>
+<h2>Related</h2>
+<ul>
+<li><a href="../02-architecture/07-authentication-authorization.md">Architecture Auth</a></li>
+</ul>
+
+</section>
+<section class="doc-section" data-source="04-api/03-api-conventions.md">
+  <p class="source-path">Source: 04-api/03-api-conventions.md</p>
+  <h1>API Conventions</h1>
+<h2>Verified patterns</h2>
+<table>
+<thead>
+<tr>
+<th>Pattern</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Resource nouns</td>
+<td><code>/api/orders</code>, <code>/api/parties</code>, …</td>
+</tr>
+<tr>
+<td>Soft-delete</td>
+<td><code>DELETE /:id</code> sets <code>deletedAt</code>; <code>GET /deleted</code>; <code>POST /:id/restore</code></td>
+</tr>
+<tr>
+<td>Patch updates</td>
+<td>Prefer <code>PATCH /:id</code> for partial updates</td>
+</tr>
+<tr>
+<td>Nested actions</td>
+<td><code>POST /:id/submit</code>, <code>/approve</code>, <code>/transition</code></td>
+</tr>
+<tr>
+<td>Multipart</td>
+<td>Attachments/dispatch bill/due sheet documents via multer field names</td>
+</tr>
+<tr>
+<td>Proxies</td>
+<td>Same path on BFF as owning service</td>
+</tr>
+</tbody></table>
+<h2>IDs</h2>
+<p>MongoDB ObjectId strings in path params.</p>
+<h2>Pagination / filters</h2>
+<p>Many list endpoints accept query filters — <strong>exact query schema varies by controller</strong>. Prefer Swagger UI / controller source for each list. Not fully standardized across services.</p>
+<h2>Idempotency</h2>
+<p><strong>Not identified</strong> as a global idempotency-key convention.</p>
+<h2>Versioning</h2>
+<p>No <code>/v1</code> prefix — <strong>Not identified</strong>.</p>
+
+</section>
+<section class="doc-section" data-source="04-api/04-error-handling.md">
+  <p class="source-path">Source: 04-api/04-error-handling.md</p>
+  <h1>API Error Handling</h1>
+<h2>Typical HTTP statuses (observed pattern)</h2>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>200/201</td>
+<td>Success</td>
+</tr>
+<tr>
+<td>400</td>
+<td>Validation / bad request</td>
+</tr>
+<tr>
+<td>401</td>
+<td>Missing/invalid JWT</td>
+</tr>
+<tr>
+<td>403</td>
+<td>Authenticated but portal/role forbidden</td>
+</tr>
+<tr>
+<td>404</td>
+<td>Not found</td>
+</tr>
+<tr>
+<td>409</td>
+<td>Conflict (e.g. unique constraints) — where implemented</td>
+</tr>
+<tr>
+<td>500</td>
+<td>Server error</td>
+</tr>
+</tbody></table>
+<p>Exact error JSON shape varies by service/middleware — <strong>not a single shared error schema across all services</strong>. Inspect controllers for <code>{ message }</code> / <code>{ error }</code> patterns.</p>
+<h2>Workflow transition errors</h2>
+<p>Invalid next status or blocked by flags returns error from workflow layer (message indicates rule failure).</p>
+<h2>Source</h2>
+<p>Express middlewares and module controllers under each service <code>src/</code>.</p>
+
+</section>
+<section class="doc-section" data-source="04-api/05-endpoints.md">
+  <p class="source-path">Source: 04-api/05-endpoints.md</p>
+  <h1>API Endpoints Inventory</h1>
+<p><strong>Rule:</strong> Only endpoints verified from <code>*.routes.js</code> / <code>app.js</code> mounts. Request/response bodies: see Swagger (<code>/api-docs</code>) for opms-backend where defined; otherwise <strong>Requires confirmation</strong> from controller source.</p>
+<p>Authentication column: Public / Bearer / Bearer+Portal / Secret / Internal.</p>
+<hr>
+<h2>auth-service (<code>:7003</code>)</h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Endpoint</th>
+<th>Auth</th>
+<th>Purpose</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>POST</td>
+<td><code>/api/auth/login</code></td>
+<td>Public</td>
+<td>Login</td>
+<td><code>auth.routes.js</code></td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/auth/me</code></td>
+<td>Bearer</td>
+<td>Current user</td>
+<td></td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/auth/change-password</code></td>
+<td>Bearer</td>
+<td>Change password</td>
+<td></td>
+</tr>
+<tr>
+<td>GET/POST</td>
+<td><code>/api/users</code></td>
+<td>Bearer</td>
+<td>List/create users</td>
+<td><code>user.routes.js</code></td>
+</tr>
+<tr>
+<td>GET/PATCH/DELETE</td>
+<td><code>/api/users/:id</code></td>
+<td>Bearer</td>
+<td>User CRUD</td>
+<td></td>
+</tr>
+<tr>
+<td>GET/POST</td>
+<td><code>/api/users/roles</code></td>
+<td>Bearer</td>
+<td>Roles</td>
+<td></td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/users/roles/seed</code></td>
+<td>Bearer</td>
+<td>Seed roles</td>
+<td></td>
+</tr>
+<tr>
+<td>PUT/DELETE</td>
+<td><code>/api/users/roles/:id</code></td>
+<td>Bearer</td>
+<td>Update/delete role</td>
+<td></td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/company-info</code></td>
+<td>Public</td>
+<td>Company info</td>
+<td><code>companyInfo.routes.js</code></td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/company-info/data</code></td>
+<td>Bearer</td>
+<td>Data</td>
+<td></td>
+</tr>
+<tr>
+<td>PUT/PATCH</td>
+<td><code>/api/company-info</code></td>
+<td>Bearer</td>
+<td>Update</td>
+<td></td>
+</tr>
+<tr>
+<td>*</td>
+<td><code>/api/portals</code></td>
+<td>Bearer</td>
+<td>Portal CRUD + seed</td>
+<td><code>portal.routes.js</code></td>
+</tr>
+<tr>
+<td>*</td>
+<td><code>/api/departments</code></td>
+<td>Bearer</td>
+<td>Department CRUD + seed</td>
+<td><code>department.routes.js</code></td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/health</code></td>
+<td>Public</td>
+<td>Health</td>
+<td></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>opms-backend domain (<code>:7001</code>) — local routers</h2>
+<h3>Orders <code>/api/orders</code> — Bearer + OPMS portal (except webhook)</h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>POST</td>
+<td><code>/google-sheet-webhook</code></td>
+<td>Public + webhook secret</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/</code></td>
+<td>List</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/stats</code></td>
+<td>Workflow stats</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/workflow-context</code></td>
+<td>Context</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/</code></td>
+<td>Create</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/deleted</code></td>
+<td>Trash</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/:id</code></td>
+<td>Get</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/:id/history</code></td>
+<td>History</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/:id/fulfillment</code></td>
+<td>Fulfillment</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/:id/approvals</code></td>
+<td>Approvals</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/:id/assignees</code></td>
+<td>Assignees</td>
+</tr>
+<tr>
+<td>PATCH</td>
+<td><code>/:id</code></td>
+<td>Update</td>
+</tr>
+<tr>
+<td>PATCH</td>
+<td><code>/:id/super-sheet</code></td>
+<td>Super sheet patch</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/:id</code></td>
+<td>Soft-delete</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/:id/restore</code></td>
+<td>Restore</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/:id/submit</code></td>
+<td>Submit</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/:id/transition</code></td>
+<td>Transition status</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/:id/close-after-full-delivery</code></td>
+<td>Close helper</td>
+</tr>
+</tbody></table>
+<p>Source: <code>opms-backend/src/modules/orders/order.routes.js</code></p>
+<h3>Order approvals <code>/api/order-approvals</code></h3>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>GET</td>
+<td><code>/</code>, <code>/deleted</code>, <code>/:id</code></td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/</code>, <code>/:id/approve</code>, <code>/:id/reject</code>, <code>/:id/send-to-finance</code>, <code>/:id/send-to-account</code>, <code>/:id/finance-amend</code>, <code>/:id/amend</code>, <code>/:id/resolve-dispatch</code>, <code>/:id/restore</code></td>
+</tr>
+<tr>
+<td>PATCH</td>
+<td><code>/:id</code>, <code>/:id/super-sheet</code></td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/:id</code></td>
+</tr>
+</tbody></table>
+<h3>Finance <code>/api/finance</code></h3>
+<p><code>GET /queue</code>, <code>GET /summary</code></p>
+<h3>Approvals <code>/api/approvals</code></h3>
+<p><code>GET /</code></p>
+<h3>Dispatch <code>/api/dispatch</code></h3>
+<p>List/get/create(with <code>bill_document</code>)/patch/soft-delete/restore/deleted</p>
+<h3>Transport <code>/api/transport</code></h3>
+<p>Soft-delete CRUD pattern</p>
+<h3>Order deliveries <code>/api/order-deliveries</code></h3>
+<p>List/get/patch/soft-delete/restore + <code>POST /log-shipment</code></p>
+<h3>Order returns <code>/api/order-returns</code></h3>
+<p>List/get/create/patch/soft-delete/restore</p>
+<h3>Due sheets <code>/api/order-due-sheets</code></h3>
+<p>CRUD + document upload + current-by-order + restore</p>
+<h3>Unbilled <code>/api/unbilled-orders</code></h3>
+<p>CRUD soft-delete + <code>GET /order/:orderId</code></p>
+<h3>Final statements <code>/api/final-order-statements</code></h3>
+<p><code>GET /</code>, <code>GET /order/:orderId</code></p>
+<h3>Flags <code>/api/flags</code></h3>
+<p><code>GET /</code>, <code>GET /:id</code>, <code>POST /</code>, <code>PATCH /:id</code></p>
+<h3>Dashboard <code>/api/dashboard</code></h3>
+<p><code>GET /admin|/sales|/finance|/dispatch|/account|/super</code></p>
+<h3>Activity <code>/api/activity</code></h3>
+<p><code>GET /</code></p>
+<h3>Attachments <code>/api/attachments</code></h3>
+<p>List/get/create(multipart)/delete/restore/deleted</p>
+<h3>Files <code>/api</code></h3>
+<p><code>GET /files/:fileId/view</code>, <code>GET /files/:fileId/download</code></p>
+<h3>Fleet</h3>
+<p><code>/api/vehicles</code>, <code>/api/drivers</code>, <code>/api/transport-agents</code> — soft-delete CRUD</p>
+<h3>Reminders <code>/api/reminders</code></h3>
+<p>Webhook + CRUD + <code>POST /:id/follow-ups</code></p>
+<h3>Transport planner <code>/api/transport-plans</code></h3>
+<p>list/stats/eligible-orders/CRUD/submit/complete/cancel/add-remove orders/LR/packed/dispatched/delivered actions</p>
+<h3>Terms <code>/api/terms-and-conditions</code></h3>
+<p><strong>No requireAuth on router</strong> — GET/POST/PUT/DELETE including text subresources</p>
+<h3>Proxied (same paths as owning services)</h3>
+<p>auth, products, parties, notifications, messages/emails/…</p>
+<hr>
+<h2>product-service (<code>:7005</code>)</h2>
+<p>Mounts: <code>/api/products</code>, <code>/api/product-groups</code>, <code>/api/product-subgroups</code>, <code>/api/product-brands</code>, <code>/api/product-manufacturers</code>, <code>/api/product-kit-items</code><br>Pattern: auth + list/get/create/patch/soft-delete/bulk; products webhook; kit by-kit routes; meta-options on products.</p>
+<hr>
+<h2>party-service (<code>:7006</code>)</h2>
+<table>
+<thead>
+<tr>
+<th>Mount</th>
+<th>Highlights</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>/api/parties</code></td>
+<td>webhook; CRUD; bulk; restore</td>
+</tr>
+<tr>
+<td><code>/api/zones</code></td>
+<td>CRUD; parties; sales-persons</td>
+</tr>
+<tr>
+<td><code>/api/party-products</code></td>
+<td>CRUD; rates approve</td>
+</tr>
+<tr>
+<td><code>/api/party-order-products-rate</code></td>
+<td>check/map helpers</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>notification-service (<code>:7012</code>)</h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>Path</th>
+<th>Auth</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>POST</td>
+<td><code>/api/notifications/internal/order-transition</code></td>
+<td>Internal (no requireAuth)</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/notifications/internal/create</code></td>
+<td>Internal</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/notifications</code></td>
+<td>Bearer</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/notifications/stream</code></td>
+<td>Bearer SSE</td>
+</tr>
+<tr>
+<td>PATCH</td>
+<td><code>/api/notifications/:id/read</code></td>
+<td>Bearer</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/push/vapid-public-key</code></td>
+<td>Public</td>
+</tr>
+<tr>
+<td>POST/DELETE</td>
+<td><code>/api/subscribe</code></td>
+<td>Bearer</td>
+</tr>
+<tr>
+<td>POST</td>
+<td><code>/api/push/notify</code></td>
+<td>Bearer</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>message-service (<code>:7011</code>)</h2>
+<table>
+<thead>
+<tr>
+<th>Mount</th>
+<th>Endpoints</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>/api/messages</code></td>
+<td>GET/POST webhook (public); GET/POST send; GET :id (auth)</td>
+</tr>
+<tr>
+<td><code>/api/emails</code></td>
+<td>POST/, GET/, GET/:id</td>
+</tr>
+<tr>
+<td><code>/api/auto-emails</code></td>
+<td>POST /trigger</td>
+</tr>
+<tr>
+<td><code>/api/communication</code></td>
+<td>GET /types; POST /send; /order-received; /queue/:type</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>lead-manager-backend (<code>:7009</code>)</h2>
+<table>
+<thead>
+<tr>
+<th>Mount</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>/api/leads</code></td>
+<td>Full CRM actions; list may allow work_planner</td>
+</tr>
+<tr>
+<td><code>/api/lead-masters</code></td>
+<td>sources &amp; lost reasons</td>
+</tr>
+<tr>
+<td><code>/api/quotations</code></td>
+<td>admin/manager gates</td>
+</tr>
+<tr>
+<td><code>/api/terms-and-conditions</code></td>
+<td>lead_manager access</td>
+</tr>
+<tr>
+<td><code>/api/attachments</code></td>
+<td><strong>No requireAuth on router</strong></td>
+</tr>
+<tr>
+<td>Proxies</td>
+<td>notifications, emails, messages, …</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>work-planner-backend (<code>:7007</code>)</h2>
+<p>Base: <code>/api/work-planner</code></p>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>GET /attachments/:attachmentId/view</code></td>
+<td>Before auth (public view redirect)</td>
+</tr>
+<tr>
+<td>plans/visits/works/expenses</td>
+<td>CRUD + lifecycle actions</td>
+</tr>
+<tr>
+<td>user-settings</td>
+<td>Per-user settings</td>
+</tr>
+<tr>
+<td>uploads/stats</td>
+<td>Supporting</td>
+</tr>
+</tbody></table>
+<p>Auth: Bearer + <code>requireWorkPlannerAccess</code></p>
+<hr>
+<h2>Example: login</h2>
+<h3>Request</h3>
+<pre><code class="language-http">POST /api/auth/login HTTP/1.1
+Host: localhost:7003
+Content-Type: application/json
+
+{
+  &quot;email&quot;: &quot;admin@example.com&quot;,
+  &quot;password&quot;: &quot;********&quot;
+}
+</code></pre>
+<h3>Response (shape <strong>Inferred</strong> — confirm against controller)</h3>
+<pre><code class="language-json">{
+  &quot;token&quot;: &quot;&lt;jwt&gt;&quot;,
+  &quot;user&quot;: {
+    &quot;email&quot;: &quot;admin@example.com&quot;,
+    &quot;portals&quot;: [{ &quot;portal_code&quot;: &quot;opms&quot;, &quot;access_roles&quot;: [&quot;admin&quot;] }]
+  }
+}
+</code></pre>
+<h2>Example: transition order</h2>
+<pre><code class="language-http">POST /api/orders/{id}/transition HTTP/1.1
+Host: localhost:7001
+Authorization: Bearer &lt;token&gt;
+Content-Type: application/json
+
+{
+  &quot;to_status&quot;: &quot;finance_review&quot;,
+  &quot;remarks&quot;: &quot;optional&quot;
+}
+</code></pre>
+<p>Exact body field names: confirm in <code>order.controller</code> / service — do not assume.</p>
+<h2>Related</h2>
+<ul>
+<li><a href="openapi.yaml">OpenAPI YAML</a></li>
+<li>Live Swagger: <code>/api-docs</code> on opms-backend</li>
+</ul>
+
+</section>
+<script>
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'neutral',
+    securityLevel: 'loose',
+    flowchart: { useMaxWidth: true, htmlLabels: true },
+    er: { useMaxWidth: true },
+    sequence: { useMaxWidth: true },
+  });
+  (async () => {
+    try {
+      await mermaid.run({ querySelector: '.mermaid' });
+      document.documentElement.setAttribute('data-mermaid-ready', 'true');
+    } catch (e) {
+      console.error('mermaid error', e);
+      document.documentElement.setAttribute('data-mermaid-ready', 'error');
+      document.documentElement.setAttribute('data-mermaid-error', String(e && e.message || e));
+    }
+  })();
+</script>
+</body>
+</html>

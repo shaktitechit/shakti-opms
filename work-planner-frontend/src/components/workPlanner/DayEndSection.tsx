@@ -18,7 +18,8 @@ import {
   Users,
 } from "lucide-react";
 import type { WorkPlanRecord } from "@/types/workPlanner";
-import { WORK_PLANNER_SERVICE_URL } from "@/lib/env";
+import { WORK_PLANNER_SERVICE_URL, withAccessToken } from "@/lib/env";
+import { readSessionFromStorage } from "@/utils/authStorage";
 import { workPlanWindowHint } from "./workPlanUtils";
 
 interface DayEndSectionProps {
@@ -76,6 +77,7 @@ export function DayEndSection({
   onOpenViewModal,
 }: DayEndSectionProps) {
   const [bodyExpanded, setBodyExpanded] = useState(true);
+  const sessionToken = readSessionFromStorage()?.token;
 
   const visits = plan.visits || [];
   const works = plan.works || [];
@@ -195,7 +197,10 @@ export function DayEndSection({
                     key={att._id}
                     href={
                       att._id
-                        ? `${WORK_PLANNER_SERVICE_URL}/api/work-planner/attachments/${att._id}/view`
+                        ? withAccessToken(
+                            `${WORK_PLANNER_SERVICE_URL}/api/work-planner/attachments/${att._id}/view`,
+                            sessionToken
+                          )
                         : att.url
                     }
                     target="_blank"

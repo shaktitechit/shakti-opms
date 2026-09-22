@@ -13,7 +13,7 @@ export const OPMS_ROLES_COOKIE_NAME = "medica_opms_roles";
 /** @deprecated Cleared on persist; replaced by {@link OPMS_ROLES_COOKIE_NAME}. */
 export const DEPT_HINT_COOKIE_NAME = "medica_department_hint";
 
-const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
+const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 8;
 
 function setCookie(name: string, value: string, maxAge: number): void {
   document.cookie = `${name}=${encodeURIComponent(

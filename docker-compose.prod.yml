@@ -22,11 +22,12 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     ports:
-      - "${REDIS_PORT:-7014}:6379"
+      - "127.0.0.1:${REDIS_PORT:-7014}:6379"
+    command: [ "redis-server", "--requirepass", "${REDIS_PASSWORD:-changeme}" ]
     volumes:
       - redis_data:/data
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -78,13 +79,13 @@ services:
       context: ./message-service
       dockerfile: Dockerfile
     restart: unless-stopped
-    ports:
-      - "${MESSAGE_SERVICE_PORT:-7011}:${MESSAGE_SERVICE_PORT:-7011}"
+    expose:
+      - "${MESSAGE_SERVICE_PORT:-7011}"
     env_file: *env_file
     environment:
       NODE_ENV: production
       PORT: ${MESSAGE_SERVICE_PORT:-7011}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme}@redis:6379
     healthcheck:
       test: [ "CMD-SHELL", "wget -qO- http://localhost:${MESSAGE_SERVICE_PORT:-7011}/health || exit 1" ]
       interval: 30s
@@ -103,7 +104,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: ${OPMS_BACKEND_PORT:-7001}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-changeme}@redis:6379
       AUTH_SERVICE_URL: ${AUTH_SERVICE_URL:-http://auth-service:7003}
       PRODUCT_SERVICE_URL: ${PRODUCT_SERVICE_URL:-http://product-service:7005}
       PARTY_SERVICE_URL: ${PARTY_SERVICE_URL:-http://party-service:7006}

@@ -14,7 +14,8 @@ import {
   File,
 } from "lucide-react";
 import type { WorkPlanDayEnd } from "@/types/workPlanner";
-import { WORK_PLANNER_SERVICE_URL } from "@/lib/env";
+import { WORK_PLANNER_SERVICE_URL, withAccessToken } from "@/lib/env";
+import { readSessionFromStorage } from "@/utils/authStorage";
 
 interface DayEndViewModalProps {
   dayEnd?: WorkPlanDayEnd;
@@ -59,6 +60,8 @@ function getFileIcon(mimeType?: string, fileName?: string) {
 
 export function DayEndViewModal({ dayEnd, isOpen, onClose }: DayEndViewModalProps) {
   if (!isOpen || !dayEnd) return null;
+
+  const sessionToken = readSessionFromStorage()?.token;
 
   const formattedDate = dayEnd.completed_at
     ? new Date(dayEnd.completed_at).toLocaleString("en-GB", {
@@ -134,7 +137,10 @@ export function DayEndViewModal({ dayEnd, isOpen, onClose }: DayEndViewModalProp
                     key={att._id}
                     href={
                       att._id
-                        ? `${WORK_PLANNER_SERVICE_URL}/api/work-planner/attachments/${att._id}/view`
+                        ? withAccessToken(
+                            `${WORK_PLANNER_SERVICE_URL}/api/work-planner/attachments/${att._id}/view`,
+                            sessionToken
+                          )
                         : att.url
                     }
                     target="_blank"

@@ -40,4 +40,39 @@ async function changePassword(req, res, next) {
   }
 }
 
-module.exports = { login, me, changePassword };
+async function createHandoff(req, res, next) {
+  try {
+    const result = await authService.createHandoff(req.user._id);
+    res.json({
+      success: true,
+      code: result.code,
+      expires_in: result.expires_in,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function exchangeHandoff(req, res, next) {
+  try {
+    const code = req.body?.code || req.body?.handoff;
+    const result = await authService.exchangeHandoff(code);
+    res.json({
+      success: true,
+      token: result.token,
+      user: result.user,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = {
+  login,
+  me,
+  changePassword,
+  createHandoff,
+  exchangeHandoff,
+};

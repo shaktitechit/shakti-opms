@@ -1,0 +1,1466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>01 — Product Documentation</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    @page { size: A4; margin: 16mm 14mm; }
+    :root {
+      --text: #1a1a1a;
+      --muted: #555;
+      --border: #d0d7de;
+      --code-bg: #f6f8fa;
+      --accent: #0b3d5c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.45;
+      color: var(--text);
+      margin: 0;
+      padding: 0;
+    }
+    .cover {
+      page-break-after: always;
+      padding: 40mm 10mm 20mm;
+      text-align: left;
+    }
+    .cover h1 {
+      font-size: 28pt;
+      color: var(--accent);
+      margin: 0 0 8pt;
+    }
+    .cover .subtitle { font-size: 14pt; color: var(--muted); margin-bottom: 24pt; }
+    .cover .meta { font-size: 10pt; color: var(--muted); }
+    h1, h2, h3, h4 {
+      color: var(--accent);
+      page-break-after: avoid;
+    }
+    h1 { font-size: 18pt; border-bottom: 2px solid var(--accent); padding-bottom: 4pt; margin-top: 22pt; }
+    h2 { font-size: 14pt; margin-top: 16pt; }
+    h3 { font-size: 12pt; }
+    h4 { font-size: 11pt; }
+    p, li { orphans: 3; widows: 3; }
+    a { color: var(--accent); text-decoration: none; }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 10pt 0;
+      font-size: 9pt;
+      page-break-inside: auto;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 4pt 6pt;
+      vertical-align: top;
+      text-align: left;
+    }
+    th { background: #eef3f7; }
+    tr { page-break-inside: avoid; }
+    pre, code {
+      font-family: "IBM Plex Mono", Menlo, Consolas, monospace;
+      font-size: 8.5pt;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8pt;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      page-break-inside: avoid;
+    }
+    code {
+      background: var(--code-bg);
+      padding: 1pt 3pt;
+      border-radius: 3px;
+    }
+    pre code { background: transparent; padding: 0; }
+    blockquote {
+      border-left: 3px solid var(--accent);
+      margin: 8pt 0;
+      padding: 4pt 10pt;
+      color: var(--muted);
+      background: #f8fafc;
+    }
+    .doc-section {
+      page-break-before: always;
+    }
+    .doc-section:first-of-type { page-break-before: auto; }
+    .source-path {
+      font-size: 8pt;
+      color: #888;
+      margin: 0 0 8pt;
+      border-bottom: 1px dashed #ccc;
+      padding-bottom: 4pt;
+    }
+    .mermaid-wrap {
+      margin: 12pt 0;
+      padding: 10pt;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      page-break-inside: avoid;
+      text-align: center;
+    }
+    .mermaid svg { max-width: 100% !important; height: auto !important; }
+    .toc { page-break-after: always; }
+    .toc ul { list-style: none; padding-left: 0; }
+    .toc li { margin: 4pt 0; font-size: 10pt; }
+    .toc .cat { font-weight: 700; margin-top: 10pt; color: var(--accent); }
+    hr { border: none; border-top: 1px solid var(--border); margin: 16pt 0; }
+  </style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>01 — Product Documentation</h1>
+  <p class="subtitle">Complete documentation suite (Markdown → PDF with Mermaid diagrams)</p>
+  <p class="meta">Generated: 2026-09-22</p>
+  <p class="meta">Source: repository <code>docs/</code> directory</p>
+  <p class="meta">Diagrams rendered with Mermaid 11</p>
+</div>
+<nav class="toc">
+  <h1>Table of Contents</h1>
+  <ul>
+    <li>01-product/01-product-overview.md</li>
+<li>01-product/02-prd.md</li>
+<li>01-product/03-scope.md</li>
+<li>01-product/04-personas-and-roles.md</li>
+<li>01-product/05-features.md</li>
+<li>01-product/06-business-requirements.md</li>
+<li>01-product/07-non-functional-requirements.md</li>
+<li>01-product/08-business-rules.md</li>
+<li>01-product/09-integrations.md</li>
+<li>01-product/10-product-glossary.md</li>
+  </ul>
+</nav><section class="doc-section" data-source="01-product/01-product-overview.md">
+  <p class="source-path">Source: 01-product/01-product-overview.md</p>
+  <h1>Product Overview</h1>
+<p><strong>Status labels:</strong> Content below is <strong>Verified</strong> from the monorepo unless marked otherwise.</p>
+<h2>Product name</h2>
+<p><strong>OPMS</strong> — Order / Operations Portal Management System (packages also use branding names such as Medica / Shakti in env examples and package names).</p>
+<p><strong>Requires confirmation:</strong> Official marketed product name and legal entity branding for end customers.</p>
+<p>Sources:</p>
+<ul>
+<li><code>DOCKER.md</code></li>
+<li><code>opms-backend/package.json</code> (<code>opms-backend</code>)</li>
+<li><code>auth-service/package.json</code> (<code>medica-auth-service</code>)</li>
+<li><code>.env.docker.example</code> (<code>COMPANY_NAME</code> / <code>NEXT_PUBLIC_COMPANY_*</code>)</li>
+</ul>
+<h2>Purpose</h2>
+<p>OPMS is a multi-portal business operations platform that enables:</p>
+<ol>
+<li><strong>Order lifecycle management</strong> — create, approve, finance/account review, dispatch, transport, delivery, returns, due sheets, flags, reminders</li>
+<li><strong>Master data</strong> — parties (customers/suppliers), products (including kits), zones, fleet (vehicles, drivers, transport agents)</li>
+<li><strong>CRM</strong> — Lead Manager (leads, follow-ups, quotations, terms)</li>
+<li><strong>Field operations</strong> — Work Planner (daily plans, visits, works, expenses)</li>
+<li><strong>Identity &amp; access</strong> — Auth service + User Manager (users, departments, roles, portals, company info)</li>
+<li><strong>Communications</strong> — in-app notifications, web push, email, WhatsApp messaging</li>
+</ol>
+<h2>Problem being solved</h2>
+<p><strong>Inferred from implementation:</strong> Organizations need a single identity layer and coordinated portals for sales-to-dispatch order operations, lead-to-quote CRM, and field sales planning — instead of disconnected tools.</p>
+<p><strong>Requires confirmation:</strong> Exact business problem statement and ROI goals from product/business team.</p>
+<h2>Target users</h2>
+<table>
+<thead>
+<tr>
+<th>Portal / App</th>
+<th>Typical users (from code)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>App Frontend (SSO hub)</td>
+<td>Any authenticated user with department + roles</td>
+</tr>
+<tr>
+<td>OPMS</td>
+<td><code>super_admin</code>, <code>admin</code>, <code>sales</code>, <code>finance</code>, <code>account</code>, <code>dispatch</code></td>
+</tr>
+<tr>
+<td>User Manager</td>
+<td>Super-admin / admin style access (<code>hasSuperAdminAccess</code>)</td>
+</tr>
+<tr>
+<td>Lead Manager</td>
+<td><code>admin</code>, <code>manager</code>, <code>executive</code></td>
+</tr>
+<tr>
+<td>Work Planner</td>
+<td><code>admin</code>, <code>manager</code>, <code>executive</code> (+ global admin bypass)</td>
+</tr>
+</tbody></table>
+<p>Sources:</p>
+<ul>
+<li><code>opms-backend/src/middlewares/opmsAuth.middleware.js</code></li>
+<li><code>lead-manager-backend/src/middlewares/leadManagerAuth.middleware.js</code></li>
+<li><code>work-planner-backend</code> work planner auth middleware</li>
+<li>Frontends&#39; <code>authStorage</code> / middleware</li>
+</ul>
+<h2>Main use cases</h2>
+<ol>
+<li>Log in via App Frontend and launch assigned portals (SSO with <code>?token=</code>).</li>
+<li>Create and progress sales orders through departmental approvals to dispatch/delivery.</li>
+<li>Maintain party and product masters (and party-product rates).</li>
+<li>Plan transport and manage fleet/agents.</li>
+<li>Manage leads, follow-ups, and quotations; convert leads.</li>
+<li>Plan field work, check in/out visits, submit expenses.</li>
+<li>Administer users, portal assignments, departments/roles, and company branding.</li>
+<li>Receive notifications (SSE/in-app/web push) and send transactional messages (email/WhatsApp).</li>
+</ol>
+<h2>Major capabilities</h2>
+<ul>
+<li>JWT authentication with shared <code>JWT_SECRET</code></li>
+<li>Portal-scoped RBAC (<code>user.portals[].portal_code</code> + <code>access_roles</code>)</li>
+<li>Soft-delete / restore on many domain entities</li>
+<li>BullMQ background jobs (orders, notifications, messages) on Redis</li>
+<li>External file management API for uploads</li>
+<li>Google Sheets webhook ingest (orders, parties, products, reminders)</li>
+<li>Dual-tenant host layout (spspl / medica nginx configs)</li>
+</ul>
+<h2>Product boundaries</h2>
+<h3>In scope (verified in repo)</h3>
+<ul>
+<li>Microservices and micro-frontends listed in <code>docker-compose.yml</code></li>
+<li>Order workflow as implemented in <code>workflow.transitions.js</code></li>
+<li>Lead Manager and Work Planner modules</li>
+<li>Auth, company info, portals, departments</li>
+<li>Messaging and notifications services</li>
+</ul>
+<h3>Out of scope / not identified in codebase</h3>
+<ul>
+<li>Payment gateway / online payment capture — <strong>Not identified</strong> as implemented (payment_status fields exist; collection/paid lifecycle in essentials docs is <strong>stale</strong>)</li>
+<li>Native mobile apps — <strong>Not identified</strong></li>
+<li>Embedded analytics BI warehouse — <strong>Not identified</strong> (dashboards are API summaries only)</li>
+<li>In-compose MongoDB or MinIO — <strong>external</strong> to Compose</li>
+<li>Automated CI/CD pipelines — <strong>Not identified</strong> (no <code>.github/workflows</code>)</li>
+</ul>
+<h2>Related docs</h2>
+<ul>
+<li><a href="02-prd.md">PRD</a></li>
+<li><a href="03-scope.md">Scope</a></li>
+<li><a href="05-features.md">Features</a></li>
+<li><a href="../02-architecture/01-system-architecture.md">System Architecture</a></li>
+</ul>
+
+</section>
+<section class="doc-section" data-source="01-product/02-prd.md">
+  <p class="source-path">Source: 01-product/02-prd.md</p>
+  <h1>Product Requirements Document (PRD)</h1>
+<p><strong>Source of truth:</strong> Implementation in this repository. Numerical SLAs are <strong>not</strong> defined in code unless noted.</p>
+<h2>Product Vision</h2>
+<p>Provide a portalized operations suite where a company can authenticate once, assign users to OPMS / Lead Manager / Work Planner / User Manager portals, and execute order-to-delivery, lead-to-quotation, and field-work processes with shared masters and communications.</p>
+<p><strong>Requires confirmation:</strong> Formal vision statement from product leadership.</p>
+<h2>Problem Statement</h2>
+<p>Sales, finance, account, and dispatch teams need coordinated order processing with auditability; sales leadership needs lead pipelines and quotations; field teams need daily work plans and expense capture — under one identity and company branding model.</p>
+<h2>Objectives</h2>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Objective</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>O-1</td>
+<td>Support multi-role order workflow with transitions and history</td>
+<td><code>workflow.transitions.js</code>, OrderWorkflow</td>
+</tr>
+<tr>
+<td>O-2</td>
+<td>Centralize identity and portal access</td>
+<td>auth-service User/Portal</td>
+</tr>
+<tr>
+<td>O-3</td>
+<td>Provide CRM for leads and quotations</td>
+<td>lead-manager-*</td>
+</tr>
+<tr>
+<td>O-4</td>
+<td>Support field work planning and expenses</td>
+<td>work-planner-*</td>
+</tr>
+<tr>
+<td>O-5</td>
+<td>Notify users and send communications</td>
+<td>notification-service, message-service</td>
+</tr>
+<tr>
+<td>O-6</td>
+<td>Deploy as Docker Compose + nginx</td>
+<td><code>docker-compose.yml</code>, <code>nginx/</code></td>
+</tr>
+</tbody></table>
+<h2>Target Users</h2>
+<p>See <a href="04-personas-and-roles.md">Personas and Roles</a>.</p>
+<h2>User Personas</h2>
+<h3>P1 — Sales Executive (OPMS + optional Lead/Work Planner)</h3>
+<ul>
+<li>Creates orders, views own pipeline, may manage leads/plans depending on portal assignment.</li>
+</ul>
+<h3>P2 — Finance / Account Reviewer</h3>
+<ul>
+<li>Reviews approvals, due sheets, rates, finance/account queues.</li>
+</ul>
+<h3>P3 — Dispatch / Logistics</h3>
+<ul>
+<li>Creates dispatches, manages transport planner, fleet, deliveries.</li>
+</ul>
+<h3>P4 — Portal Administrator (User Manager)</h3>
+<ul>
+<li>Manages users, portals, departments/roles, company info.</li>
+</ul>
+<h3>P5 — Lead Manager / Manager</h3>
+<ul>
+<li>Oversees team leads, quotations, terms, reports.</li>
+</ul>
+<h3>P6 — Work Planner Manager</h3>
+<ul>
+<li>Assigns team settings, approves plans/expenses.</li>
+</ul>
+<h2>User Stories</h2>
+<pre><code class="language-text">As a sales user,
+I want to create and submit an order,
+so that finance/account/dispatch can process it.
+
+As a finance user,
+I want to approve or reject order approvals,
+so that commercial risk is controlled before dispatch.
+
+As a dispatch user,
+I want to create dispatches and transport plans,
+so that goods can be shipped and tracked.
+
+As any authenticated user,
+I want to log into App Frontend and open my assigned portals with SSO,
+so that I do not re-authenticate for each app.
+
+As a super admin,
+I want to assign portal access_roles to users,
+so that each person only sees authorized workspaces.
+
+As a lead executive,
+I want to create leads, schedule follow-ups, and convert won leads,
+so that the sales pipeline is managed in one place.
+
+As a work planner executive,
+I want to create a daily plan with visits and submit expenses,
+so that field activity is recorded and approved.
+</code></pre>
+<h2>Functional Requirements</h2>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Requirement</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>FR-001</td>
+<td>Users can authenticate with email/password and receive JWT</td>
+<td><code>auth-service</code> <code>POST /api/auth/login</code></td>
+</tr>
+<tr>
+<td>FR-002</td>
+<td>JWT can be exchanged across frontends via <code>?token=</code> SSO</td>
+<td>app-frontend / portal AuthTokenSsoBootstrap</td>
+</tr>
+<tr>
+<td>FR-003</td>
+<td>OPMS domain APIs require portal_code <code>opms</code> + access_roles</td>
+<td><code>opmsAuth.middleware.js</code></td>
+</tr>
+<tr>
+<td>FR-004</td>
+<td>Orders support create, submit, transition, soft-delete, restore</td>
+<td><code>order.routes.js</code></td>
+</tr>
+<tr>
+<td>FR-005</td>
+<td>Order status transitions follow allowed graph</td>
+<td><code>workflow.transitions.js</code></td>
+</tr>
+<tr>
+<td>FR-006</td>
+<td>Order approvals support approve/reject/send-to-finance/account/amend</td>
+<td><code>orderApproval.routes.js</code></td>
+</tr>
+<tr>
+<td>FR-007</td>
+<td>Dispatches, deliveries, returns, due sheets, unbilled orders are manageable</td>
+<td>respective routes</td>
+</tr>
+<tr>
+<td>FR-008</td>
+<td>Transport planner supports plan lifecycle and order line actions</td>
+<td><code>transportPlanner.routes.js</code></td>
+</tr>
+<tr>
+<td>FR-009</td>
+<td>Parties and products CRUD (+ soft-delete) via party/product services</td>
+<td>party-service, product-service</td>
+</tr>
+<tr>
+<td>FR-010</td>
+<td>Lead CRUD, follow-ups, convert, quotations, terms</td>
+<td>lead-manager-backend</td>
+</tr>
+<tr>
+<td>FR-011</td>
+<td>Work plans, visits, works, expenses with approve/reject</td>
+<td>work-planner-backend</td>
+</tr>
+<tr>
+<td>FR-012</td>
+<td>Notifications list/stream/read + web push subscribe</td>
+<td>notification-service</td>
+</tr>
+<tr>
+<td>FR-013</td>
+<td>Email/WhatsApp send and communication triggers</td>
+<td>message-service</td>
+</tr>
+<tr>
+<td>FR-014</td>
+<td>Attachments upload via file management API</td>
+<td>attachments modules</td>
+</tr>
+<tr>
+<td>FR-015</td>
+<td>Dashboards per OPMS role</td>
+<td><code>dashboard.routes.js</code></td>
+</tr>
+<tr>
+<td>FR-016</td>
+<td>Google Sheet webhooks for orders/parties/products/reminders</td>
+<td>webhook routes + secret</td>
+</tr>
+<tr>
+<td>FR-017</td>
+<td>Company branding via CompanyInfo</td>
+<td>auth-service company-info</td>
+</tr>
+<tr>
+<td>FR-018</td>
+<td>Soft-delete with trash list and restore on many entities</td>
+<td>softDelete plugin</td>
+</tr>
+</tbody></table>
+<h2>Non-Functional Requirements</h2>
+<p>See <a href="07-non-functional-requirements.md">Non-Functional Requirements</a>. No latency/availability SLAs found in repository.</p>
+<h2>Acceptance Criteria (implementation-derived)</h2>
+<table>
+<thead>
+<tr>
+<th>Story area</th>
+<th>Acceptance criteria (verified behavior)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Login</td>
+<td>Valid credentials return JWT; <code>/api/auth/me</code> returns user with portals</td>
+</tr>
+<tr>
+<td>OPMS access</td>
+<td>User without <code>opms</code> portal receives 403 on domain routes</td>
+</tr>
+<tr>
+<td>Order transition</td>
+<td>Invalid next status rejected per transitions graph</td>
+</tr>
+<tr>
+<td>Soft-delete</td>
+<td>Soft-deleted records excluded from default lists; restore returns them</td>
+</tr>
+<tr>
+<td>SSO</td>
+<td>Opening portal URL with <code>?token=</code> establishes session and strips token</td>
+</tr>
+<tr>
+<td>Health</td>
+<td><code>GET /health</code> on backends returns success when process is up</td>
+</tr>
+</tbody></table>
+<p><strong>Requires confirmation:</strong> Formal UAT scripts and business acceptance sign-off.</p>
+
+</section>
+<section class="doc-section" data-source="01-product/03-scope.md">
+  <p class="source-path">Source: 01-product/03-scope.md</p>
+  <h1>Scope</h1>
+<h2>In scope (verified)</h2>
+<h3>Applications</h3>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Components</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Frontends</td>
+<td>app-frontend, opms-frontend, user-manager-frontend, lead-manager-frontend, work-planner-frontend</td>
+</tr>
+<tr>
+<td>Backends</td>
+<td>opms-backend, auth-service, product-service, party-service, lead-manager-backend, work-planner-backend, message-service, notification-service</td>
+</tr>
+<tr>
+<td>Infra in Compose</td>
+<td>Redis</td>
+</tr>
+<tr>
+<td>Edge</td>
+<td>Host nginx configs under <code>nginx/</code> for spspl and medica hostnames</td>
+</tr>
+<tr>
+<td>Data store</td>
+<td>MongoDB (external URI)</td>
+</tr>
+<tr>
+<td>Files</td>
+<td>External File Management API (<code>FILE_MANAGEMENT_API_*</code>)</td>
+</tr>
+</tbody></table>
+<h3>Functional domains</h3>
+<ul>
+<li>Authentication, users, departments, roles, portals, company info</li>
+<li>Orders and departmental workflow</li>
+<li>Approvals, finance queues, account steps</li>
+<li>Dispatch, transport shipments, deliveries, returns</li>
+<li>Due sheets, unbilled orders, final order statements</li>
+<li>Flags, reminders, attachments, activity logs</li>
+<li>Fleet: vehicles, drivers, transport agents</li>
+<li>Transport planner</li>
+<li>Party/zone/product catalogs and party-product rates</li>
+<li>Leads, follow-ups, quotations, lead masters, terms</li>
+<li>Work plans, visits, works, expenses, user work-planner settings</li>
+<li>Notifications, web push, email, WhatsApp, auto-emails, communication helpers</li>
+<li>Google Sheets webhook ingestion (selected modules)</li>
+</ul>
+<h2>Out of scope / not implemented in repo</h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Compose-hosted MongoDB</td>
+<td>Not in compose — external</td>
+</tr>
+<tr>
+<td>Compose-hosted MinIO</td>
+<td>Leftover <code>minio-data/</code> only; not a service</td>
+</tr>
+<tr>
+<td>RabbitMQ</td>
+<td>Not present — BullMQ/Redis used</td>
+</tr>
+<tr>
+<td>CI/CD pipelines</td>
+<td>Not identified</td>
+</tr>
+<tr>
+<td>Mobile native apps</td>
+<td>Not identified</td>
+</tr>
+<tr>
+<td>Full payment collection / invoice_generated lifecycle in live transitions</td>
+<td>Essentials docs stale; not in <code>workflow.transitions.js</code></td>
+</tr>
+<tr>
+<td>Automated Mongo backup jobs in repo</td>
+<td>Not identified</td>
+</tr>
+<tr>
+<td>Centralized APM/metrics stack</td>
+<td>Not identified</td>
+</tr>
+</tbody></table>
+<h2>Partial / dual-tenant</h2>
+<ul>
+<li><code>docker-compose.prod.yml</code> defines a <strong>subset</strong> of services — incomplete standalone full deploy (<strong>Verified</strong>).</li>
+<li>Medica tenant uses alternate ports/nginx (5001–5013 / <code>*.medicaent.in</code>) via <code>.env.docker.medica</code> (<strong>Verified</strong> configs exist; dual-stack runbook <strong>Requires confirmation</strong>).</li>
+</ul>
+<h2>Related</h2>
+<ul>
+<li><a href="05-features.md">Features</a></li>
+<li><a href="09-integrations.md">Integrations</a></li>
+</ul>
+
+</section>
+<section class="doc-section" data-source="01-product/04-personas-and-roles.md">
+  <p class="source-path">Source: 01-product/04-personas-and-roles.md</p>
+  <h1>Personas and Roles</h1>
+<h2>Identity model (verified)</h2>
+<p>Users are stored in <strong>auth-service</strong> with:</p>
+<ul>
+<li><code>department</code> (string; seeded values include <code>super_admin</code>, <code>admin</code>, <code>sales</code>, <code>finance</code>, <code>account</code>, <code>dispatch</code>)</li>
+<li><code>roles[]</code> → Role documents (<code>sales_executive</code>, <code>finance_manager</code>, etc.)</li>
+<li><code>portals[{ portal, portal_code, access_roles[] }]</code></li>
+</ul>
+<p>Sources: <code>auth-service/src/models/User.js</code>, Role/Department/Portal models, seed services.</p>
+<h2>Portals</h2>
+<table>
+<thead>
+<tr>
+<th>portal_code</th>
+<th>Seeded in DEFAULT_PORTALS?</th>
+<th>access_roles (observed)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>opms</code></td>
+<td>Yes</td>
+<td><code>super_admin</code>, <code>admin</code>, <code>sales</code>, <code>finance</code>, <code>account</code>, <code>dispatch</code></td>
+</tr>
+<tr>
+<td><code>work_planner</code></td>
+<td><strong>No</strong> (used in code)</td>
+<td><code>admin</code>, <code>manager</code>, <code>executive</code> (+ super_admin/sales observed in constants)</td>
+</tr>
+<tr>
+<td><code>lead_manager</code></td>
+<td><strong>No</strong> (used in code)</td>
+<td><code>admin</code>, <code>manager</code>, <code>executive</code></td>
+</tr>
+<tr>
+<td><code>user_manager</code></td>
+<td><strong>No</strong> (frontend gate)</td>
+<td><strong>Unknown</strong> exact role list — frontend checks admin/super_admin style access</td>
+</tr>
+</tbody></table>
+<p><strong>Requires confirmation:</strong> Official portal catalog and which portals must be seeded for production onboarding.</p>
+<h2>OPMS access roles → UI workspaces</h2>
+<table>
+<thead>
+<tr>
+<th>access_role</th>
+<th>Frontend portal path</th>
+<th>Typical focus (inferred from nav)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>super_admin</code></td>
+<td><code>/super_admin</code></td>
+<td>Full masters + User Manager embed</td>
+</tr>
+<tr>
+<td><code>admin</code></td>
+<td><code>/admin</code></td>
+<td>Broad order/masters/transport</td>
+</tr>
+<tr>
+<td><code>sales</code></td>
+<td><code>/sales</code></td>
+<td>Orders overview/create (own data emphasis)</td>
+</tr>
+<tr>
+<td><code>finance</code></td>
+<td><code>/finance</code></td>
+<td>Finance review, masters, transport</td>
+</tr>
+<tr>
+<td><code>account</code></td>
+<td><code>/account</code></td>
+<td>Account review, masters, transport</td>
+</tr>
+<tr>
+<td><code>dispatch</code></td>
+<td><code>/dispatch</code></td>
+<td>Dispatch, transport planner/agents</td>
+</tr>
+</tbody></table>
+<p>Source: <code>opms-frontend</code> portal nav and middleware.</p>
+<h2>Lead Manager roles</h2>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Capabilities (from UI/API gates)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>admin</code></td>
+<td>Full leads; quotations; terms; team reports</td>
+</tr>
+<tr>
+<td><code>manager</code></td>
+<td>Similar to admin for quotations/terms; team oversight</td>
+</tr>
+<tr>
+<td><code>executive</code></td>
+<td>Leads/follow-ups/personal reports; no quotations nav</td>
+</tr>
+</tbody></table>
+<h2>Work Planner roles</h2>
+<table>
+<thead>
+<tr>
+<th>Role</th>
+<th>Capabilities</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>admin</code></td>
+<td>Team manager settings; approve plans/expenses</td>
+</tr>
+<tr>
+<td><code>manager</code></td>
+<td>My team settings; approvals</td>
+</tr>
+<tr>
+<td><code>executive</code></td>
+<td>Own plans, visits, expenses</td>
+</tr>
+</tbody></table>
+<h2>App Frontend access</h2>
+<p>Requires JWT with <strong>department</strong> and at least one <strong>role</strong>; sidebar built from <code>role_codes</code>; portal tiles from <code>portals[]</code>.</p>
+<h2>Persona mapping</h2>
+<p>See PRD personas P1–P6 in <a href="02-prd.md">02-prd.md</a>.</p>
+
+</section>
+<section class="doc-section" data-source="01-product/05-features.md">
+  <p class="source-path">Source: 01-product/05-features.md</p>
+  <h1>Features</h1>
+<p>Feature catalog derived from routes and frontend screens. <strong>Verified</strong> unless noted.</p>
+<h2>A. App Frontend (SSO Hub)</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Description</th>
+<th>Source</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Login</td>
+<td>Email/password login with company branding</td>
+<td><code>app-frontend</code> <code>/</code></td>
+</tr>
+<tr>
+<td>Department dashboard</td>
+<td>Assigned portals launcher</td>
+<td><code>/dashboard/[department]</code></td>
+</tr>
+<tr>
+<td>Profile / password</td>
+<td>Change password</td>
+<td><code>/dashboard/profile</code></td>
+</tr>
+<tr>
+<td>Notifications</td>
+<td>Bell via auth proxy</td>
+<td>NotificationBell</td>
+</tr>
+<tr>
+<td>SSO launch</td>
+<td>Opens peer apps with <code>?token=</code></td>
+<td>PortalsSection</td>
+</tr>
+</tbody></table>
+<h2>B. OPMS Frontend / Backend</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Role workspaces</td>
+<td>admin/sales/finance/dispatch/account/super_admin</td>
+</tr>
+<tr>
+<td>Order master</td>
+<td>List by workflow/priority; create; detail with lifecycle tabs</td>
+</tr>
+<tr>
+<td>Order workflow</td>
+<td>Submit, transition, history, assignees, fulfillment</td>
+</tr>
+<tr>
+<td>Approvals</td>
+<td>Unified OrderApproval actions</td>
+</tr>
+<tr>
+<td>Finance queues</td>
+<td><code>/api/finance/queue</code>, <code>/summary</code></td>
+</tr>
+<tr>
+<td>Dispatch</td>
+<td>Create/patch soft-delete with bill document upload</td>
+</tr>
+<tr>
+<td>Deliveries / returns</td>
+<td>Log shipment delivery; returns CRUD</td>
+</tr>
+<tr>
+<td>Due sheets / unbilled / final statements</td>
+<td>Billing support artifacts</td>
+</tr>
+<tr>
+<td>Flags</td>
+<td>Raise/manage order flags (blocking types in workflow rules)</td>
+</tr>
+<tr>
+<td>Reminders</td>
+<td>Reminders + follow-ups; Google Sheet webhook</td>
+</tr>
+<tr>
+<td>Parties / zones</td>
+<td>Via party-service proxy</td>
+</tr>
+<tr>
+<td>Products / groups / brands / manufacturers / kits</td>
+<td>Via product-service proxy</td>
+</tr>
+<tr>
+<td>Fleet</td>
+<td>Vehicles, drivers, transport agents</td>
+</tr>
+<tr>
+<td>Transport planner</td>
+<td>Plans, calendar, LR, packed/dispatched/delivered</td>
+</tr>
+<tr>
+<td>Attachments / files</td>
+<td>Upload + view/download redirects</td>
+</tr>
+<tr>
+<td>Dashboards</td>
+<td>Per-role KPI endpoints</td>
+</tr>
+<tr>
+<td>Activity log</td>
+<td>List activity</td>
+</tr>
+<tr>
+<td>Terms &amp; conditions</td>
+<td>OPMS T&amp;C API (note: router lacks requireAuth — see security)</td>
+</tr>
+<tr>
+<td>Communication</td>
+<td>Proxied to message-service</td>
+</tr>
+<tr>
+<td>Push notifications</td>
+<td>Proxied to notification-service</td>
+</tr>
+<tr>
+<td>PDF/export helpers</td>
+<td>Frontend html2canvas/jspdf</td>
+</tr>
+</tbody></table>
+<h2>C. User Manager</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>User directory CRUD</td>
+<td>List/add/edit/detail</td>
+</tr>
+<tr>
+<td>Portals registry</td>
+<td>Seed defaults; assign per user</td>
+</tr>
+<tr>
+<td>Departments &amp; roles</td>
+<td>Hub management</td>
+</tr>
+<tr>
+<td>Company information</td>
+<td>Branding and legal/tax fields</td>
+</tr>
+<tr>
+<td>KPI cards</td>
+<td>User counts</td>
+</tr>
+</tbody></table>
+<h2>D. Lead Manager</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Lead pipeline</td>
+<td>CRUD, assign, status, qualify, mark lost, convert</td>
+</tr>
+<tr>
+<td>Follow-ups</td>
+<td>Calendar + reminders (cron digests)</td>
+</tr>
+<tr>
+<td>Reports</td>
+<td>Admin “Sales Reports” / others “My Reports”</td>
+</tr>
+<tr>
+<td>Quotations</td>
+<td>CRUD, submit/approve/reject, PDF, email</td>
+</tr>
+<tr>
+<td>Terms &amp; conditions</td>
+<td>Master for quotations</td>
+</tr>
+<tr>
+<td>Bulk / Google Sheet ingest</td>
+<td>Lead import paths</td>
+</tr>
+<tr>
+<td>Attachments</td>
+<td>Lead attachments module</td>
+</tr>
+</tbody></table>
+<h2>E. Work Planner</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Work plans</td>
+<td>Create/list/calendar; submit/approve/reject/complete</td>
+</tr>
+<tr>
+<td>Visits / works</td>
+<td>Nested lifecycle (check-in/out/complete)</td>
+</tr>
+<tr>
+<td>Expenses</td>
+<td>Submit/approve/reject with receipts</td>
+</tr>
+<tr>
+<td>Assigned users / settings</td>
+<td>Manager templates, CC emails, plan types</td>
+</tr>
+<tr>
+<td>Day-end / exports</td>
+<td>PDF/Excel helpers in UI</td>
+</tr>
+</tbody></table>
+<h2>F. Platform services</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Auth</td>
+<td>Login, me, change-password</td>
+</tr>
+<tr>
+<td>Notifications</td>
+<td>Internal create, SSE stream, mark read, web push</td>
+</tr>
+<tr>
+<td>Messages</td>
+<td>WhatsApp webhook, send message/email, auto-email trigger, communication helpers</td>
+</tr>
+</tbody></table>
+
+</section>
+<section class="doc-section" data-source="01-product/06-business-requirements.md">
+  <p class="source-path">Source: 01-product/06-business-requirements.md</p>
+  <h1>Business Requirements</h1>
+<p>Mapped from implemented behavior. Formal BR IDs from business analysts: <strong>Requires confirmation</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>BR ID</th>
+<th>Statement</th>
+<th>Implementation evidence</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>BR-001</td>
+<td>System shall authenticate users and issue time-bounded tokens</td>
+<td>JWT + <code>JWT_EXPIRES_IN</code></td>
+</tr>
+<tr>
+<td>BR-002</td>
+<td>Access shall be portal-scoped</td>
+<td><code>portals[].portal_code</code> + middleware</td>
+</tr>
+<tr>
+<td>BR-003</td>
+<td>Orders shall follow controlled status transitions</td>
+<td><code>workflow.transitions.js</code></td>
+</tr>
+<tr>
+<td>BR-004</td>
+<td>Certain flags shall block dispatch/transit/delivery transitions</td>
+<td><code>workflow.rules.js</code> flag blocks</td>
+</tr>
+<tr>
+<td>BR-005</td>
+<td>Pricing shall lock after finance/account/dispatch stages</td>
+<td>pricing lock statuses in rules</td>
+</tr>
+<tr>
+<td>BR-006</td>
+<td>Soft-deleted records shall be recoverable by authorized users</td>
+<td>softDelete plugin + restore routes</td>
+</tr>
+<tr>
+<td>BR-007</td>
+<td>Company branding shall be configurable</td>
+<td>CompanyInfo module</td>
+</tr>
+<tr>
+<td>BR-008</td>
+<td>Field teams shall plan daily work and claim expenses</td>
+<td>Work Planner models/APIs</td>
+</tr>
+<tr>
+<td>BR-009</td>
+<td>Sales shall manage leads through quotation to conversion</td>
+<td>Lead Manager</td>
+</tr>
+<tr>
+<td>BR-010</td>
+<td>System shall notify users of relevant events</td>
+<td>notification-service + queues</td>
+</tr>
+<tr>
+<td>BR-011</td>
+<td>System may send email/WhatsApp for order/comms</td>
+<td>message-service integrations</td>
+</tr>
+<tr>
+<td>BR-012</td>
+<td>External sheets may ingest masters/orders via webhook + secret</td>
+<td>Google Sheet webhook routes</td>
+</tr>
+</tbody></table>
+<h2>Priority</h2>
+<p><strong>Not identified</strong> in repository (no MoSCoW tags in code).</p>
+<h2>Related</h2>
+<ul>
+<li><a href="08-business-rules.md">Business Rules</a></li>
+<li><a href="02-prd.md">PRD</a></li>
+</ul>
+
+</section>
+<section class="doc-section" data-source="01-product/07-non-functional-requirements.md">
+  <p class="source-path">Source: 01-product/07-non-functional-requirements.md</p>
+  <h1>Non-Functional Requirements</h1>
+<p>Only document NFRs evidenced in configuration/code. Do not invent numeric SLAs.</p>
+<h2>Security</h2>
+<table>
+<thead>
+<tr>
+<th>NFR</th>
+<th>Status</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>JWT authentication</td>
+<td>Implemented</td>
+<td>auth-service, shared JWT_SECRET</td>
+</tr>
+<tr>
+<td>Portal RBAC</td>
+<td>Implemented</td>
+<td>middleware per portal</td>
+</tr>
+<tr>
+<td>Password hashing</td>
+<td>Implemented</td>
+<td>bcryptjs</td>
+</tr>
+<tr>
+<td>HTTPS at edge</td>
+<td>Configured for prod hosts</td>
+<td>nginx ssl snippets</td>
+</tr>
+<tr>
+<td>Secrets via env</td>
+<td>Documented</td>
+<td><code>.env.docker</code>, DOCKER.md</td>
+</tr>
+<tr>
+<td>Break-glass master password</td>
+<td>Optional env</td>
+<td><code>MASTER_PASSWORD</code> — leave empty in prod (DOCKER.md)</td>
+</tr>
+<tr>
+<td>Rate limiting</td>
+<td><strong>Not identified</strong> as middleware</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Redis AUTH</td>
+<td><strong>Not configured</strong> in compose</td>
+<td>security risk</td>
+</tr>
+</tbody></table>
+<h2>Performance</h2>
+<table>
+<thead>
+<tr>
+<th>NFR</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>JSON body limit configurable</td>
+<td><code>JSON_BODY_LIMIT</code> (example 50mb)</td>
+</tr>
+<tr>
+<td>Nginx proxy timeouts</td>
+<td>API hosts use extended timeouts (e.g. 120s) and large body (50m) on api-opms</td>
+</tr>
+<tr>
+<td>Explicit p95 latency targets</td>
+<td><strong>Not identified</strong></td>
+</tr>
+</tbody></table>
+<h2>Availability / Scalability</h2>
+<table>
+<thead>
+<tr>
+<th>NFR</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Container restart policy</td>
+<td><code>restart: unless-stopped</code></td>
+</tr>
+<tr>
+<td>Horizontal scaling playbooks</td>
+<td><strong>Not identified</strong></td>
+</tr>
+<tr>
+<td>Redis health dependency for queues</td>
+<td>message/notification/opms-backend</td>
+</tr>
+</tbody></table>
+<h2>Reliability</h2>
+<table>
+<thead>
+<tr>
+<th>NFR</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Health endpoints</td>
+<td><code>/health</code> on backends</td>
+</tr>
+<tr>
+<td>BullMQ retry/attempts</td>
+<td>Message model tracks attempts; exact policies <strong>Requires confirmation</strong> from queue configs</td>
+</tr>
+<tr>
+<td>Soft-delete over hard-delete</td>
+<td>Many domain models</td>
+</tr>
+</tbody></table>
+<h2>Maintainability</h2>
+<table>
+<thead>
+<tr>
+<th>NFR</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Modular Express modules</td>
+<td><code>src/modules/*</code></td>
+</tr>
+<tr>
+<td>OpenAPI for opms-backend</td>
+<td><code>/api-docs</code></td>
+</tr>
+<tr>
+<td>Shared schema registries duplicated across services</td>
+<td>Maintainability risk — documented in audit</td>
+</tr>
+</tbody></table>
+<h2>Auditability</h2>
+<table>
+<thead>
+<tr>
+<th>NFR</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>OrderWorkflow / OrderStatusHistory</td>
+<td>Append-only workflow audit</td>
+</tr>
+<tr>
+<td>ActivityLog</td>
+<td>Present</td>
+</tr>
+<tr>
+<td>Who approved (signatures on OrderApproval)</td>
+<td>Implemented</td>
+</tr>
+</tbody></table>
+<h2>Accessibility / i18n</h2>
+<p><strong>Not identified</strong> as systematic requirements in frontend code.</p>
+<h2>Related</h2>
+<ul>
+<li><a href="../06-developer-deployment/19-security.md">Security</a></li>
+<li><a href="../06-developer-deployment/20-performance.md">Performance</a></li>
+</ul>
+
+</section>
+<section class="doc-section" data-source="01-product/08-business-rules.md">
+  <p class="source-path">Source: 01-product/08-business-rules.md</p>
+  <h1>Business Rules</h1>
+<h2>Order status transitions (verified)</h2>
+<p>Source: <code>opms-backend/src/modules/workflow/workflow.transitions.js</code></p>
+<pre><code class="language-text">draft → submitted, cancelled
+submitted → sales_approved, finance_review, finance_rejected, on_hold, cancelled
+sales_approved → finance_review, finance_rejected, on_hold, cancelled
+finance_review → finance_approved, finance_rejected, on_hold, dispatch, cancelled
+finance_rejected → submitted, cancelled
+finance_approved → account_review, dispatch, on_hold, finance_rejected, cancelled
+account_review → account_approved, account_rejected, finance_rejected, on_hold, cancelled
+account_rejected → account_review, finance_approved, cancelled
+account_approved → dispatch, account_review, on_hold, finance_rejected, account_rejected, cancelled
+dispatch → in_transit, on_hold, finance_rejected, cancelled
+in_transit → delivered, on_hold, cancelled
+delivered → in_transit, cancelled
+on_hold → (resume to multiple prior active statuses), cancelled
+cancelled → (none)
+</code></pre>
+<p><strong>Note:</strong> Schema includes <code>closed</code> but transition graph has <strong>no</strong> <code>closed</code> edges. <code>POST .../close-after-full-delivery</code> exists — behavior should be verified against service code when documenting close semantics.</p>
+<h2>Department permission to set status</h2>
+<p>Source: <code>workflow.rules.js</code> (<code>DEPT_CAN_SET_STATUS</code> and special cases).<br>Sales is limited; admin/super_admin broader; finance/account/dispatch scoped.</p>
+<h2>Flag blocking</h2>
+<p>Flag types <code>payment_issue</code>, <code>stock_issue</code>, <code>dispatch_issue</code> <strong>block</strong> transitions into <code>dispatch</code> / <code>in_transit</code> / <code>delivered</code>.</p>
+<h2>Pricing lock</h2>
+<p>Pricing locked after statuses including <code>finance_approved</code>, <code>account_approved</code>, <code>dispatch</code>, <code>in_transit</code>, <code>delivered</code> (per rules).</p>
+<h2>Priority derivation</h2>
+<p>Order <code>priority</code> derived from expected delivery date windows (&gt;10 low, 5–10 normal, 3–4 high, ≤2 urgent) — as documented in schema analysis of Order model.</p>
+<h2>Soft-delete</h2>
+<p>Default queries exclude <code>deletedAt != null</code>. Restore endpoints reverse soft-delete.</p>
+<h2>Portal access</h2>
+<p>Missing portal assignment ⇒ 403 on portal-gated APIs even if <code>department</code> is set (swagger description + middleware).</p>
+<h2>Lead / Work Planner state machines</h2>
+<p>Enums exist on models; full transition matrices beyond enums: <strong>partially documented</strong> in functional docs — deep service validation <strong>Requires confirmation</strong> for edge cases.</p>
+<h2>Stale documentation warning</h2>
+<p><code>opms-backend/docs/essentials/*</code> describes older payment/invoice/collection flows — <strong>do not</strong> treat as live business rules.</p>
+
+</section>
+<section class="doc-section" data-source="01-product/09-integrations.md">
+  <p class="source-path">Source: 01-product/09-integrations.md</p>
+  <h1>Integrations</h1>
+<table>
+<thead>
+<tr>
+<th>Integration</th>
+<th>Purpose</th>
+<th>Config / evidence</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>MongoDB Atlas / external Mongo</td>
+<td>Primary datastore</td>
+<td><code>MONGO_URI</code> / <code>MONGODB_URI</code></td>
+<td>Required</td>
+</tr>
+<tr>
+<td>Redis</td>
+<td>BullMQ queues + cache backbone</td>
+<td><code>REDIS_URL</code>, compose <code>redis</code></td>
+<td>Required for queue services</td>
+</tr>
+<tr>
+<td>File Management API</td>
+<td>Uploads / MinIO-backed files</td>
+<td><code>FILE_MANAGEMENT_API_URL</code>, <code>FILE_MANAGEMENT_API_KEY</code></td>
+<td>Optional</td>
+</tr>
+<tr>
+<td>SMTP</td>
+<td>Email fallback</td>
+<td><code>SMTP_*</code></td>
+<td>Optional</td>
+</tr>
+<tr>
+<td>Microsoft Graph</td>
+<td>Preferred outbound email</td>
+<td><code>MICROSOFT_GRAPH_*</code></td>
+<td>Optional</td>
+</tr>
+<tr>
+<td>WhatsApp Cloud API</td>
+<td>Templates + webhooks</td>
+<td><code>WHATSAPP_*</code></td>
+<td>Optional</td>
+</tr>
+<tr>
+<td>Web Push (VAPID)</td>
+<td>Browser push</td>
+<td><code>VAPID_*</code></td>
+<td>Optional</td>
+</tr>
+<tr>
+<td>Google Sheets webhooks</td>
+<td>Ingest orders/parties/products/reminders</td>
+<td><code>GOOGLE_SHEET_WEBHOOK_SECRET</code></td>
+<td>Optional</td>
+</tr>
+<tr>
+<td>Host nginx + Let&#39;s Encrypt</td>
+<td>TLS termination</td>
+<td><code>nginx/</code></td>
+<td>Prod edge</td>
+</tr>
+<tr>
+<td>Inter-service HTTP</td>
+<td>BFF proxies</td>
+<td><code>*_SERVICE_URL</code></td>
+<td>Required in compose</td>
+</tr>
+</tbody></table>
+<h2>Not identified</h2>
+<ul>
+<li>Payment gateways (Razorpay/Stripe/etc.)</li>
+<li>SMS providers beyond WhatsApp</li>
+<li>External ERP connectors (SAP/etc.)</li>
+<li>RabbitMQ / Kafka</li>
+</ul>
+<h2>Related</h2>
+<ul>
+<li><a href="../02-architecture/08-integration-architecture.md">Integration Architecture</a></li>
+</ul>
+
+</section>
+<section class="doc-section" data-source="01-product/10-product-glossary.md">
+  <p class="source-path">Source: 01-product/10-product-glossary.md</p>
+  <h1>Product Glossary</h1>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Meaning in this codebase</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>OPMS</td>
+<td>Core order operations portal and its backend BFF</td>
+</tr>
+<tr>
+<td>Portal</td>
+<td>Application workspace assigned on a user (<code>portal_code</code>)</td>
+</tr>
+<tr>
+<td>access_roles</td>
+<td>Role strings within a portal (e.g. <code>finance</code> under <code>opms</code>)</td>
+</tr>
+<tr>
+<td>Party</td>
+<td>Customer/supplier (or both) master record</td>
+</tr>
+<tr>
+<td>Order</td>
+<td>Central commercial/fulfillment document with workflow status</td>
+</tr>
+<tr>
+<td>OrderApproval</td>
+<td>Unified approval document for admin/finance/account signatures</td>
+</tr>
+<tr>
+<td>Due sheet</td>
+<td>Documented due/commercial sheet attached to an order</td>
+</tr>
+<tr>
+<td>Unbilled order</td>
+<td>Tracking record for unbilled quantities/status</td>
+</tr>
+<tr>
+<td>Dispatch</td>
+<td>Warehouse dispatch against an order</td>
+</tr>
+<tr>
+<td>Transport plan</td>
+<td>Planned multi-order shipment plan for an agent/date</td>
+</tr>
+<tr>
+<td>Lead</td>
+<td>CRM prospect in Lead Manager</td>
+</tr>
+<tr>
+<td>Quotation</td>
+<td>Lead quotation with approval/status enums</td>
+</tr>
+<tr>
+<td>Work plan</td>
+<td>Daily field plan for a sales user</td>
+</tr>
+<tr>
+<td>Soft-delete</td>
+<td>Record marked with <code>deletedAt</code> rather than removed</td>
+</tr>
+<tr>
+<td>SSO hub</td>
+<td>app-frontend launching other apps with JWT query token</td>
+</tr>
+<tr>
+<td>BFF</td>
+<td>Backend-for-frontend pattern — opms-backend proxies sibling APIs</td>
+</tr>
+<tr>
+<td>BullMQ</td>
+<td>Redis-backed job queue library</td>
+</tr>
+<tr>
+<td>CompanyInfo</td>
+<td>Company branding and legal/tax profile</td>
+</tr>
+</tbody></table>
+<h2>Related</h2>
+<ul>
+<li><a href="05-features.md">Features</a></li>
+<li><a href="../05-database/01-database-overview.md">Database Overview</a></li>
+</ul>
+
+</section>
+<script>
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'neutral',
+    securityLevel: 'loose',
+    flowchart: { useMaxWidth: true, htmlLabels: true },
+    er: { useMaxWidth: true },
+    sequence: { useMaxWidth: true },
+  });
+  (async () => {
+    try {
+      await mermaid.run({ querySelector: '.mermaid' });
+      document.documentElement.setAttribute('data-mermaid-ready', 'true');
+    } catch (e) {
+      console.error('mermaid error', e);
+      document.documentElement.setAttribute('data-mermaid-ready', 'error');
+      document.documentElement.setAttribute('data-mermaid-error', String(e && e.message || e));
+    }
+  })();
+</script>
+</body>
+</html>

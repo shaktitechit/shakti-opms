@@ -3,6 +3,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
-COPY . .
+COPY --chown=node:node . .
+USER node
 EXPOSE 7007
 CMD ["npm", "start"]

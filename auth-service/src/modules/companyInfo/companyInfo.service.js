@@ -20,6 +20,30 @@ async function getCompanyInfo() {
   return doc;
 }
 
+/** Fields safe for unauthenticated login/branding surfaces. */
+const PUBLIC_COMPANY_FIELDS = [
+  'legal_name',
+  'trade_name',
+  'logo_url',
+  'favicon_url',
+  'primary_color',
+  'secondary_color',
+  'theme_palette',
+  'website',
+];
+
+/**
+ * Slim company projection for public GET /api/company-info (no bank/tax PII).
+ */
+async function getPublicCompanyInfo() {
+  const doc = await getCompanyInfo();
+  const out = {};
+  for (const key of PUBLIC_COMPANY_FIELDS) {
+    if (doc[key] !== undefined) out[key] = doc[key];
+  }
+  return out;
+}
+
 /**
  * Updates the company info record.
  * @param {Record<string, unknown>} patch 
@@ -250,6 +274,7 @@ async function getCompanyAggregatedData() {
 
 module.exports = {
   getCompanyInfo,
+  getPublicCompanyInfo,
   updateCompanyInfo,
   getCompanyAggregatedData,
 };

@@ -4,8 +4,10 @@
  */
 const { getModels } = require('../../data/mongoRegistry');
 const { toPlain } = require('../../utils/mongoJson');
+const { getAuditContext } = require('../../middlewares/auditContext.middleware');
 
 async function create(entry) {
+  const ctx = getAuditContext();
   const { ActivityLog } = getModels();
   const row = await ActivityLog.create({
     actor: entry.actor,
@@ -15,8 +17,8 @@ async function create(entry) {
     message: entry.message,
     old_value: entry.old_value,
     new_value: entry.new_value,
-    ip_address: entry.ip_address,
-    user_agent: entry.user_agent,
+    ip_address: entry.ip_address || ctx.ip_address,
+    user_agent: entry.user_agent || ctx.user_agent,
   });
   return toPlain(row.toObject());
 }

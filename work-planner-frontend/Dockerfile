@@ -37,10 +37,11 @@ ENV NEXT_PUBLIC_COMPANY_LOGO_URL=$NEXT_PUBLIC_COMPANY_LOGO_URL
 COPY package.json package-lock.json* ./
 RUN if [ -f package-lock.json ]; then npm ci --omit=dev; else npm install --omit=dev; fi
 
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/next.config.ts ./next.config.ts
+COPY --from=builder --chown=node:node /app/.next ./.next
+COPY --from=builder --chown=node:node /app/public ./public
+COPY --from=builder --chown=node:node /app/next.config.ts ./next.config.ts
 
+USER node
 EXPOSE 3000
 
 CMD ["npm", "run", "start"]

@@ -22,6 +22,8 @@ import {
   USER_MANAGER_FRONTEND_URL,
   WORK_PLANNER_FRONTEND_URL,
 } from "@/lib/env";
+import { buildSsoLaunchUrl } from "@/lib/ssoHandoff";
+import { SESSION_COOKIE_MAX_AGE_DAYS } from "@/lib/sessionTtl";
 import type { AuthUser } from "@/types/leadManager";
 
 export type PortalDef = {
@@ -45,14 +47,9 @@ function normalizeCode(code: string): string {
     .replace(/-/g, "_");
 }
 
-function withToken(baseUrl: string, token: string): string {
-  if (!token) return baseUrl;
-  return `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
-}
-
-function setCookie(name: string, value: string, maxAgeDays = 7) {
+function setCookie(name: string, value: string, maxAgeDays = SESSION_COOKIE_MAX_AGE_DAYS) {
   if (typeof document === "undefined") return;
-  const maxAge = maxAgeDays * 86400;
+  const maxAge = Math.floor(maxAgeDays * 86400);
   document.cookie = `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
 }
 
@@ -273,29 +270,32 @@ export function PortalsSection() {
       return;
     }
 
-    try {
-      setCookie("shakti_session", token);
+    void (async () => {
+      try {
+        setCookie("shakti_session", token);
 
-      if (portal.isOpmsWorkspace) {
-        persistOpmsSsoCookies(user);
+        if (portal.isOpmsWorkspace) {
+          persistOpmsSsoCookies(user);
+        }
+
+        // localStorage is origin-scoped; only useful for same-origin micro-frontends.
+        if (portal.storageKey && !portal.isOpmsWorkspace) {
+          localStorage.setItem(
+            portal.storageKey,
+            JSON.stringify({ token, user }),
+          );
+        }
+      } catch {
+        /* ignore */
       }
 
-      // localStorage is origin-scoped; only useful for same-origin micro-frontends.
-      if (portal.storageKey && !portal.isOpmsWorkspace) {
-        localStorage.setItem(
-          portal.storageKey,
-          JSON.stringify({ token, user }),
-        );
-      }
-    } catch {
-      /* ignore */
-    }
+      toast.success(`SSO: ${portal.name}`, {
+        description: `Opening as ${user.email || user.name || "user"}`,
+      });
 
-    toast.success(`SSO: ${portal.name}`, {
-      description: `Opening as ${user.email || user.name || "user"}`,
-    });
-
-    window.open(withToken(portal.getUrl(), token), "_blank");
+      const url = await buildSsoLaunchUrl(portal.getUrl(), token);
+      window.open(url, "_blank");
+    })();
   };
 
   if (!assignedPortals.length) return null;

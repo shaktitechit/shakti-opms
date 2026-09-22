@@ -4,7 +4,12 @@
  */
 const express = require('express');
 const router = express.Router();
+const { requireAuth } = require('../../middlewares/auth.middleware');
+const { requireOpmsAccess } = require('../../middlewares/opmsAuth.middleware');
 const termsController = require('./terms_and_conditions.controller');
+
+router.use(requireAuth);
+router.use(requireOpmsAccess);
 
 router.get('/default', termsController.getDefault);
 router.get('/', termsController.list);

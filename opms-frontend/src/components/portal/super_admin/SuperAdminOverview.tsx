@@ -43,6 +43,8 @@ import {
 import PeriodFilter from "@/components/portal/shared/dashboard/PeriodFilter";
 import { usePeriodFilter } from "@/components/portal/shared/dashboard/usePeriodFilter";
 import { dashboardPeriodToStatsQuery } from "@/components/portal/shared/dashboard/periodFilterUtils";
+import { buildSsoLaunchUrl } from "@/lib/ssoHandoff";
+
 const PORTAL_HOME = "/super_admin" as const;
 
 export default function SuperAdminOverview() {
@@ -162,17 +164,17 @@ export default function SuperAdminOverview() {
         token = parsed.token || "";
       }
       if (token) {
-        document.cookie = `shakti_session=${encodeURIComponent(token)}; path=/; SameSite=Lax`;
+        document.cookie = `shakti_session=${encodeURIComponent(token)}; path=/; SameSite=Lax; Max-Age=${60 * 60 * 8}`;
         localStorage.setItem("shakti.user_manager.session", JSON.stringify({ token, user }));
       }
     } catch {
       // Fallback
     }
     const baseUrl = process.env.NEXT_PUBLIC_USER_MANAGER_URL || "http://localhost:7004/dashboard";
-    const targetUrl = token
-      ? `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`
-      : baseUrl;
-    window.open(targetUrl, "_blank");
+    void (async () => {
+      const targetUrl = token ? await buildSsoLaunchUrl(baseUrl, token) : baseUrl;
+      window.open(targetUrl, "_blank");
+    })();
   };
 
   return (

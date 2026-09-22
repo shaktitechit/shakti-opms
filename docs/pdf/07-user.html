@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>07 — User Documentation</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    @page { size: A4; margin: 16mm 14mm; }
+    :root {
+      --text: #1a1a1a;
+      --muted: #555;
+      --border: #d0d7de;
+      --code-bg: #f6f8fa;
+      --accent: #0b3d5c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.45;
+      color: var(--text);
+      margin: 0;
+      padding: 0;
+    }
+    .cover {
+      page-break-after: always;
+      padding: 40mm 10mm 20mm;
+      text-align: left;
+    }
+    .cover h1 {
+      font-size: 28pt;
+      color: var(--accent);
+      margin: 0 0 8pt;
+    }
+    .cover .subtitle { font-size: 14pt; color: var(--muted); margin-bottom: 24pt; }
+    .cover .meta { font-size: 10pt; color: var(--muted); }
+    h1, h2, h3, h4 {
+      color: var(--accent);
+      page-break-after: avoid;
+    }
+    h1 { font-size: 18pt; border-bottom: 2px solid var(--accent); padding-bottom: 4pt; margin-top: 22pt; }
+    h2 { font-size: 14pt; margin-top: 16pt; }
+    h3 { font-size: 12pt; }
+    h4 { font-size: 11pt; }
+    p, li { orphans: 3; widows: 3; }
+    a { color: var(--accent); text-decoration: none; }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 10pt 0;
+      font-size: 9pt;
+      page-break-inside: auto;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 4pt 6pt;
+      vertical-align: top;
+      text-align: left;
+    }
+    th { background: #eef3f7; }
+    tr { page-break-inside: avoid; }
+    pre, code {
+      font-family: "IBM Plex Mono", Menlo, Consolas, monospace;
+      font-size: 8.5pt;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8pt;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      page-break-inside: avoid;
+    }
+    code {
+      background: var(--code-bg);
+      padding: 1pt 3pt;
+      border-radius: 3px;
+    }
+    pre code { background: transparent; padding: 0; }
+    blockquote {
+      border-left: 3px solid var(--accent);
+      margin: 8pt 0;
+      padding: 4pt 10pt;
+      color: var(--muted);
+      background: #f8fafc;
+    }
+    .doc-section {
+      page-break-before: always;
+    }
+    .doc-section:first-of-type { page-break-before: auto; }
+    .source-path {
+      font-size: 8pt;
+      color: #888;
+      margin: 0 0 8pt;
+      border-bottom: 1px dashed #ccc;
+      padding-bottom: 4pt;
+    }
+    .mermaid-wrap {
+      margin: 12pt 0;
+      padding: 10pt;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      page-break-inside: avoid;
+      text-align: center;
+    }
+    .mermaid svg { max-width: 100% !important; height: auto !important; }
+    .toc { page-break-after: always; }
+    .toc ul { list-style: none; padding-left: 0; }
+    .toc li { margin: 4pt 0; font-size: 10pt; }
+    .toc .cat { font-weight: 700; margin-top: 10pt; color: var(--accent); }
+    hr { border: none; border-top: 1px solid var(--border); margin: 16pt 0; }
+  </style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>07 — User Documentation</h1>
+  <p class="subtitle">Complete documentation suite (Markdown → PDF with Mermaid diagrams)</p>
+  <p class="meta">Generated: 2026-09-22</p>
+  <p class="meta">Source: repository <code>docs/</code> directory</p>
+  <p class="meta">Diagrams rendered with Mermaid 11</p>
+</div>
+<nav class="toc">
+  <h1>Table of Contents</h1>
+  <ul>
+    <li>07-user/01-user-guide.md</li>
+<li>07-user/02-getting-started.md</li>
+<li>07-user/03-login.md</li>
+<li>07-user/04-navigation.md</li>
+<li>07-user/05-feature-guides.md</li>
+<li>07-user/06-role-guides.md</li>
+<li>07-user/07-common-tasks.md</li>
+<li>07-user/08-troubleshooting.md</li>
+<li>07-user/09-faq.md</li>
+  </ul>
+</nav><section class="doc-section" data-source="07-user/01-user-guide.md">
+  <p class="source-path">Source: 07-user/01-user-guide.md</p>
+  <h1>User Guide</h1>
+<p>Welcome to the OPMS platform applications. This guide is based on the screens and routes present in the frontends.</p>
+<p>Screenshot: Not available in repository.</p>
+<h2>Applications you may use</h2>
+<table>
+<thead>
+<tr>
+<th>App</th>
+<th>What it is for</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>App (login hub)</td>
+<td>Sign in and open your assigned portals</td>
+</tr>
+<tr>
+<td>OPMS</td>
+<td>Orders, parties, products, dispatch, transport planning</td>
+</tr>
+<tr>
+<td>User Manager</td>
+<td>Users, portals, departments, company branding (admins)</td>
+</tr>
+<tr>
+<td>Lead Manager</td>
+<td>Leads, follow-ups, quotations</td>
+</tr>
+<tr>
+<td>Work Planner</td>
+<td>Daily plans, visits, expenses</td>
+</tr>
+</tbody></table>
+<h2>How access works</h2>
+<p>Your administrator assigns <strong>portals</strong> and <strong>roles</strong>. If you cannot open an app, you likely lack that portal assignment.</p>
+<h2>Related</h2>
+<ul>
+<li><a href="02-getting-started.md">Getting Started</a></li>
+<li><a href="06-role-guides.md">Role Guides</a></li>
+</ul>
+
+</section>
+<section class="doc-section" data-source="07-user/02-getting-started.md">
+  <p class="source-path">Source: 07-user/02-getting-started.md</p>
+  <h1>Getting Started</h1>
+<ol>
+<li>Open the App login URL (local default <code>http://localhost:7013</code>, production e.g. <code>https://app.spspl.com</code>).</li>
+<li>Sign in with the email and password provided by your administrator.</li>
+<li>On your department dashboard, open an <strong>Assigned Portal</strong> tile.</li>
+<li>The portal opens with single sign-on (<code>?token=</code> is applied automatically).</li>
+<li>Use the sidebar to navigate features for your role.</li>
+</ol>
+<h2>First-time tips</h2>
+<ul>
+<li>Change your password from Profile if available.</li>
+<li>Ensure pop-up/redirects are allowed if an admin opens User Manager in an embed.</li>
+<li>If branding looks wrong, your admin should update Company Information in User Manager.</li>
+</ul>
+<p>Screenshot: Not available in repository.</p>
+
+</section>
+<section class="doc-section" data-source="07-user/03-login.md">
+  <p class="source-path">Source: 07-user/03-login.md</p>
+  <h1>Login</h1>
+<h2>App Frontend</h2>
+<ol>
+<li>Go to <code>/</code></li>
+<li>Enter email and password</li>
+<li>Submit</li>
+<li>On success you reach <code>/dashboard/...</code></li>
+</ol>
+<h2>Portal-specific login pages</h2>
+<p>OPMS, Lead Manager, Work Planner, and User Manager also expose <code>/</code> or <code>/login</code> if opened directly. Prefer the App hub when possible for SSO.</p>
+<h2>SSO</h2>
+<p>When launched from App, a token is passed in the URL once and stored in the browser session storage/cookies used by that app.</p>
+<h2>Logout</h2>
+<p>Use the user menu / logout control in the top bar (exact label may vary by app).</p>
+<h2>Problems</h2>
+<p>See <a href="08-troubleshooting.md">Troubleshooting</a>.</p>
+
+</section>
+<section class="doc-section" data-source="07-user/04-navigation.md">
+  <p class="source-path">Source: 07-user/04-navigation.md</p>
+  <h1>Navigation</h1>
+<h2>App Frontend</h2>
+<ul>
+<li>Sidebar: roles under your department</li>
+<li>Main: Assigned Portals grid</li>
+<li>Topbar: theme, notifications, profile</li>
+</ul>
+<h2>OPMS</h2>
+<p>Portal path prefix: <code>/admin</code>, <code>/sales</code>, <code>/finance</code>, <code>/dispatch</code>, <code>/account</code>, <code>/super_admin</code></p>
+<p>Typical sidebar groups (by role):</p>
+<ul>
+<li>Overview</li>
+<li>Order Master / Create Order</li>
+<li>Party Master / Product Master (not sales/dispatch limited views)</li>
+<li>Transport Agent Master / Transport Planner (dispatch-focused roles)</li>
+</ul>
+<h2>Lead Manager</h2>
+<p>Dashboard · Leads · Follow-Ups · Reports · Quotations* · Terms*<br>* admin/manager</p>
+<h2>Work Planner</h2>
+<p>Dashboard · Work Plans · Tasks &amp; Visits · Calendar · Expenses · Team Manager/My Team*<br>* admin/manager</p>
+<h2>User Manager</h2>
+<p>Dashboard · User Directory · Portals · Departments &amp; Roles · Company Info</p>
+<p>Screenshot: Not available in repository.</p>
+
+</section>
+<section class="doc-section" data-source="07-user/05-feature-guides.md">
+  <p class="source-path">Source: 07-user/05-feature-guides.md</p>
+  <h1>Feature Guides</h1>
+<h2>Creating an OPMS order</h2>
+<ol>
+<li>Login and open OPMS portal for your role.</li>
+<li>Go to <strong>Create Order</strong>.</li>
+<li>Select party and add products/quantities/rates as the form requires.</li>
+<li>Save draft.</li>
+<li><strong>Submit</strong> when ready for workflow.</li>
+<li>Track status in <strong>Order Master</strong> / order detail tabs (approvals, dispatch, etc.).</li>
+</ol>
+<h2>Approving an order (finance/account/admin)</h2>
+<ol>
+<li>Open order detail or approvals queue.</li>
+<li>Review line items and due sheet if present.</li>
+<li>Use Approve / Reject / Send to finance or account actions available to your role.</li>
+<li>Confirm status advanced in order header.</li>
+</ol>
+<h2>Transport planning</h2>
+<ol>
+<li>Open <strong>Transport Planner</strong>.</li>
+<li>Create a plan for a date/agent.</li>
+<li>Add eligible orders.</li>
+<li>Submit and update packed/dispatched/delivered as operations proceed.</li>
+</ol>
+<h2>Managing a lead</h2>
+<ol>
+<li>Open Lead Manager → Leads → New.</li>
+<li>Enter contact and requirement details.</li>
+<li>Assign and schedule follow-ups.</li>
+<li>Optionally create a quotation (manager/admin).</li>
+<li>Mark won/lost or convert when appropriate.</li>
+</ol>
+<h2>Creating a work plan</h2>
+<ol>
+<li>Open Work Planner → Work Plans → New.</li>
+<li>Choose plan type and date.</li>
+<li>Add visits/works.</li>
+<li>Submit for approval (if required by your process).</li>
+<li>Check in/complete visits; submit expenses.</li>
+</ol>
+<h2>Admin: assign portal access</h2>
+<ol>
+<li>Open User Manager → User Directory → user detail / portals.</li>
+<li>Assign portal codes and access roles.</li>
+<li>Ask the user to re-login via App hub.</li>
+</ol>
+<p>Screenshot: Not available in repository.</p>
+
+</section>
+<section class="doc-section" data-source="07-user/06-role-guides.md">
+  <p class="source-path">Source: 07-user/06-role-guides.md</p>
+  <h1>Role Guides</h1>
+<h2>OPMS — Sales</h2>
+<p><strong>Purpose:</strong> Create and track sales orders.<br><strong>Features:</strong> Overview, Order Master, Create Order.<br><strong>Restrictions:</strong> Limited masters/nav vs admin; own-order emphasis on overview.</p>
+<h2>OPMS — Finance</h2>
+<p><strong>Purpose:</strong> Commercial/financial review.<br><strong>Features:</strong> Orders, approvals/finance queues, masters, transport planner (per nav).<br><strong>Typical tasks:</strong> Review approvals, due sheets, risk flags.</p>
+<h2>OPMS — Account</h2>
+<p><strong>Purpose:</strong> Account-stage review before dispatch.<br><strong>Features:</strong> Similar masters to finance/admin per nav.<br><strong>Typical tasks:</strong> Account approve/reject/amend.</p>
+<h2>OPMS — Dispatch</h2>
+<p><strong>Purpose:</strong> Fulfillment and logistics.<br><strong>Features:</strong> Orders, transport agents, transport planner; drivers/vehicles routes exist.<br><strong>Typical tasks:</strong> Create dispatches, run transport plans, log deliveries.</p>
+<h2>OPMS — Admin / Super Admin</h2>
+<p><strong>Purpose:</strong> Broad operational control; super admin also User Manager embed.<br><strong>Features:</strong> Full masters + orders + transport; users via User Manager.</p>
+<h2>Lead Manager — Executive</h2>
+<p><strong>Purpose:</strong> Personal pipeline.<br><strong>Features:</strong> Leads, follow-ups, my reports.<br><strong>Restrictions:</strong> No quotations/terms nav.</p>
+<h2>Lead Manager — Manager / Admin</h2>
+<p><strong>Purpose:</strong> Team CRM + quotations.<br><strong>Features:</strong> Full leads, quotations, terms, sales reports (admin labeling).</p>
+<h2>Work Planner — Executive</h2>
+<p><strong>Purpose:</strong> Own daily plan and expenses.<br><strong>Restrictions:</strong> No team manager sidebar.</p>
+<h2>Work Planner — Manager / Admin</h2>
+<p><strong>Purpose:</strong> Approve plans/expenses; configure assignees.<br><strong>Features:</strong> Team Manager / My Team + settings.</p>
+<h2>User Manager — Admin</h2>
+<p><strong>Purpose:</strong> Identity &amp; branding administration.<br><strong>Features:</strong> Users, portals, departments/roles, company info.</p>
+
+</section>
+<section class="doc-section" data-source="07-user/07-common-tasks.md">
+  <p class="source-path">Source: 07-user/07-common-tasks.md</p>
+  <h1>Common Tasks</h1>
+<table>
+<thead>
+<tr>
+<th>Task</th>
+<th>Steps (summary)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Launch a portal</td>
+<td>App dashboard → Assigned Portals tile</td>
+</tr>
+<tr>
+<td>Create order</td>
+<td>OPMS → Create Order → save → submit</td>
+</tr>
+<tr>
+<td>Find order</td>
+<td>OPMS → Order Master → search/filters</td>
+</tr>
+<tr>
+<td>Raise flag</td>
+<td>Order detail → Flags → create</td>
+</tr>
+<tr>
+<td>Add reminder</td>
+<td>Reminders UI / order context</td>
+</tr>
+<tr>
+<td>Upload attachment</td>
+<td>Order/lead/expense attachment controls</td>
+</tr>
+<tr>
+<td>Import via Google Sheet</td>
+<td>Use sync/import UI where available (admin/configured)</td>
+</tr>
+<tr>
+<td>Change password</td>
+<td>Profile → Password change panel</td>
+</tr>
+<tr>
+<td>Approve work plan</td>
+<td>Work Planner → plan → Approve</td>
+</tr>
+<tr>
+<td>Submit expense</td>
+<td>Work Planner → Expenses → submit</td>
+</tr>
+<tr>
+<td>Create quotation</td>
+<td>Lead Manager → Quotations → New (manager/admin)</td>
+</tr>
+<tr>
+<td>Assign user portal</td>
+<td>User Manager → user/portals</td>
+</tr>
+</tbody></table>
+<p>Screenshot: Not available in repository.</p>
+
+</section>
+<section class="doc-section" data-source="07-user/08-troubleshooting.md">
+  <p class="source-path">Source: 07-user/08-troubleshooting.md</p>
+  <h1>User Troubleshooting</h1>
+<h2>I can log in but portals are empty</h2>
+<p>Ask an admin to assign portals in User Manager.</p>
+<h2>OPMS says I don&#39;t have access</h2>
+<p>You need the <code>opms</code> portal with an access role (sales/finance/…). Re-login after assignment.</p>
+<h2>I opened a bookmark and must log in again</h2>
+<p>Sessions are browser-stored; use App hub launch for SSO. Clear stale tabs with old tokens.</p>
+<h2>Notifications not appearing</h2>
+<p>Check notification bell permissions; ensure you are logged in; ask ops if notification-service is down.</p>
+<h2>Upload failed</h2>
+<p>File service may be unavailable — contact administrator.</p>
+<h2>Wrong company logo/name</h2>
+<p>Admin updates Company Information; you may need a refresh.</p>
+
+</section>
+<section class="doc-section" data-source="07-user/09-faq.md">
+  <p class="source-path">Source: 07-user/09-faq.md</p>
+  <h1>FAQ</h1>
+<p><strong>Q: What is OPMS?</strong><br>A: The operations portal for orders, masters, and logistics, part of a multi-app platform.</p>
+<p><strong>Q: Why are there multiple websites?</strong><br>A: Each domain (orders, leads, plans, users, login hub) is a separate app for clarity and access control.</p>
+<p><strong>Q: Can one person have multiple roles?</strong><br>A: Yes — users can hold multiple portal access_roles and department roles as assigned.</p>
+<p><strong>Q: Where do I manage passwords for other users?</strong><br>A: User Manager (admin). End users change their own password in Profile.</p>
+<p><strong>Q: Is there a mobile app?</strong><br>A: Not identified in this repository; use the responsive web apps.</p>
+<p><strong>Q: Who do I contact for access?</strong><br>A: Your system administrator / User Manager operator. Support escalation path: <strong>Requires confirmation</strong>.</p>
+
+</section>
+<script>
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'neutral',
+    securityLevel: 'loose',
+    flowchart: { useMaxWidth: true, htmlLabels: true },
+    er: { useMaxWidth: true },
+    sequence: { useMaxWidth: true },
+  });
+  (async () => {
+    try {
+      await mermaid.run({ querySelector: '.mermaid' });
+      document.documentElement.setAttribute('data-mermaid-ready', 'true');
+    } catch (e) {
+      console.error('mermaid error', e);
+      document.documentElement.setAttribute('data-mermaid-ready', 'error');
+      document.documentElement.setAttribute('data-mermaid-error', String(e && e.message || e));
+    }
+  })();
+</script>
+</body>
+</html>

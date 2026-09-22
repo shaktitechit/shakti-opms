@@ -36,7 +36,7 @@ function getCookie(name: string): string | null {
   return match ? decodeURIComponent(match[2]) : null;
 }
 
-function setCookie(name: string, value: string, days = 7) {
+function setCookie(name: string, value: string, days = 8 / 24) {
   if (typeof document === "undefined") return;
   const expires = new Date(Date.now() + days * 864e5).toUTCString();
   document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax`;

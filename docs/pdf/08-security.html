@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>OPMS Security Documentation</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    @page { size: A4; margin: 16mm 14mm; }
+    :root { --text:#1a1a1a; --muted:#555; --border:#d0d7de; --code-bg:#f6f8fa; --accent:#7a1f1f; }
+    body { font-family: "IBM Plex Sans","Segoe UI",Helvetica,Arial,sans-serif; font-size:10.5pt; line-height:1.45; color:var(--text); margin:0; }
+    .cover { page-break-after: always; padding: 40mm 10mm 20mm; }
+    .cover h1 { font-size:28pt; color:var(--accent); margin:0 0 8pt; }
+    .cover .subtitle { font-size:14pt; color:var(--muted); }
+    .cover .meta { font-size:10pt; color:var(--muted); }
+    h1,h2,h3,h4 { color:var(--accent); page-break-after:avoid; }
+    h1 { font-size:18pt; border-bottom:2px solid var(--accent); padding-bottom:4pt; margin-top:22pt; }
+    h2 { font-size:14pt; margin-top:16pt; }
+    table { border-collapse:collapse; width:100%; margin:10pt 0; font-size:9pt; }
+    th,td { border:1px solid var(--border); padding:4pt 6pt; vertical-align:top; text-align:left; }
+    th { background:#f8ecec; }
+    tr { page-break-inside:avoid; }
+    pre,code { font-family:"IBM Plex Mono",Menlo,Consolas,monospace; font-size:8.5pt; }
+    pre { background:var(--code-bg); border:1px solid var(--border); border-radius:4px; padding:8pt; white-space:pre-wrap; word-break:break-word; page-break-inside:avoid; }
+    code { background:var(--code-bg); padding:1pt 3pt; border-radius:3px; }
+    pre code { background:transparent; padding:0; }
+    .doc-section { page-break-before: always; }
+    .doc-section:first-of-type { page-break-before: auto; }
+    .source-path { font-size:8pt; color:#888; margin:0 0 8pt; border-bottom:1px dashed #ccc; padding-bottom:4pt; }
+    .mermaid-wrap { margin:12pt 0; padding:10pt; border:1px solid var(--border); border-radius:6px; background:#fff; page-break-inside:avoid; text-align:center; }
+    .mermaid svg { max-width:100% !important; height:auto !important; }
+    .toc { page-break-after: always; }
+    .toc ul { list-style:none; padding-left:0; }
+    .toc li { margin:4pt 0; font-size:10pt; }
+  </style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>OPMS Security Documentation</h1>
+  <p class="subtitle">Authentication, authorization, secrets, edge TLS, and known risks</p>
+  <p class="meta">Generated: 2026-09-22</p>
+  <p class="meta">Diagrams rendered with Mermaid 11 · Secrets redacted</p>
+</div>
+<nav class="toc">
+  <h1>Contents</h1>
+  <ul><li>08-security/01-security-overview.md</li><li>02-architecture/07-authentication-authorization.md</li><li>04-api/02-authentication.md</li><li>03-functional/authentication.md</li><li>06-developer-deployment/19-security.md</li><li>06-developer-deployment/05-environment-variables.md</li></ul>
+</nav>
+<section class="doc-section" data-source="08-security/01-security-overview.md">
+  <p class="source-path">Source: 08-security/01-security-overview.md</p>
+  <h1>OPMS Security Documentation</h1>
+<p><strong>Status:</strong> Verified from repository implementation unless marked otherwise.<br><strong>Scope:</strong> Authentication, authorization, secrets, transport security, known risks, and hardening guidance derived from code/config — not a penetration-test report.</p>
+<p><strong>Sources:</strong></p>
+<ul>
+<li><code>auth-service/</code>, <code>opms-backend/src/middlewares/</code></li>
+<li>Portal middlewares (lead-manager, work-planner)</li>
+<li><code>nginx/</code> TLS configs</li>
+<li><code>docker-compose.yml</code>, <code>.env.docker.example</code>, <code>DOCKER.md</code></li>
+<li><code>docs/02-architecture/07-authentication-authorization.md</code></li>
+<li><code>docs/06-developer-deployment/19-security.md</code></li>
+</ul>
+<hr>
+<h2>1. Security model overview</h2>
+<div class="mermaid-wrap"><div class="mermaid">flowchart TB
+  U[Browser user] --&gt; NGX[Host nginx TLS]
+  NGX --&gt; FE[Frontends]
+  NGX --&gt; API[API services]
+  FE --&gt;|Bearer JWT| API
+  API --&gt;|verify JWT_SECRET| JWT[Shared JWT secret]
+  API --&gt;|portal_code + access_roles| RBAC[Portal RBAC]
+  API --&gt; MONGO[(MongoDB external)]
+  API --&gt; REDIS[(Redis - no AUTH in compose)]
+  API --&gt; FAPI[File Management API + API key]</div></div>
+<h3>Trust boundaries</h3>
+<table>
+<thead>
+<tr>
+<th>Boundary</th>
+<th>What crosses it</th>
+<th>Control</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Internet → host</td>
+<td>HTTPS</td>
+<td>nginx TLS + HSTS snippets</td>
+</tr>
+<tr>
+<td>Browser → API</td>
+<td>REST + JWT</td>
+<td>Bearer token; CORS origins</td>
+</tr>
+<tr>
+<td>Service → service</td>
+<td>Internal HTTP on compose network</td>
+<td>Shared JWT; some internal routes unauthenticated</td>
+</tr>
+<tr>
+<td>Service → Mongo</td>
+<td>Connection string</td>
+<td><code>MONGO_URI</code> secret</td>
+</tr>
+<tr>
+<td>Service → Redis</td>
+<td>Queue/jobs</td>
+<td>No Redis password in current compose</td>
+</tr>
+<tr>
+<td>Service → File API</td>
+<td>Uploads</td>
+<td><code>FILE_MANAGEMENT_API_KEY</code></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>2. Authentication</h2>
+<h3>Mechanism</h3>
+<ul>
+<li><strong>JWT</strong> signed with shared <code>JWT_SECRET</code> across services</li>
+<li>Passwords hashed with <strong>bcrypt</strong> (<code>bcryptjs</code>)</li>
+<li>Token TTL via <code>JWT_EXPIRES_IN</code> (example default <code>7d</code>)</li>
+<li>Optional <strong><code>MASTER_PASSWORD</code></strong>: break-glass login as any user if set — <strong>must be empty in production</strong></li>
+</ul>
+<h3>Login flow</h3>
+<div class="mermaid-wrap"><div class="mermaid">sequenceDiagram
+  participant C as Client
+  participant Auth as auth-service
+  participant API as Domain API
+  C-&gt;&gt;Auth: POST /api/auth/login
+  Auth--&gt;&gt;C: JWT (+ user claims)
+  C-&gt;&gt;API: Authorization: Bearer JWT
+  API-&gt;&gt;API: verify signature / expiry
+  API-&gt;&gt;API: load/attach req.user
+  API-&gt;&gt;API: portal / role gate
+  API--&gt;&gt;C: 200 resource or 401/403</div></div>
+<h3>Obtain token</h3>
+<pre><code class="language-http">POST /api/auth/login
+Content-Type: application/json
+
+{ &quot;email&quot;: &quot;user@example.com&quot;, &quot;password&quot;: &quot;********&quot; }
+</code></pre>
+<p>Available on auth-service (<code>:7003</code>) or via opms-backend proxy (<code>:7001/api/auth/login</code>).</p>
+<h3>Session introspection</h3>
+<pre><code class="language-http">GET /api/auth/me
+Authorization: Bearer &lt;token&gt;
+</code></pre>
+<h3>Frontend session handling</h3>
+<table>
+<thead>
+<tr>
+<th>App</th>
+<th>Primary storage</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>app-frontend</td>
+<td><code>shakti.app.session</code> + cookies</td>
+<td>SSO hub; launches peers with <code>?token=</code></td>
+</tr>
+<tr>
+<td>opms-frontend</td>
+<td><code>medica.auth</code> + cookies</td>
+<td>Consumes SSO token</td>
+</tr>
+<tr>
+<td>user / lead / work planner</td>
+<td>per-app <code>shakti.*.session</code></td>
+<td>Shared cookie names used for middleware gates</td>
+</tr>
+</tbody></table>
+<p><strong>Risk note:</strong> JWT in query string for SSO is convenient but can leak via Referer/logs/history. Prefer short-lived handoff and strip token after consume (apps attempt strip after bootstrap).</p>
+<hr>
+<h2>3. Authorization (RBAC)</h2>
+<h3>Layers</h3>
+<ol>
+<li><strong>Authenticated</strong> — valid JWT  </li>
+<li><strong>Portal membership</strong> — <code>user.portals[]</code> contains required <code>portal_code</code>  </li>
+<li><strong>access_roles</strong> — role string must match portal gate (admin bypass where coded)  </li>
+<li><strong>Handler-level checks</strong> — department/workflow rules for specific actions  </li>
+<li><strong>Soft-delete routes</strong> — authenticated (+ OPMS portal) on many trash/restore endpoints</li>
+</ol>
+<h3>Portal codes and roles (observed)</h3>
+<table>
+<thead>
+<tr>
+<th>portal_code</th>
+<th>Seeded by default?</th>
+<th>access_roles (observed)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>opms</code></td>
+<td>Yes (<code>DEFAULT_PORTALS</code>)</td>
+<td><code>super_admin</code>, <code>admin</code>, <code>sales</code>, <code>finance</code>, <code>account</code>, <code>dispatch</code></td>
+</tr>
+<tr>
+<td><code>work_planner</code></td>
+<td><strong>No</strong></td>
+<td><code>admin</code>, <code>manager</code>, <code>executive</code> (+ admin bypasses)</td>
+</tr>
+<tr>
+<td><code>lead_manager</code></td>
+<td><strong>No</strong></td>
+<td><code>admin</code>, <code>manager</code>, <code>executive</code></td>
+</tr>
+<tr>
+<td><code>user_manager</code></td>
+<td><strong>No</strong></td>
+<td>Frontend admin/super-admin style gate — exact role list <strong>Unknown</strong></td>
+</tr>
+</tbody></table>
+<h3>Middleware gates</h3>
+<table>
+<thead>
+<tr>
+<th>Gate</th>
+<th>Applies to</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>requireAuth</code></td>
+<td>Most domain routes</td>
+</tr>
+<tr>
+<td><code>requireOpmsAccess</code></td>
+<td>OPMS domain APIs</td>
+</tr>
+<tr>
+<td><code>requireLeadManagerAccess</code></td>
+<td>Lead Manager (most routes)</td>
+</tr>
+<tr>
+<td><code>requireWorkPlannerAccess</code></td>
+<td>Work Planner routes</td>
+</tr>
+<tr>
+<td>Webhook secret</td>
+<td>Google Sheet ingest</td>
+</tr>
+</tbody></table>
+<p>Missing <code>opms</code> portal ⇒ <strong>403</strong> even if <code>department</code> is set (documented in Swagger + middleware behavior).</p>
+<div class="mermaid-wrap"><div class="mermaid">flowchart TD
+  A[Request] --&gt; B{JWT valid?}
+  B --&gt;|No| U[401 Unauthorized]
+  B --&gt;|Yes| C{Portal required?}
+  C --&gt;|No| H[Handler]
+  C --&gt;|Yes| D{portal_code present?}
+  D --&gt;|No| F[403 Forbidden]
+  D --&gt;|Yes| E{access_role allowed?}
+  E --&gt;|No| F
+  E --&gt;|Yes| H
+  H --&gt; R[Response]</div></div>
+<hr>
+<h2>4. Transport &amp; edge security</h2>
+<h3>nginx (production pattern)</h3>
+<ul>
+<li>TLS 1.2/1.3 via <code>nginx/snippets/ssl-params.conf</code></li>
+<li>HSTS and security headers in ssl snippets</li>
+<li>Let&#39;s Encrypt cert paths for <code>*.spspl.com</code> / <code>*.medicaent.in</code></li>
+<li>HTTP → HTTPS redirect after cert bootstrap</li>
+<li>SSE-specific proxy settings for notification streams</li>
+</ul>
+<h3>CORS</h3>
+<p>Configured via <code>CORS_ORIGINS</code> / service CORS settings. Production frontends must be listed. Incorrect CORS is a browser-enforced issue, not a substitute for authz.</p>
+<h3>Docker network</h3>
+<p>Services communicate on the Compose bridge using internal URLs (<code>http://auth-service:7003</code>, etc.). Assume <strong>network trust inside the compose network</strong> for some internal endpoints (see §6).</p>
+<hr>
+<h2>5. Secrets &amp; configuration hygiene</h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Secret?</th>
+<th>Guidance</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>JWT_SECRET</code></td>
+<td><strong>Yes</strong></td>
+<td>Long random; identical across all services</td>
+</tr>
+<tr>
+<td><code>MASTER_PASSWORD</code></td>
+<td><strong>Yes</strong></td>
+<td>Leave <strong>empty</strong> in production</td>
+</tr>
+<tr>
+<td><code>MONGO_URI</code> / <code>MONGODB_URI</code></td>
+<td><strong>Yes</strong></td>
+<td>Atlas/user credentials</td>
+</tr>
+<tr>
+<td><code>FILE_MANAGEMENT_API_KEY</code></td>
+<td><strong>Yes</strong></td>
+<td>Uploads</td>
+</tr>
+<tr>
+<td><code>SMTP_*</code> / Graph / WhatsApp / VAPID private</td>
+<td><strong>Yes</strong></td>
+<td>Integrations</td>
+</tr>
+<tr>
+<td><code>GOOGLE_SHEET_WEBHOOK_SECRET</code></td>
+<td><strong>Yes</strong></td>
+<td>Webhook auth</td>
+</tr>
+<tr>
+<td><code>SEED_PASSWORD</code></td>
+<td><strong>Yes</strong></td>
+<td>Demo only</td>
+</tr>
+<tr>
+<td><code>NEXT_PUBLIC_*</code></td>
+<td>No (public)</td>
+<td>Baked into FE builds — never put secrets here</td>
+</tr>
+</tbody></table>
+<h3>Critical finding</h3>
+<p><strong>SECRET DETECTED IN SOURCE — NOT REPEATED HERE:</strong> <code>.env.docker.example</code> appears to contain real-looking credentials (JWT, Mongo URI, API keys, passwords).  </p>
+<p><strong>Actions required (ops):</strong></p>
+<ol>
+<li>Rotate all exposed secrets  </li>
+<li>Replace example file with placeholders only  </li>
+<li>Ensure <code>.env.docker</code> remains gitignored and never committed</li>
+</ol>
+<p>Do not re-declare <code>MONGO_URI</code> / <code>JWT_SECRET</code> under Compose <code>environment:</code> with empty interpolation — empty values override <code>env_file</code> (see <code>DOCKER.md</code>).</p>
+<hr>
+<h2>6. Public and weakly protected surfaces</h2>
+<p>Documented carefully for threat modeling. <strong>Verified</strong> from route files.</p>
+<table>
+<thead>
+<tr>
+<th>Surface</th>
+<th>Auth</th>
+<th>Risk</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST /api/auth/login</code></td>
+<td>Public</td>
+<td>Brute force — <strong>rate limiting not identified</strong></td>
+</tr>
+<tr>
+<td><code>GET /api/company-info</code></td>
+<td>Public (auth-service)</td>
+<td>Info disclosure of branding/company fields</td>
+</tr>
+<tr>
+<td>Google Sheet webhooks</td>
+<td>Shared secret</td>
+<td>Secret leakage ⇒ data injection</td>
+</tr>
+<tr>
+<td>WhatsApp webhooks</td>
+<td>Provider verify</td>
+<td>Must validate hub challenge/signature per Meta rules</td>
+</tr>
+<tr>
+<td><code>POST /api/notifications/internal/*</code></td>
+<td><strong>No requireAuth</strong></td>
+<td>Anyone who can reach the port can create notifications</td>
+</tr>
+<tr>
+<td>opms <code>/api/terms-and-conditions</code> router</td>
+<td><strong>No requireAuth on router</strong></td>
+<td>Read/write exposure if port reachable</td>
+</tr>
+<tr>
+<td>lead-manager <code>/api/attachments</code> router</td>
+<td><strong>No requireAuth on router</strong></td>
+<td>Attachment abuse if reachable</td>
+</tr>
+<tr>
+<td>work-planner attachment view path</td>
+<td>Before auth</td>
+<td>Public file view redirect — <strong>Requires confirmation</strong> if intentional</td>
+</tr>
+</tbody></table>
+<div class="mermaid-wrap"><div class="mermaid">flowchart LR
+  Internet --&gt; Nginx
+  Nginx --&gt; PublishedPorts[Host published API ports]
+  PublishedPorts --&gt; Weak[Weakly protected routes]
+  Weak --&gt; Impact[Data injection / file access / spam]</div></div>
+<p><strong>Hardening (recommended, not implemented in-repo):</strong></p>
+<ul>
+<li>Bind internal-only routes to Docker network (do not publish message/notification internal ports publicly where avoidable)</li>
+<li>Add <code>requireAuth</code> or shared service token to internal notification/create routes</li>
+<li>Add auth to terms and attachments routers</li>
+<li>Add login rate limiting / lockout</li>
+<li>Enable Redis AUTH and avoid publishing Redis on host</li>
+</ul>
+<hr>
+<h2>7. Data protection controls present</h2>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Password hashing (bcrypt)</td>
+<td>Implemented</td>
+</tr>
+<tr>
+<td>Soft-delete (recoverable)</td>
+<td>Many domain models</td>
+</tr>
+<tr>
+<td>Append-only workflow history</td>
+<td>OrderWorkflow / status history</td>
+</tr>
+<tr>
+<td>HTTPS at edge</td>
+<td>nginx configs</td>
+</tr>
+<tr>
+<td>File binaries outside app DB</td>
+<td>External File Management API</td>
+</tr>
+<tr>
+<td>Field-level encryption at rest in app</td>
+<td><strong>Not identified</strong></td>
+</tr>
+<tr>
+<td>Audit log completeness for all portals</td>
+<td>Partial (ActivityLog + workflow)</td>
+</tr>
+</tbody></table>
+<hr>
+<h2>8. Infrastructure security notes</h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Finding</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Redis</td>
+<td>No password in compose; host port <code>7014</code> published — exposure risk if host is reachable</td>
+</tr>
+<tr>
+<td>MongoDB</td>
+<td>External; protect via Atlas IP allowlists / strong credentials</td>
+</tr>
+<tr>
+<td>Frontends</td>
+<td>No compose healthchecks; not a direct auth issue</td>
+</tr>
+<tr>
+<td>CI/CD secrets scanning</td>
+<td><strong>Not identified</strong> (no GitHub Actions)</td>
+</tr>
+<tr>
+<td>Container user hardening</td>
+<td>Default Node images — deep review <strong>Not identified</strong></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>9. Security-related NFRs (from implementation)</h2>
+<table>
+<thead>
+<tr>
+<th>Topic</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Authentication</td>
+<td>JWT</td>
+</tr>
+<tr>
+<td>Authorization</td>
+<td>Portal RBAC</td>
+</tr>
+<tr>
+<td>Confidentiality in transit</td>
+<td>TLS at nginx</td>
+</tr>
+<tr>
+<td>Rate limiting</td>
+<td><strong>Not identified</strong></td>
+</tr>
+<tr>
+<td>Centralized security monitoring / WAF</td>
+<td><strong>Not identified</strong></td>
+</tr>
+<tr>
+<td>Formal threat model / pen-test artifacts</td>
+<td><strong>Not identified</strong></td>
+</tr>
+</tbody></table>
+<hr>
+<h2>10. Incident checklist (ops-oriented)</h2>
+<ol>
+<li>Rotate <code>JWT_SECRET</code> → forces re-login everywhere (coordinate downtime)  </li>
+<li>Rotate Mongo, File API, Graph, WhatsApp, VAPID, webhook secrets  </li>
+<li>Clear <code>MASTER_PASSWORD</code> in production env  </li>
+<li>Review nginx access logs for scraping of public/weak routes  </li>
+<li>Restart services after secret rotation: <code>docker compose --env-file .env.docker up -d</code>  </li>
+<li>Rebuild frontends if any <code>NEXT_PUBLIC_*</code> changed</li>
+</ol>
+<hr>
+<h2>11. Requires confirmation (product / security team)</h2>
+<ol>
+<li>Is work-planner public attachment view intentional?  </li>
+<li>Should non-<code>opms</code> portals be seeded by default?  </li>
+<li>Is Permission-code RBAC (opms Permission model) still a goal vs portal roles only?  </li>
+<li>Target password policy / session length / MFA — <strong>not in codebase</strong>  </li>
+<li>Who owns secret rotation and env hygiene for <code>.env.docker.example</code>?</li>
+</ol>
+<hr>
+<h2>Related documents</h2>
+<ul>
+<li><a href="../02-architecture/07-authentication-authorization.md">Authentication &amp; Authorization (Architecture)</a></li>
+<li><a href="../04-api/02-authentication.md">API Authentication</a></li>
+<li><a href="../03-functional/authentication.md">Functional: Authentication</a></li>
+<li><a href="../06-developer-deployment/05-environment-variables.md">Environment Variables</a></li>
+<li><a href="../06-developer-deployment/18-troubleshooting.md">Troubleshooting</a></li>
+<li><a href="../DOCUMENTATION-AUDIT.md">Documentation Audit</a></li>
+</ul>
+
+</section>
+<section class="doc-section" data-source="02-architecture/07-authentication-authorization.md">
+  <p class="source-path">Source: 02-architecture/07-authentication-authorization.md</p>
+  <h1>Authentication &amp; Authorization</h1>
+<h2>Authentication flow</h2>
+<div class="mermaid-wrap"><div class="mermaid">sequenceDiagram
+  participant C as Client
+  participant Auth as auth-service
+  participant API as Domain API
+  C-&gt;&gt;Auth: POST /api/auth/login
+  Auth--&gt;&gt;C: JWT
+  C-&gt;&gt;API: Authorization Bearer JWT
+  API-&gt;&gt;API: verify JWT_SECRET
+  API-&gt;&gt;Auth: optional GET /api/auth/me (opms pattern)
+  API-&gt;&gt;API: attach req.user
+  API-&gt;&gt;API: portal access check
+  API--&gt;&gt;C: resource or 401/403</div></div>
+<h2>Token</h2>
+<ul>
+<li>Signed with <code>JWT_SECRET</code></li>
+<li>Expiry <code>JWT_EXPIRES_IN</code> (example default <code>7d</code>)</li>
+<li>Optional <code>MASTER_PASSWORD</code> break-glass (<strong>dangerous if set in prod</strong>)</li>
+</ul>
+<h2>Authorization layers</h2>
+<ol>
+<li><strong>Authenticated</strong> — valid JWT</li>
+<li><strong>Portal membership</strong> — <code>portals[]</code> contains required <code>portal_code</code></li>
+<li><strong>access_roles</strong> — role string must match portal gate (or admin bypass where coded)</li>
+<li><strong>Handler-level checks</strong> — department / role for specific actions (workflow rules, lead admin routes)</li>
+<li><strong>Soft-delete permission</strong> — authenticated (+ opms) for trash/restore on some routes; swagger mentions permission codes that may be aspirational vs portal model — <strong>Requires confirmation</strong> for fine-grained permission codes vs portal roles</li>
+</ol>
+<h2>OPMS roles</h2>
+<p><code>super_admin | admin | sales | finance | account | dispatch</code></p>
+<h2>Cross-portal</h2>
+<p>Lead list may allow work_planner access in some routes (<code>requireLeadManagerOrWorkPlannerAccess</code>).</p>
+<h2>Public / weakly protected surfaces (document carefully)</h2>
+<table>
+<thead>
+<tr>
+<th>Surface</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST /api/auth/login</code></td>
+<td>Public</td>
+</tr>
+<tr>
+<td><code>GET /api/company-info</code></td>
+<td>Public on auth-service</td>
+</tr>
+<tr>
+<td>Google Sheet webhooks</td>
+<td>Secret header/param</td>
+</tr>
+<tr>
+<td>WhatsApp webhooks</td>
+<td>Public verify/receive</td>
+</tr>
+<tr>
+<td>notification internal POSTs</td>
+<td>No requireAuth — service trust</td>
+</tr>
+<tr>
+<td>opms terms-and-conditions router</td>
+<td>No requireAuth on router</td>
+</tr>
+<tr>
+<td>lead attachments router</td>
+<td>No requireAuth on router</td>
+</tr>
+<tr>
+<td>work-planner attachment view</td>
+<td>Public view path before auth</td>
+</tr>
+</tbody></table>
+<p>See <a href="../06-developer-deployment/19-security.md">Security</a>.</p>
+
+</section>
+<section class="doc-section" data-source="04-api/02-authentication.md">
+  <p class="source-path">Source: 04-api/02-authentication.md</p>
+  <h1>API Authentication</h1>
+<h2>Method</h2>
+<p><strong>Bearer JWT</strong> in <code>Authorization: Authorization: Bearer &lt;token&gt;</code> header.</p>
+<h2>Obtain token</h2>
+<pre><code class="language-http">POST /api/auth/login
+Content-Type: application/json
+
+{ &quot;email&quot;: &quot;user@example.com&quot;, &quot;password&quot;: &quot;********&quot; }
+</code></pre>
+<p>Hit auth-service (<code>:7003</code>) or via opms-backend proxy (<code>:7001/api/auth/login</code>).</p>
+<h2>Session introspection</h2>
+<pre><code class="language-http">GET /api/auth/me
+Authorization: Bearer &lt;token&gt;
+</code></pre>
+<h2>Authorization</h2>
+<table>
+<thead>
+<tr>
+<th>Gate</th>
+<th>Applies to</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>requireAuth</code></td>
+<td>Most domain routes</td>
+</tr>
+<tr>
+<td><code>requireOpmsAccess</code></td>
+<td>OPMS domain on opms-backend</td>
+</tr>
+<tr>
+<td><code>requireLeadManagerAccess</code></td>
+<td>Lead Manager mutating/list routes</td>
+</tr>
+<tr>
+<td><code>requireWorkPlannerAccess</code></td>
+<td>Work Planner routes</td>
+</tr>
+<tr>
+<td>Webhook secrets</td>
+<td>Google Sheet / WhatsApp verify</td>
+</tr>
+</tbody></table>
+<h2>Portal requirement (OPMS)</h2>
+<p>User must include <code>portals[]</code> entry <code>{ portal_code: &quot;opms&quot;, access_roles: [...] }</code>.</p>
+<h2>Related</h2>
+<ul>
+<li><a href="../02-architecture/07-authentication-authorization.md">Architecture Auth</a></li>
+</ul>
+
+</section>
+<section class="doc-section" data-source="03-functional/authentication.md">
+  <p class="source-path">Source: 03-functional/authentication.md</p>
+  <h1>Module: Authentication</h1>
+<h2>Purpose</h2>
+<p>Authenticate users, issue JWTs, expose current user profile, and support password change.</p>
+<h2>Actors</h2>
+<p>Any user with an active auth-service account; App Frontend and all portal frontends.</p>
+<h2>Preconditions</h2>
+<ul>
+<li>auth-service running and Mongo reachable</li>
+<li>User exists with password hash; <code>is_active</code> true (<strong>Inferred</strong> inactive users rejected — verify service)</li>
+</ul>
+<h2>Workflow</h2>
+<div class="mermaid-wrap"><div class="mermaid">flowchart TD
+  A[Open login page] --&gt; B[Submit email/password]
+  B --&gt; C{Valid?}
+  C --&gt;|No| D[Show error]
+  C --&gt;|Yes| E[Issue JWT]
+  E --&gt; F[Store session in browser]
+  F --&gt; G[Navigate dashboard/portal]
+  G --&gt; H[Optional SSO ?token= to other app]</div></div>
+<h2>Business Rules</h2>
+<ul>
+<li>Shared <code>JWT_SECRET</code> across services</li>
+<li>Optional <code>MASTER_PASSWORD</code> can authenticate as any user if set — <strong>must be empty in production</strong></li>
+</ul>
+<h2>Validations</h2>
+<p>Email/password required on login (controller-level).</p>
+<h2>Permissions</h2>
+<p>Login public; <code>/me</code> and change-password require auth.</p>
+<h2>Exceptions / Errors</h2>
+<p>401 invalid credentials; 401/403 on protected routes without/with wrong token.</p>
+<h2>Related APIs</h2>
+<ul>
+<li><code>POST /api/auth/login</code></li>
+<li><code>GET /api/auth/me</code></li>
+<li><code>POST /api/auth/change-password</code></li>
+</ul>
+<h2>Related DB</h2>
+<p>User, Role, Portal, Department, CompanyInfo (auth-service)</p>
+<h2>Related UI</h2>
+<p>app-frontend <code>/</code>, portal <code>/login</code> pages</p>
+<h2>Dependencies</h2>
+<p>auth-service; MongoDB; frontends</p>
+<h2>Source</h2>
+<p><code>auth-service/src/modules/auth/</code></p>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/19-security.md">
+  <p class="source-path">Source: 06-developer-deployment/19-security.md</p>
+  <h1>Security</h1>
+<h2>Implemented</h2>
+<ul>
+<li>JWT auth + bcrypt passwords</li>
+<li>Portal RBAC</li>
+<li>HTTPS via nginx TLS configs</li>
+<li>Webhook secrets for Google Sheets</li>
+<li>Soft-delete vs hard-delete for many records</li>
+</ul>
+<h2>Risks identified in codebase (document, do not &quot;fix&quot; here)</h2>
+<table>
+<thead>
+<tr>
+<th>Risk</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Secrets in <code>.env.docker.example</code></td>
+<td>Appears to contain real credentials — rotate &amp; sanitize</td>
+</tr>
+<tr>
+<td><code>MASTER_PASSWORD</code></td>
+<td>Break-glass; must be empty in prod</td>
+</tr>
+<tr>
+<td>Redis without AUTH + published port</td>
+<td>Network exposure risk</td>
+</tr>
+<tr>
+<td>Notification internal routes unauthenticated</td>
+<td>Network trust assumed</td>
+</tr>
+<tr>
+<td>opms terms-and-conditions router without requireAuth</td>
+<td>Exposure risk</td>
+</tr>
+<tr>
+<td>lead-manager attachments router without requireAuth</td>
+<td>Exposure risk</td>
+</tr>
+<tr>
+<td>work-planner attachment view before auth</td>
+<td>Intentional public view? <strong>Requires confirmation</strong></td>
+</tr>
+<tr>
+<td>Duplicated schema registries</td>
+<td>Drift / authz inconsistency risk</td>
+</tr>
+</tbody></table>
+<h2>Rate limiting</h2>
+<p><strong>Not identified</strong>.</p>
+<h2>Related</h2>
+<ul>
+<li><a href="../02-architecture/07-authentication-authorization.md">Auth architecture</a></li>
+</ul>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/05-environment-variables.md">
+  <p class="source-path">Source: 06-developer-deployment/05-environment-variables.md</p>
+  <h1>Environment Variables</h1>
+<p><strong>IMPORTANT:</strong> Never copy real secrets into documentation.<br><strong>SECRET DETECTED IN SOURCE — NOT INCLUDED IN DOCUMENTATION:</strong> <code>.env.docker.example</code> currently contains values that look like live JWT secrets, Mongo credentials, API keys, and passwords. Treat as a credential-hygiene incident; rotate if exposed; replace example file with placeholders.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Required</th>
+<th>Purpose</th>
+<th>Example (placeholder)</th>
+<th>Secret</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>NODE_ENV</td>
+<td>yes</td>
+<td>Runtime mode</td>
+<td><code>production</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>JWT_SECRET</td>
+<td><strong>yes</strong></td>
+<td>JWT signing</td>
+<td><code>change-me-long-random</code></td>
+<td><strong>yes</strong></td>
+</tr>
+<tr>
+<td>JWT_EXPIRES_IN</td>
+<td>no</td>
+<td>Token TTL</td>
+<td><code>7d</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>MASTER_PASSWORD</td>
+<td>no</td>
+<td>Break-glass login</td>
+<td>empty in prod</td>
+<td><strong>yes</strong></td>
+</tr>
+<tr>
+<td>JSON_BODY_LIMIT</td>
+<td>no</td>
+<td>Body size</td>
+<td><code>50mb</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>MONGO_URI / MONGODB_URI</td>
+<td><strong>yes</strong></td>
+<td>Mongo connection</td>
+<td><code>mongodb+srv://USER:PASS@host/db</code></td>
+<td><strong>yes</strong></td>
+</tr>
+<tr>
+<td>MONGODB_LOOKUP_FAMILY</td>
+<td>no</td>
+<td>Prefer IPv4</td>
+<td><code>4</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>REDIS_URL</td>
+<td>no</td>
+<td>Redis</td>
+<td><code>redis://redis:6379</code></td>
+<td>no*</td>
+</tr>
+<tr>
+<td>REDIS_PORT</td>
+<td>no</td>
+<td>Host publish</td>
+<td><code>7014</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>*_PORT</td>
+<td>no</td>
+<td>Host ports</td>
+<td>see compose defaults</td>
+<td>no</td>
+</tr>
+<tr>
+<td>AUTH_SERVICE_URL etc.</td>
+<td>no</td>
+<td>Internal URLs</td>
+<td><code>http://auth-service:7003</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>API_PUBLIC_BASE_URL</td>
+<td>prod</td>
+<td>Public API</td>
+<td><code>https://api-opms.example.com</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>NEXT_PUBLIC_*</td>
+<td>prod</td>
+<td>Browser URLs (build-time)</td>
+<td>https://…</td>
+<td>no</td>
+</tr>
+<tr>
+<td>CORS_ORIGINS</td>
+<td>prod</td>
+<td>Extra CORS</td>
+<td>comma URLs</td>
+<td>no</td>
+</tr>
+<tr>
+<td>COMPANY_NAME / LOGO</td>
+<td>no</td>
+<td>Branding fallback</td>
+<td>—</td>
+<td>no</td>
+</tr>
+<tr>
+<td>SEED_*</td>
+<td>no</td>
+<td>Seed controls</td>
+<td>—</td>
+<td>SEED_PASSWORD yes</td>
+</tr>
+<tr>
+<td>FOLLOWUP_REMINDER_*</td>
+<td>no</td>
+<td>Lead cron</td>
+<td>—</td>
+<td>no</td>
+</tr>
+<tr>
+<td>FILE_MANAGEMENT_API_URL/KEY</td>
+<td>optional</td>
+<td>Uploads</td>
+<td>—</td>
+<td>key <strong>yes</strong></td>
+</tr>
+<tr>
+<td>SMTP_*</td>
+<td>optional</td>
+<td>Email</td>
+<td>—</td>
+<td>pass <strong>yes</strong></td>
+</tr>
+<tr>
+<td>MICROSOFT_GRAPH_*</td>
+<td>optional</td>
+<td>Email</td>
+<td>—</td>
+<td>secret <strong>yes</strong></td>
+</tr>
+<tr>
+<td>WHATSAPP_*</td>
+<td>optional</td>
+<td>WhatsApp</td>
+<td>—</td>
+<td><strong>yes</strong></td>
+</tr>
+<tr>
+<td>VAPID_*</td>
+<td>optional</td>
+<td>Web push</td>
+<td>—</td>
+<td>private <strong>yes</strong></td>
+</tr>
+<tr>
+<td>GOOGLE_SHEET_WEBHOOK_SECRET</td>
+<td>optional</td>
+<td>Webhooks</td>
+<td>—</td>
+<td><strong>yes</strong></td>
+</tr>
+<tr>
+<td>ADMIN_EMAIL / ACCOUNT_EMAIL / FINANCE_EMAIL / DUE_SHEET_EMAIL / DISPATCH_EMAIL</td>
+<td>optional</td>
+<td>Role mailboxes</td>
+<td>—</td>
+<td>no</td>
+</tr>
+<tr>
+<td>COMPOSE_PROJECT_NAME / ENV_FILE</td>
+<td>no</td>
+<td>Multi-stack</td>
+<td>—</td>
+<td>no</td>
+</tr>
+<tr>
+<td>APP_LOGIN_URL / LEAD_MANAGER_PUBLIC_URL / FRONTEND_URL</td>
+<td>optional</td>
+<td>Links in emails</td>
+<td>—</td>
+<td>no</td>
+</tr>
+</tbody></table>
+<p>* Redis currently unauthenticated in compose.</p>
+<p>Source: <code>.env.docker.example</code>, service <code>env.js</code> files, compose.</p>
+
+</section>
+<script>
+  mermaid.initialize({ startOnLoad:false, theme:'neutral', securityLevel:'loose',
+    flowchart:{ useMaxWidth:true, htmlLabels:true }, sequence:{ useMaxWidth:true } });
+  (async () => {
+    try {
+      await mermaid.run({ querySelector: '.mermaid' });
+      document.documentElement.setAttribute('data-mermaid-ready', 'true');
+    } catch (e) {
+      document.documentElement.setAttribute('data-mermaid-ready', 'error');
+    }
+  })();
+</script>
+</body>
+</html>

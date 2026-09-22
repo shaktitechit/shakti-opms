@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 
 import { hasOpmsAccess } from "@/lib/opmsAuth";
 import { persistSessionMarksFromAuth } from "@/lib/sessionCookie";
+import { publicAuthOrigin } from "@/lib/env";
 import {
   AUTH_STORAGE_KEY,
   setCredentials,
@@ -39,9 +40,42 @@ function parseJwtUser(token: string): AuthUser | null {
   }
 }
 
+async function exchangeHandoff(code: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${publicAuthOrigin()}/api/auth/handoff/exchange`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      token?: string;
+      data?: { token?: string };
+    };
+    return data.token || data.data?.token || null;
+  } catch {
+    return null;
+  }
+}
+
+function applySession(token: string, dispatch: ReturnType<typeof useAppDispatch>) {
+  const user = parseJwtUser(token);
+  if (!user || !hasOpmsAccess(user)) return false;
+  dispatch(setCredentials({ token, user }));
+  try {
+    window.localStorage.setItem(
+      AUTH_STORAGE_KEY,
+      JSON.stringify({ token, user }),
+    );
+  } catch {
+    /* ignore */
+  }
+  persistSessionMarksFromAuth({ token, user });
+  return true;
+}
+
 /**
- * Consumes `?token=` SSO handoff from other micro-frontends (e.g. app-frontend).
- * Writes `medica.auth` + session role cookies so middleware and Redux both accept the user.
+ * Consumes SSO handoff (`?handoff=` one-time code) or legacy `?token=` JWT.
  */
 export function AuthTokenSsoBootstrap() {
   const dispatch = useAppDispatch();
@@ -52,26 +86,22 @@ export function AuthTokenSsoBootstrap() {
     ran.current = true;
 
     const url = new URL(window.location.href);
-    const token = url.searchParams.get("token")?.trim();
-    if (!token) return;
+    const handoff = url.searchParams.get("handoff")?.trim();
+    const tokenParam = url.searchParams.get("token")?.trim();
 
-    const user = parseJwtUser(token);
-    if (!user || !hasOpmsAccess(user)) return;
+    void (async () => {
+      let token = tokenParam || "";
+      if (handoff) {
+        token = (await exchangeHandoff(handoff)) || "";
+      }
+      if (!token) return;
+      if (!applySession(token, dispatch)) return;
 
-    dispatch(setCredentials({ token, user }));
-    try {
-      window.localStorage.setItem(
-        AUTH_STORAGE_KEY,
-        JSON.stringify({ token, user }),
-      );
-    } catch {
-      /* ignore */
-    }
-    persistSessionMarksFromAuth({ token, user });
-
-    url.searchParams.delete("token");
-    const clean = `${url.pathname}${url.search}${url.hash}`;
-    window.history.replaceState({}, document.title, clean || "/");
+      url.searchParams.delete("token");
+      url.searchParams.delete("handoff");
+      const clean = `${url.pathname}${url.search}${url.hash}`;
+      window.history.replaceState({}, document.title, clean || "/");
+    })();
   }, [dispatch]);
 
   return null;

@@ -7,7 +7,10 @@ const validation = require('./companyInfo.validation');
 
 async function get(req, res, next) {
   try {
-    const data = await service.getCompanyInfo();
+    // Authenticated callers (Bearer present via global authMiddleware) get full record
+    const data = req.user
+      ? await service.getCompanyInfo()
+      : await service.getPublicCompanyInfo();
     res.json({ success: true, data });
   } catch (err) {
     next(err);

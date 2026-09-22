@@ -2,8 +2,10 @@ const express = require('express');
 const router = express.Router();
 const userController = require('./user.controller');
 const { requireAuth } = require('../../middlewares/auth.middleware');
+const { requireUserManagerAdmin } = require('../../middlewares/userManagerAuth.middleware');
 
 router.use(requireAuth);
+router.use(requireUserManagerAdmin);
 
 router.get('/roles', userController.listRoles);
 router.post('/roles/seed', userController.seedRoles);

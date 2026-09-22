@@ -1,4 +1,5 @@
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const User = require('../../models/User');
 const Role = require('../../models/Role');
 const Portal = require('../../models/Portal');
@@ -6,7 +7,7 @@ const Department = require('../../models/Department');
 const { toPlain } = require('../../utils/mongoJson');
 const { ApiError } = require('../../utils/ApiError');
 const { sanitizeUser } = require('../../utils/sanitize');
-const { APP_LOGIN_URL } = require('../../config/env');
+const { APP_LOGIN_URL, JWT_SECRET } = require('../../config/env');
 const emailHelper = require('../messages/helpers/email.helper');
 const {
   resolveRoleIdsForUser,
@@ -66,9 +67,18 @@ async function sendPortalAssignedInAppNotification({ userId, portals }) {
       .filter(Boolean)
       .join(', ');
 
+    const serviceToken = jwt.sign(
+      { sub: 'auth-service', name: 'Auth Service' },
+      JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
     await fetch(`${notificationServiceUrl.replace(/\/$/, '')}/api/notifications/internal/create`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${serviceToken}`,
+      },
       body: JSON.stringify({
         userId,
         payload: {

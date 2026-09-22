@@ -1,14 +1,19 @@
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { ApiError } = require('../../utils/ApiError');
+const { assertPasswordStrength } = require('../../utils/passwordPolicy');
 const { JWT_SECRET, JWT_EXPIRES_IN } = require('../../config/env');
 const { sanitizeUser } = require('../../utils/sanitize');
 const User = require('../../models/User');
+const AuthHandoff = require('../../models/AuthHandoff');
 const {
   loadUserForJwtSub,
   authenticate,
   matchesMasterPassword,
 } = require('./mongoUserBridge');
+
+const HANDOFF_TTL_MS = 60 * 1000;
 
 function registerToken(user) {
   // Claims are a snapshot for clients; servers re-load the user from Mongo on each request.
@@ -23,6 +28,10 @@ function registerToken(user) {
     portals: user.portals || [],
   };
   return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+}
+
+function hashHandoffCode(code) {
+  return crypto.createHash('sha256').update(String(code)).digest('hex');
 }
 
 async function login(email, password) {
@@ -43,9 +52,7 @@ async function changePassword(userId, currentPassword, newPassword) {
   const current = String(currentPassword || '');
   const next = String(newPassword || '');
   if (!current) throw new ApiError(400, 'Current password is required');
-  if (next.length < 6) {
-    throw new ApiError(400, 'New password must be at least 6 characters');
-  }
+  assertPasswordStrength(next, 'New password');
   if (current === next) {
     throw new ApiError(400, 'New password must be different from the current password');
   }
@@ -63,9 +70,63 @@ async function changePassword(userId, currentPassword, newPassword) {
   return { success: true };
 }
 
+/**
+ * Create a one-time SSO handoff code for the authenticated user (TTL ~60s).
+ */
+async function createHandoff(userId) {
+  const user = await loadUserForJwtSub(userId);
+  if (!user) throw new ApiError(401, 'Unauthorized');
+
+  const code = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + HANDOFF_TTL_MS);
+  await AuthHandoff.create({
+    code_hash: hashHandoffCode(code),
+    user_id: user._id,
+    expires_at: expiresAt,
+  });
+
+  return {
+    code,
+    expires_in: Math.floor(HANDOFF_TTL_MS / 1000),
+  };
+}
+
+/**
+ * Exchange a one-time handoff code for a fresh JWT + user (single use).
+ */
+async function exchangeHandoff(code) {
+  const raw = String(code || '').trim();
+  if (!raw || raw.length < 16) {
+    throw new ApiError(400, 'Invalid handoff code');
+  }
+
+  const codeHash = hashHandoffCode(raw);
+  const doc = await AuthHandoff.findOneAndUpdate(
+    {
+      code_hash: codeHash,
+      used_at: null,
+      expires_at: { $gt: new Date() },
+    },
+    { $set: { used_at: new Date() } },
+    { new: true }
+  );
+
+  if (!doc) {
+    throw new ApiError(401, 'Handoff code invalid, expired, or already used');
+  }
+
+  const user = await loadUserForJwtSub(String(doc.user_id));
+  if (!user) throw new ApiError(401, 'Unauthorized');
+
+  const token = registerToken(user);
+  return { token, user };
+}
+
 module.exports = {
   login,
   me,
   changePassword,
   registerToken,
+  createHandoff,
+  exchangeHandoff,
 };

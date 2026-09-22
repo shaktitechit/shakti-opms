@@ -1,60 +1,106 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
+/** Aligned with default JWT_EXPIRES_IN=8h */
+const COOKIE_MAX_AGE = 60 * 60 * 8;
 
-export function middleware(request: NextRequest) {
+function authServiceBase(): string {
+  return (
+    process.env.NEXT_PUBLIC_AUTH_SERVICE_URL ||
+    process.env.AUTH_SERVICE_URL ||
+    "http://localhost:7003"
+  ).replace(/\/+$/, "");
+}
+
+async function exchangeHandoff(code: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${authServiceBase()}/api/auth/handoff/exchange`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      token?: string;
+      data?: { token?: string };
+    };
+    return data.token || data.data?.token || null;
+  } catch {
+    return null;
+  }
+}
+
+function applySessionCookies(response: NextResponse, token: string) {
+  response.cookies.set("shakti_session", token, {
+    path: "/",
+    maxAge: COOKIE_MAX_AGE,
+    sameSite: "lax",
+  });
+  response.cookies.set("medica_session", token, {
+    path: "/",
+    maxAge: COOKIE_MAX_AGE,
+    sameSite: "lax",
+  });
+}
+
+export async function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
   const cookieToken =
     request.cookies.get("shakti_session")?.value ||
     request.cookies.get("medica_session")?.value;
   const urlToken = searchParams.get("token")?.trim() || "";
-  const effectiveToken = cookieToken || urlToken;
+  const handoffCode = searchParams.get("handoff")?.trim() || "";
+
+  let exchangedToken: string | null = null;
+  if (handoffCode) {
+    exchangedToken = await exchangeHandoff(handoffCode);
+  }
+
+  const effectiveToken = cookieToken || exchangedToken || urlToken;
 
   const isAuthRoute = pathname === "/" || pathname === "/login";
   const isProtectedRoute = pathname.startsWith("/dashboard");
 
-  // 1. If accessing protected route with urlToken, attach cookie to response
-  if (isProtectedRoute && urlToken) {
-    const response = NextResponse.next();
-    response.cookies.set("shakti_session", urlToken, {
-      path: "/",
-      maxAge: COOKIE_MAX_AGE,
-      sameSite: "lax",
-    });
-    response.cookies.set("medica_session", urlToken, {
-      path: "/",
-      maxAge: COOKIE_MAX_AGE,
-      sameSite: "lax",
-    });
+  if (exchangedToken) {
+    const cleanUrl = request.nextUrl.clone();
+    cleanUrl.searchParams.delete("handoff");
+    cleanUrl.searchParams.delete("token");
+    const response = isAuthRoute
+      ? NextResponse.redirect(
+          (() => {
+            const u = request.nextUrl.clone();
+            u.pathname = "/dashboard";
+            u.search = "";
+            return u;
+          })(),
+        )
+      : NextResponse.redirect(cleanUrl);
+    applySessionCookies(response, exchangedToken);
     return response;
   }
 
-  // 2. If accessing protected route without session token, redirect to login page (/)
+  if (isProtectedRoute && urlToken) {
+    const response = NextResponse.next();
+    applySessionCookies(response, urlToken);
+    return response;
+  }
+
   if (isProtectedRoute && !effectiveToken) {
+    // Allow pending client-side handoff exchange if middleware could not reach auth
+    if (handoffCode) return NextResponse.next();
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/";
     redirectUrl.searchParams.set("redirect", pathname);
     return NextResponse.redirect(redirectUrl);
   }
 
-  // 3. If authenticated user tries to access login page (/), redirect to /dashboard
   if (isAuthRoute && effectiveToken) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/dashboard";
     redirectUrl.search = "";
     const response = NextResponse.redirect(redirectUrl);
-    if (urlToken && !cookieToken) {
-      response.cookies.set("shakti_session", urlToken, {
-        path: "/",
-        maxAge: COOKIE_MAX_AGE,
-        sameSite: "lax",
-      });
-      response.cookies.set("medica_session", urlToken, {
-        path: "/",
-        maxAge: COOKIE_MAX_AGE,
-        sameSite: "lax",
-      });
+    if ((urlToken || exchangedToken) && !cookieToken) {
+      applySessionCookies(response, urlToken || exchangedToken!);
     }
     return response;
   }
@@ -64,13 +110,6 @@ export function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except:
-     * - api (API routes)
-     * - _next/static (static assets)
-     * - _next/image (image optimization files)
-     * - favicon.ico, sitemap.xml, robots.txt
-     */
     "/((?!api|_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)",
   ],
 };

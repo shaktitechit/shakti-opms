@@ -38,13 +38,22 @@ export function resolvePublicAssetUrl(path: string): string {
 }
 
 /**
+ * Append JWT for browser navigations that cannot send Authorization headers
+ * (e.g. attachment view links opened in a new tab). Prefer Bearer for XHR.
+ */
+export function withAccessToken(url: string, token?: string | null): string {
+  if (!url || url === "#" || !token) return url || "";
+  if (url.includes("token=")) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+}
+
+/**
  * Append JWT only for `/api/files/...` proxy URLs.
  * Presigned MinIO/file-manager URLs already carry signed query params — do not mutate them.
  */
 export function withFileAccessToken(url: string, token?: string | null): string {
   if (!url || url === "#" || !token) return url || "";
   if (!/\/api\/files\//i.test(url)) return url;
-  if (url.includes("token=")) return url;
-  return `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
+  return withAccessToken(url, token);
 }
 

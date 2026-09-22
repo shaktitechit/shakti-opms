@@ -36,6 +36,18 @@ function requireAuth(req, res, next) {
   next();
 }
 
+/** Service-to-service JWTs use sub like `backend-service` / `auth-service`. */
+function requireInternalService(req, res, next) {
+  if (!req.user) {
+    return next(new ApiError(401, 'Authentication required'));
+  }
+  const sub = String(req.user._id || '');
+  if (!/-service$/i.test(sub)) {
+    return next(new ApiError(403, 'Service authentication required'));
+  }
+  next();
+}
+
 function requirePermissions(...requiredOneOf) {
   return requireAuth;
 }
@@ -43,5 +55,6 @@ function requirePermissions(...requiredOneOf) {
 module.exports = {
   authMiddleware,
   requireAuth,
+  requireInternalService,
   requirePermissions,
 };

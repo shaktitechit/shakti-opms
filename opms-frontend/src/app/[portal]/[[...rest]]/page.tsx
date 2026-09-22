@@ -1,6 +1,7 @@
 "use client";
 
 import { useParams, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 
 import {
   PortalOverview,
@@ -41,11 +42,83 @@ import {
   resolvePortalPageTitle,
 } from "@/constants/portalNav";
 import { useAppSelector } from "@/store/hooks";
+import { buildSsoLaunchUrl } from "@/lib/ssoHandoff";
+
+function UserManagerEmbed({
+  openSso,
+  authToken,
+}: {
+  openSso: (baseUrl: string) => Promise<void>;
+  authToken: string;
+}) {
+  const baseUserManagerUrl =
+    process.env.NEXT_PUBLIC_USER_MANAGER_URL || "http://localhost:7004";
+  const [iframeSrc, setIframeSrc] = useState(baseUserManagerUrl);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      if (!authToken) {
+        setIframeSrc(baseUserManagerUrl);
+        return;
+      }
+      const url = await buildSsoLaunchUrl(baseUserManagerUrl, authToken);
+      if (!cancelled) setIframeSrc(url);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authToken, baseUserManagerUrl]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900">
+        <div>
+          <h2 className="font-bold text-slate-900 dark:text-slate-100">User Management Micro-Frontend</h2>
+          <p className="text-xs text-slate-500">
+            Decoupled user-manager-frontend app active at{" "}
+            <button
+              type="button"
+              onClick={() => void openSso(baseUserManagerUrl)}
+              className="text-violet-600 underline"
+            >
+              {baseUserManagerUrl}
+            </button>
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => void openSso(baseUserManagerUrl)}
+          className="rounded-lg bg-violet-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow hover:bg-violet-700 transition"
+        >
+          Open Standalone Window ↗
+        </button>
+      </div>
+      <iframe
+        src={iframeSrc}
+        title="User Manager Frontend"
+        className="w-full h-[750px] rounded-2xl border border-slate-200 shadow-sm dark:border-white/10 bg-white dark:bg-slate-900"
+      />
+    </div>
+  );
+}
 
 export default function PortalCatchAllPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const authToken = useAppSelector((state) => state.auth.token);
+
+  const openSso = useCallback(
+    async (baseUrl: string) => {
+      if (!authToken) {
+        window.open(baseUrl, "_blank");
+        return;
+      }
+      const url = await buildSsoLaunchUrl(baseUrl, String(authToken));
+      window.open(url, "_blank");
+    },
+    [authToken],
+  );
 
   const raw =
     typeof params.portal === "string"
@@ -72,9 +145,6 @@ export default function PortalCatchAllPage() {
   // ── LEADS & QUOTATIONS (REDIRECT TO LEAD MANAGER MICRO-FRONTEND) ───────
   if (restArr[0] === "quotations" || restArr[0] === "leads") {
     const baseLeadManagerUrl = process.env.NEXT_PUBLIC_LEAD_MANAGER_URL || "http://localhost:7010";
-    const leadManagerUrl = authToken
-      ? `${baseLeadManagerUrl}?token=${encodeURIComponent(String(authToken))}`
-      : baseLeadManagerUrl;
     return (
       <div className="space-y-4 p-4">
         <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900">
@@ -82,19 +152,22 @@ export default function PortalCatchAllPage() {
             <h2 className="font-bold text-slate-900 dark:text-slate-100">Lead Manager Micro-Frontend</h2>
             <p className="text-xs text-slate-500">
               Leads & Quotations are now managed in the decoupled Lead Manager Portal at{" "}
-              <a href={leadManagerUrl} target="_blank" rel="noreferrer" className="text-orange-600 underline">
-                {leadManagerUrl}
-              </a>
+              <button
+                type="button"
+                onClick={() => void openSso(baseLeadManagerUrl)}
+                className="text-orange-600 underline"
+              >
+                {baseLeadManagerUrl}
+              </button>
             </p>
           </div>
-          <a
-            href={leadManagerUrl}
-            target="_blank"
-            rel="noreferrer"
+          <button
+            type="button"
+            onClick={() => void openSso(baseLeadManagerUrl)}
             className="rounded-lg bg-orange-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow hover:bg-orange-700 transition"
           >
             Open Lead Manager Portal ↗
-          </a>
+          </button>
         </div>
       </div>
     );
@@ -266,38 +339,7 @@ export default function PortalCatchAllPage() {
     return <SuperAdminOrderDetail orderId={restArr[1]} />;
   }
   if (portal === "super_admin" && restArr.length === 1 && restArr[0] === "users") {
-    const baseUserManagerUrl = process.env.NEXT_PUBLIC_USER_MANAGER_URL || "http://localhost:7004";
-    const userManagerUrl = authToken
-      ? `${baseUserManagerUrl}?token=${encodeURIComponent(String(authToken))}`
-      : baseUserManagerUrl;
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900">
-          <div>
-            <h2 className="font-bold text-slate-900 dark:text-slate-100">User Management Micro-Frontend</h2>
-            <p className="text-xs text-slate-500">
-              Decoupled user-manager-frontend app active at{" "}
-              <a href={userManagerUrl} target="_blank" rel="noreferrer" className="text-violet-600 underline">
-                {userManagerUrl}
-              </a>
-            </p>
-          </div>
-          <a
-            href={userManagerUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-lg bg-violet-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow hover:bg-violet-700 transition"
-          >
-            Open Standalone Window ↗
-          </a>
-        </div>
-        <iframe
-          src={userManagerUrl}
-          title="User Manager Frontend"
-          className="w-full h-[750px] rounded-2xl border border-slate-200 shadow-sm dark:border-white/10 bg-white dark:bg-slate-900"
-        />
-      </div>
-    );
+    return <UserManagerEmbed openSso={openSso} authToken={authToken ? String(authToken) : ""} />;
   }
   if (portal === "super_admin" && restArr.length === 1 && restArr[0] === "parties") {
     return <ListPartiesPage portalHome="/super_admin" />;

@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
-const { CORS_ORIGIN, JSON_BODY_LIMIT } = require('./config/env');
+const { JSON_BODY_LIMIT } = require('./config/env');
+const corsOptions = require('./config/cors');
 const { authMiddleware } = require('./middlewares/auth.middleware');
 const authRoutes = require('./modules/auth/auth.routes');
 const userRoutes = require('./modules/users/user.routes');
@@ -12,10 +13,10 @@ const { ApiError } = require('./utils/ApiError');
 
 const app = express();
 
-app.use(cors({
-  origin: (origin, callback) => callback(null, true),
-  credentials: true,
-}));
+// Behind nginx / Docker published ports — needed for accurate rate-limit keys
+app.set('trust proxy', 1);
+
+app.use(cors(corsOptions));
 app.use(express.json({ limit: JSON_BODY_LIMIT || '15mb' }));
 app.use(express.urlencoded({ limit: JSON_BODY_LIMIT || '15mb', extended: true }));
 

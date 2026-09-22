@@ -22,6 +22,8 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: JSON_BODY_LIMIT || '50mb' }));
 app.use(express.urlencoded({ limit: JSON_BODY_LIMIT || '50mb', extended: true }));
 
+const { auditContextMiddleware } = require('./middlewares/auditContext.middleware');
+app.use(auditContextMiddleware);
 app.use(authMiddleware);
 
 app.get('/health', (req, res) => {

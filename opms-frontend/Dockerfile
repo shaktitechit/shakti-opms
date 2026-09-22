@@ -11,7 +11,7 @@ ENV NEXT_PUBLIC_COMPANY_NAME=$NEXT_PUBLIC_COMPANY_NAME
 ENV NEXT_PUBLIC_COMPANY_LOGO_URL=$NEXT_PUBLIC_COMPANY_LOGO_URL
 ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY
 
-COPY package.json package-lock.json ./
+COPY --chown=node:node package.json package-lock.json ./
 RUN npm ci
 
 COPY . .
@@ -34,13 +34,14 @@ ENV NEXT_PUBLIC_COMPANY_NAME=$NEXT_PUBLIC_COMPANY_NAME
 ENV NEXT_PUBLIC_COMPANY_LOGO_URL=$NEXT_PUBLIC_COMPANY_LOGO_URL
 ENV NEXT_PUBLIC_VAPID_PUBLIC_KEY=$NEXT_PUBLIC_VAPID_PUBLIC_KEY
 
-COPY package.json package-lock.json ./
+COPY --chown=node:node package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-COPY --from=builder /app/.next ./.next
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/next.config.ts ./next.config.ts
+COPY --from=builder --chown=node:node /app/.next ./.next
+COPY --from=builder --chown=node:node /app/public ./public
+COPY --from=builder --chown=node:node /app/next.config.ts ./next.config.ts
 
+USER node
 EXPOSE 3000
 
 CMD ["npm", "run", "start"]

@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>06 — Developer &amp; Deployment</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    @page { size: A4; margin: 16mm 14mm; }
+    :root {
+      --text: #1a1a1a;
+      --muted: #555;
+      --border: #d0d7de;
+      --code-bg: #f6f8fa;
+      --accent: #0b3d5c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "IBM Plex Sans", "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.45;
+      color: var(--text);
+      margin: 0;
+      padding: 0;
+    }
+    .cover {
+      page-break-after: always;
+      padding: 40mm 10mm 20mm;
+      text-align: left;
+    }
+    .cover h1 {
+      font-size: 28pt;
+      color: var(--accent);
+      margin: 0 0 8pt;
+    }
+    .cover .subtitle { font-size: 14pt; color: var(--muted); margin-bottom: 24pt; }
+    .cover .meta { font-size: 10pt; color: var(--muted); }
+    h1, h2, h3, h4 {
+      color: var(--accent);
+      page-break-after: avoid;
+    }
+    h1 { font-size: 18pt; border-bottom: 2px solid var(--accent); padding-bottom: 4pt; margin-top: 22pt; }
+    h2 { font-size: 14pt; margin-top: 16pt; }
+    h3 { font-size: 12pt; }
+    h4 { font-size: 11pt; }
+    p, li { orphans: 3; widows: 3; }
+    a { color: var(--accent); text-decoration: none; }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 10pt 0;
+      font-size: 9pt;
+      page-break-inside: auto;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 4pt 6pt;
+      vertical-align: top;
+      text-align: left;
+    }
+    th { background: #eef3f7; }
+    tr { page-break-inside: avoid; }
+    pre, code {
+      font-family: "IBM Plex Mono", Menlo, Consolas, monospace;
+      font-size: 8.5pt;
+    }
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 8pt;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      page-break-inside: avoid;
+    }
+    code {
+      background: var(--code-bg);
+      padding: 1pt 3pt;
+      border-radius: 3px;
+    }
+    pre code { background: transparent; padding: 0; }
+    blockquote {
+      border-left: 3px solid var(--accent);
+      margin: 8pt 0;
+      padding: 4pt 10pt;
+      color: var(--muted);
+      background: #f8fafc;
+    }
+    .doc-section {
+      page-break-before: always;
+    }
+    .doc-section:first-of-type { page-break-before: auto; }
+    .source-path {
+      font-size: 8pt;
+      color: #888;
+      margin: 0 0 8pt;
+      border-bottom: 1px dashed #ccc;
+      padding-bottom: 4pt;
+    }
+    .mermaid-wrap {
+      margin: 12pt 0;
+      padding: 10pt;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      page-break-inside: avoid;
+      text-align: center;
+    }
+    .mermaid svg { max-width: 100% !important; height: auto !important; }
+    .toc { page-break-after: always; }
+    .toc ul { list-style: none; padding-left: 0; }
+    .toc li { margin: 4pt 0; font-size: 10pt; }
+    .toc .cat { font-weight: 700; margin-top: 10pt; color: var(--accent); }
+    hr { border: none; border-top: 1px solid var(--border); margin: 16pt 0; }
+  </style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>06 — Developer &amp; Deployment</h1>
+  <p class="subtitle">Complete documentation suite (Markdown → PDF with Mermaid diagrams)</p>
+  <p class="meta">Generated: 2026-09-22</p>
+  <p class="meta">Source: repository <code>docs/</code> directory</p>
+  <p class="meta">Diagrams rendered with Mermaid 11</p>
+</div>
+<nav class="toc">
+  <h1>Table of Contents</h1>
+  <ul>
+    <li>06-developer-deployment/01-development-overview.md</li>
+<li>06-developer-deployment/02-prerequisites.md</li>
+<li>06-developer-deployment/03-local-development.md</li>
+<li>06-developer-deployment/04-project-structure.md</li>
+<li>06-developer-deployment/05-environment-variables.md</li>
+<li>06-developer-deployment/06-configuration.md</li>
+<li>06-developer-deployment/07-running-the-application.md</li>
+<li>06-developer-deployment/08-testing.md</li>
+<li>06-developer-deployment/09-code-quality.md</li>
+<li>06-developer-deployment/10-git-workflow.md</li>
+<li>06-developer-deployment/11-docker.md</li>
+<li>06-developer-deployment/12-deployment.md</li>
+<li>06-developer-deployment/13-production-runbook.md</li>
+<li>06-developer-deployment/14-monitoring.md</li>
+<li>06-developer-deployment/15-logging.md</li>
+<li>06-developer-deployment/16-backup-and-restore.md</li>
+<li>06-developer-deployment/17-disaster-recovery.md</li>
+<li>06-developer-deployment/18-troubleshooting.md</li>
+<li>06-developer-deployment/19-security.md</li>
+<li>06-developer-deployment/20-performance.md</li>
+  </ul>
+</nav><section class="doc-section" data-source="06-developer-deployment/01-development-overview.md">
+  <p class="source-path">Source: 06-developer-deployment/01-development-overview.md</p>
+  <h1>Development Overview</h1>
+<p>OPMS is a polyglot-free <strong>Node.js + Next.js monorepo</strong> orchestrated with Docker Compose.</p>
+<h2>Typical developer loop</h2>
+<ol>
+<li>Configure <code>.env.docker</code> from example (use placeholders for secrets)</li>
+<li>Start stack with compose (optionally <code>docker-compose.dev.yml</code> for hot reload)</li>
+<li>Open App Frontend <code>:7013</code> or OPMS <code>:7002</code></li>
+<li>Use Swagger at <code>:7001/api-docs</code> for OPMS API exploration</li>
+</ol>
+<h2>Packages</h2>
+<p>13 <code>package.json</code> projects (8 backends + 5 frontends). No root workspace package manager identified.</p>
+<h2>Related</h2>
+<ul>
+<li><a href="03-local-development.md">Local Development</a></li>
+<li><a href="../../DOCKER.md">DOCKER.md</a></li>
+</ul>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/02-prerequisites.md">
+  <p class="source-path">Source: 06-developer-deployment/02-prerequisites.md</p>
+  <h1>Prerequisites</h1>
+<table>
+<thead>
+<tr>
+<th>Tool</th>
+<th>Purpose</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Docker Desktop / Engine + Compose v2</td>
+<td>Run full stack</td>
+<td>DOCKER.md</td>
+</tr>
+<tr>
+<td>Node.js 20</td>
+<td>Image base <code>node:20-alpine</code>; local non-docker optional</td>
+<td>Dockerfiles</td>
+</tr>
+<tr>
+<td>Git</td>
+<td>Source control</td>
+<td><code>.git</code></td>
+</tr>
+<tr>
+<td>MongoDB Atlas or local Mongo</td>
+<td>Database</td>
+<td><code>MONGO_URI</code></td>
+</tr>
+<tr>
+<td>Optional: host nginx + certbot</td>
+<td>TLS prod</td>
+<td><code>nginx/</code></td>
+</tr>
+</tbody></table>
+<h2>Not required for basic Docker run</h2>
+<p>Kubernetes, RabbitMQ, local MinIO (file API external).</p>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/03-local-development.md">
+  <p class="source-path">Source: 06-developer-deployment/03-local-development.md</p>
+  <h1>Local Development</h1>
+<h2>Steps (verified from DOCKER.md)</h2>
+<ol>
+<li>Clone repository</li>
+<li><code>cp .env.docker.example .env.docker</code></li>
+<li>Edit <code>.env.docker</code>: set <code>JWT_SECRET</code>, <code>MONGO_URI</code>/<code>MONGODB_URI</code> (<strong>do not commit secrets</strong>)</li>
+<li><code>ln -sfn .env.docker .env</code></li>
+<li>Start:<ul>
+<li>Prod-style: <code>docker compose --env-file .env.docker up --build</code></li>
+<li>Dev hot reload: <code>docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.dev.yml up --build</code></li>
+</ul>
+</li>
+<li>Verify: <code>http://localhost:7001/health</code> and App Frontend <code>http://localhost:7013</code></li>
+<li>Optional seed: <code>docker compose --env-file .env.docker exec opms-backend npm run seed:users</code></li>
+</ol>
+<h2>Per-service local run (without compose)</h2>
+<p>Possible via each package <code>npm run dev</code> / <code>start</code> <strong>if</strong> env vars and Mongo/Redis are provided — exact standalone runbooks <strong>partially documented</strong>; prefer Compose.</p>
+<h2>URLs</h2>
+<p>See DOCKER.md table (7001–7014).</p>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/04-project-structure.md">
+  <p class="source-path">Source: 06-developer-deployment/04-project-structure.md</p>
+  <h1>Project Structure</h1>
+<pre><code class="language-text">/
+├── app-frontend/              # SSO hub Next.js
+├── opms-frontend/             # OPMS UI
+├── user-manager-frontend/
+├── lead-manager-frontend/
+├── work-planner-frontend/
+├── auth-service/
+├── opms-backend/              # BFF + order domain
+├── product-service/
+├── party-service/
+├── lead-manager-backend/
+├── work-planner-backend/
+├── message-service/
+├── notification-service/
+├── nginx/                     # Host TLS reverse proxy configs
+├── docker-compose.yml
+├── docker-compose.dev.yml
+├── docker-compose.prod.yml    # Partial stack
+├── DOCKER.md
+├── .env.docker.example
+├── docs/                      # This documentation suite
+├── backups/                   # gitignored leftovers
+└── minio-data/                # leftover, not compose service
+</code></pre>
+<h2>Typical backend layout</h2>
+<p><code>src/server.js</code>, <code>src/app.js</code>, <code>src/modules/</code>, <code>src/models</code> or <code>src/data/mongoRegistry.js</code>, <code>src/middlewares/</code>, <code>src/config/</code></p>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/05-environment-variables.md">
+  <p class="source-path">Source: 06-developer-deployment/05-environment-variables.md</p>
+  <h1>Environment Variables</h1>
+<p><strong>IMPORTANT:</strong> Never copy real secrets into documentation.<br><strong>SECRET DETECTED IN SOURCE — NOT INCLUDED IN DOCUMENTATION:</strong> <code>.env.docker.example</code> currently contains values that look like live JWT secrets, Mongo credentials, API keys, and passwords. Treat as a credential-hygiene incident; rotate if exposed; replace example file with placeholders.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Required</th>
+<th>Purpose</th>
+<th>Example (placeholder)</th>
+<th>Secret</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>NODE_ENV</td>
+<td>yes</td>
+<td>Runtime mode</td>
+<td><code>production</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>JWT_SECRET</td>
+<td><strong>yes</strong></td>
+<td>JWT signing</td>
+<td><code>change-me-long-random</code></td>
+<td><strong>yes</strong></td>
+</tr>
+<tr>
+<td>JWT_EXPIRES_IN</td>
+<td>no</td>
+<td>Token TTL</td>
+<td><code>7d</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>MASTER_PASSWORD</td>
+<td>no</td>
+<td>Break-glass login</td>
+<td>empty in prod</td>
+<td><strong>yes</strong></td>
+</tr>
+<tr>
+<td>JSON_BODY_LIMIT</td>
+<td>no</td>
+<td>Body size</td>
+<td><code>50mb</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>MONGO_URI / MONGODB_URI</td>
+<td><strong>yes</strong></td>
+<td>Mongo connection</td>
+<td><code>mongodb+srv://USER:PASS@host/db</code></td>
+<td><strong>yes</strong></td>
+</tr>
+<tr>
+<td>MONGODB_LOOKUP_FAMILY</td>
+<td>no</td>
+<td>Prefer IPv4</td>
+<td><code>4</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>REDIS_URL</td>
+<td>no</td>
+<td>Redis</td>
+<td><code>redis://redis:6379</code></td>
+<td>no*</td>
+</tr>
+<tr>
+<td>REDIS_PORT</td>
+<td>no</td>
+<td>Host publish</td>
+<td><code>7014</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>*_PORT</td>
+<td>no</td>
+<td>Host ports</td>
+<td>see compose defaults</td>
+<td>no</td>
+</tr>
+<tr>
+<td>AUTH_SERVICE_URL etc.</td>
+<td>no</td>
+<td>Internal URLs</td>
+<td><code>http://auth-service:7003</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>API_PUBLIC_BASE_URL</td>
+<td>prod</td>
+<td>Public API</td>
+<td><code>https://api-opms.example.com</code></td>
+<td>no</td>
+</tr>
+<tr>
+<td>NEXT_PUBLIC_*</td>
+<td>prod</td>
+<td>Browser URLs (build-time)</td>
+<td>https://…</td>
+<td>no</td>
+</tr>
+<tr>
+<td>CORS_ORIGINS</td>
+<td>prod</td>
+<td>Extra CORS</td>
+<td>comma URLs</td>
+<td>no</td>
+</tr>
+<tr>
+<td>COMPANY_NAME / LOGO</td>
+<td>no</td>
+<td>Branding fallback</td>
+<td>—</td>
+<td>no</td>
+</tr>
+<tr>
+<td>SEED_*</td>
+<td>no</td>
+<td>Seed controls</td>
+<td>—</td>
+<td>SEED_PASSWORD yes</td>
+</tr>
+<tr>
+<td>FOLLOWUP_REMINDER_*</td>
+<td>no</td>
+<td>Lead cron</td>
+<td>—</td>
+<td>no</td>
+</tr>
+<tr>
+<td>FILE_MANAGEMENT_API_URL/KEY</td>
+<td>optional</td>
+<td>Uploads</td>
+<td>—</td>
+<td>key <strong>yes</strong></td>
+</tr>
+<tr>
+<td>SMTP_*</td>
+<td>optional</td>
+<td>Email</td>
+<td>—</td>
+<td>pass <strong>yes</strong></td>
+</tr>
+<tr>
+<td>MICROSOFT_GRAPH_*</td>
+<td>optional</td>
+<td>Email</td>
+<td>—</td>
+<td>secret <strong>yes</strong></td>
+</tr>
+<tr>
+<td>WHATSAPP_*</td>
+<td>optional</td>
+<td>WhatsApp</td>
+<td>—</td>
+<td><strong>yes</strong></td>
+</tr>
+<tr>
+<td>VAPID_*</td>
+<td>optional</td>
+<td>Web push</td>
+<td>—</td>
+<td>private <strong>yes</strong></td>
+</tr>
+<tr>
+<td>GOOGLE_SHEET_WEBHOOK_SECRET</td>
+<td>optional</td>
+<td>Webhooks</td>
+<td>—</td>
+<td><strong>yes</strong></td>
+</tr>
+<tr>
+<td>ADMIN_EMAIL / ACCOUNT_EMAIL / FINANCE_EMAIL / DUE_SHEET_EMAIL / DISPATCH_EMAIL</td>
+<td>optional</td>
+<td>Role mailboxes</td>
+<td>—</td>
+<td>no</td>
+</tr>
+<tr>
+<td>COMPOSE_PROJECT_NAME / ENV_FILE</td>
+<td>no</td>
+<td>Multi-stack</td>
+<td>—</td>
+<td>no</td>
+</tr>
+<tr>
+<td>APP_LOGIN_URL / LEAD_MANAGER_PUBLIC_URL / FRONTEND_URL</td>
+<td>optional</td>
+<td>Links in emails</td>
+<td>—</td>
+<td>no</td>
+</tr>
+</tbody></table>
+<p>* Redis currently unauthenticated in compose.</p>
+<p>Source: <code>.env.docker.example</code>, service <code>env.js</code> files, compose.</p>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/06-configuration.md">
+  <p class="source-path">Source: 06-developer-deployment/06-configuration.md</p>
+  <h1>Configuration</h1>
+<h2>Patterns</h2>
+<ul>
+<li>dotenv / compose <code>env_file</code></li>
+<li>Service <code>src/config/env.js</code> reading <code>process.env</code></li>
+<li>Frontend <code>NEXT_PUBLIC_*</code> baked at <strong>image build</strong></li>
+</ul>
+<h2>Do not</h2>
+<p>Re-declare <code>MONGO_URI</code> / <code>JWT_SECRET</code> under compose <code>environment:</code> with empty interpolation — overrides env_file (DOCKER.md).</p>
+<h2>Nginx</h2>
+<p>Copy snippets + site files to <code>/etc/nginx/</code>; use HTTP bootstrap before certbot; then HTTPS site.</p>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/07-running-the-application.md">
+  <p class="source-path">Source: 06-developer-deployment/07-running-the-application.md</p>
+  <h1>Running the Application</h1>
+<h2>Full stack</h2>
+<pre><code class="language-bash">docker compose --env-file .env.docker up --build
+# or detached
+docker compose --env-file .env.docker up -d --build
+</code></pre>
+<h2>Dev hot reload</h2>
+<pre><code class="language-bash">docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.dev.yml up --build
+</code></pre>
+<h2>Partial prod file (incomplete)</h2>
+<pre><code class="language-bash">docker compose --env-file .env.docker -f docker-compose.prod.yml up --build -d
+</code></pre>
+<p>Warning: missing many services vs full product.</p>
+<h2>Useful</h2>
+<pre><code class="language-bash">docker compose --env-file .env.docker logs -f opms-backend
+docker compose --env-file .env.docker down
+docker compose --env-file .env.docker down -v   # wipes Redis volume
+docker compose --env-file .env.docker exec opms-backend npm run seed:users
+</code></pre>
+<h2>Package scripts (examples)</h2>
+<ul>
+<li>Backends: <code>npm start</code>, <code>npm run dev</code></li>
+<li>Frontends: <code>npm run dev</code>, <code>npm run build</code>, <code>npm start</code>, <code>npm run lint</code></li>
+<li>opms-backend also has migrate/seed scripts in <code>package.json</code></li>
+</ul>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/08-testing.md">
+  <p class="source-path">Source: 06-developer-deployment/08-testing.md</p>
+  <h1>Testing</h1>
+<h2>Status</h2>
+<p><strong>Not identified</strong> as a comprehensive automated test suite at monorepo root (no Jest/Playwright configs systematically documented across all packages in discovery).</p>
+<h2>What exists</h2>
+<ul>
+<li>Lint scripts on frontends (<code>npm run lint</code>)</li>
+<li>Health endpoints for smoke checks</li>
+<li>Manual verification via UI + Swagger</li>
+</ul>
+<h2>Recommendation</h2>
+<p><strong>Requires confirmation</strong> from engineering on intended test strategy; do not invent coverage claims.</p>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/09-code-quality.md">
+  <p class="source-path">Source: 06-developer-deployment/09-code-quality.md</p>
+  <h1>Code Quality</h1>
+<table>
+<thead>
+<tr>
+<th>Mechanism</th>
+<th>Where</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ESLint via <code>next lint</code></td>
+<td>Frontends package scripts</td>
+</tr>
+<tr>
+<td>Swagger for API surface</td>
+<td>opms-backend <code>/api-docs</code></td>
+</tr>
+<tr>
+<td>Soft-delete plugin consistency</td>
+<td>Shared plugin copies</td>
+</tr>
+</tbody></table>
+<p>No monorepo-wide prettier/eslint root config identified as mandatory CI gate (no CI).</p>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/10-git-workflow.md">
+  <p class="source-path">Source: 06-developer-deployment/10-git-workflow.md</p>
+  <h1>Git Workflow</h1>
+<h2>Observed</h2>
+<ul>
+<li>Git repository at monorepo root</li>
+<li><code>.gitignore</code> excludes <code>.env.docker</code>, backups, minio-data, etc.</li>
+</ul>
+<h2>Formal branching / PR policy</h2>
+<p><strong>Not identified</strong> in repository (no CONTRIBUTING.md).</p>
+<p><strong>Requires confirmation</strong> from team process.</p>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/11-docker.md">
+  <p class="source-path">Source: 06-developer-deployment/11-docker.md</p>
+  <h1>Docker</h1>
+<h2>Compose services (base)</h2>
+<p>redis + 8 APIs + 5 frontends. See <a href="../02-architecture/09-infrastructure-architecture.md">Infrastructure Architecture</a>.</p>
+<div class="mermaid-wrap"><div class="mermaid">flowchart LR
+  subgraph compose
+    redis
+    auth
+    product
+    party
+    message
+    notification
+    workbe[work-planner-backend]
+    opmsbe[opms-backend]
+    leadbe[lead-manager-backend]
+    fes[5 frontends]
+  end
+  message --&gt; redis
+  notification --&gt; redis
+  opmsbe --&gt; redis
+  opmsbe --&gt; auth
+  opmsbe --&gt; product
+  opmsbe --&gt; party</div></div>
+<h2>Images</h2>
+<p>Build contexts per service folder; <code>node:20-alpine</code>.</p>
+<h2>Volumes</h2>
+<p><code>redis_data</code> only.</p>
+<h2>Healthchecks</h2>
+<p>Backends + redis; frontends none in base compose.</p>
+<h2>Dev overlay</h2>
+<p><code>Dockerfile.dev</code>, bind-mount <code>src</code>, watch modes, FE healthchecks disabled.</p>
+<h2>Related</h2>
+<p>Root <a href="../../DOCKER.md">DOCKER.md</a></p>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/12-deployment.md">
+  <p class="source-path">Source: 06-developer-deployment/12-deployment.md</p>
+  <h1>Deployment</h1>
+<h2>Path A — Single host Docker + nginx (documented)</h2>
+<ol>
+<li>Provision host with Docker + nginx + certbot</li>
+<li>Configure <code>.env.docker</code> with production URLs and secrets</li>
+<li><code>docker compose --env-file .env.docker up -d --build</code></li>
+<li>Install nginx site (<code>nginx/sites-available/opms</code>) and obtain certs (commands in nginx file headers)</li>
+<li>DNS for all hostnames</li>
+<li>Verify <code>/health</code> on APIs and FE loads</li>
+</ol>
+<h2>Path B — Medica tenant</h2>
+<p>Use <code>.env.docker.medica</code> + medica nginx; ports 5001–5013. Dual-stack on one host <strong>Requires confirmation</strong>.</p>
+<h2>Image registry / K8s</h2>
+<p><strong>Not identified</strong>.</p>
+<h2>Rollback</h2>
+<p>Rebuild/redeploy previous git SHA; no automated rollback tool in repo.</p>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/13-production-runbook.md">
+  <p class="source-path">Source: 06-developer-deployment/13-production-runbook.md</p>
+  <h1>Production Runbook</h1>
+<h2>Startup</h2>
+<p><code>docker compose --env-file .env.docker up -d</code></p>
+<h2>Health verification</h2>
+<pre><code class="language-bash">curl -fsS http://127.0.0.1:7001/health
+curl -fsS http://127.0.0.1:7003/health
+# repeat for other API ports
+</code></pre>
+<h2>Logs</h2>
+<p><code>docker compose --env-file .env.docker logs -f &lt;service&gt;</code></p>
+<h2>Restart one service</h2>
+<p><code>docker compose --env-file .env.docker restart opms-backend</code></p>
+<h2>Seed / admin bootstrap</h2>
+<p>Seed scripts + User Manager to assign portals. Exact first-admin procedure <strong>Requires confirmation</strong>.</p>
+<h2>Incidents</h2>
+<p>See <a href="18-troubleshooting.md">Troubleshooting</a>.</p>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/14-monitoring.md">
+  <p class="source-path">Source: 06-developer-deployment/14-monitoring.md</p>
+  <h1>Monitoring</h1>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>/health</code> endpoints</td>
+<td>Implemented on backends</td>
+</tr>
+<tr>
+<td>Redis healthcheck</td>
+<td>Compose <code>redis-cli ping</code></td>
+</tr>
+<tr>
+<td>Prometheus/Grafana/APM</td>
+<td><strong>Not identified</strong></td>
+</tr>
+<tr>
+<td>Uptime checks</td>
+<td><strong>Not identified</strong> in repo</td>
+</tr>
+<tr>
+<td>Alerting</td>
+<td><strong>Not identified</strong></td>
+</tr>
+</tbody></table>
+<p>SSE streams exist for notifications — not a metrics system.</p>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/15-logging.md">
+  <p class="source-path">Source: 06-developer-deployment/15-logging.md</p>
+  <h1>Logging</h1>
+<ul>
+<li>Application logs via container stdout/stderr</li>
+<li>Access via <code>docker compose logs</code></li>
+<li>No ELK/Loki stack in compose</li>
+</ul>
+<p>Structured logging standard: <strong>Not identified</strong> as global.</p>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/16-backup-and-restore.md">
+  <p class="source-path">Source: 06-developer-deployment/16-backup-and-restore.md</p>
+  <h1>Backup and Restore</h1>
+<h2>What needs backup</h2>
+<table>
+<thead>
+<tr>
+<th>Data</th>
+<th>Location</th>
+<th>Repo automation</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>MongoDB</td>
+<td>Atlas/external</td>
+<td><strong>Not identified</strong></td>
+</tr>
+<tr>
+<td>Redis</td>
+<td><code>redis_data</code> volume</td>
+<td><strong>Not identified</strong> (often ephemeral queues)</td>
+</tr>
+<tr>
+<td>Files</td>
+<td>External File API / MinIO</td>
+<td><strong>Not identified</strong></td>
+</tr>
+<tr>
+<td>Config</td>
+<td><code>.env.docker</code> (secrets store outside git)</td>
+<td>operator-managed</td>
+</tr>
+<tr>
+<td>nginx certs</td>
+<td>host <code>/etc/letsencrypt</code></td>
+<td>operator-managed</td>
+</tr>
+</tbody></table>
+<h2>Observed artifacts</h2>
+<p><code>backups/minio-backup-*.tar.gz</code> leftover; <code>dump.rdb</code> gitignored — <strong>not</strong> a documented procedure.</p>
+<h2>Commands</h2>
+<p><strong>Not identified</strong> official backup/restore scripts. Use MongoDB Atlas backups / <code>mongodump</code> per ops standards — <strong>Requires confirmation</strong>.</p>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/17-disaster-recovery.md">
+  <p class="source-path">Source: 06-developer-deployment/17-disaster-recovery.md</p>
+  <h1>Disaster Recovery</h1>
+<h2>Status</h2>
+<p>No formal DR runbook in repository.</p>
+<h2>Inferred recovery outline (not official)</h2>
+<ol>
+<li>Restore Mongo from Atlas PITR/snapshot</li>
+<li>Redeploy compose stack from known-good git tag</li>
+<li>Restore env secrets from secure vault</li>
+<li>Re-point DNS/nginx if host replaced</li>
+<li>Verify login + create-order smoke test</li>
+</ol>
+<p><strong>Requires confirmation</strong> from ops for RTO/RPO targets.</p>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/18-troubleshooting.md">
+  <p class="source-path">Source: 06-developer-deployment/18-troubleshooting.md</p>
+  <h1>Troubleshooting</h1>
+<h2>Compose won&#39;t start / env overrides</h2>
+<p><strong>Symptoms:</strong> Mongo auth failures despite env_file<br><strong>Cause:</strong> Empty <code>${MONGO_URI}</code> in <code>environment:</code> overrides file<br><strong>Solution:</strong> Follow DOCKER.md — don&#39;t redeclare secrets in environment<br><strong>Verify:</strong> <code>docker compose exec auth-service printenv MONGO_URI</code> (ensure set; don&#39;t log in shared chats)</p>
+<h2>JWT errors across services</h2>
+<p><strong>Symptoms:</strong> 401 after login when calling another service<br><strong>Cause:</strong> Mismatched <code>JWT_SECRET</code><br><strong>Solution:</strong> Single shared secret in <code>.env.docker</code><br><strong>Verify:</strong> Relogin; call <code>/api/auth/me</code></p>
+<h2>403 on OPMS routes</h2>
+<p><strong>Symptoms:</strong> Authenticated but forbidden<br><strong>Cause:</strong> Missing <code>portals[]</code> entry <code>portal_code: opms</code><br><strong>Solution:</strong> Assign portal in User Manager; re-login<br><strong>Verify:</strong> <code>/api/auth/me</code> shows portals</p>
+<h2>Frontend calls wrong API / CORS</h2>
+<p><strong>Symptoms:</strong> Network errors to localhost from prod build<br><strong>Cause:</strong> <code>NEXT_PUBLIC_*</code> baked at build<br><strong>Solution:</strong> Fix env and <strong>rebuild</strong> frontend images<br><strong>Verify:</strong> View page source / network hostnames</p>
+<h2>Redis / queue jobs stuck</h2>
+<p><strong>Symptoms:</strong> Notifications/emails not sending<br><strong>Cause:</strong> Redis down or workers not started<br><strong>Solution:</strong> Check redis health; restart message/notification/opms-backend<br><strong>Verify:</strong> <code>docker compose ps</code>; service logs</p>
+<h2>Mongo Atlas IPv6 issues</h2>
+<p><strong>Symptoms:</strong> Connection timeouts from containers<br><strong>Cause:</strong> DNS family<br><strong>Solution:</strong> <code>MONGODB_LOOKUP_FAMILY=4</code><br><strong>Verify:</strong> Backend connects and <code>/health</code> OK</p>
+<h2>File upload failures</h2>
+<p><strong>Symptoms:</strong> Attachment create errors<br><strong>Cause:</strong> Missing <code>FILE_MANAGEMENT_API_*</code><br><strong>Solution:</strong> Configure URL/key or disable upload features<br><strong>Verify:</strong> Upload small file in UI</p>
+<h2>nginx 502</h2>
+<p><strong>Symptoms:</strong> Public hostname 502<br><strong>Cause:</strong> Container not listening / wrong upstream port<br><strong>Solution:</strong> Align nginx upstream with compose ports; <code>nginx -t</code> + reload<br><strong>Verify:</strong> curl upstream on 127.0.0.1:port</p>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/19-security.md">
+  <p class="source-path">Source: 06-developer-deployment/19-security.md</p>
+  <h1>Security</h1>
+<h2>Implemented</h2>
+<ul>
+<li>JWT auth + bcrypt passwords</li>
+<li>Portal RBAC</li>
+<li>HTTPS via nginx TLS configs</li>
+<li>Webhook secrets for Google Sheets</li>
+<li>Soft-delete vs hard-delete for many records</li>
+</ul>
+<h2>Risks identified in codebase (document, do not &quot;fix&quot; here)</h2>
+<table>
+<thead>
+<tr>
+<th>Risk</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Secrets in <code>.env.docker.example</code></td>
+<td>Appears to contain real credentials — rotate &amp; sanitize</td>
+</tr>
+<tr>
+<td><code>MASTER_PASSWORD</code></td>
+<td>Break-glass; must be empty in prod</td>
+</tr>
+<tr>
+<td>Redis without AUTH + published port</td>
+<td>Network exposure risk</td>
+</tr>
+<tr>
+<td>Notification internal routes unauthenticated</td>
+<td>Network trust assumed</td>
+</tr>
+<tr>
+<td>opms terms-and-conditions router without requireAuth</td>
+<td>Exposure risk</td>
+</tr>
+<tr>
+<td>lead-manager attachments router without requireAuth</td>
+<td>Exposure risk</td>
+</tr>
+<tr>
+<td>work-planner attachment view before auth</td>
+<td>Intentional public view? <strong>Requires confirmation</strong></td>
+</tr>
+<tr>
+<td>Duplicated schema registries</td>
+<td>Drift / authz inconsistency risk</td>
+</tr>
+</tbody></table>
+<h2>Rate limiting</h2>
+<p><strong>Not identified</strong>.</p>
+<h2>Related</h2>
+<ul>
+<li><a href="../02-architecture/07-authentication-authorization.md">Auth architecture</a></li>
+</ul>
+
+</section>
+<section class="doc-section" data-source="06-developer-deployment/20-performance.md">
+  <p class="source-path">Source: 06-developer-deployment/20-performance.md</p>
+  <h1>Performance</h1>
+<h2>Config levers found</h2>
+<ul>
+<li><code>JSON_BODY_LIMIT</code></li>
+<li>nginx proxy timeouts / body size for API hosts</li>
+<li>Redis/BullMQ async offload for messages/notifications/some order jobs</li>
+<li>Mongo indexes on hot fields</li>
+</ul>
+<h2>Targets</h2>
+<p>No published latency/throughput SLOs in repo.</p>
+<h2>Frontend</h2>
+<p>Next.js production builds; <code>NEXT_PUBLIC_*</code> must be correct to avoid extra failures (not perf per se).</p>
+
+</section>
+<script>
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'neutral',
+    securityLevel: 'loose',
+    flowchart: { useMaxWidth: true, htmlLabels: true },
+    er: { useMaxWidth: true },
+    sequence: { useMaxWidth: true },
+  });
+  (async () => {
+    try {
+      await mermaid.run({ querySelector: '.mermaid' });
+      document.documentElement.setAttribute('data-mermaid-ready', 'true');
+    } catch (e) {
+      console.error('mermaid error', e);
+      document.documentElement.setAttribute('data-mermaid-ready', 'error');
+      document.documentElement.setAttribute('data-mermaid-error', String(e && e.message || e));
+    }
+  })();
+</script>
+</body>
+</html>

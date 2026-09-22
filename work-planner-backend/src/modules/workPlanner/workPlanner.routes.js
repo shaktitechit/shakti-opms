@@ -17,11 +17,11 @@ const upload = multer({
   limits: { fileSize: 15 * 1024 * 1024 },
 });
 
-// Public attachment streaming redirect (accessible by browser navigation and email links)
-router.get('/attachments/:attachmentId/view', controller.viewAttachment);
-
 router.use(requireAuth);
 router.use(requireWorkPlannerAccess);
+
+// Authenticated attachment streaming redirect (browser may pass ?token=)
+router.get('/attachments/:attachmentId/view', controller.viewAttachment);
 
 router.post('/expenses/upload', upload.single('file'), controller.uploadExpenseReceipt);
 router.post('/attachments/upload', upload.single('file'), controller.uploadAttachment);

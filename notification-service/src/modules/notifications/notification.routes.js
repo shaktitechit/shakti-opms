@@ -4,14 +4,15 @@
  */
 const { Router } = require('express');
 const router = Router();
-const { requireAuth } = require('../../middlewares/auth.middleware');
+const { requireAuth, requireInternalService } = require('../../middlewares/auth.middleware');
 const controller = require('./notification.controller');
 
-// Inter-service internal endpoints (bypasses user auth)
-router.post('/internal/order-transition', controller.internalOrderTransition);
-router.post('/internal/create', controller.internalCreateForUser);
-
 router.use(requireAuth);
+
+// Inter-service endpoints — require service JWT (not end-user tokens)
+router.post('/internal/order-transition', requireInternalService, controller.internalOrderTransition);
+router.post('/internal/create', requireInternalService, controller.internalCreateForUser);
+
 router.get('/', controller.list);
 router.patch('/:id/read', controller.markRead);
 
