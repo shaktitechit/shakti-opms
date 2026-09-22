@@ -8,11 +8,20 @@
 #   1) Keep medica.http-bootstrap enabled (HTTP proxies + ACME webroot)
 #   2) Point DNS A/AAAA for all hosts at this server
 #   3) Issue multi-SAN or wildcard cert (see nginx/snippets/medica-ssl.conf)
-#   4) Then:
+#   4) Install http{} helpers (REQUIRED — defines log_format opms_main + limit_req_zone):
 #        sudo cp nginx/snippets/* /etc/nginx/snippets/
+#        sudo cp nginx/conf.d/opms-http.conf /etc/nginx/conf.d/opms-http.conf
+#      (Ubuntu/Debian auto-includes conf.d from http{}. If your nginx.conf
+#       does not include conf.d, add once inside http{}:
+#        include /etc/nginx/snippets/logging.conf;)
+#   5) Then:
 #        sudo cp nginx/sites-available/medica /etc/nginx/sites-available/medica
 #        sudo ln -sfn /etc/nginx/sites-available/medica /etc/nginx/sites-enabled/medica
 #        sudo nginx -t && sudo systemctl reload nginx
+#   6) Optional hard 15-min IP ban (fail2ban):
+#        sudo cp nginx/fail2ban/filter.d/medica-auth-login.conf /etc/fail2ban/filter.d/
+#        sudo cp nginx/fail2ban/jail.d/medica-auth.conf /etc/fail2ban/jail.d/
+#        sudo fail2ban-client reload
 #
 # listen is "ssl" only (no http2 flag) to avoid
 # "protocol options redefined" warnings with other sites on :443.
@@ -154,6 +163,10 @@ server {
     server_name auth.medicaent.in;
     include /etc/nginx/snippets/medica-ssl.conf;
     client_max_body_size 50m;
+    access_log /var/log/nginx/medica-auth.access.log opms_main;
+
+    # Requires http{} include of snippets/logging.conf (log_format + limit_req_zone)
+    include /etc/nginx/snippets/medica-auth-rate-limit.conf;
 
     location ~ ^/api/notifications/stream {
         include /etc/nginx/snippets/proxy-sse.conf;
