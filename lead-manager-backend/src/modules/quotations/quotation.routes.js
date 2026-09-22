@@ -4,13 +4,17 @@
  */
 const express = require('express');
 const { requireAuth } = require('../../middlewares/auth.middleware');
-const { requireLeadManagerAccess } = require('../../middlewares/leadManagerAuth.middleware');
+const {
+  requireLeadManagerAccess,
+  requireLeadManagerRole,
+} = require('../../middlewares/leadManagerAuth.middleware');
 const controller = require('./quotation.controller');
 
 const router = express.Router();
 
 router.use(requireAuth);
 router.use(requireLeadManagerAccess);
+router.use(requireLeadManagerRole('admin', 'manager'));
 
 router.get('/default-terms', controller.getDefaultTerms);
 router.get('/', controller.list);

@@ -260,30 +260,65 @@ export function isUserInLeadManagerPortal(user: {
   name?: string;
   department?: string;
   role?: string;
-  portals?: Array<{ portal_code: string; access_roles?: string[] }>;
+  portals?: Array<{ portal_code?: string; portal?: string; access_roles?: string[] }>;
 }): boolean {
   if (!user) return false;
 
   if (Array.isArray(user.portals) && user.portals.length > 0) {
-    const portalAccess = user.portals.find((p) => p.portal_code === "lead_manager");
+    const portalAccess = user.portals.find(
+      (p) => p && (p.portal_code === "lead_manager" || (p as any).portal === "lead_manager")
+    );
     return Boolean(
       portalAccess &&
         Array.isArray(portalAccess.access_roles) &&
-        portalAccess.access_roles.length > 0
+        portalAccess.access_roles.some((r) => ["admin", "manager", "executive"].includes(r))
     );
   }
 
   return false;
 }
 
-import { isManager, isExecutive } from "@/utils/authStorage";
+/**
+ * Returns the formatted portal role for a user on lead_manager portal.
+ */
+export function getLeadManagerPortalRole(user: {
+  portals?: Array<{ portal_code?: string; portal?: string; access_roles?: string[] }>;
+}): string {
+  if (!user || !Array.isArray(user.portals)) return "";
+  const portalAccess = user.portals.find(
+    (p) => p && (p.portal_code === "lead_manager" || (p as any).portal === "lead_manager")
+  );
+  if (!portalAccess || !Array.isArray(portalAccess.access_roles)) return "";
+  if (portalAccess.access_roles.includes("admin")) return "Admin";
+  if (portalAccess.access_roles.includes("manager")) return "Manager";
+  if (portalAccess.access_roles.includes("executive")) return "Executive";
+  return "";
+}
+
+import { isAdmin, isManager, isExecutive } from "@/utils/authStorage";
 
 /**
- * Checks if the user is a manager for lead management (strictly checks lead_manager portal manager role).
+ * Checks if the user is an admin for lead management (strictly checks lead_manager portal admin role).
  */
 export function isLeadAdmin(user: AuthUserLike, _portalHome: string = ""): boolean {
   void _portalHome;
+  return isAdmin(user as any);
+}
+
+/**
+ * Checks if the user has manager role on lead_manager portal.
+ */
+export function isLeadManagerRole(user: AuthUserLike, _portalHome: string = ""): boolean {
+  void _portalHome;
   return isManager(user as any);
+}
+
+/**
+ * Checks if the user has executive role on lead_manager portal.
+ */
+export function isLeadExecutiveRole(user: AuthUserLike, _portalHome: string = ""): boolean {
+  void _portalHome;
+  return isExecutive(user as any);
 }
 
 /**
@@ -325,7 +360,7 @@ export function canCreateQuotation(status: LeadStatus | string): boolean {
 
 export function canManageQuotations(user: AuthUserLike, _portalHome: string = ""): boolean {
   void _portalHome;
-  return isManager(user as any);
+  return isAdmin(user as any) || isManager(user as any);
 }
 
 /**

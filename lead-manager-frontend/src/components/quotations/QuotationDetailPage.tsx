@@ -52,6 +52,7 @@ import QuotationPdfTemplate from "./QuotationPdfTemplate";
 import { SendQuotationEmailModal } from "./SendQuotationEmailModal";
 import {
   formatCurrencyINR,
+  isAssignedSignatory,
   isStrictSignatory,
   isQuotationCreator,
   canViewQuotationPdf,
@@ -141,7 +142,7 @@ export default function QuotationDetailPage({ quotationId, portalHome = "/dashbo
     );
   }
 
-  const isSignatory = isStrictSignatory(authUser, quotation);
+  const isSignatory = isAssignedSignatory(authUser, quotation);
   const canViewPdf = canViewQuotationPdf(authUser, quotation);
   const canEmail = canEmailQuotation(quotation);
   const canEdit = canEditQuotation(authUser, quotation);

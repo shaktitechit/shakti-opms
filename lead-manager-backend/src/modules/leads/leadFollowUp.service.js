@@ -7,7 +7,7 @@ const { toPlain } = require('../../utils/mongoJson');
 const { ApiError } = require('../../utils/ApiError');
 const activityService = require('../activity/activity.service');
 const notificationService = require('../notifications/notification.service');
-const { isLeadManager } = require('./lead.service');
+const { isLeadAdmin } = require('./lead.service');
 
 /**
  * Schedule a new follow-up for a lead.
@@ -17,10 +17,9 @@ async function createForLead(leadId, body, user) {
   const lead = await Lead.findOne({ _id: leadId, deletedAt: null });
   if (!lead) throw new ApiError(404, 'Lead not found');
 
-  if (!isLeadManager(user)) {
+  if (!isLeadAdmin(user)) {
     const assignedId = lead.assigned_to ? String(lead.assigned_to) : null;
-    const createdById = lead.created_by ? String(lead.created_by) : null;
-    if (assignedId && assignedId !== String(user._id) && createdById !== String(user._id)) {
+    if (!assignedId || assignedId !== String(user._id)) {
       throw new ApiError(403, 'You do not have permission to schedule follow-ups for this lead');
     }
   }
@@ -75,8 +74,16 @@ async function createForLead(leadId, body, user) {
 /**
  * List all follow-ups for a single lead.
  */
-async function listForLead(leadId) {
-  const { LeadFollowUp } = getModels();
+async function listForLead(leadId, user) {
+  const { Lead, LeadFollowUp } = getModels();
+  if (user && !isLeadAdmin(user)) {
+    const lead = await Lead.findOne({ _id: leadId, deletedAt: null });
+    if (!lead) throw new ApiError(404, 'Lead not found');
+    const assignedId = lead.assigned_to ? String(lead.assigned_to) : null;
+    if (!assignedId || assignedId !== String(user._id)) {
+      throw new ApiError(403, 'You do not have permission to view follow-ups for this lead');
+    }
+  }
   const rows = await LeadFollowUp.find({ lead: leadId, deletedAt: null })
     .populate('created_by', 'name email')
     .populate('completed_by', 'name email')
@@ -96,10 +103,9 @@ async function complete(followUpId, body, user) {
   const lead = await Lead.findOne({ _id: fu.lead, deletedAt: null });
   if (!lead) throw new ApiError(404, 'Associated lead not found');
 
-  if (!isLeadManager(user)) {
+  if (!isLeadAdmin(user)) {
     const assignedId = lead.assigned_to ? String(lead.assigned_to) : null;
-    const createdById = lead.created_by ? String(lead.created_by) : null;
-    if (assignedId && assignedId !== String(user._id) && createdById !== String(user._id)) {
+    if (!assignedId || assignedId !== String(user._id)) {
       throw new ApiError(403, 'You do not have permission to complete follow-ups for this lead');
     }
   }
@@ -201,14 +207,24 @@ async function getCalendar(query = {}, user) {
     .sort({ follow_up_date: 1 })
     .lean();
 
-  // If user is sales, filter to leads assigned to them or created by them
-  if (!isLeadManager(user)) {
+  // If user is not admin, filter strictly to leads assigned to them
+  if (!isLeadAdmin(user)) {
     const userStr = String(user._id);
     return rows
       .filter((r) => {
         const assignedId = r.lead?.assigned_to?._id ? String(r.lead.assigned_to._id) : '';
-        const createdById = r.created_by?._id ? String(r.created_by._id) : '';
-        return assignedId === userStr || createdById === userStr;
+        return assignedId === userStr;
+      })
+      .map(toPlain);
+  }
+
+  // If admin filtered by assigned_to
+  if (query.assigned_to && query.assigned_to !== 'all') {
+    const targetAssignee = String(query.assigned_to);
+    return rows
+      .filter((r) => {
+        const assignedId = r.lead?.assigned_to?._id ? String(r.lead.assigned_to._id) : '';
+        return assignedId === targetAssignee;
       })
       .map(toPlain);
   }

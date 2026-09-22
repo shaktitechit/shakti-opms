@@ -6,14 +6,14 @@ import { LeadReportsDashboard } from "@/components/leads/LeadReportsDashboard";
 import { ShieldAlert, ArrowLeft } from "lucide-react";
 
 export default function LeadReportsPage() {
-  const { isManager, isExecutive, loading } = useLeadManagerRole();
+  const { isAdmin, isManager, isExecutive, loading } = useLeadManagerRole();
 
   if (loading) {
     return null;
   }
 
-  // Managers see team/filtered analytics; executives see their own assigned-lead metrics.
-  if (!isManager && !isExecutive) {
+  // Admins see team/filtered analytics; managers and executives see their own assigned-lead metrics.
+  if (!isAdmin && !isManager && !isExecutive) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center p-6 text-center">
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-500 mb-4 border border-amber-500/20">
@@ -21,7 +21,7 @@ export default function LeadReportsPage() {
         </div>
         <h2 className="text-xl font-bold text-foreground">Access Required</h2>
         <p className="mt-2 text-xs text-muted max-w-md">
-          Sales Analytics & Reports are available to Lead Managers and Executives. Please contact your administrator if you need access.
+          Sales Analytics & Reports are available to Lead Admins, Managers, and Executives. Please contact your administrator if you need access.
         </p>
         <Link
           href="/dashboard/leads"

@@ -6,7 +6,7 @@ import LeadManagerStatsWidgets from "@/components/leads/LeadManagerStatsWidgets"
 import { Users, CalendarDays, Plus, BarChart3 } from "lucide-react";
 
 export default function DashboardPage() {
-  const { user, isManager, isExecutive, roleLabel } = useLeadManagerRole();
+  const { user, isAdmin, isManager, isExecutive, roleLabel } = useLeadManagerRole();
 
   return (
     <div className="space-y-6 font-sans">
@@ -18,21 +18,27 @@ export default function DashboardPage() {
               Welcome back, {user?.name || "User"}!
             </h1>
             <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider ${
-              isManager ? "bg-amber-400 text-slate-900" : "bg-blue-400 text-slate-900"
+              isAdmin
+                ? "bg-purple-400 text-slate-900"
+                : isManager
+                ? "bg-amber-400 text-slate-900"
+                : "bg-blue-400 text-slate-900"
             }`}>
               {roleLabel} Access
             </span>
           </div>
           <p className="mt-1 text-xs opacity-90 max-w-xl">
-            {isManager
-              ? "Lead Manager Control Center — Track team pipeline performance, manage lead sources, assign leads to executives, and analyze conversion metrics."
+            {isAdmin
+              ? "Lead Admin Control Center — Track company pipeline performance, manage lead sources, assign leads to reps, and analyze overall conversion metrics."
+              : isManager
+              ? "Manager Lead Center — Manage your assigned leads, quotations, and track your personal pipeline performance."
               : "Executive Lead Center — Manage your assigned leads, execute scheduled follow-ups, and track your personal pipeline performance."}
           </p>
         </div>
 
         {/* Quick Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
-          {isManager ? (
+          {isAdmin ? (
             <>
               <Link
                 href="/dashboard/leads"
@@ -65,15 +71,13 @@ export default function DashboardPage() {
                 <CalendarDays className="h-4 w-4" />
                 My Follow-Ups
               </Link>
-              {isExecutive && (
-                <Link
-                  href="/dashboard/leads/reports"
-                  className="flex items-center gap-2 rounded-xl bg-white/10 backdrop-blur-md px-4 py-2 text-xs font-semibold text-white hover:bg-white/20 border border-white/20 transition"
-                >
-                  <BarChart3 className="h-4 w-4" />
-                  My Reports
-                </Link>
-              )}
+              <Link
+                href="/dashboard/leads/reports"
+                className="flex items-center gap-2 rounded-xl bg-white/10 backdrop-blur-md px-4 py-2 text-xs font-semibold text-white hover:bg-white/20 border border-white/20 transition"
+              >
+                <BarChart3 className="h-4 w-4" />
+                My Reports
+              </Link>
             </>
           )}
         </div>
@@ -82,7 +86,7 @@ export default function DashboardPage() {
       {/* Main Stats Widgets */}
       <LeadManagerStatsWidgets
         portalHome="/dashboard"
-        assigned_to={isManager ? undefined : user?._id}
+        assigned_to={isAdmin ? undefined : user?._id}
       />
     </div>
   );

@@ -44,8 +44,13 @@ import { toast } from "@/lib/toast";
 import { mutationRejectedMessage } from "@/lib/mutationMessages";
 import { PortalBusyOverlay } from "@/components/portal/shared/PortalBusyOverlay";
 import { useAppSelector } from "@/store/hooks";
-import { formatCurrencyINR, leadLineValue, isUserInLeadManagerPortal } from "./leadUtils";
-import { isManager, readSessionFromStorage } from "@/utils/authStorage";
+import {
+  formatCurrencyINR,
+  leadLineValue,
+  isUserInLeadManagerPortal,
+  getLeadManagerPortalRole,
+} from "./leadUtils";
+import { isAdmin as checkIsAdmin, readSessionFromStorage } from "@/utils/authStorage";
 
 type Props = {
   mode: "create" | "edit";
@@ -243,7 +248,7 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
   const reduxUser = useAppSelector((state) => state.auth.user);
   const sessionUser = useMemo(() => readSessionFromStorage()?.user || null, []);
   const authUser = (reduxUser || sessionUser) as any;
-  const isAdmin = isManager(authUser);
+  const isAdmin = checkIsAdmin(authUser);
   const isSales = !isAdmin;
 
   // Fetch lead data if edit mode
@@ -1292,11 +1297,14 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
                   className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white"
                 >
                   <option value="">Unassigned...</option>
-                  {users.map((u) => (
-                    <option key={u._id} value={u._id}>
-                      {u.name}
-                    </option>
-                  ))}
+                  {users.map((u) => {
+                    const roleBadge = getLeadManagerPortalRole(u);
+                    return (
+                      <option key={u._id} value={u._id}>
+                        {u.name} {roleBadge ? `(${roleBadge})` : ""}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             )}

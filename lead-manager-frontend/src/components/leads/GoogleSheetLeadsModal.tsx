@@ -49,9 +49,6 @@ import {
   isFollowUpToday,
   isLeadAdmin,
   canAssignLead,
-  isSuperAdmin,
-  getUserDepartment,
-  getDeptLabel,
   canDeleteLead,
   canScheduleFollowUp,
   canViewLeadPricing,
@@ -59,6 +56,8 @@ import {
   ALLOWED_STATUS_TRANSITIONS,
   LEAD_STATUS_CONFIG,
   LEAD_PRIORITY_CONFIG,
+  isUserInLeadManagerPortal,
+  getLeadManagerPortalRole,
 } from "./leadUtils";
 import { AssignLeadModal } from "./AssignLeadModal";
 import { FollowUpModal } from "./FollowUpModal";
@@ -274,13 +273,12 @@ export function GoogleSheetLeadsModal({
   const [deleteLead] = useDeleteLeadMutation();
   const [bulkDeleteLeads, { isLoading: isBulkDeleting }] = useBulkDeleteLeadsMutation();
 
-  const rawUsers = Array.isArray(usersData)
+  const rawUsers = (Array.isArray(usersData)
     ? usersData
-    : (usersData as { data?: Array<{ _id: string; name: string; department?: string }> })?.data || [];
+    : (usersData as { data?: Array<{ _id: string; name: string; department?: string; portals?: Array<{ portal_code: string; access_roles?: string[] }> }> })?.data || []) as Array<{ _id: string; name: string; department?: string; portals?: Array<{ portal_code: string; access_roles?: string[] }> }>;
   const assignableUsers = useMemo(() => {
-    return rawUsers.filter((u) =>
-      ["sales", "admin", "finance"].includes(u.department || "")
-    );
+    const filtered = rawUsers.filter(isUserInLeadManagerPortal);
+    return filtered.length > 0 ? filtered : rawUsers;
   }, [rawUsers]);
 
   // Transform backend leads into flattened LeadRow array
@@ -863,8 +861,8 @@ export function GoogleSheetLeadsModal({
                   }`}
                 >
                   {isSA
-                    ? "Super Admin — All Leads"
-                    : `My Leads (${getDeptLabel(userDept)})`}
+                    ? "Admin — All Leads"
+                    : "My Assigned Leads"}
                 </span>
 
                 {/* Cloud Sync Status */}
@@ -884,8 +882,8 @@ export function GoogleSheetLeadsModal({
               </div>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 {isSA
-                  ? "Full access: edit leads, set Sales / Admin / Finance assignees together, and manage records"
-                  : `View and update leads assigned to you in ${getDeptLabel(userDept)}. Assignee is locked to yourself.`}
+                  ? "Full access: edit leads, assign portal users, and manage records"
+                  : "View and update leads assigned to you. Assignee is locked to yourself."}
               </p>
             </div>
           </div>
@@ -1126,7 +1124,7 @@ export function GoogleSheetLeadsModal({
                     <p className="text-xs text-slate-500">
                       {isSA
                         ? "Try adjusting your search query or filters"
-                        : `No leads assigned to you in ${getDeptLabel(userDept)}`}
+                        : "No leads assigned to you"}
                     </p>
                   </div>
                 ) : (
@@ -1588,11 +1586,14 @@ export function GoogleSheetLeadsModal({
                     >
                       <option value="all">All Assignees</option>
                       <option value="unassigned">Unassigned Only</option>
-                      {assignableUsers.map((u) => (
-                        <option key={u._id} value={u._id}>
-                          {u.name} ({getDeptLabel(u.department || "")})
-                        </option>
-                      ))}
+                      {assignableUsers.map((u) => {
+                        const roleBadge = getLeadManagerPortalRole(u);
+                        return (
+                          <option key={u._id} value={u._id}>
+                            {u.name} {roleBadge ? `(${roleBadge})` : ""}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
                 )}

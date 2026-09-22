@@ -30,7 +30,7 @@ import {
 } from "@/store/api";
 import { toast } from "@/lib/toast";
 import { useAppSelector } from "@/store/hooks";
-import { isManager, readSessionFromStorage } from "@/utils/authStorage";
+import { isAdmin as checkIsAdmin, isManager as checkIsManager, readSessionFromStorage } from "@/utils/authStorage";
 import { RichTextDisplay } from "@/components/quotations/RichTextDisplay";
 
 export default function TermsListingRoutePage() {
@@ -38,7 +38,7 @@ export default function TermsListingRoutePage() {
   const reduxUser = useAppSelector((state) => state.auth?.user);
   const sessionUser = useMemo(() => readSessionFromStorage()?.user || null, []);
   const authUser = (reduxUser || sessionUser) as any;
-  const isAdmin = isManager(authUser);
+  const canManageTerms = checkIsAdmin(authUser) || checkIsManager(authUser);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
@@ -138,7 +138,7 @@ export default function TermsListingRoutePage() {
           </div>
         </div>
 
-        {isAdmin && (
+        {canManageTerms && (
           <Link
             href={`${portalHome}/quotations/terms/new`}
             className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white shadow-md hover:bg-primary-hover transition cursor-pointer"
@@ -256,7 +256,7 @@ export default function TermsListingRoutePage() {
                   </div>
 
                   <div className="flex items-center gap-2 self-end sm:self-center">
-                    {isAdmin && (
+                    {canManageTerms && (
                       <button
                         type="button"
                         onClick={() => handleToggleDefault(item)}
@@ -280,7 +280,7 @@ export default function TermsListingRoutePage() {
                       {isExpanded ? "Hide Lines" : "View Lines"}
                     </button>
 
-                    {isAdmin && (
+                    {canManageTerms && (
                       <Link
                         href={`${portalHome}/quotations/terms/${item._id}/edit`}
                         className="rounded-xl border border-slate-200 p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:text-slate-300 dark:hover:bg-slate-700 cursor-pointer"
@@ -289,7 +289,7 @@ export default function TermsListingRoutePage() {
                       </Link>
                     )}
 
-                    {isAdmin && (
+                    {canManageTerms && (
                       <button
                         type="button"
                         onClick={() => handleDelete(item._id, item.title)}
@@ -327,7 +327,7 @@ export default function TermsListingRoutePage() {
                               </span>
                               <RichTextDisplay content={textLine.text} className="flex-1" />
                             </div>
-                            {isAdmin && (
+                            {canManageTerms && (
                               <button
                                 type="button"
                                 onClick={() => textLine._id && handleDeleteTextLine(textLine._id)}
@@ -341,7 +341,7 @@ export default function TermsListingRoutePage() {
                       </div>
                     )}
 
-                    {isAdmin && (
+                    {canManageTerms && (
                       <div className="mt-3 flex items-center gap-2">
                         <input
                           type="text"

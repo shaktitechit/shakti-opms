@@ -165,7 +165,7 @@ export function RichTextEditor({
           />
           <button
             type="button"
-            onClick={() => handleApplyColor("#0f172a")} // Default slate
+            onClick={() => handleApplyColor("inherit")} // Default
             className="h-3.5 w-3.5 rounded-full bg-slate-900 dark:bg-white hover:scale-110 transition cursor-pointer"
             title="Text Color: Default"
           />
@@ -203,7 +203,7 @@ export function RichTextEditor({
           onInput={emitChange}
           onBlur={emitChange}
           style={{ minHeight }}
-          className="w-full p-2.5 text-xs text-slate-900 dark:text-white focus:outline-none overflow-y-auto leading-relaxed prose dark:prose-invert max-w-none [&>ul]:list-disc [&>ul]:pl-4 [&>ol]:list-decimal [&>ol]:pl-4"
+          className="w-full p-2.5 text-xs text-slate-900 dark:text-white dark:[&_*]:!text-white focus:outline-none overflow-y-auto leading-relaxed prose dark:prose-invert max-w-none [&>ul]:list-disc [&>ul]:pl-4 [&>ol]:list-decimal [&>ol]:pl-4"
         />
 
         {/* Placeholder overlay when empty */}

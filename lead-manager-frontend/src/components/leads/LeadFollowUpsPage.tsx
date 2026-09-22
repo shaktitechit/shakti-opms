@@ -49,6 +49,8 @@ import {
   FOLLOWUP_TYPE_CONFIG,
   formatLeadDate,
   formatLeadDateTime,
+  isUserInLeadManagerPortal,
+  getLeadManagerPortalRole,
 } from "./leadUtils";
 import { CompleteFollowUpModal } from "./CompleteFollowUpModal";
 
@@ -110,11 +112,7 @@ function FollowUpTypeBadge({ type }: { type: LeadFollowUpType }) {
 
 export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
   const currentUser = useAppSelector((state) => state.auth.user);
-  const { isManager } = useLeadManagerRole();
-  const isAdminOrSuper =
-    currentUser?.role === "admin" ||
-    currentUser?.role === "super_admin" ||
-    portalHome.includes("admin");
+  const { isAdmin } = useLeadManagerRole();
 
   const [datePreset, setDatePreset] = useState<DateFilterPreset>("all");
   const [customFrom, setCustomFrom] = useState<string>("");
@@ -156,7 +154,7 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
   }
 
   const { data: usersData } = useListUsersQuery(undefined, {
-    skip: !isAdminOrSuper,
+    skip: !isAdmin,
   });
 
   // Calculate Date bounds for query if needed
@@ -230,11 +228,26 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
       // Overdue preset filter
       if (datePreset === "overdue" && !isOverdue) return false;
 
-      // Assignee filter
+      // Non-admin: only assigned leads
+      if (!isAdmin) {
+        const assignedId = leadObj?.assigned_to?._id
+          ? String(leadObj.assigned_to._id)
+          : typeof leadObj?.assigned_to === "string"
+          ? leadObj.assigned_to
+          : "";
+        if (assignedId !== String(currentUser?._id)) {
+          return false;
+        }
+      }
+
+      // Assignee filter (Admin only)
       if (assignedFilter !== "all") {
-        const assignedId = leadObj?.assigned_to?._id || "";
-        const createdById = fu.created_by?._id || "";
-        if (assignedId !== assignedFilter && createdById !== assignedFilter) {
+        const assignedId = leadObj?.assigned_to?._id
+          ? String(leadObj.assigned_to._id)
+          : typeof leadObj?.assigned_to === "string"
+          ? leadObj.assigned_to
+          : "";
+        if (assignedId !== assignedFilter) {
           return false;
         }
       }
@@ -255,7 +268,7 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
 
       return true;
     });
-  }, [followUps, statusFilter, typeFilter, datePreset, assignedFilter, search, todayStr]);
+  }, [followUps, statusFilter, typeFilter, datePreset, assignedFilter, search, todayStr, isAdmin, currentUser?._id]);
 
   // Summary counts
   const summary = useMemo(() => {
@@ -264,7 +277,19 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
     let completed = 0;
     let todayCount = 0;
 
-    for (const fu of followUps) {
+    const userFollowUps = !isAdmin
+      ? followUps.filter((fu) => {
+          const leadObj = typeof fu.lead === "object" && fu.lead !== null ? fu.lead : null;
+          const assignedId = leadObj?.assigned_to?._id
+            ? String(leadObj.assigned_to._id)
+            : typeof leadObj?.assigned_to === "string"
+            ? leadObj.assigned_to
+            : "";
+          return assignedId === String(currentUser?._id);
+        })
+      : followUps;
+
+    for (const fu of userFollowUps) {
       const fuDate = fu.follow_up_date ? fu.follow_up_date.split("T")[0] : "";
       const isDone = fu.status === "completed";
       if (isDone) {
@@ -276,11 +301,11 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
       }
     }
 
-    const total = followUps.length;
+    const total = userFollowUps.length;
     const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
 
     return { total, pending, overdue, completed, todayCount, rate };
-  }, [followUps, todayStr]);
+  }, [followUps, todayStr, isAdmin, currentUser?._id]);
 
   // Groupings for Agenda View
   const groupedAgenda = useMemo(() => {
@@ -340,7 +365,7 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {isManager ? (
+          {isAdmin ? (
             <>
               <button
                 type="button"
@@ -582,20 +607,25 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
           </div>
 
           {/* Sales rep filter (for Admin / Super Admin) */}
-          {isAdminOrSuper ? (
+          {isAdmin ? (
             <div>
               <select
                 value={assignedFilter}
                 onChange={(e) => setAssignedFilter(e.target.value)}
                 className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-white/10 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
               >
-                <option value="all">All Executives</option>
+                <option value="all">All Users</option>
                 {Array.isArray(usersData) &&
-                  usersData.map((u: any) => (
-                    <option key={u._id || u.id} value={u._id || u.id}>
-                      {u.name} ({u.department || u.role})
-                    </option>
-                  ))}
+                  usersData
+                    .filter(isUserInLeadManagerPortal)
+                    .map((u: any) => {
+                      const roleBadge = getLeadManagerPortalRole(u);
+                      return (
+                        <option key={u._id || u.id} value={u._id || u.id}>
+                          {u.name} {roleBadge ? `(${roleBadge})` : ""}
+                        </option>
+                      );
+                    })}
               </select>
             </div>
           ) : (

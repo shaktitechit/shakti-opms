@@ -50,7 +50,8 @@ import {
   leadEstimatedValue,
   LEAD_STATUS_CONFIG,
   LEAD_PRIORITY_CONFIG,
-  getDeptLabel,
+  isUserInLeadManagerPortal,
+  getLeadManagerPortalRole,
 } from "./leadUtils";
 import { AssignLeadModal } from "./AssignLeadModal";
 import { FollowUpModal } from "./FollowUpModal";
@@ -163,10 +164,9 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
   const total = leadsData?.total || 0;
   const totalPages = leadsData?.totalPages || 1;
 
-  const users = Array.isArray(usersData)
+  const users = (Array.isArray(usersData)
     ? usersData
-    : (usersData as { data?: Array<{ _id: string; name: string; department?: string }> })?.data || [];
-  const salesUsers = users.filter((u) => u.department === "sales");
+    : (usersData as { data?: Array<{ _id: string; name: string; department?: string; portals?: Array<{ portal_code: string; access_roles?: string[] }> }> })?.data || []) as Array<{ _id: string; name: string; department?: string; portals?: Array<{ portal_code: string; access_roles?: string[] }> }>;
 
   const clearFilters = () => {
     setSearch("");
@@ -398,12 +398,15 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
                   <option value="all">All Users</option>
                   <option value="unassigned">Unassigned Only</option>
                   {users
-                    .filter((u) => ["sales", "admin", "finance"].includes(u.department || ""))
-                    .map((u) => (
-                      <option key={u._id} value={u._id}>
-                        {u.name} ({getDeptLabel(u.department || "")})
-                      </option>
-                    ))}
+                    .filter(isUserInLeadManagerPortal)
+                    .map((u) => {
+                      const roleBadge = getLeadManagerPortalRole(u);
+                      return (
+                        <option key={u._id} value={u._id}>
+                          {u.name} {roleBadge ? `(${roleBadge})` : ""}
+                        </option>
+                      );
+                    })}
                 </select>
               </div>
             )}

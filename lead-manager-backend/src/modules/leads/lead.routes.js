@@ -3,6 +3,7 @@ const { requireAuth } = require('../../middlewares/auth.middleware');
 const {
   requireLeadManagerAccess,
   requireLeadManagerOrWorkPlannerAccess,
+  requireLeadManagerRole,
 } = require('../../middlewares/leadManagerAuth.middleware');
 const controller = require('./lead.controller');
 const quotationController = require('./leadQuotation.controller');
@@ -33,13 +34,13 @@ router.post('/follow-ups/reminders/overdue', controller.runOverdueFollowUpRemind
 router.put('/follow-ups/:followUpId/complete', controller.completeFollowUp);
 
 /* --- Lead Quotations --- */
-router.get('/quotations/default-terms', quotationController.getDefaultTerms);
-router.get('/quotations/:quotationId', quotationController.getById);
-router.patch('/quotations/:quotationId', quotationController.update);
-router.post('/quotations/:quotationId/submit-for-approval', quotationController.submitForApproval);
-router.post('/quotations/:quotationId/approve', quotationController.approve);
-router.post('/quotations/:quotationId/reject', quotationController.reject);
-router.delete('/quotations/:quotationId', quotationController.remove);
+router.get('/quotations/default-terms', requireLeadManagerRole('admin', 'manager'), quotationController.getDefaultTerms);
+router.get('/quotations/:quotationId', requireLeadManagerRole('admin', 'manager'), quotationController.getById);
+router.patch('/quotations/:quotationId', requireLeadManagerRole('admin', 'manager'), quotationController.update);
+router.post('/quotations/:quotationId/submit-for-approval', requireLeadManagerRole('admin', 'manager'), quotationController.submitForApproval);
+router.post('/quotations/:quotationId/approve', requireLeadManagerRole('admin', 'manager'), quotationController.approve);
+router.post('/quotations/:quotationId/reject', requireLeadManagerRole('admin', 'manager'), quotationController.reject);
+router.delete('/quotations/:quotationId', requireLeadManagerRole('admin', 'manager'), quotationController.remove);
 
 /* --- Leads CRUD --- */
 router.post('/', controller.create);
@@ -64,7 +65,7 @@ router.get('/:id/follow-ups', controller.listFollowUps);
 router.post('/:id/follow-ups', controller.createFollowUp);
 
 /* --- Lead Quotations per Lead --- */
-router.get('/:id/quotations', quotationController.list);
-router.post('/:id/quotations', quotationController.create);
+router.get('/:id/quotations', requireLeadManagerRole('admin', 'manager'), quotationController.list);
+router.post('/:id/quotations', requireLeadManagerRole('admin', 'manager'), quotationController.create);
 
 module.exports = router;

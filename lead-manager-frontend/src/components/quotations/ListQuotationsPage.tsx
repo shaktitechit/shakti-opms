@@ -43,7 +43,7 @@ import {
 } from "@/store/api";
 import { useAppSelector } from "@/store/hooks";
 import { toast } from "@/lib/toast";
-import { isManager, readSessionFromStorage } from "@/utils/authStorage";
+import { isAdmin, isManager, readSessionFromStorage } from "@/utils/authStorage";
 import {
   formatCurrencyINR,
   isAssignedSignatory,
@@ -261,7 +261,7 @@ export function ListQuotationsPage({
             Refresh
           </button>
 
-          {isManager(authUser as any) && (
+          {(isAdmin(authUser as any) || isManager(authUser as any)) && (
             <Link
               href={`${portalHome}/quotations/terms`}
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 shadow-xs hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer"
@@ -524,7 +524,7 @@ export function ListQuotationsPage({
                       {/* Actions */}
                       <td className="px-5 py-4 text-right">
                         {(() => {
-                          const isSignatory = isStrictSignatory(authUser, q);
+                          const isSignatory = isAssignedSignatory(authUser, q);
                           const canViewPdf = canViewQuotationPdf(authUser, q);
                           const canEmail = canEmailQuotation(q);
                           const canEdit = canEditQuotation(authUser, q);

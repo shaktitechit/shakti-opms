@@ -30,7 +30,12 @@ import {
 } from "@/store/api";
 import { useAppSelector } from "@/store/hooks";
 import { useLeadManagerRole } from "@/hooks/useLeadManagerRole";
-import { formatCurrencyINR, getUserDepartment, getDeptLabel, canViewLeadPricing } from "./leadUtils";
+import {
+  formatCurrencyINR,
+  canViewLeadPricing,
+  isUserInLeadManagerPortal,
+  getLeadManagerPortalRole,
+} from "./leadUtils";
 import { ExecutiveLeadDetailsModal } from "./ExecutiveLeadDetailsModal";
 
 type Props = {
@@ -39,87 +44,71 @@ type Props = {
 
 export function LeadReportsDashboard({ portalHome = "/dashboard" }: Props) {
   const authUser = useAppSelector((state) => state.auth.user);
-  const { isManager, user } = useLeadManagerRole();
+  const { isAdmin, user } = useLeadManagerRole();
   const [selectedUser, setSelectedUser] = useState<string>("all");
   const [detailsExecutive, setDetailsExecutive] = useState<LeadSalesPerformance | null>(null);
 
-  const userDept = getUserDepartment(authUser);
-  /** Manager → all leads (optional assignee filter). Executive → own assigned leads only. */
-  const isPersonalView = !isManager;
+  /** Admin → all leads (optional assignee filter). Manager & Executive → own assigned leads only. */
+  const isPersonalView = !isAdmin;
   const showPricing = canViewLeadPricing(authUser, portalHome);
 
   const { data: usersData } = useListUsersQuery(undefined, { skip: isPersonalView });
-  const users = Array.isArray(usersData)
+  const users = (Array.isArray(usersData)
     ? usersData
-    : (usersData as { data?: Array<{ _id: string; name: string; department?: string; portals?: Array<{ portal_code?: string; access_roles?: string[] }> }> })?.data || [];
+    : (usersData as { data?: Array<{ _id: string; name: string; department?: string; portals?: Array<{ portal_code?: string; access_roles?: string[] }> }> })?.data || []) as Array<{ _id: string; name: string; department?: string; portals?: Array<{ portal_code?: string; access_roles?: string[] }> }>;
   const assignableUsers = (() => {
-    const executives = users.filter((u) => {
-      const portals = Array.isArray(u.portals) ? u.portals : [];
-      const portalAccess = portals.find((p: { portal_code?: string; access_roles?: string[] }) => p.portal_code === "lead_manager");
-      return Boolean(
-        portalAccess &&
-          Array.isArray(portalAccess.access_roles) &&
-          portalAccess.access_roles.includes("executive")
-      );
-    });
-    return executives.length > 0 ? executives : users;
+    const filtered = users.filter(isUserInLeadManagerPortal);
+    return filtered.length > 0 ? filtered : users;
   })();
 
   const selfId = String(user?._id || authUser?._id || "");
   const queryParam = isPersonalView
     ? selfId
-      ? { assigned_to: selfId }
-      : undefined
-    : selectedUser !== "all"
-      ? { assigned_to: selectedUser }
-      : undefined;
+    : selectedUser === "all"
+    ? undefined
+    : selectedUser;
 
-  const {
-    data: stats,
-    isLoading: loadingStats,
-    refetch: refetchStats,
-  } = useGetLeadDashboardStatsQuery(queryParam);
-  const {
-    data: funnel,
-    isLoading: loadingFunnel,
-    refetch: refetchFunnel,
-  } = useGetLeadSalesFunnelQuery(queryParam);
-  const {
-    data: salesPerf,
-    isLoading: loadingPerf,
-    refetch: refetchPerf,
-  } = useGetLeadSalesPerformanceQuery(queryParam, { skip: isPersonalView });
-  const {
-    data: sourcePerf,
-    isLoading: loadingSource,
-    refetch: refetchSource,
-  } = useGetLeadSourcePerformanceQuery(queryParam);
+  const { data: stats, isLoading: loadingStats, refetch: refetchStats } = useGetLeadDashboardStatsQuery(
+    queryParam ? { assigned_to: queryParam } : undefined
+  );
+  const { data: funnel, isLoading: loadingFunnel, refetch: refetchFunnel } = useGetLeadSalesFunnelQuery(
+    queryParam ? { assigned_to: queryParam } : undefined
+  );
+  const { data: perfData, isLoading: loadingPerf, refetch: refetchPerf } = useGetLeadSalesPerformanceQuery(
+    queryParam ? { assigned_to: queryParam } : undefined
+  );
+  const { data: sourcePerf, isLoading: loadingSource, refetch: refetchSource } = useGetLeadSourcePerformanceQuery(
+    queryParam ? { assigned_to: queryParam } : undefined
+  );
 
   const handleRefreshAll = () => {
     refetchStats();
     refetchFunnel();
-    if (!isPersonalView) refetchPerf();
+    refetchPerf();
     refetchSource();
   };
 
+  const salesPerformance = Array.isArray(perfData) ? perfData : [];
+  const hasExecutiveBreakdown = salesPerformance.length > 0;
+
   return (
-    <div className="relative min-h-screen space-y-6 pb-20">
+    <div className="space-y-6">
       {/* Header Banner */}
-      <div className="relative shrink-0 overflow-hidden rounded-xl border border-blue-500/10 bg-gradient-to-r from-blue-600/5 to-indigo-600/10 px-4 py-2.5 shadow-sm dark:from-blue-500/5 dark:to-indigo-500/5">
-        <div className="relative flex flex-wrap items-center justify-between gap-4">
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/60">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <Link
-              href={`${portalHome}/leads`}
-              className="rounded-xl border border-slate-200 bg-white p-2 text-slate-500 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-white/5"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <BarChart3 className="h-5 w-5" />
+            </div>
             <div>
-              <h1 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">
-                {isPersonalView
-                  ? `My Lead Funnel & Performance (${getDeptLabel(userDept)})`
-                  : "Lead Funnel & Performance Analytics"}
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-lg font-bold text-slate-900 dark:text-white">
+                  {isPersonalView ? "My Performance Report" : "Sales & Pipeline Analytics"}
+                </h1>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                  {isPersonalView ? "Personal View" : "Organization"}
+                </span>
+              </div>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {isPersonalView
                   ? "Personal pipeline metrics for leads assigned to you"
@@ -129,18 +118,21 @@ export function LeadReportsDashboard({ portalHome = "/dashboard" }: Props) {
           </div>
 
           <div className="flex items-center gap-2.5">
-            {isManager && (
+            {isAdmin && (
               <select
                 value={selectedUser}
                 onChange={(e) => setSelectedUser(e.target.value)}
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-900 dark:text-slate-200"
               >
-                <option value="all">All Executives</option>
-                {assignableUsers.map((u) => (
-                  <option key={u._id} value={u._id}>
-                    {u.name}
-                  </option>
-                ))}
+                <option value="all">All Team Members</option>
+                {assignableUsers.map((u) => {
+                  const roleBadge = getLeadManagerPortalRole(u);
+                  return (
+                    <option key={u._id} value={u._id}>
+                      {u.name} {roleBadge ? `(${roleBadge})` : ""}
+                    </option>
+                  );
+                })}
               </select>
             )}
 
@@ -358,7 +350,7 @@ export function LeadReportsDashboard({ portalHome = "/dashboard" }: Props) {
 
       {/* Executives performance (Manager only) */}
       {!isPersonalView && (() => {
-        const rows = (salesPerf || [])
+        const rows = (salesPerformance || [])
           .slice()
           .sort((a, b) => (b.total_leads || 0) - (a.total_leads || 0));
         const colSpan = showPricing ? 13 : 11;

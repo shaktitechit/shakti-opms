@@ -137,14 +137,35 @@ function getPortalAccess(user, portalCode) {
 }
 
 /**
- * Checks whether user can manage all leads (not scoped to assignee).
- * Uses lead_manager portal access_roles: `manager` → all leads; `executive` → assigned only.
+ * Checks whether user has admin access on lead_manager portal.
+ * Strictly checks `admin` inside portal access_roles.
+ */
+function isLeadAdmin(user) {
+  const portalAccess = getPortalAccess(user, 'lead_manager');
+  if (portalAccess && Array.isArray(portalAccess.access_roles)) {
+    return portalAccess.access_roles.includes('admin');
+  }
+  return false;
+}
+
+/**
+ * Checks whether user has manager access role on lead_manager portal.
  */
 function isLeadManager(user) {
   const portalAccess = getPortalAccess(user, 'lead_manager');
   if (portalAccess && Array.isArray(portalAccess.access_roles)) {
-    if (portalAccess.access_roles.includes('manager')) return true;
-    if (portalAccess.access_roles.includes('executive')) return false;
+    return portalAccess.access_roles.includes('manager');
+  }
+  return false;
+}
+
+/**
+ * Checks whether user has executive access role on lead_manager portal.
+ */
+function isLeadExecutive(user) {
+  const portalAccess = getPortalAccess(user, 'lead_manager');
+  if (portalAccess && Array.isArray(portalAccess.access_roles)) {
+    return portalAccess.access_roles.includes('executive');
   }
   return false;
 }
@@ -159,14 +180,9 @@ function isWorkPlannerManager(user) {
   );
 }
 
-function isSuperAdminUser(user) {
-  if (!user) return false;
-  return user.department === 'super_admin' || user.role === 'super_admin';
-}
-
-/** Visibility: portal managers see all leads; executives only leads assigned to them. */
+/** Visibility: portal admins see all leads; managers and executives only leads assigned to them. */
 function assertCanAccessLead(lead, user, action = 'view') {
-  if (isLeadManager(user)) return;
+  if (isLeadAdmin(user)) return;
   if (userIsLeadAssignee(lead, user._id)) return;
   throw new ApiError(403, `You do not have permission to ${action} this lead`);
 }
@@ -240,7 +256,7 @@ async function list(query = {}, user) {
   const { Lead, User } = getModels();
   const andConditions = [{ deletedAt: null }];
 
-  const canManageAll = isLeadManager(user);
+  const canManageAll = isLeadAdmin(user);
   const canSearchAssigneeAsWpManager =
     isWorkPlannerManager(user) &&
     query.assigned_to &&
@@ -424,7 +440,7 @@ async function get(id, user) {
 async function create(body, user) {
   const { Lead } = getModels();
 
-  const canManageAll = isLeadManager(user);
+  const canManageAll = isLeadAdmin(user);
   let assigned_to = undefined;
   if (canManageAll) {
     assigned_to = body.assigned_to ? body.assigned_to : null;
@@ -621,6 +637,10 @@ async function update(id, body, user) {
  * Assign or reassign lead to user via assigned_to.
  */
 async function assign(id, body, user) {
+  if (!isLeadAdmin(user)) {
+    throw new ApiError(403, 'Only Lead Administrators can assign or reassign leads');
+  }
+
   const { Lead, User } = getModels();
   const lead = await Lead.findOne({ _id: id, deletedAt: null });
   if (!lead) throw new ApiError(404, 'Lead not found');
@@ -1124,6 +1144,10 @@ async function getTimeline(id) {
  * Soft delete lead.
  */
 async function remove(id, user) {
+  if (!isLeadAdmin(user)) {
+    throw new ApiError(403, 'Only Lead Administrators can delete leads');
+  }
+
   const { Lead } = getModels();
   const doc = await softDeleteActiveById(Lead, id, {
     notFoundMessage: 'Lead not found',
@@ -1145,6 +1169,10 @@ async function remove(id, user) {
  * Restore soft deleted lead.
  */
 async function restore(id, user) {
+  if (!isLeadAdmin(user)) {
+    throw new ApiError(403, 'Only Lead Administrators can restore deleted leads');
+  }
+
   const { Lead } = getModels();
   const doc = await restoreSoftDeletedById(Lead, id, {
     notFoundMessage: 'Lead not found',
@@ -1166,6 +1194,10 @@ async function restore(id, user) {
  * Bulk delete leads.
  */
 async function bulkDelete(ids, user) {
+  if (!isLeadAdmin(user)) {
+    throw new ApiError(403, 'Only Lead Administrators can bulk delete leads');
+  }
+
   if (!Array.isArray(ids) || ids.length === 0) {
     return { count: 0, deletedIds: [] };
   }
@@ -1202,11 +1234,11 @@ async function bulkDelete(ids, user) {
 }
 
 /**
- * Bulk create leads (Manager only).
+ * Bulk create leads (Admin only).
  */
 async function bulkCreate(body, user) {
-  if (!isLeadManager(user)) {
-    throw new ApiError(403, 'Only Lead Managers can perform bulk lead upload');
+  if (!isLeadAdmin(user)) {
+    throw new ApiError(403, 'Only Lead Administrators can perform bulk lead upload');
   }
 
   const { Lead } = getModels();
@@ -1318,8 +1350,10 @@ async function bulkCreate(body, user) {
 }
 
 module.exports = {
+  isLeadAdmin,
   isLeadManager,
-  checkDuplicates,
+  isLeadExecutive,
+  assertCanAccessLead,
   list,
   get,
   create,
@@ -1332,7 +1366,7 @@ module.exports = {
   convert,
   getTimeline,
   remove,
-  restore,
   bulkDelete,
+  restore,
+  checkDuplicates,
 };
-

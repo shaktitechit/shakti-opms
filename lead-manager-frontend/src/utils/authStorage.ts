@@ -69,14 +69,6 @@ function parseJwtUser(token: string): AuthUser | null {
 export function hasLeadManagerPortalAccess(user: AuthUser | null | undefined): boolean {
   if (!user) return false;
   const uAny = user as any;
-  if (
-    uAny.department === "super_admin" ||
-    uAny.department === "admin" ||
-    (Array.isArray(uAny.role_codes) && (uAny.role_codes.includes("admin") || uAny.role_codes.includes("super_admin"))) ||
-    (Array.isArray(uAny.roles) && (uAny.roles.includes("super_admin") || uAny.roles.includes("admin")))
-  ) {
-    return true;
-  }
   const portals = Array.isArray(user.portals)
     ? user.portals
     : Array.isArray(uAny.portal_access)
@@ -89,6 +81,32 @@ export function hasLeadManagerPortalAccess(user: AuthUser | null | undefined): b
     portalAccess &&
       Array.isArray(portalAccess.access_roles) &&
       portalAccess.access_roles.length > 0
+  );
+}
+
+export function isAdmin(user: AuthUser | null | undefined): boolean {
+  const uParam = user as any;
+  if (!user || (!uParam?._id && !uParam?.id && !uParam?.email)) {
+    const s = readSessionFromStorage();
+    user = s?.user || null;
+  }
+  if (!user) return false;
+
+  const uAny = user as any;
+  const portals = Array.isArray(user.portals)
+    ? user.portals
+    : Array.isArray(uAny.portal_access)
+    ? uAny.portal_access
+    : [];
+
+  const portalAccess = portals.find(
+    (p: any) => p && (p.portal_code === "lead_manager" || p.portal === "lead_manager")
+  );
+
+  return Boolean(
+    portalAccess &&
+      Array.isArray(portalAccess.access_roles) &&
+      portalAccess.access_roles.includes("admin")
   );
 }
 
@@ -108,7 +126,7 @@ export function isManager(user: AuthUser | null | undefined): boolean {
     : [];
 
   const portalAccess = portals.find(
-    (p: any) => p.portal_code === "lead_manager" || p.portal === "lead_manager"
+    (p: any) => p && (p.portal_code === "lead_manager" || p.portal === "lead_manager")
   );
 
   return Boolean(
@@ -134,7 +152,7 @@ export function isExecutive(user: AuthUser | null | undefined): boolean {
     : [];
 
   const portalAccess = portals.find(
-    (p: any) => p.portal_code === "lead_manager" || p.portal === "lead_manager"
+    (p: any) => p && (p.portal_code === "lead_manager" || p.portal === "lead_manager")
   );
 
   return Boolean(

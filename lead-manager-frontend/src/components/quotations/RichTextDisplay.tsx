@@ -20,14 +20,14 @@ export function RichTextDisplay({ content, className = "" }: RichTextDisplayProp
   if (isHtml) {
     return (
       <div
-        className={`prose dark:prose-invert max-w-none text-xs leading-relaxed text-slate-800 dark:text-slate-200 [&>ul]:list-disc [&>ul]:pl-4 [&>ol]:list-decimal [&>ol]:pl-4 [&>p]:mb-1 ${className}`}
+        className={`prose dark:prose-invert max-w-none text-xs leading-relaxed text-slate-800 dark:text-white dark:[&_*]:!text-white [&>ul]:list-disc [&>ul]:pl-4 [&>ol]:list-decimal [&>ol]:pl-4 [&>p]:mb-1 ${className}`}
         dangerouslySetInnerHTML={{ __html: content }}
       />
     );
   }
 
   return (
-    <span className={`text-xs text-slate-800 dark:text-slate-200 whitespace-pre-wrap ${className}`}>
+    <span className={`text-xs text-slate-800 dark:text-white whitespace-pre-wrap ${className}`}>
       {content}
     </span>
   );

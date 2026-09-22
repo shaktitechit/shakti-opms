@@ -12,12 +12,12 @@ export function formatCurrencyINR(amount: number): string {
   }).format(amount);
 }
 
-import { isManager, readSessionFromStorage } from "@/utils/authStorage";
+import { isAdmin, isManager, isExecutive, readSessionFromStorage } from "@/utils/authStorage";
 
 export function canManageQuotations(
   user?: any
 ): boolean {
-  return isManager(user);
+  return isAdmin(user) || isManager(user);
 }
 
 export function canCreateQuotation(
@@ -90,7 +90,8 @@ export function isAssignedSignatory(
   }
   if (!user || !quotation) return false;
 
-  if (isManager(user as any)) {
+  // Admin can give approval to any quotation even if not listed as signatory
+  if (isAdmin(user as any)) {
     return true;
   }
 
@@ -112,6 +113,7 @@ export function canViewQuotationPdf(
   quotation?: (QuotationLike & { created_by?: string | QuotationUserRef | null }) | null
 ): boolean {
   if (!quotation) return false;
+  if (isAssignedSignatory(user, quotation)) return true;
   return isQuotationApproved(quotation);
 }
 
@@ -134,7 +136,7 @@ export function canEditQuotation(
   quotation?: (QuotationLike & { created_by?: string | QuotationUserRef | null }) | null
 ): boolean {
   if (!user || !quotation) return false;
-  return canManageQuotations(user) || isQuotationCreator(user, quotation);
+  return isAdmin(user as any) || isQuotationCreator(user, quotation);
 }
 
 export function isQuotationCreator(
@@ -171,17 +173,17 @@ export function isQuotationVisible(
   quotation?: (QuotationLike & { created_by?: string | QuotationUserRef | null }) | null
 ): boolean {
   if (!quotation) return false;
-  if (!user) return true;
+  if (!user) return false;
 
-  if (isManager(user as any)) {
+  if (isAdmin(user as any)) {
     return true;
   }
 
-  if (quotation.status === "draft") {
-    return isQuotationCreator(user, quotation);
+  if (isManager(user as any)) {
+    return isQuotationCreator(user, quotation) || isStrictSignatory(user, quotation);
   }
 
-  return true;
+  return false;
 }
 
 export function canSubmitForApproval(
@@ -213,7 +215,15 @@ export function isQuotationRosterVisible(
     const s = readSessionFromStorage();
     user = s?.user || null;
   }
-  if (!user) return true;
+  if (!user) return false;
 
-  return isQuotationCreator(user, quotation) || isStrictSignatory(user, quotation);
+  if (isAdmin(user as any)) {
+    return true;
+  }
+
+  if (isManager(user as any)) {
+    return isQuotationCreator(user, quotation) || isStrictSignatory(user, quotation);
+  }
+
+  return false;
 }

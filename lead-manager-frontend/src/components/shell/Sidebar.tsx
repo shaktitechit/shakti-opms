@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useLeadManagerRole } from "@/hooks/useLeadManagerRole";
 import {
   BarChart3,
+  BookOpen,
   CalendarDays,
   CheckSquare,
   ChevronLeft,
@@ -29,7 +30,7 @@ export function Sidebar({
   companyInfo?: any;
 }) {
   const pathname = usePathname();
-  const { isManager, isExecutive, roleLabel } = useLeadManagerRole();
+  const { isAdmin, isManager, isExecutive, roleLabel } = useLeadManagerRole();
   const lgW = desktopCollapsed ? "lg:w-[64px] lg:min-w-[64px]" : "lg:w-[14.5rem] lg:min-w-[14.5rem]";
 
   const companyLogoUrl = companyInfo?.logo_url || process.env.NEXT_PUBLIC_COMPANY_LOGO_URL || "";
@@ -39,7 +40,8 @@ export function Sidebar({
   const isLeadsActive = pathname === "/dashboard/leads" || (pathname.startsWith("/dashboard/leads") && !pathname.includes("follow-ups") && !pathname.includes("reports"));
   const isFollowUpsActive = pathname.startsWith("/dashboard/leads/follow-ups");
   const isReportsActive = pathname.startsWith("/dashboard/leads/reports");
-  const isQuotationsActive = pathname.startsWith("/dashboard/quotations");
+  const isQuotationsActive = pathname.startsWith("/dashboard/quotations") && !pathname.includes("terms");
+  const isTermsActive = pathname.startsWith("/dashboard/quotations/terms");
 
   return (
     <>
@@ -106,7 +108,13 @@ export function Sidebar({
         <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
           <div className={`flex items-center justify-between px-2 py-1.5 text-[10px] font-bold uppercase tracking-wider text-muted ${desktopCollapsed ? "hidden" : "flex"}`}>
             <span>Navigation</span>
-            <span className={`rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${isManager ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20" : "bg-primary/15 text-primary border border-primary/20"}`}>
+            <span className={`rounded-md px-1.5 py-0.5 text-[9px] font-extrabold uppercase ${
+              isAdmin
+                ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/20"
+                : isManager
+                ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                : "bg-primary/15 text-primary border border-primary/20"
+            }`}>
               {roleLabel}
             </span>
           </div>
@@ -156,25 +164,23 @@ export function Sidebar({
             {!desktopCollapsed && <span>Follow-Ups</span>}
           </Link>
 
-          {/* Sales Reports — managers (team) and executives (own data) */}
-          {(isManager || isExecutive) && (
-            <Link
-              href="/dashboard/leads/reports"
-              onClick={() => setMobileNavOpen(false)}
-              className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
-                isReportsActive
-                  ? "bg-primary/15 border border-primary/30 text-primary font-bold shadow-xs"
-                  : "text-muted hover:bg-surface-muted hover:text-foreground border border-transparent"
-              }`}
-              title={isExecutive && !isManager ? "My Reports" : "Sales Reports"}
-            >
-              <BarChart3 className={`h-4 w-4 shrink-0 ${isReportsActive ? "text-primary" : ""}`} />
-              {!desktopCollapsed && <span>{isExecutive && !isManager ? "My Reports" : "Reports"}</span>}
-            </Link>
-          )}
+          {/* Reports — team analytics for Admin, own data for Manager & Executive */}
+          <Link
+            href="/dashboard/leads/reports"
+            onClick={() => setMobileNavOpen(false)}
+            className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+              isReportsActive
+                ? "bg-primary/15 border border-primary/30 text-primary font-bold shadow-xs"
+                : "text-muted hover:bg-surface-muted hover:text-foreground border border-transparent"
+            }`}
+            title={isAdmin ? "Sales Reports" : "My Reports"}
+          >
+            <BarChart3 className={`h-4 w-4 shrink-0 ${isReportsActive ? "text-primary" : ""}`} />
+            {!desktopCollapsed && <span>{isAdmin ? "Sales Reports" : "My Reports"}</span>}
+          </Link>
 
-          {/* Quotations (Manager only — not shown to executives) */}
-          {!isExecutive && (
+          {/* Quotations (Admin & Manager Only) */}
+          {(isAdmin || isManager) && (
             <Link
               href="/dashboard/quotations"
               onClick={() => setMobileNavOpen(false)}
@@ -187,6 +193,23 @@ export function Sidebar({
             >
               <FileText className={`h-4 w-4 shrink-0 ${isQuotationsActive ? "text-primary" : ""}`} />
               {!desktopCollapsed && <span>Quotations</span>}
+            </Link>
+          )}
+
+          {/* Master Terms & Conditions (Admin & Manager) */}
+          {(isAdmin || isManager) && (
+            <Link
+              href="/dashboard/quotations/terms"
+              onClick={() => setMobileNavOpen(false)}
+              className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+                isTermsActive
+                  ? "bg-primary/15 border border-primary/30 text-primary font-bold shadow-xs"
+                  : "text-muted hover:bg-surface-muted hover:text-foreground border border-transparent"
+              }`}
+              title="Terms & Conditions Master"
+            >
+              <BookOpen className={`h-4 w-4 shrink-0 ${isTermsActive ? "text-primary" : ""}`} />
+              {!desktopCollapsed && <span>Terms &amp; Conditions</span>}
             </Link>
           )}
         </div>

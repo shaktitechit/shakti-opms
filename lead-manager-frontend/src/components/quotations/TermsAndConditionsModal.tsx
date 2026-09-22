@@ -459,7 +459,7 @@ export function TermsAndConditionsModal({ open, onClose }: Props) {
                                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[10px] font-bold text-blue-800 dark:bg-blue-950 dark:text-blue-300 mt-0.5">
                                     {textLine.sequence || idx + 1}
                                   </span>
-                                  <RichTextDisplay content={textLine.text} className="flex-1" />
+                                  <RichTextDisplay content={textLine.text} className="flex-1 text-slate-900 dark:text-white" />
                                 </div>
                                 <button
                                   type="button"
@@ -654,7 +654,7 @@ export function TermsAndConditionsModal({ open, onClose }: Props) {
                           <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[10px] font-bold text-blue-800 dark:bg-blue-950 dark:text-blue-300 mt-1">
                             {idx + 1}
                           </span>
-                          <div className="flex-1">
+                          <div className="flex-1 text-slate-900 dark:text-white">
                             <RichTextEditor
                               value={line.text}
                               onChange={(html) =>

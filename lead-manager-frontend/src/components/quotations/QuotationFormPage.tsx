@@ -55,8 +55,10 @@ import { mutationRejectedMessage } from "@/lib/mutationMessages";
 import { PortalBusyOverlay } from "@/components/portal/shared/PortalBusyOverlay";
 import { formatCurrencyINR, canCreateQuotation, canManageQuotations } from "./quotationUtils";
 import { RichTextEditor } from "./RichTextEditor";
+import { RichTextDisplay } from "./RichTextDisplay";
 import { getFieldText } from "@/components/leads/LeadFormPage";
-import { isManager, readSessionFromStorage } from "@/utils/authStorage";
+import { getLeadManagerPortalRole } from "@/components/leads/leadUtils";
+import { isAdmin, isManager, readSessionFromStorage } from "@/utils/authStorage";
 
 type Props = {
   mode: "create" | "edit";
@@ -868,21 +870,11 @@ export function QuotationFormPage({
     ) as Array<Record<string, unknown>>;
   }, [usersData]);
 
-  // Filter users who have lead_manager portal assigned AND access role is manager
+  // Filter users who have lead_manager portal assigned AND access role is admin or manager
   const managerUsers = useMemo(() => {
     return usersList.filter((u: any) => {
-      if (isManager(u)) return true;
-      const portals = Array.isArray(u.portals)
-        ? u.portals
-        : Array.isArray(u.portal_access)
-        ? u.portal_access
-        : [];
-      const p = portals.find(
-        (x: any) => x.portal_code === "lead_manager" || x.portal === "lead_manager"
-      );
-      return Boolean(
-        p && Array.isArray(p.access_roles) && p.access_roles.includes("manager")
-      );
+      const role = getLeadManagerPortalRole(u);
+      return role === "Admin" || role === "Manager";
     });
   }, [usersList]);
 
@@ -1185,13 +1177,14 @@ export function QuotationFormPage({
     }
     const selected = usersList.find((u: any) => u._id === userId) as any;
     if (!selected) return;
+    const roleBadge = getLeadManagerPortalRole(selected);
     setSignatoryUserId(selected._id);
     setSignatoryName(selected.name || "");
     setSignatoryPhone(selected.phone || "");
     setSignatoryEmail(selected.email || "");
     setSignatoryDesignation(
-      selected.department
-        ? String(selected.department).charAt(0).toUpperCase() + String(selected.department).slice(1)
+      roleBadge === "Admin"
+        ? "Lead Administrator"
         : "Lead Manager"
     );
   };
@@ -2195,14 +2188,14 @@ export function QuotationFormPage({
                 Signatory &amp; Admin Representative (Printed on PDF Letterhead)
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Select an authorized signatory from the dropdown (only active Lead Managers are listed). Signatory details are auto-filled and locked; only designation can be edited.
+                Select an authorized signatory from the dropdown (only active Lead Managers and Admins are listed). Signatory details are auto-filled and locked; only designation can be edited.
               </p>
             </div>
 
             {usersList.length > 0 && (
               <div className="flex items-center gap-2">
                 <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                  Choose Manager Signatory:
+                  Choose Signatory:
                 </label>
                 <select
                   value={signatoryUserId}
@@ -2210,13 +2203,16 @@ export function QuotationFormPage({
                   className="rounded-lg border border-blue-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-800 shadow-xs focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-slate-100 cursor-pointer"
                 >
                   <option value="">
-                    -- Select Lead Manager Signatory (Required) --
+                    -- Select Authorized Signatory (Required) --
                   </option>
-                  {managerUsers.map((u: any) => (
-                    <option key={u._id} value={u._id}>
-                      {u.name || u.email} (Manager) {u.phone ? `• ${u.phone}` : ""}
-                    </option>
-                  ))}
+                  {managerUsers.map((u: any) => {
+                    const roleBadge = getLeadManagerPortalRole(u);
+                    return (
+                      <option key={u._id} value={u._id}>
+                        {u.name || u.email} {roleBadge ? `(${roleBadge})` : ""} {u.phone ? `• ${u.phone}` : ""}
+                      </option>
+                    );
+                  })}
                 </select>
                 {signatoryUserId && (
                   <button
@@ -2483,19 +2479,19 @@ export function QuotationFormPage({
                                     onClick={() => handleToggleClause(clause)}
                                     className={`w-full flex items-start gap-2 p-1.5 rounded-md text-left text-xs transition cursor-pointer ${
                                       isClauseSelected
-                                        ? "bg-blue-100/70 text-blue-900 dark:bg-blue-950/70 dark:text-blue-200 font-medium"
-                                        : "hover:bg-white text-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                                        ? "bg-blue-100/70 text-blue-900 dark:bg-blue-950/70 dark:text-white font-medium"
+                                        : "hover:bg-white text-slate-700 dark:text-white dark:hover:bg-slate-800"
                                     }`}
                                   >
-                                    <div className="mt-0.5 shrink-0 text-blue-600">
+                                    <div className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400">
                                       {isClauseSelected ? (
                                         <CheckSquare className="h-3.5 w-3.5" />
                                       ) : (
                                         <Square className="h-3.5 w-3.5 text-slate-400" />
                                       )}
                                     </div>
-                                    <div className="flex-1 text-[11px] leading-snug">
-                                      {clause}
+                                    <div className="flex-1 text-[11px] leading-snug text-slate-800 dark:text-white">
+                                      <RichTextDisplay content={clause} className="dark:text-white dark:[&_*]:!text-white" />
                                     </div>
                                   </button>
                                 );
@@ -2526,7 +2522,7 @@ export function QuotationFormPage({
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[10px] font-bold text-blue-800 dark:bg-blue-950 dark:text-blue-300 mt-1">
                       {idx + 1}
                     </span>
-                    <div className="flex-1">
+                    <div className="flex-1 text-slate-900 dark:text-white">
                       <RichTextEditor
                         value={term}
                         onChange={(html) => handleTermChange(idx, html)}

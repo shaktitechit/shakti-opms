@@ -40,8 +40,10 @@ import { toast } from "@/lib/toast";
 import { mutationRejectedMessage } from "@/lib/mutationMessages";
 import { formatCurrencyINR, canCreateQuotation, canManageQuotations } from "./quotationUtils";
 import { RichTextEditor } from "./RichTextEditor";
+import { RichTextDisplay } from "./RichTextDisplay";
 import { getFieldText } from "@/components/leads/LeadFormPage";
-import { isManager } from "@/utils/authStorage";
+import { getLeadManagerPortalRole } from "@/components/leads/leadUtils";
+import { isAdmin, isManager } from "@/utils/authStorage";
 
 type Props = {
   lead?: LeadRecord | null;
@@ -656,18 +658,8 @@ export function QuotationFormModal({
 
   const managerUsers = useMemo(() => {
     return usersList.filter((u: any) => {
-      if (isManager(u)) return true;
-      const portals = Array.isArray(u.portals)
-        ? u.portals
-        : Array.isArray(u.portal_access)
-        ? u.portal_access
-        : [];
-      const p = portals.find(
-        (x: any) => x.portal_code === "lead_manager" || x.portal === "lead_manager"
-      );
-      return Boolean(
-        p && Array.isArray(p.access_roles) && p.access_roles.includes("manager")
-      );
+      const role = getLeadManagerPortalRole(u);
+      return role === "Admin" || role === "Manager";
     });
   }, [usersList]);
 
@@ -1076,14 +1068,15 @@ export function QuotationFormModal({
     }
     const selected = usersList.find((u) => u._id === userId);
     if (!selected) return;
+    const roleBadge = getLeadManagerPortalRole(selected as any);
     setSignatoryUserId(selected._id);
     setSignatoryName(selected.name || "");
     setSignatoryPhone(selected.phone || "");
     setSignatoryEmail(selected.email || "");
     setSignatoryDesignation(
-      selected.department
-        ? selected.department.charAt(0).toUpperCase() + selected.department.slice(1)
-        : "Authorized Signatory"
+      roleBadge === "Admin"
+        ? "Lead Administrator"
+        : "Lead Manager"
     );
   };
 
@@ -2096,18 +2089,14 @@ export function QuotationFormModal({
                       <option value="">
                         -- Select Authorized Signatory (Required) --
                       </option>
-                      {lead?.assigned_to &&
-                        typeof lead.assigned_to === "object" &&
-                        isManager(lead.assigned_to) && (
-                          <option value={lead.assigned_to._id}>
-                            ⭐ Lead Assigned: {lead.assigned_to.name} (Manager)
+                      {managerUsers.map((u: any) => {
+                        const roleBadge = getLeadManagerPortalRole(u);
+                        return (
+                          <option key={u._id} value={u._id}>
+                            {u.name || u.email} {roleBadge ? `(${roleBadge})` : ""} {u.phone ? `• ${u.phone}` : ""}
                           </option>
-                        )}
-                      {managerUsers.map((u: any) => (
-                        <option key={u._id} value={u._id}>
-                          {u.name || u.email} (Manager) {u.phone ? `• ${u.phone}` : ""}
-                        </option>
-                      ))}
+                        );
+                      })}
                     </select>
                     {signatoryUserId && (
                       <button
@@ -2374,19 +2363,19 @@ export function QuotationFormModal({
                                         onClick={() => handleToggleClause(clause)}
                                         className={`w-full flex items-start gap-2 p-1.5 rounded-md text-left text-xs transition cursor-pointer ${
                                           isClauseSelected
-                                            ? "bg-blue-100/70 text-blue-900 dark:bg-blue-950/70 dark:text-blue-200 font-medium"
-                                            : "hover:bg-white text-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                                            ? "bg-blue-100/70 text-blue-900 dark:bg-blue-950/70 dark:text-white font-medium"
+                                            : "hover:bg-white text-slate-700 dark:text-white dark:hover:bg-slate-800"
                                         }`}
                                       >
-                                        <div className="mt-0.5 shrink-0 text-blue-600">
+                                        <div className="mt-0.5 shrink-0 text-blue-600 dark:text-blue-400">
                                           {isClauseSelected ? (
                                             <CheckSquare className="h-3.5 w-3.5" />
                                           ) : (
                                             <Square className="h-3.5 w-3.5 text-slate-400" />
                                           )}
                                         </div>
-                                        <div className="text-[11px] leading-snug line-clamp-2">
-                                          {clause}
+                                        <div className="flex-1 text-[11px] leading-snug text-slate-800 dark:text-white">
+                                          <RichTextDisplay content={clause} className="dark:text-white dark:[&_*]:!text-white" />
                                         </div>
                                       </button>
                                     );
@@ -2417,7 +2406,7 @@ export function QuotationFormModal({
                         <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-100 text-[10px] font-bold text-blue-800 dark:bg-blue-950 dark:text-blue-300 mt-1">
                           {idx + 1}
                         </span>
-                        <div className="flex-1">
+                        <div className="flex-1 text-slate-900 dark:text-white">
                           <RichTextEditor
                             value={term}
                             onChange={(html) => handleTermChange(idx, html)}

@@ -127,7 +127,7 @@ exports.restore = asyncHandler(async (req, res) => {
 exports.listFollowUps = asyncHandler(async (req, res) => {
   res.json({
     success: true,
-    data: await followUpService.listForLead(req.params.id),
+    data: await followUpService.listForLead(req.params.id, req.user),
   });
 });
 
@@ -156,9 +156,9 @@ exports.getFollowUpCalendar = asyncHandler(async (req, res) => {
 
 exports.runTodaysFollowUpReminders = asyncHandler(async (req, res) => {
   const { runTodaysFollowUpReminders } = require('../../jobs/followUpDailyReminder');
-  const { isLeadManager } = require('./lead.service');
-  if (!isLeadManager(req.user)) {
-    return res.status(403).json({ success: false, message: 'Managers only' });
+  const { isLeadAdmin } = require('./lead.service');
+  if (!isLeadAdmin(req.user)) {
+    return res.status(403).json({ success: false, message: 'Administrators only' });
   }
   const force = req.query.force === '1' || req.query.force === 'true' || req.body?.force === true;
   const data = await runTodaysFollowUpReminders({ force });
@@ -167,9 +167,9 @@ exports.runTodaysFollowUpReminders = asyncHandler(async (req, res) => {
 
 exports.runOverdueFollowUpReminders = asyncHandler(async (req, res) => {
   const { runOverdueFollowUpReminders } = require('../../jobs/followUpDailyReminder');
-  const { isLeadManager } = require('./lead.service');
-  if (!isLeadManager(req.user)) {
-    return res.status(403).json({ success: false, message: 'Managers only' });
+  const { isLeadAdmin } = require('./lead.service');
+  if (!isLeadAdmin(req.user)) {
+    return res.status(403).json({ success: false, message: 'Administrators only' });
   }
   const force = req.query.force === '1' || req.query.force === 'true' || req.body?.force === true;
   const data = await runOverdueFollowUpReminders({ force });
@@ -178,9 +178,9 @@ exports.runOverdueFollowUpReminders = asyncHandler(async (req, res) => {
 
 exports.runAllFollowUpReminders = asyncHandler(async (req, res) => {
   const { runAllFollowUpReminders } = require('../../jobs/followUpDailyReminder');
-  const { isLeadManager } = require('./lead.service');
-  if (!isLeadManager(req.user)) {
-    return res.status(403).json({ success: false, message: 'Managers only' });
+  const { isLeadAdmin } = require('./lead.service');
+  if (!isLeadAdmin(req.user)) {
+    return res.status(403).json({ success: false, message: 'Administrators only' });
   }
   const force = req.query.force === '1' || req.query.force === 'true' || req.body?.force === true;
   const data = await runAllFollowUpReminders({ force });

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDown, LogOut, Menu, Moon, Sun, User } from "lucide-react";
 import type { UserSession, ThemeColor } from "@/types/leadManager";
-import { isManager } from "@/utils/authStorage";
+import { isAdmin, isManager } from "@/utils/authStorage";
 import { NotificationBell } from "./NotificationBell";
 
 export function Topbar({
@@ -31,6 +31,7 @@ export function Topbar({
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
   const user = session?.user;
+  const adminRole = isAdmin(user);
   const managerRole = isManager(user);
 
   const getPageHeader = () => {
@@ -48,7 +49,7 @@ export function Topbar({
 
   const header = getPageHeader();
 
-  const userRoleBadge = managerRole ? "LEAD MANAGER" : "LEAD EXECUTIVE";
+  const userRoleBadge = adminRole ? "LEAD ADMIN" : managerRole ? "LEAD MANAGER" : "LEAD EXECUTIVE";
 
   return (
     <header className="relative z-30 flex shrink-0 items-center justify-between border-b border-border bg-card px-4 py-3 sm:px-6">

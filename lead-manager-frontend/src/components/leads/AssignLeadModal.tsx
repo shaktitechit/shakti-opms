@@ -17,11 +17,9 @@ import { useAppSelector } from "@/store/hooks";
 import { toast } from "@/lib/toast";
 import { mutationRejectedMessage } from "@/lib/mutationMessages";
 import {
-  isSuperAdmin,
-  isLeadAdmin,
   canAssignLead,
-  getDeptLabel,
   isUserInLeadManagerPortal,
+  getLeadManagerPortalRole,
 } from "./leadUtils";
 
 type Props = {
@@ -131,11 +129,14 @@ export function AssignLeadModal({ lead, open, onClose, onSuccess }: Props) {
                   className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white"
                 >
                   <option value="">Select User...</option>
-                  {allUsers.map((u) => (
-                    <option key={u._id} value={u._id}>
-                      {u.name} {u._id === authUserId ? " (You)" : ""} {u.department ? `(${getDeptLabel(u.department)})` : ""}
-                    </option>
-                  ))}
+                  {allUsers.map((u) => {
+                    const roleBadge = getLeadManagerPortalRole(u);
+                    return (
+                      <option key={u._id} value={u._id}>
+                        {u.name} {u._id === authUserId ? "(You) " : ""}{roleBadge ? `(${roleBadge})` : ""}
+                      </option>
+                    );
+                  })}
                 </select>
               )}
             </div>

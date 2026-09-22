@@ -9,27 +9,18 @@ const emailHelper = require('../messages/helpers/email.helper');
 const notificationHelper = require('../../utils/notificationHelper');
 const microsoftGraph = require('../../config/microsoftGraph');
 const { logger } = require('../../utils/logger');
-const authService = require('../../services/authService');
+const { isAdmin, isManager } = require('../../middlewares/leadManagerAuth.middleware');
 
 const TEMPLATE_APPROVAL_REQUEST = 'lead_quotation_approval_request';
 const TEMPLATE_APPROVED = 'lead_quotation_approved';
 const TEMPLATE_REJECTED = 'lead_quotation_rejected';
 
 /**
- * Checks whether user has permission to manage quotations (Admin, Super Admin, Finance only).
+ * Checks whether user has permission to manage quotations (Admin portal role).
  */
 function isQuotationManager(user) {
   if (!user) return false;
-  const dept = user.department || '';
-  const role = user.role || '';
-  return (
-    dept === 'admin' ||
-    dept === 'super_admin' ||
-    dept === 'finance' ||
-    role === 'admin' ||
-    role === 'super_admin' ||
-    role === 'finance'
-  );
+  return isAdmin(user);
 }
 
 function userIdOf(ref) {
@@ -550,35 +541,34 @@ function advanceLeadToQuotationStatus(lead) {
 
 /**
  * Build visibility filter for quotation queries.
- * - Super admin: sees all non-draft quotations + self-created draft quotations.
- * - Admin, Finance, and other roles: sees ONLY quotations where user is Creator OR assigned Signatory (and draft if creator).
+ * - Admin: sees all quotations.
+ * - Manager: sees quotations where user is Creator OR assigned Signatory.
+ * - Executive: zero quotation access.
  */
 function buildQuotationVisibilityFilter(user) {
-  if (!user || !user._id) return {};
+  if (!user || !user._id) return { _id: null };
 
-  const userEmail = (user.email || '').toLowerCase().trim();
+  if (isAdmin(user)) {
+    return {};
+  }
 
-  if (user.department === 'super_admin') {
+  if (isManager(user)) {
+    const userEmail = (user.email || '').toLowerCase().trim();
     return {
       $or: [
-        { status: { $ne: 'draft' } },
         { created_by: user._id },
+        {
+          $or: [
+            { signatory_user: user._id },
+            ...(userEmail ? [{ signatory_email: new RegExp(`^${userEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')}$`, 'i') }] : []),
+          ],
+        },
       ],
     };
   }
 
-  return {
-    $or: [
-      { created_by: user._id },
-      {
-        status: { $ne: 'draft' },
-        $or: [
-          { signatory_user: user._id },
-          ...(userEmail ? [{ signatory_email: new RegExp(`^${userEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')}$`, 'i') }] : []),
-        ],
-      },
-    ],
-  };
+  // Executives have zero quotation visibility
+  return { _id: null };
 }
 
 /**
@@ -874,8 +864,12 @@ async function update(id, body, user) {
   const quotation = await LeadQuotation.findOne({ _id: id, deletedAt: null });
   if (!quotation) throw new ApiError(404, 'Quotation not found');
 
-  if (!isQuotationManager(user)) {
-    throw new ApiError(403, 'Only administrators can edit quotations');
+  const isCreator =
+    quotation.created_by &&
+    String(quotation.created_by._id || quotation.created_by) === String(user._id);
+
+  if (!isAdmin(user) && !isCreator) {
+    throw new ApiError(403, 'Only administrators and quotation creators can edit quotations');
   }
 
   // Detect if this is a content update (form edit) versus a status-only transition (e.g. marking accepted/on_hold)
@@ -1097,7 +1091,7 @@ async function remove(id, user) {
 }
 
 /**
- * Approve quotation by assigned signatory.
+ * Approve quotation by assigned signatory or portal administrator.
  */
 async function approve(id, user) {
   const { LeadQuotation } = getModels();
@@ -1107,14 +1101,14 @@ async function approve(id, user) {
   if (!quotation) throw new ApiError(404, 'Quotation not found');
 
   const isSignatoryUser =
+    isAdmin(user) ||
     (quotation.signatory_user && String(quotation.signatory_user._id || quotation.signatory_user) === String(user._id)) ||
-    (quotation.signatory_email && quotation.signatory_email.toLowerCase() === (user.email || '').toLowerCase()) ||
-    user.department === 'super_admin';
+    (quotation.signatory_email && quotation.signatory_email.toLowerCase() === (user.email || '').toLowerCase());
 
   if (!isSignatoryUser) {
     throw new ApiError(
       403,
-      `Only assigned signatory (${quotation.signatory_name || 'Signatory'}) can approve this quotation`
+      `Only assigned signatory (${quotation.signatory_name || 'Signatory'}) or Lead Manager Administrators can approve this quotation`
     );
   }
 
@@ -1130,7 +1124,7 @@ async function approve(id, user) {
     entity_id: quotation.lead,
     action: 'approved',
     actor: user._id,
-    message: `Signatory ${user.name || user.email} approved Quotation #${quotation.quotation_no}`,
+    message: `${isAdmin(user) ? 'Administrator' : 'Signatory'} ${user.name || user.email} approved Quotation #${quotation.quotation_no}`,
     new_value: {
       quotation_id: quotation._id,
       quotation_no: quotation.quotation_no,
@@ -1144,7 +1138,7 @@ async function approve(id, user) {
 }
 
 /**
- * Reject quotation by assigned signatory.
+ * Reject quotation by assigned signatory or portal administrator.
  */
 async function reject(id, reason, user) {
   const { LeadQuotation } = getModels();
@@ -1154,14 +1148,14 @@ async function reject(id, reason, user) {
   if (!quotation) throw new ApiError(404, 'Quotation not found');
 
   const isSignatoryUser =
+    isAdmin(user) ||
     (quotation.signatory_user && String(quotation.signatory_user._id || quotation.signatory_user) === String(user._id)) ||
-    (quotation.signatory_email && quotation.signatory_email.toLowerCase() === (user.email || '').toLowerCase()) ||
-    user.department === 'super_admin';
+    (quotation.signatory_email && quotation.signatory_email.toLowerCase() === (user.email || '').toLowerCase());
 
   if (!isSignatoryUser) {
     throw new ApiError(
       403,
-      `Only assigned signatory (${quotation.signatory_name || 'Signatory'}) can reject this quotation`
+      `Only assigned signatory (${quotation.signatory_name || 'Signatory'}) or Lead Manager Administrators can reject this quotation`
     );
   }
 
@@ -1176,7 +1170,7 @@ async function reject(id, reason, user) {
     entity_id: quotation.lead,
     action: 'rejected',
     actor: user._id,
-    message: `Signatory ${user.name || user.email} rejected Quotation #${quotation.quotation_no}. Reason: ${reason || 'N/A'}`,
+    message: `${isAdmin(user) ? 'Administrator' : 'Signatory'} ${user.name || user.email} rejected Quotation #${quotation.quotation_no}. Reason: ${reason || 'N/A'}`,
     new_value: {
       quotation_id: quotation._id,
       quotation_no: quotation.quotation_no,

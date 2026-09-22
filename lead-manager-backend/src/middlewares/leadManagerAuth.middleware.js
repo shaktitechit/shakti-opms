@@ -5,13 +5,28 @@
 const { ApiError } = require('../utils/ApiError');
 
 /**
+ * Admin role on lead_manager portal.
+ * Returns true ONLY if assigned access_roles on lead_manager portal contains 'admin'.
+ */
+function isAdmin(user) {
+  if (!user) return false;
+  const portalAccess = Array.isArray(user.portals)
+    ? user.portals.find((p) => p && (p.portal_code === 'lead_manager' || p.portal === 'lead_manager'))
+    : null;
+  if (portalAccess && Array.isArray(portalAccess.access_roles)) {
+    return portalAccess.access_roles.includes('admin');
+  }
+  return false;
+}
+
+/**
  * Manager role on lead_manager portal.
  * Returns true ONLY if assigned access_roles on lead_manager portal contains 'manager'.
  */
 function isManager(user) {
   if (!user) return false;
   const portalAccess = Array.isArray(user.portals)
-    ? user.portals.find((p) => p.portal_code === 'lead_manager')
+    ? user.portals.find((p) => p && (p.portal_code === 'lead_manager' || p.portal === 'lead_manager'))
     : null;
   if (portalAccess && Array.isArray(portalAccess.access_roles)) {
     return portalAccess.access_roles.includes('manager');
@@ -26,7 +41,7 @@ function isManager(user) {
 function isExecutive(user) {
   if (!user) return false;
   const portalAccess = Array.isArray(user.portals)
-    ? user.portals.find((p) => p.portal_code === 'lead_manager')
+    ? user.portals.find((p) => p && (p.portal_code === 'lead_manager' || p.portal === 'lead_manager'))
     : null;
   if (portalAccess && Array.isArray(portalAccess.access_roles)) {
     return portalAccess.access_roles.includes('executive');
@@ -37,7 +52,7 @@ function isExecutive(user) {
 function hasPortalAccess(user, portalCode) {
   if (!user) return false;
   const portalAccess = Array.isArray(user.portals)
-    ? user.portals.find((p) => p.portal_code === portalCode)
+    ? user.portals.find((p) => p && (p.portal_code === portalCode || p.portal === portalCode))
     : null;
   return Boolean(
     portalAccess && Array.isArray(portalAccess.access_roles) && portalAccess.access_roles.length > 0
@@ -76,7 +91,7 @@ function requireLeadManagerOrWorkPlannerAccess(req, res, next) {
 }
 
 /**
- * Requires one of the specified portal roles ('executive' or 'manager') on lead_manager portal.
+ * Requires one of the specified portal roles ('admin', 'manager', 'executive') on lead_manager portal.
  */
 function requireLeadManagerRole(...allowedRoles) {
   return (req, res, next) => {
@@ -85,7 +100,7 @@ function requireLeadManagerRole(...allowedRoles) {
     }
 
     const portalAccess = Array.isArray(req.user.portals)
-      ? req.user.portals.find((p) => p.portal_code === 'lead_manager')
+      ? req.user.portals.find((p) => p && (p.portal_code === 'lead_manager' || p.portal === 'lead_manager'))
       : null;
 
     if (portalAccess && Array.isArray(portalAccess.access_roles)) {
@@ -105,6 +120,7 @@ function requireLeadManagerRole(...allowedRoles) {
 }
 
 module.exports = {
+  isAdmin,
   isManager,
   isExecutive,
   hasPortalAccess,

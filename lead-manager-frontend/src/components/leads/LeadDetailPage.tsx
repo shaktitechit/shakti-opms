@@ -630,10 +630,9 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
           { id: "overview", label: "Overview & Contacts" },
           { id: "products", label: `Requirements (${lead.products?.length || 0})` },
           { id: "followups", label: `Follow-ups (${followUps?.length || 0})` },
-          {
-            id: "orders",
-            label: `Quotations (${quotations?.length || 0})`,
-          },
+          ...(canManageQuotations(authUser, portalHome)
+            ? [{ id: "orders", label: `Quotations (${quotations?.length || 0})` }]
+            : []),
           { id: "attachments", label: `Attachments (${attachments?.length || 0})` },
           { id: "timeline", label: "Timeline & Activity" },
         ].map((tab) => {
@@ -1144,7 +1143,7 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
       )}
 
       {/* Tab 5: Quotations & Orders */}
-      {activeTab === "orders" && (
+      {activeTab === "orders" && canManageQuotations(authUser, portalHome) && (
         <div className="space-y-6">
           {/* Quotations Section */}
           <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-slate-900">
@@ -1207,7 +1206,7 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
                 quotations
                   .filter((q) => isDraftVisible(authUser, q as unknown as any))
                   .map((q) => {
-                  const isSignatory = isStrictSignatory(authUser, q);
+                  const isSignatory = isAssignedSignatory(authUser, q);
                   const canViewPdf = canViewQuotationPdf(authUser, q);
                   const canEmail = canEmailQuotation(q);
                   const canEdit = canEditQuotation(authUser, q);

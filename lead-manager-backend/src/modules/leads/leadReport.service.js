@@ -6,7 +6,7 @@
  */
 const mongoose = require('mongoose');
 const { getModels } = require('../../data/mongoRegistry');
-const { isLeadManager } = require('./lead.service');
+const { isLeadAdmin } = require('./lead.service');
 
 function toObjectId(id) {
   if (!id) return null;
@@ -31,10 +31,10 @@ function leadAssignedToUser(lead, userId) {
 }
 
 /**
- * Managers: optional assigned_to filter. Executives (and anyone else): force self scope.
+ * Admins: optional assigned_to filter. Managers and Executives: force self scope.
  */
 function applyAssigneeScope(q, query, user) {
-  if (isLeadManager(user)) {
+  if (isLeadAdmin(user)) {
     if (query.assigned_to && query.assigned_to !== 'all') {
       q.$or = assigneeMatchOr(query.assigned_to);
     }
@@ -221,7 +221,7 @@ async function getSalesFunnel(query = {}, user) {
 async function getSalesPerformance(query = {}, user) {
   const { Lead, LeadFollowUp, User } = getModels();
 
-  if (!isLeadManager(user)) {
+  if (!isLeadAdmin(user)) {
     query.assigned_to = String(user._id);
   }
 
@@ -233,7 +233,7 @@ async function getSalesPerformance(query = {}, user) {
   const userFilter = {
     is_active: true,
   };
-  if (!isLeadManager(user)) {
+  if (!isLeadAdmin(user)) {
     userFilter._id = user._id;
   }
 
@@ -247,8 +247,8 @@ async function getSalesPerformance(query = {}, user) {
     )
     .lean();
 
-  // Managers: prefer lead_manager executives; fall back to users who have assigned leads
-  if (isLeadManager(user)) {
+  // Admins: prefer lead_manager portal users; fall back to users who have assigned leads
+  if (isLeadAdmin(user)) {
     const executives = assignees.filter((su) => {
       const portals = Array.isArray(su.portals)
         ? su.portals
@@ -261,7 +261,7 @@ async function getSalesPerformance(query = {}, user) {
       return Boolean(
         portalAccess &&
           Array.isArray(portalAccess.access_roles) &&
-          portalAccess.access_roles.includes('executive')
+          portalAccess.access_roles.length > 0
       );
     });
 

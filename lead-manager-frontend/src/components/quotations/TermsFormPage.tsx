@@ -298,7 +298,7 @@ export function TermsFormPage({ mode, termsId, portalHome = "/dashboard" }: Prop
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-100 text-xs font-bold text-blue-800 dark:bg-blue-950 dark:text-blue-300 mt-1">
                   {idx + 1}
                 </span>
-                <div className="flex-1">
+                <div className="flex-1 text-slate-900 dark:text-white">
                   <RichTextEditor
                     value={line.text}
                     onChange={(html) =>
