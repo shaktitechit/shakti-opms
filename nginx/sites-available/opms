@@ -8,11 +8,13 @@
 #   1) Keep opms.http-bootstrap enabled (HTTP proxies + ACME webroot)
 #   2) Point DNS A/AAAA for all hosts at this server
 #   3) Issue one multi-SAN cert (see nginx/snippets/opms-ssl.conf)
-#   4) In nginx.conf http{} block, once:
-#        include /etc/nginx/snippets/logging.conf;
-#      (defines log_format opms_main + limit_req_zone for auth login/handoff)
-#   5) Then:
+#   4) Install http{} helpers (REQUIRED — defines log_format opms_main + limit_req_zone):
 #        sudo cp nginx/snippets/* /etc/nginx/snippets/
+#        sudo cp nginx/conf.d/opms-http.conf /etc/nginx/conf.d/opms-http.conf
+#      (Ubuntu/Debian auto-includes conf.d from http{}. If your nginx.conf
+#       does not include conf.d, add once inside http{}:
+#        include /etc/nginx/snippets/logging.conf;)
+#   5) Then:
 #        sudo cp nginx/sites-available/opms /etc/nginx/sites-available/opms
 #        sudo nginx -t && sudo systemctl reload nginx
 #   6) Optional hard 15-min IP ban (fail2ban):
