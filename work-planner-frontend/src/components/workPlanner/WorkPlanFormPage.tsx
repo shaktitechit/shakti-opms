@@ -98,6 +98,15 @@ interface ExecutiveUser {
 
 function hasWorkPlannerAccess(u: ExecutiveUser, sessionUserId?: string): boolean {
   if (u._id === sessionUserId || u.id === sessionUserId) return true;
+  const uAny = u as any;
+  if (
+    uAny.department === "super_admin" ||
+    (Array.isArray(uAny.role_codes) && uAny.role_codes.includes("super_admin")) ||
+    (Array.isArray(uAny.roles) && uAny.roles.includes("super_admin")) ||
+    uAny.wp_role
+  ) {
+    return true;
+  }
 
   if (!Array.isArray(u.portals) || u.portals.length === 0) {
     return false;
@@ -125,6 +134,17 @@ function hasWorkPlannerAccess(u: ExecutiveUser, sessionUserId?: string): boolean
 }
 
 function getWorkPlannerUserRole(u: ExecutiveUser): "Admin" | "Manager" | null {
+  const uAny = u as any;
+  if (
+    uAny.department === "super_admin" ||
+    (Array.isArray(uAny.role_codes) && uAny.role_codes.includes("super_admin")) ||
+    (Array.isArray(uAny.roles) && uAny.roles.includes("super_admin"))
+  ) {
+    return "Admin";
+  }
+  if (uAny.wp_role === "admin" || uAny.wp_role === "super_admin") return "Admin";
+  if (uAny.wp_role === "manager") return "Manager";
+
   if (!Array.isArray(u.portals) || u.portals.length === 0) {
     return null;
   }
@@ -270,8 +290,8 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Fetch all users for executive selection (managers) and manager discussion selection (all users)
-  const { data: usersData } = useGetUsersQuery();
+  // Fetch all users for executive selection (admins) and manager discussion selection
+  const { data: usersData } = useGetUsersQuery(undefined, { skip: !adminRole });
   const [fetchPlan] = useLazyGetPlanQuery();
   const [lazyGetPlans] = useLazyGetPlansQuery();
   const [createPlanMut] = useCreatePlanMutation();
@@ -294,7 +314,32 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     return null;
   }, [dbUserSettings, targetUserId]);
 
-  const allUsers = useMemo(() => (usersData as ExecutiveUser[]) || [], [usersData]);
+  const allUsers = useMemo<ExecutiveUser[]>(() => {
+    if (adminRole) return (usersData as ExecutiveUser[]) || [];
+    const list: ExecutiveUser[] = [];
+    const seen = new Set<string>();
+
+    const addUser = (u: any) => {
+      if (!u) return;
+      const id = String(u._id || u.id || "");
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        list.push(u as ExecutiveUser);
+      }
+    };
+
+    if (sessionUser) addUser(sessionUser);
+    if (Array.isArray(myTeamData?.members)) {
+      myTeamData.members.forEach(addUser);
+    }
+    if (Array.isArray(myTeamData?.edges)) {
+      myTeamData.edges.forEach((e: any) => {
+        if (e.manager) addUser(e.manager);
+        if (e.user) addUser(e.user);
+      });
+    }
+    return list;
+  }, [adminRole, usersData, sessionUser, myTeamData]);
 
   // Resolve assigned manager for current plan type (or fallback to global default manager)
   const assignedPlanTypeManager = useMemo(() => {
@@ -433,10 +478,34 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
 
   // Load roster of executives for manager selection
   useEffect(() => {
-    if (usersData) {
+    if (adminRole && usersData) {
       setExecutives(usersData as ExecutiveUser[]);
+    } else if (!adminRole) {
+      const list: ExecutiveUser[] = [];
+      const seen = new Set<string>();
+      if (sessionUser?._id) {
+        list.push({
+          _id: sessionUser._id,
+          id: sessionUser._id,
+          name: sessionUser.name,
+          email: sessionUser.email,
+          department: sessionUser.department,
+          portals: sessionUser.portals,
+        } as ExecutiveUser);
+        seen.add(String(sessionUser._id));
+      }
+      if (myTeamData?.members && Array.isArray(myTeamData.members)) {
+        for (const m of myTeamData.members) {
+          const id = String(m._id || m.id || "");
+          if (id && !seen.has(id)) {
+            seen.add(id);
+            list.push(m as ExecutiveUser);
+          }
+        }
+      }
+      setExecutives(list);
     }
-  }, [usersData]);
+  }, [adminRole, usersData, myTeamData, sessionUser]);
 
   useEffect(() => {
     if (!planId) return;
