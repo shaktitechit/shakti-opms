@@ -353,10 +353,23 @@ export function WorkPlanCreateMailModal({
   }, [allUsers, eligibleManagersData, assignedPlanTypeManager, plan, draftData]);
 
   const availableManagers = eligibleManagers;
+  const initializedRef = useRef(false);
 
   // Generate initial HTML Body for Work Plan Creation & default recipient email fields
   useEffect(() => {
-    if (!isOpen || !plan) return;
+    if (!isOpen) {
+      initializedRef.current = false;
+      setBodyHtml("");
+      setSubject("");
+      setToEmail("");
+      setCcEmails([]);
+      setAttachments([]);
+      setIsAddingCc(false);
+      setNewCcInput("");
+      return;
+    }
+
+    if (initializedRef.current || !plan) return;
 
     const executiveName = isManagerCreatingForExecutive
       ? targetExecutiveName || "Executive"
@@ -563,7 +576,8 @@ export function WorkPlanCreateMailModal({
 
       setBodyHtml(defaultHtml);
     }
-  }, [isOpen, plan, draftData, availableManagers]);
+    initializedRef.current = true;
+  }, [isOpen, plan, draftData, availableManagers, effectiveSettings]);
 
   // Handle adding CC tag
   const handleAddCc = (emailToAdd: string) => {

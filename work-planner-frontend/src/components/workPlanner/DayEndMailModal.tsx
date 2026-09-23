@@ -340,17 +340,23 @@ export function DayEndMailModal({
   }, [allUsers, eligibleManagersData, assignedPlanTypeManager, plan, draftData]);
 
   const availableManagers = eligibleManagers;
+  const initializedRef = useRef(false);
 
   // Initialize draft values once fetched or settings loaded
   useEffect(() => {
     if (!isOpen) {
+      initializedRef.current = false;
       setBodyHtml("");
       setSubject("");
       setToEmail("");
       setCcEmails([]);
       setAttachments([]);
+      setIsAddingCc(false);
+      setNewCcInput("");
       return;
     }
+
+    if (initializedRef.current || !plan) return;
 
     const planTypeStr = plan?.plan_type || "Visits";
     const pts = effectiveSettings?.planTypeSettings?.[planTypeStr];
@@ -402,14 +408,13 @@ export function DayEndMailModal({
       });
     }
 
-    if (ccEmails.length === 0 && combinedCcSet.size > 0) {
-      setCcEmails(Array.from(combinedCcSet));
-    }
+    setCcEmails(Array.from(combinedCcSet));
 
     if (draftData) {
       setSubject((prev) => prev || draftData.subject || "");
       setBodyHtml((prev) => prev || draftData.body_html || "");
     }
+    initializedRef.current = true;
   }, [isOpen, draftData, effectiveSettings, plan, availableManagers]);
 
   // Fallback initial values if draft hasn't loaded yet

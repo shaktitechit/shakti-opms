@@ -679,6 +679,8 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
 
     const currentKey = `${targetUserId}_${planDate}`;
     if (prevFetchedKey.current === currentKey) return;
+    const isInitialMount = !prevFetchedKey.current;
+    prevFetchedKey.current = currentKey;
 
     async function checkPlanForSelectedDate() {
       try {
@@ -698,7 +700,6 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
 
         const found = res?.data?.[0];
         if (found) {
-          prevFetchedKey.current = currentKey;
           const foundId = String(found._id || found.id);
           const isStandaloneVirtual = Boolean(
             found?.is_standalone ||
@@ -847,7 +848,6 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           }
         } else {
           // No active plan for this date & member -> switch to create mode and reset form fields
-          prevFetchedKey.current = currentKey;
           setExistingPlanId(null);
           setDetectedPlan(null);
           setPlanStatus(null);
@@ -890,7 +890,9 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           }
           setDiscussionMethod("on_call");
 
-          toast.info(`Switched to Create Work Plan mode for ${planDate}.`);
+          if (!isInitialMount) {
+            toast.info(`Switched to Create Work Plan mode for ${planDate}.`, { id: `create-mode-${planDate}` });
+          }
         }
       } catch (err) {
         console.error("Error checking existing plan by date:", err);
@@ -900,7 +902,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     }
 
     checkPlanForSelectedDate();
-  }, [planDate, targetUserId, planId, copyId, lazyGetPlans, fetchPlan, effectiveSettings, assignedPlanTypeManager]);
+  }, [planDate, targetUserId, planId, copyId, lazyGetPlans, fetchPlan]);
 
   // Effect 1: Auto-populate custom work tasks additionally when switching to a task-enabled plan
   useEffect(() => {
@@ -931,18 +933,18 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         });
       }
     }
-  }, [planType, effectiveSettings, isEditing, isCopying]);
+  }, [planType, dbUserSettings, isEditing, isCopying]);
 
   // Effect 2: Default "Discussed with Manager" to the plan type manager (or global default manager)
   useEffect(() => {
     if (isEditing) return;
-    if (assignedPlanTypeManager) {
+    if (assignedPlanTypeManager?._id || assignedPlanTypeManager?.name) {
       setIsDiscussedWithManager(true);
       setDiscussedManagerId(assignedPlanTypeManager._id || "");
       setDiscussedManagerName(assignedPlanTypeManager.name || "");
       setShowManagerPicker(false);
     }
-  }, [planType, assignedPlanTypeManager, isEditing]);
+  }, [assignedPlanTypeManager?._id, assignedPlanTypeManager?.name, isEditing]);
 
   // Filter eligible managers for discussion dropdown: strictly reporting manager, portal admins, and portal managers
   const eligibleManagers = useMemo(() => {
