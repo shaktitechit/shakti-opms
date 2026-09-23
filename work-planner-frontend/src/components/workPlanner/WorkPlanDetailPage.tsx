@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -101,7 +101,7 @@ function RichTextDisplay({ content, className = "" }: { content?: string; classN
 
 export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   const router = useRouter();
-  const sessionUser = readSessionFromStorage()?.user;
+  const sessionUser = useMemo(() => readSessionFromStorage()?.user, []);
   const adminRole = isWpAdmin(sessionUser);
   const managerRole = isWpManager(sessionUser);
   const elevatedRole = isWpElevated(sessionUser);

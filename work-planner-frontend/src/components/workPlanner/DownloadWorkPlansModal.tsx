@@ -61,7 +61,7 @@ export function DownloadWorkPlansModal({
   onClose,
 }: DownloadWorkPlansModalProps) {
   const letterhead = usePdfCompanyLetterhead();
-  const sessionUser = readSessionFromStorage()?.user;
+  const sessionUser = useMemo(() => readSessionFromStorage()?.user, []);
   const adminRole = isWpAdmin(sessionUser);
   const managerRole = isWpManager(sessionUser);
   const elevatedRole = isWpElevated(sessionUser);

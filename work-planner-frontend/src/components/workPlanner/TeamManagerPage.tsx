@@ -19,7 +19,7 @@ import {
 import { isWpAdmin, readSessionFromStorage } from "@/utils/authStorage";
 
 export function TeamManagerPage() {
-  const sessionUser = readSessionFromStorage()?.user;
+  const sessionUser = useMemo(() => readSessionFromStorage()?.user, []);
   const adminAccess = isWpAdmin(sessionUser);
 
   const { data: tree, isLoading, refetch, error } = useGetTeamTreeQuery(undefined, {

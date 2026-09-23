@@ -45,7 +45,7 @@ function getUserDepartmentName(u: any): string {
 export type TeamDirectoryMode = "my-team" | "assigned-teams";
 
 export function AssignedUsersPage({ mode = "my-team" }: { mode?: TeamDirectoryMode }) {
-  const sessionUser = readSessionFromStorage()?.user;
+  const sessionUser = useMemo(() => readSessionFromStorage()?.user, []);
   const adminAccess = isWpAdmin(sessionUser);
   const managerAccess = isWpManager(sessionUser);
   const elevatedAccess = isWpElevated(sessionUser);

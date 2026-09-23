@@ -210,10 +210,10 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   const activePlanId = existingPlanId || planId;
   const isEditing = Boolean(activePlanId);
   const isCopying = Boolean(copyId) && !isEditing;
-  const sessionUser = readSessionFromStorage()?.user;
-  const adminRole = isWpAdmin(sessionUser);
-  const isManagerOnly = isWpManager(sessionUser);
-  const elevatedRole = isWpElevated(sessionUser);
+  const sessionUser = useMemo(() => readSessionFromStorage()?.user, []);
+  const adminRole = useMemo(() => isWpAdmin(sessionUser), [sessionUser]);
+  const isManagerOnly = useMemo(() => isWpManager(sessionUser), [sessionUser]);
+  const elevatedRole = useMemo(() => isWpElevated(sessionUser), [sessionUser]);
   const managerRole = elevatedRole;
   const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !isManagerOnly });
   const prevFetchedKey = useRef<string>("");
@@ -237,7 +237,6 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   const [location, setLocation] = useState("");
   const [remarks, setRemarks] = useState("");
   const [salesUserId, setSalesUserId] = useState<string>(() => sessionUser?._id || "");
-  const [executives, setExecutives] = useState<ExecutiveUser[]>([]);
 
   // Local state arrays for embedded visits and tasks
   const [visits, setVisits] = useState<Array<Record<string, any>>>([]);
@@ -482,34 +481,33 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   ]);
 
   // Load roster of executives for manager selection
-  useEffect(() => {
+  const executives = useMemo<ExecutiveUser[]>(() => {
     if (adminRole && usersData) {
-      setExecutives(usersData as ExecutiveUser[]);
-    } else if (!adminRole) {
-      const list: ExecutiveUser[] = [];
-      const seen = new Set<string>();
-      if (sessionUser?._id) {
-        list.push({
-          _id: sessionUser._id,
-          id: sessionUser._id,
-          name: sessionUser.name,
-          email: sessionUser.email,
-          department: sessionUser.department,
-          portals: sessionUser.portals,
-        } as ExecutiveUser);
-        seen.add(String(sessionUser._id));
-      }
-      if (myTeamData?.members && Array.isArray(myTeamData.members)) {
-        for (const m of myTeamData.members) {
-          const id = String(m._id || m.id || "");
-          if (id && !seen.has(id)) {
-            seen.add(id);
-            list.push(m as ExecutiveUser);
-          }
+      return usersData as ExecutiveUser[];
+    }
+    const list: ExecutiveUser[] = [];
+    const seen = new Set<string>();
+    if (sessionUser?._id) {
+      list.push({
+        _id: sessionUser._id,
+        id: sessionUser._id,
+        name: sessionUser.name,
+        email: sessionUser.email,
+        department: sessionUser.department,
+        portals: sessionUser.portals,
+      } as ExecutiveUser);
+      seen.add(String(sessionUser._id));
+    }
+    if (myTeamData?.members && Array.isArray(myTeamData.members)) {
+      for (const m of myTeamData.members) {
+        const id = String(m._id || m.id || "");
+        if (id && !seen.has(id)) {
+          seen.add(id);
+          list.push(m as ExecutiveUser);
         }
       }
-      setExecutives(list);
     }
+    return list;
   }, [adminRole, usersData, myTeamData, sessionUser]);
 
   useEffect(() => {
@@ -1532,7 +1530,9 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         <div className="flex items-center gap-3">
           <Link
             href="/dashboard/plans"
-            className="rounded-lg border border-border p-2 text-muted hover:bg-surface-muted hover:text-foreground transition"
+            className="rounded-lg border border-border p-2 text-muted hover:bg-surface-muted hover:text-foreground transition inline-flex items-center justify-center cursor-pointer"
+            title="Back to Work Plans"
+            aria-label="Back to Work Plans"
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>

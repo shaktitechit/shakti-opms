@@ -69,7 +69,7 @@ const WORK_PLAN_TYPES = [
 
 export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = false }: UserSettingsPageProps) {
   const router = useRouter();
-  const sessionUser = readSessionFromStorage()?.user;
+  const sessionUser = useMemo(() => readSessionFromStorage()?.user, []);
   const managerAccess = isManager(sessionUser);
   const isManagerOnly = isWpManager(sessionUser);
   const adminAccess = isWpAdmin(sessionUser);
