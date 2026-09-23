@@ -114,6 +114,234 @@ function getWorkPlannerUserRole(u: any): "Admin" | "Manager" | null {
   return null;
 }
 
+function generateDayEndHtmlTemplate(
+  plan: WorkPlanRecord,
+  executiveName: string,
+  executiveEmail: string
+): string {
+  const planDateStr = plan.plan_date
+    ? new Date(plan.plan_date).toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      })
+    : new Date().toLocaleDateString("en-GB");
+
+  const expenses = plan.expenses || [];
+  const expensesTotal = expenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const visits = plan.visits || [];
+  const tasks = plan.works || [];
+
+  const getStatusBadgeStyle = (statusStr?: string) => {
+    const s = String(statusStr || "pending").toLowerCase().trim();
+    if (s === "completed") return "background-color: #dcfce7; color: #15803d; border: 1px solid #bbf7d0;";
+    if (s === "in_progress") return "background-color: #fef3c7; color: #b45309; border: 1px solid #fde68a;";
+    if (s === "created") return "background-color: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd;";
+    if (["cancelled", "skipped", "rejected"].includes(s)) return "background-color: #fee2e2; color: #b91c1c; border: 1px solid #fecaca;";
+    return "background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1;";
+  };
+
+  let visitsTableHtml = '<p style="font-size: 13px; color: #64748b; font-style: italic; margin: 8px 0;">No visits recorded for this plan.</p>';
+  if (visits.length > 0) {
+    const visitRows = visits
+      .map((v, i) => {
+        const party =
+          (typeof v.party === "object" && v.party ? (v.party as any).party_name : null) ||
+          v.party_name ||
+          v.contact_person ||
+          "N/A";
+        const contact =
+          v.contact_person ||
+          (typeof v.party === "object" && v.party ? (v.party as any).contact_person : "") ||
+          "";
+        const purpose = v.purpose || "General";
+        const status = (v.status || "pending").toLowerCase();
+        const time = v.planned_start_time
+          ? `${v.planned_start_time}${v.planned_end_time ? " - " + v.planned_end_time : ""}`
+          : "—";
+
+        let remarksHtml = "—";
+        if (status === "completed") {
+          const out = v.outcome || "";
+          const outHtml = out ? `<div style="color: #15803d; font-weight: 500; margin-bottom: 6px;">${out}</div>` : "";
+
+          const hasChecklist = [
+            v.meeting_with_doctor,
+            v.meeting_with_purchase,
+            v.meeting_with_finance,
+            v.meeting_with_engineer,
+            v.new_product_introduced,
+            v.order_received,
+          ].some((val) => val !== undefined && val !== null);
+
+          let checklistHtml = "";
+          if (hasChecklist) {
+            const renderTag = (label: string, val?: boolean) => {
+              const isYes = Boolean(val);
+              const style = isYes
+                ? "background-color: #dcfce7; color: #166534; border: 1px solid #bbf7d0;"
+                : "background-color: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0;";
+              return `<span style="display: inline-block; padding: 2px 6px; margin: 2px 4px 2px 0; border-radius: 4px; font-size: 10px; font-weight: 600; ${style}">${label}: ${isYes ? "✓ Yes" : "✗ No"}</span>`;
+            };
+
+            checklistHtml = `
+              <div style="margin-top: 4px; padding-top: 4px; border-top: 1px dashed #cbd5e1;">
+                <div style="font-size: 10px; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 2px; letter-spacing: 0.5px;">Checklist:</div>
+                <div>
+                  ${renderTag("Doctor", v.meeting_with_doctor)}
+                  ${renderTag("Purchase", v.meeting_with_purchase)}
+                  ${renderTag("Finance", v.meeting_with_finance)}
+                  ${renderTag("Engineer", v.meeting_with_engineer)}
+                  ${renderTag("New Product", v.new_product_introduced)}
+                  ${renderTag("Order", v.order_received)}
+                </div>
+              </div>
+            `;
+          }
+          remarksHtml = outHtml || checklistHtml ? `${outHtml}${checklistHtml}` : "—";
+        } else if (status === "in_progress") {
+          const inp = v.in_progress_remarks || "";
+          remarksHtml = inp ? `<div><span style="color: #b45309; font-weight: 700; font-size: 11px; text-transform: uppercase;">In Progress:</span> <span style="color: #334155;">${inp}</span></div>` : "—";
+        } else if (status === "pending" || status === "created") {
+          const pnd = v.pending_remarks || "";
+          remarksHtml = pnd ? `<div><span style="color: #475569; font-weight: 700; font-size: 11px; text-transform: uppercase;">Pending Reason:</span> <span style="color: #334155;">${pnd}</span></div>` : "—";
+        } else {
+          const other = v.outcome || v.in_progress_remarks || v.pending_remarks || "";
+          remarksHtml = other || "—";
+        }
+
+        const formattedStatus = status.replace(/_/g, " ").toUpperCase();
+
+        return `
+          <tr style="background-color: ${i % 2 === 0 ? "#ffffff" : "#f8fafc"};">
+            <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px; color: #0f172a;">
+              <div style="font-weight: 600;">${i + 1}. ${party}</div>
+              ${contact ? `<div style="font-size: 11px; color: #64748b;">Contact: ${contact}</div>` : ""}
+            </td>
+            <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px; color: #334155;">
+              ${purpose}
+            </td>
+            <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 12px; color: #475569; white-space: nowrap;">
+              ${time}
+            </td>
+            <td style="padding: 10px 12px; border: 1px solid #e2e8f0; text-align: center; white-space: nowrap;">
+              <span style="display: inline-block; padding: 3px 8px; border-radius: 9999px; font-size: 11px; font-weight: 700; ${getStatusBadgeStyle(status)}">
+                ${formattedStatus}
+              </span>
+            </td>
+            <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px; color: #334155;">
+              ${remarksHtml}
+            </td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    visitsTableHtml = `
+      <table style="width: 100%; border-collapse: collapse; margin: 12px 0 20px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden;">
+        <thead>
+          <tr style="background-color: #0f172a; color: #ffffff;">
+            <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #1e293b;">Client / Party</th>
+            <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #1e293b;">Purpose</th>
+            <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #1e293b;">Time</th>
+            <th style="padding: 10px 12px; text-align: center; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #1e293b;">Status</th>
+            <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #1e293b;">Outcome / Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${visitRows}
+        </tbody>
+      </table>
+    `;
+  }
+
+  let tasksTableHtml = '<p style="font-size: 13px; color: #64748b; font-style: italic; margin: 8px 0;">No tasks recorded for this plan.</p>';
+  if (tasks.length > 0) {
+    const taskRows = tasks
+      .map((t, i) => {
+        const title = t.title || "Task #" + (i + 1);
+        const desc = t.description || "—";
+        const status = (t.status || "pending").toLowerCase();
+
+        let remarksHtml = "—";
+        if (status === "completed") {
+          const out = t.completion_remarks || t.outcome || "";
+          remarksHtml = out ? `<div style="color: #15803d; font-weight: 500;">${out}</div>` : "—";
+        } else if (status === "in_progress") {
+          const inp = t.in_progress_remarks || "";
+          remarksHtml = inp ? `<div><span style="color: #b45309; font-weight: 700; font-size: 11px; text-transform: uppercase;">In Progress:</span> <span style="color: #334155;">${inp}</span></div>` : "—";
+        } else if (status === "pending" || status === "created") {
+          const pnd = t.pending_remarks || "";
+          remarksHtml = pnd ? `<div><span style="color: #475569; font-weight: 700; font-size: 11px; text-transform: uppercase;">Pending Reason:</span> <span style="color: #334155;">${pnd}</span></div>` : "—";
+        } else {
+          const other = t.completion_remarks || t.outcome || t.in_progress_remarks || t.pending_remarks || "";
+          remarksHtml = other || "—";
+        }
+
+        const formattedStatus = status.replace(/_/g, " ").toUpperCase();
+
+        return `
+          <tr style="background-color: ${i % 2 === 0 ? "#ffffff" : "#f8fafc"};">
+            <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px; color: #0f172a; font-weight: 600; width: 28%;">
+              ${i + 1}. ${title}
+            </td>
+            <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px; color: #334155; width: 35%;">
+              ${desc}
+            </td>
+            <td style="padding: 10px 12px; border: 1px solid #e2e8f0; text-align: center; white-space: nowrap; width: 15%;">
+              <span style="display: inline-block; padding: 3px 8px; border-radius: 9999px; font-size: 11px; font-weight: 700; ${getStatusBadgeStyle(status)}">
+                ${formattedStatus}
+              </span>
+            </td>
+            <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px; color: #334155; width: 22%;">
+              ${remarksHtml}
+            </td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    tasksTableHtml = `
+      <table style="width: 100%; border-collapse: collapse; margin: 12px 0 20px 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 13px; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden;">
+        <thead>
+          <tr style="background-color: #0f172a; color: #ffffff;">
+            <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #1e293b;">Task Title</th>
+            <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #1e293b;">Description</th>
+            <th style="padding: 10px 12px; text-align: center; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #1e293b;">Status</th>
+            <th style="padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #1e293b;">Remarks</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${taskRows}
+        </tbody>
+      </table>
+    `;
+  }
+
+  return `
+<div style="font-family: Arial, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #1e293b;">
+  <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+    <h2 style="margin: 0 0 12px 0; color: #0f172a; font-size: 18px;">Day End Report — Summary</h2>
+    <p style="margin: 4px 0; font-size: 14px;"><strong>Executive:</strong> ${executiveName} ${executiveEmail ? `(${executiveEmail})` : ""}</p>
+    <p style="margin: 4px 0; font-size: 14px;"><strong>Plan Date:</strong> ${planDateStr}</p>
+    <p style="margin: 4px 0; font-size: 14px;"><strong>Plan Type:</strong> ${plan.plan_type || "Visits"} | <strong>Location:</strong> ${plan.location || "N/A"}</p>
+    <p style="margin: 4px 0; font-size: 14px;"><strong>Total Expenses Logged:</strong> ₹${expensesTotal.toLocaleString("en-IN")}</p>
+  </div>
+
+  <h3 style="color: #0f172a; font-size: 16px; border-bottom: 2px solid #0284c7; padding-bottom: 6px; margin-top: 24px;">Field Visits (${visits.length})</h3>
+  ${visitsTableHtml}
+
+  <h3 style="color: #0f172a; font-size: 16px; border-bottom: 2px solid #059669; padding-bottom: 6px; margin-top: 24px;">Tasks / Work Items (${tasks.length})</h3>
+  ${tasksTableHtml}
+
+  <h3 style="color: #0f172a; font-size: 16px; border-bottom: 2px solid #475569; padding-bottom: 6px; margin-top: 24px;">Key Highlights & Day End Remarks</h3>
+  <p style="font-size: 14px; color: #334155; padding: 12px; background: #f1f5f9; border-radius: 6px;">
+    ${plan.remarks ? plan.remarks : "Please add any specific highlights, order wins, follow-ups, or escalations here..."}
+  </p>
+</div>
+  `.trim();
+}
+
 export function DayEndMailModal({
   planId,
   plan,
@@ -340,12 +568,31 @@ export function DayEndMailModal({
   }, [allUsers, eligibleManagersData, assignedPlanTypeManager, plan, draftData]);
 
   const availableManagers = eligibleManagers;
-  const initializedRef = useRef(false);
+
+  const fromName =
+    (typeof plan?.sales_user === "object" && plan?.sales_user ? (plan.sales_user as any)?.name : null) ||
+    currentSessionUser?.name ||
+    sessionUser?.name ||
+    "Executive";
+  const fromEmail =
+    draftData?.from_email ||
+    (typeof plan?.sales_user === "object" && plan?.sales_user ? (plan.sales_user as any)?.email : null) ||
+    currentSessionUser?.email ||
+    sessionUser?.email ||
+    "";
+
+  const userEditedSubjectRef = useRef(false);
+  const userEditedBodyRef = useRef(false);
+  const userEditedToRef = useRef(false);
+  const appliedDraftKeyRef = useRef<string | null>(null);
 
   // Initialize draft values once fetched or settings loaded
   useEffect(() => {
     if (!isOpen) {
-      initializedRef.current = false;
+      appliedDraftKeyRef.current = null;
+      userEditedSubjectRef.current = false;
+      userEditedBodyRef.current = false;
+      userEditedToRef.current = false;
       setBodyHtml("");
       setSubject("");
       setToEmail("");
@@ -356,7 +603,17 @@ export function DayEndMailModal({
       return;
     }
 
-    if (initializedRef.current || !plan) return;
+    if (!plan) return;
+
+    const planDateStr = plan.plan_date
+      ? new Date(plan.plan_date).toLocaleDateString("en-GB", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        })
+      : new Date().toLocaleDateString("en-GB");
+
+    const defaultSubject = `Day End Report — ${fromName} (${planDateStr})`;
 
     const planTypeStr = plan?.plan_type || "Visits";
     const pts = effectiveSettings?.planTypeSettings?.[planTypeStr];
@@ -372,15 +629,17 @@ export function DayEndMailModal({
       globalManagerEmail ||
       draftData?.to ||
       (plan?.discussed_manager_id && typeof plan.discussed_manager_id === "object"
-        ? plan.discussed_manager_id.email
+        ? (plan.discussed_manager_id as any)?.email
         : "") ||
       availableManagers[0]?.email ||
       "";
 
-    if (chosenTo && (!toEmail || toEmail !== chosenTo)) {
-      setToEmail(chosenTo);
-    } else if (!toEmail && draftData?.to) {
-      setToEmail(draftData.to);
+    if (!userEditedToRef.current) {
+      if (chosenTo && (!toEmail || toEmail !== chosenTo)) {
+        setToEmail(chosenTo);
+      } else if (!toEmail && draftData?.to) {
+        setToEmail(draftData.to);
+      }
     }
 
     // CC Field: Use plan type CC emails (or global CC if plan type CC is empty) + draft CC
@@ -388,7 +647,7 @@ export function DayEndMailModal({
     const globalCc = effectiveSettings?.ccEmails || [];
     const configuredCc = ptsCc.length > 0 ? ptsCc : globalCc;
 
-    const activeFrom = (sessionUser?.email || draftData?.from_email || "").toLowerCase().trim();
+    const activeFrom = fromEmail.toLowerCase().trim();
     const normTo = (chosenTo || toEmail || "").toLowerCase().trim();
     const combinedCcSet = new Set<string>();
 
@@ -410,16 +669,27 @@ export function DayEndMailModal({
 
     setCcEmails(Array.from(combinedCcSet));
 
-    if (draftData) {
-      setSubject((prev) => prev || draftData.subject || "");
-      setBodyHtml((prev) => prev || draftData.body_html || "");
+    // Initialize/update Subject and Body from draftData or fallback generator
+    const draftKey = draftData ? `${planId}-${draftData.subject || "draft"}-${draftData.body_html ? "body" : ""}` : null;
+    if (draftData && appliedDraftKeyRef.current !== draftKey) {
+      if (!userEditedSubjectRef.current && draftData.subject) {
+        setSubject(draftData.subject);
+      }
+      if (!userEditedBodyRef.current && draftData.body_html) {
+        setBodyHtml(draftData.body_html);
+      }
+      appliedDraftKeyRef.current = draftKey;
+    } else if (!draftData && !bodyHtml) {
+      // Immediate client-side fallback generation so the editor is never blank
+      const fallbackHtml = generateDayEndHtmlTemplate(plan, fromName, fromEmail);
+      if (!userEditedBodyRef.current) {
+        setBodyHtml(fallbackHtml);
+      }
+      if (!userEditedSubjectRef.current && !subject) {
+        setSubject(defaultSubject);
+      }
     }
-    initializedRef.current = true;
-  }, [isOpen, draftData, effectiveSettings, plan, availableManagers]);
-
-  // Fallback initial values if draft hasn't loaded yet
-  const fromName = sessionUser?.name || "Executive";
-  const fromEmail = sessionUser?.email || draftData?.from_email || "";
+  }, [isOpen, draftData, effectiveSettings, plan, availableManagers, fromName, fromEmail, planId, toEmail, subject, bodyHtml]);
 
   // Handle adding CC tag
   const handleAddCc = (emailToAdd: string) => {
@@ -599,7 +869,10 @@ export function DayEndMailModal({
                 <input
                   type="email"
                   value={toEmail}
-                  onChange={(e) => setToEmail(e.target.value)}
+                  onChange={(e) => {
+                    userEditedToRef.current = true;
+                    setToEmail(e.target.value);
+                  }}
                   placeholder="Primary Manager Email (e.g. manager@shaktipumps.com)"
                   className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-foreground focus:border-emerald-500 focus:outline-hidden"
                 />
@@ -615,7 +888,10 @@ export function DayEndMailModal({
                       <div key={m._id || m.email} className="inline-flex items-center rounded-lg border border-border bg-surface overflow-hidden shrink-0">
                         <button
                           type="button"
-                          onClick={() => setToEmail(m.email)}
+                          onClick={() => {
+                            userEditedToRef.current = true;
+                            setToEmail(m.email);
+                          }}
                           className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition cursor-pointer text-xs ${
                             isSelected
                               ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold"
@@ -744,7 +1020,10 @@ export function DayEndMailModal({
             <input
               type="text"
               value={subject}
-              onChange={(e) => setSubject(e.target.value)}
+              onChange={(e) => {
+                userEditedSubjectRef.current = true;
+                setSubject(e.target.value);
+              }}
               placeholder="Day End Report Subject"
               className="flex-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground focus:border-emerald-500 focus:outline-hidden"
             />
@@ -836,7 +1115,7 @@ export function DayEndMailModal({
             <span>Formatted HTML summary of visits, tasks, and notes</span>
           </div>
 
-          {draftLoading ? (
+          {draftLoading && !bodyHtml ? (
             <div className="flex-1 flex items-center justify-center border border-border rounded-xl bg-card">
               <div className="flex flex-col items-center gap-2 text-muted">
                 <Loader2 className="h-6 w-6 animate-spin text-emerald-500" />
@@ -846,7 +1125,10 @@ export function DayEndMailModal({
           ) : (
             <DayEndRichEditor
               value={bodyHtml}
-              onChange={setBodyHtml}
+              onChange={(val) => {
+                userEditedBodyRef.current = true;
+                setBodyHtml(val);
+              }}
               placeholder="Edit your day end remarks and summary..."
               className="flex-1 h-full"
               minHeight="280px"
