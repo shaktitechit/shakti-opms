@@ -26,6 +26,7 @@ import {
   useSubmitPlanMutation,
   useGetUserSettingsQuery,
   useGetMyTeamQuery,
+  useGetEligibleManagersQuery,
 } from "@/store/api/workPlannerApiSlice";
 import { isWpAdmin, isWpManager, readSessionFromStorage } from "@/utils/authStorage";
 import { getUserWorkPlannerSettings } from "@/utils/userWorkPlannerSettings";
@@ -141,6 +142,7 @@ export function WorkPlanCreateMailModal({
   });
   const { data: usersData } = useGetUsersQuery(undefined, { skip: !isOpen || !adminRole });
   const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !isOpen || !isManagerOnly });
+  const { data: eligibleManagersData } = useGetEligibleManagersQuery(undefined, { skip: !isOpen });
 
   const [uploadAttachmentMut] = useUploadWorkPlanAttachmentMutation();
   const [submitPlanMut] = useSubmitPlanMutation();
@@ -160,7 +162,7 @@ export function WorkPlanCreateMailModal({
   const fromEmail = sessionUser?.email || currentSessionUser?.email || draftData?.from_email || "";
 
   const allUsers = useMemo<any[]>(() => {
-    if (adminRole) return (usersData as any[]) || [];
+    if (adminRole && usersData) return (usersData as any[]) || [];
     const list: any[] = [];
     const seen = new Set<string>();
 
@@ -174,6 +176,9 @@ export function WorkPlanCreateMailModal({
     };
 
     if (currentSessionUser) addUser(currentSessionUser);
+    if (Array.isArray(eligibleManagersData)) {
+      eligibleManagersData.forEach(addUser);
+    }
     if (Array.isArray(myTeamData?.members)) {
       myTeamData.members.forEach(addUser);
     }
@@ -184,7 +189,7 @@ export function WorkPlanCreateMailModal({
       });
     }
     return list;
-  }, [adminRole, usersData, currentSessionUser, myTeamData]);
+  }, [adminRole, usersData, currentSessionUser, eligibleManagersData, myTeamData]);
 
   // Check if current user (Manager) is creating a plan for a target Executive
   const targetUserObj =
@@ -305,19 +310,25 @@ export function WorkPlanCreateMailModal({
       }
     }
 
-    // 3. Add Portal Admins of work_planner portal only
-    for (const u of allUsers) {
+    // 3. Add Portal Admins / Managers
+    const mgrSource = Array.isArray(eligibleManagersData) && eligibleManagersData.length > 0
+      ? eligibleManagersData
+      : allUsers;
+
+    for (const u of mgrSource) {
       const id = String(u._id || u.id || "");
       if (!id || !u.email) continue;
       const role = getWorkPlannerUserRole(u);
-      if (role !== "Admin") continue;
+      const isPortalAdmin = role === "Admin" || String(u.roleBadge || "").includes("Admin");
+      const isPortalManager = role === "Manager" || String(u.roleBadge || "").includes("Manager");
+      if (!isPortalAdmin && !isPortalManager) continue;
 
       if (!map.has(u.email.toLowerCase())) {
         map.set(u.email.toLowerCase(), {
           _id: id,
           name: u.name,
           email: u.email,
-          roleBadge: "Portal Admin",
+          roleBadge: u.roleBadge || (isPortalAdmin ? "Portal Admin" : "Portal Manager"),
           isReportingManager: false,
         });
       }
@@ -325,7 +336,7 @@ export function WorkPlanCreateMailModal({
 
     // Fallback: If no managers identified, include draftData.managers
     if (map.size === 0 && draftData?.managers && draftData.managers.length > 0) {
-      draftData.managers.forEach((m) => {
+      draftData.managers.forEach((m: any) => {
         if (m.email && !map.has(m.email.toLowerCase())) {
           map.set(m.email.toLowerCase(), {
             _id: String(m._id || m.email),
@@ -339,7 +350,7 @@ export function WorkPlanCreateMailModal({
     }
 
     return Array.from(map.values());
-  }, [allUsers, assignedPlanTypeManager, plan, draftData]);
+  }, [allUsers, eligibleManagersData, assignedPlanTypeManager, plan, draftData]);
 
   const availableManagers = eligibleManagers;
 

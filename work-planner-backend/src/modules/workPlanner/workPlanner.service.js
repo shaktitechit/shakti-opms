@@ -3017,10 +3017,122 @@ module.exports = {
   addWork,
   updateWork,
   removeWork,
+async function getEligibleManagers(user) {
+  const { User } = getModels();
+  const allActiveUsers = await User.find({ is_active: { $ne: false } })
+    .select('_id name email department roles role_codes portals')
+    .lean();
+
+  return allActiveUsers
+    .filter((u) => {
+      if (!u.email) return false;
+      if (
+        u.department === 'super_admin' ||
+        (Array.isArray(u.role_codes) && u.role_codes.includes('super_admin')) ||
+        (Array.isArray(u.roles) && u.roles.includes('super_admin'))
+      ) {
+        return true;
+      }
+      if (Array.isArray(u.portals)) {
+        const wpPortal = u.portals.find(
+          (p) =>
+            p &&
+            ['work_planner'].includes(
+              String(p.portal_code || p.code || p.portal || '').toLowerCase()
+            )
+        );
+        if (wpPortal && Array.isArray(wpPortal.access_roles)) {
+          return wpPortal.access_roles.some((r) =>
+            ['manager', 'admin', 'super_admin'].includes(
+              String(r).toLowerCase().trim()
+            )
+          );
+        }
+      }
+      return false;
+    })
+    .map((u) => {
+      let wpRole = 'Manager';
+      if (
+        u.department === 'super_admin' ||
+        (Array.isArray(u.role_codes) && u.role_codes.includes('super_admin')) ||
+        (Array.isArray(u.roles) && u.roles.includes('super_admin'))
+      ) {
+        wpRole = 'Admin';
+      } else if (Array.isArray(u.portals)) {
+        const wpPortal = u.portals.find(
+          (p) =>
+            p &&
+            ['work_planner'].includes(
+              String(p.portal_code || p.code || p.portal || '').toLowerCase()
+            )
+        );
+        if (wpPortal && Array.isArray(wpPortal.access_roles)) {
+          const roles = wpPortal.access_roles.map((r) =>
+            String(r).toLowerCase().trim()
+          );
+          if (roles.includes('admin') || roles.includes('super_admin')) {
+            wpRole = 'Admin';
+          }
+        }
+      }
+      return {
+        _id: String(u._id),
+        id: String(u._id),
+        name: u.name || u.email.split('@')[0],
+        email: u.email,
+        department:
+          typeof u.department === 'object'
+            ? u.department?.name || ''
+            : u.department || '',
+        portals: u.portals || [],
+        wp_role: wpRole.toLowerCase(),
+        roleBadge: wpRole === 'Admin' ? 'Portal Admin' : 'Portal Manager',
+      };
+    });
+}
+
+module.exports = {
+  list,
+  get,
+  create,
+  update,
+  remove,
+  submit,
+  approve,
+  reject,
+  completePlan,
+  loadVisits,
+  addVisit,
+  updateVisit,
+  removeVisit,
+  addStandaloneVisit,
+  updateStandaloneVisit,
+  removeStandaloneVisit,
+  checkIn,
+  checkOut,
+  completeVisit,
+  listAllExpenses,
+  listExpenses,
+  addExpense,
+  updateExpense,
+  removeExpense,
+  submitExpense,
+  approveExpense,
+  rejectExpense,
+  submitAllExpenses,
+  approveAllExpenses,
+  rejectAllExpenses,
+  stats,
+  loadWorks,
+  addWork,
+  updateWork,
+  removeWork,
   addStandaloneWork,
   updateStandaloneWork,
   removeStandaloneWork,
   getDayEndDraft,
   getUserSettings,
   updateUserSettings,
+  getEligibleManagers,
 };

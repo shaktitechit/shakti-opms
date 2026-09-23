@@ -57,6 +57,10 @@ exports.getDayEndDraft = asyncHandler(async (req, res) => {
   res.json({ success: true, data: await service.getDayEndDraft(req.params.id, req.user) });
 });
 
+exports.getEligibleManagers = asyncHandler(async (req, res) => {
+  res.json({ success: true, data: await service.getEligibleManagers(req.user) });
+});
+
 
 exports.addStandaloneVisit = asyncHandler(async (req, res) => {
   validation.assertVisitCreate(req.body || {});

@@ -450,6 +450,11 @@ export const workPlannerApiSlice = baseApi.injectEndpoints({
       transformResponse: (res: any) => res.data || res,
       providesTags: ["WorkPlannerTeam"],
     }),
+    getEligibleManagers: builder.query<any[], void>({
+      query: () => `${WORK_PLANNER_SERVICE_URL}/api/work-planner/eligible-managers`,
+      transformResponse: (res: any) => res.data || [],
+      providesTags: ["WorkPlannerTeam"],
+    }),
     upsertTeamEdge: builder.mutation<any, { subordinate: string; manager: string }>({
       query: (body) => ({
         url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/team/edges`,
@@ -525,6 +530,7 @@ export const {
   useGetTeamTreeQuery,
   useGetMyTeamQuery,
   useGetTeamMembersQuery,
+  useGetEligibleManagersQuery,
   useUpsertTeamEdgeMutation,
   useRemoveTeamEdgeMutation,
 } = workPlannerApiSlice;

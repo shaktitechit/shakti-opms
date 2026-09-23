@@ -31,6 +31,7 @@ router.post('/expenses/upload', upload.single('file'), controller.uploadExpenseR
 router.post('/attachments/upload', upload.single('file'), controller.uploadAttachment);
 router.get('/user-settings/:userId', controller.getUserSettings);
 router.put('/user-settings/:userId', elevatedRoles, controller.updateUserSettings);
+router.get('/eligible-managers', controller.getEligibleManagers);
 
 // Team hierarchy (must be before /:id)
 router.get('/team/tree', adminRole, teamController.getTree);

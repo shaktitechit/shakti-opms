@@ -43,6 +43,7 @@ import {
   useRemoveWorkMutation,
   useGetUserSettingsQuery,
   useGetMyTeamQuery,
+  useGetEligibleManagersQuery,
 } from "@/store/api/workPlannerApiSlice";
 import { isWpAdmin, isWpManager, isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
 import { getUserWorkPlannerSettings, type CustomWorkTaskTemplate } from "@/utils/userWorkPlannerSettings";
@@ -292,6 +293,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
 
   // Fetch all users for executive selection (admins) and manager discussion selection
   const { data: usersData } = useGetUsersQuery(undefined, { skip: !adminRole });
+  const { data: eligibleManagersData } = useGetEligibleManagersQuery();
   const [fetchPlan] = useLazyGetPlanQuery();
   const [lazyGetPlans] = useLazyGetPlansQuery();
   const [createPlanMut] = useCreatePlanMutation();
@@ -315,7 +317,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   }, [dbUserSettings, targetUserId]);
 
   const allUsers = useMemo<ExecutiveUser[]>(() => {
-    if (adminRole) return (usersData as ExecutiveUser[]) || [];
+    if (adminRole && usersData) return (usersData as ExecutiveUser[]) || [];
     const list: ExecutiveUser[] = [];
     const seen = new Set<string>();
 
@@ -329,6 +331,9 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     };
 
     if (sessionUser) addUser(sessionUser);
+    if (Array.isArray(eligibleManagersData)) {
+      eligibleManagersData.forEach(addUser);
+    }
     if (Array.isArray(myTeamData?.members)) {
       myTeamData.members.forEach(addUser);
     }
@@ -339,7 +344,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       });
     }
     return list;
-  }, [adminRole, usersData, sessionUser, myTeamData]);
+  }, [adminRole, usersData, sessionUser, eligibleManagersData, myTeamData]);
 
   // Resolve assigned manager for current plan type (or fallback to global default manager)
   const assignedPlanTypeManager = useMemo(() => {
@@ -968,20 +973,27 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       });
     }
 
-    // 2. Add Portal Admins of work_planner portal
-    for (const u of allUsers) {
+    // 2. Add Portal Admins / Eligible Managers from backend
+    const managersSource = Array.isArray(eligibleManagersData) && eligibleManagersData.length > 0
+      ? eligibleManagersData
+      : allUsers;
+
+    for (const u of managersSource) {
       const id = String(u._id || u.id || "");
       if (!id) continue;
       const role = getWorkPlannerUserRole(u);
-      if (role !== "Admin") continue; // Strictly portal admins only!
+      const isPortalAdmin = role === "Admin" || String(u.roleBadge || "").includes("Admin");
+      const isPortalManager = role === "Manager" || String(u.roleBadge || "").includes("Manager");
+
+      if (!isPortalAdmin && !isPortalManager) continue;
 
       if (!map.has(id)) {
         map.set(id, {
           _id: id,
           name: u.name,
           email: u.email || "",
-          department: u.department || "",
-          roleBadge: "Portal Admin",
+          department: typeof u.department === "object" ? u.department?.name : (u.department || ""),
+          roleBadge: u.roleBadge || (isPortalAdmin ? "Portal Admin" : "Portal Manager"),
           isReportingManager: false,
         });
       }
@@ -998,7 +1010,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         u.roleBadge?.toLowerCase().includes(q) ||
         u.department?.toLowerCase().includes(q)
     );
-  }, [allUsers, assignedPlanTypeManager, planType, managerSearch]);
+  }, [allUsers, eligibleManagersData, assignedPlanTypeManager, planType, managerSearch]);
 
   const selectedManager = useMemo(() => {
     if (!discussedManagerId) return null;
