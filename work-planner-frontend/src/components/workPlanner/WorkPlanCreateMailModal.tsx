@@ -27,7 +27,7 @@ import {
   useGetUserSettingsQuery,
   useGetMyTeamQuery,
 } from "@/store/api/workPlannerApiSlice";
-import { isWpAdmin, readSessionFromStorage } from "@/utils/authStorage";
+import { isWpAdmin, isWpManager, readSessionFromStorage } from "@/utils/authStorage";
 import { getUserWorkPlannerSettings } from "@/utils/userWorkPlannerSettings";
 import type {
   WorkPlanRecord,
@@ -133,13 +133,14 @@ export function WorkPlanCreateMailModal({
 
   const currentSessionUser = sessionUser || readSessionFromStorage()?.user;
   const adminRole = isWpAdmin(currentSessionUser as any);
+  const isManagerOnly = isWpManager(currentSessionUser as any);
 
   // Fetch prefilled draft / manager list from backend if available
   const { data: draftData, isLoading: draftLoading } = useGetDayEndDraftQuery(planId || "", {
     skip: !isOpen || !planId,
   });
   const { data: usersData } = useGetUsersQuery(undefined, { skip: !isOpen || !adminRole });
-  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !isOpen || adminRole });
+  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !isOpen || !isManagerOnly });
 
   const [uploadAttachmentMut] = useUploadWorkPlanAttachmentMutation();
   const [submitPlanMut] = useSubmitPlanMutation();

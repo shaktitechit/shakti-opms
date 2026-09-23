@@ -35,7 +35,7 @@ import {
   useUpdateUserSettingsMutation,
   useGetMyTeamQuery,
 } from "@/store/api/workPlannerApiSlice";
-import { isManager, isWpAdmin, readSessionFromStorage } from "@/utils/authStorage";
+import { isManager, isWpAdmin, isWpManager, readSessionFromStorage } from "@/utils/authStorage";
 import { resolveRoleLabels } from "@/utils/resolveRoleLabels";
 import {
   getUserWorkPlannerSettings,
@@ -71,13 +71,14 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
   const router = useRouter();
   const sessionUser = readSessionFromStorage()?.user;
   const managerAccess = isManager(sessionUser);
+  const isManagerOnly = isWpManager(sessionUser);
   const adminAccess = isWpAdmin(sessionUser);
   const isSelf = Boolean(sessionUser) && String(sessionUser?._id || (sessionUser as any)?.id || "") === String(userId);
   const canAccess = managerAccess || isSelf;
   const teamDirectoryHref = adminAccess ? "/dashboard/assigned-teams" : "/dashboard/my-team";
 
   const { data: usersData, isLoading: loadingUsers } = useGetUsersQuery(undefined, { skip: !adminAccess });
-  const { data: myTeamData, isLoading: loadingMyTeam } = useGetMyTeamQuery(undefined, { skip: adminAccess });
+  const { data: myTeamData, isLoading: loadingMyTeam } = useGetMyTeamQuery(undefined, { skip: !isManagerOnly });
 
   const rawUsers = useMemo<any[]>(() => {
     if (adminAccess) return (usersData as any[]) || [];
