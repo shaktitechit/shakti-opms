@@ -2982,41 +2982,6 @@ async function updateUserSettings(targetUserId, payload, currentUser) {
   return getUserSettings(targetUserId, currentUser);
 }
 
-module.exports = {
-  list,
-  get,
-  create,
-  update,
-  remove,
-  submit,
-  approve,
-  reject,
-  completePlan,
-  addVisit,
-  updateVisit,
-  removeVisit,
-  addStandaloneVisit,
-  updateStandaloneVisit,
-  removeStandaloneVisit,
-  checkIn,
-  checkOut,
-  completeVisit,
-  listAllExpenses,
-  listExpenses,
-  addExpense,
-  updateExpense,
-  removeExpense,
-  submitExpense,
-  approveExpense,
-  rejectExpense,
-  submitAllExpenses,
-  approveAllExpenses,
-  rejectAllExpenses,
-  stats,
-  loadWorks,
-  addWork,
-  updateWork,
-  removeWork,
 async function getEligibleManagers(user) {
   const { User } = getModels();
   const allActiveUsers = await User.find({ is_active: { $ne: false } })
