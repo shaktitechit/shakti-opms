@@ -187,11 +187,36 @@ export function WorkPlanCalendarPage() {
   const [selectedTeamFilter, setSelectedTeamFilter] = useState<string>("all");
   const [selectedExecutiveFilter, setSelectedExecutiveFilter] = useState<string>("all");
 
-  const { data: usersData } = useGetUsersQuery();
+  const { data: usersData } = useGetUsersQuery(undefined, { skip: !adminRole });
   const { data: tree } = useGetTeamTreeQuery(undefined, { skip: !adminRole });
-  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !managerRole });
+  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: adminRole || !managerRole });
 
-  const allUsers = useMemo(() => (usersData as ExecutiveUser[]) || [], [usersData]);
+  const allUsers = useMemo<ExecutiveUser[]>(() => {
+    if (adminRole) return (usersData as ExecutiveUser[]) || [];
+    const list: ExecutiveUser[] = [];
+    const seen = new Set<string>();
+
+    const addUser = (u: any) => {
+      if (!u) return;
+      const id = String(u._id || u.id || "");
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        list.push(u as ExecutiveUser);
+      }
+    };
+
+    if (user) addUser(user);
+    if (Array.isArray(myTeamData?.members)) {
+      myTeamData.members.forEach(addUser);
+    }
+    if (Array.isArray(myTeamData?.edges)) {
+      myTeamData.edges.forEach((e: any) => {
+        if (e.manager) addUser(e.manager);
+        if (e.user) addUser(e.user);
+      });
+    }
+    return list;
+  }, [adminRole, usersData, user, myTeamData]);
 
   // Teams list (Managers with their teams)
   const teamOptions = useMemo<Array<{ id: string; name: string; memberIds: string[] }>>(() => {

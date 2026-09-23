@@ -222,8 +222,8 @@ export function TasksVisitsPage() {
   const [actionSaving, setActionSaving] = useState(false);
 
   // User Roster and Team queries
-  const { data: usersData } = useGetUsersQuery();
-  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !managerRole });
+  const { data: usersData } = useGetUsersQuery(undefined, { skip: !adminRole });
+  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: adminRole || !managerRole });
 
   // Mutations & Lazy queries
   const [lazyGetPlans] = useLazyGetPlansQuery();
@@ -236,7 +236,32 @@ export function TasksVisitsPage() {
   const [updateWorkMut] = useUpdateWorkMutation();
   const [addStandaloneWorkMut] = useAddStandaloneWorkMutation();
 
-  const allUsers = useMemo(() => (usersData as ExecutiveUser[]) || [], [usersData]);
+  const allUsers = useMemo<ExecutiveUser[]>(() => {
+    if (adminRole) return (usersData as ExecutiveUser[]) || [];
+    const list: ExecutiveUser[] = [];
+    const seen = new Set<string>();
+
+    const addUser = (u: any) => {
+      if (!u) return;
+      const id = String(u._id || u.id || "");
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        list.push(u as ExecutiveUser);
+      }
+    };
+
+    if (user) addUser(user);
+    if (Array.isArray(myTeamData?.members)) {
+      myTeamData.members.forEach(addUser);
+    }
+    if (Array.isArray(myTeamData?.edges)) {
+      myTeamData.edges.forEach((e: any) => {
+        if (e.manager) addUser(e.manager);
+        if (e.user) addUser(e.user);
+      });
+    }
+    return list;
+  }, [adminRole, usersData, user, myTeamData]);
 
   // Allowed Executives for planning:
   // - Admin: all portal members with work_planner access

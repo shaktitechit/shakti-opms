@@ -25,7 +25,9 @@ import {
   useUploadWorkPlanAttachmentMutation,
   useSubmitPlanMutation,
   useGetUserSettingsQuery,
+  useGetMyTeamQuery,
 } from "@/store/api/workPlannerApiSlice";
+import { isWpAdmin, readSessionFromStorage } from "@/utils/authStorage";
 import { getUserWorkPlannerSettings } from "@/utils/userWorkPlannerSettings";
 import type {
   WorkPlanRecord,
@@ -87,7 +89,18 @@ function getFileIcon(mimeType?: string, fileName?: string) {
 }
 
 function getWorkPlannerUserRole(u: any): "Admin" | "Manager" | null {
-  if (!u || !Array.isArray(u.portals) || u.portals.length === 0) {
+  if (!u) return null;
+  if (
+    u.department === "super_admin" ||
+    (Array.isArray(u.role_codes) && u.role_codes.includes("super_admin")) ||
+    (Array.isArray(u.roles) && u.roles.includes("super_admin"))
+  ) {
+    return "Admin";
+  }
+  if (u.wp_role === "admin" || u.wp_role === "super_admin") return "Admin";
+  if (u.wp_role === "manager") return "Manager";
+
+  if (!Array.isArray(u.portals) || u.portals.length === 0) {
     return null;
   }
   const wpPortal = u.portals.find((p: any) => {
@@ -118,11 +131,15 @@ export function WorkPlanCreateMailModal({
 }: WorkPlanCreateMailModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const currentSessionUser = sessionUser || readSessionFromStorage()?.user;
+  const adminRole = isWpAdmin(currentSessionUser as any);
+
   // Fetch prefilled draft / manager list from backend if available
   const { data: draftData, isLoading: draftLoading } = useGetDayEndDraftQuery(planId || "", {
     skip: !isOpen || !planId,
   });
-  const { data: usersData } = useGetUsersQuery();
+  const { data: usersData } = useGetUsersQuery(undefined, { skip: !isOpen || !adminRole });
+  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !isOpen || adminRole });
 
   const [uploadAttachmentMut] = useUploadWorkPlanAttachmentMutation();
   const [submitPlanMut] = useSubmitPlanMutation();
@@ -138,10 +155,35 @@ export function WorkPlanCreateMailModal({
   const [uploadingFiles, setUploadingFiles] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  const fromName = sessionUser?.name || "Executive";
-  const fromEmail = sessionUser?.email || draftData?.from_email || "";
+  const fromName = sessionUser?.name || currentSessionUser?.name || "Executive";
+  const fromEmail = sessionUser?.email || currentSessionUser?.email || draftData?.from_email || "";
 
-  const allUsers = useMemo(() => (usersData as any[]) || [], [usersData]);
+  const allUsers = useMemo<any[]>(() => {
+    if (adminRole) return (usersData as any[]) || [];
+    const list: any[] = [];
+    const seen = new Set<string>();
+
+    const addUser = (u: any) => {
+      if (!u) return;
+      const id = String(u._id || u.id || "");
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        list.push(u);
+      }
+    };
+
+    if (currentSessionUser) addUser(currentSessionUser);
+    if (Array.isArray(myTeamData?.members)) {
+      myTeamData.members.forEach(addUser);
+    }
+    if (Array.isArray(myTeamData?.edges)) {
+      myTeamData.edges.forEach((e: any) => {
+        if (e.manager) addUser(e.manager);
+        if (e.user) addUser(e.user);
+      });
+    }
+    return list;
+  }, [adminRole, usersData, currentSessionUser, myTeamData]);
 
   // Check if current user (Manager) is creating a plan for a target Executive
   const targetUserObj =

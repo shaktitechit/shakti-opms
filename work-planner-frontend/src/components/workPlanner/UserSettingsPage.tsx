@@ -33,6 +33,7 @@ import { useGetUsersQuery } from "@/store/api/authApiSlice";
 import {
   useGetUserSettingsQuery,
   useUpdateUserSettingsMutation,
+  useGetMyTeamQuery,
 } from "@/store/api/workPlannerApiSlice";
 import { isManager, isWpAdmin, readSessionFromStorage } from "@/utils/authStorage";
 import { resolveRoleLabels } from "@/utils/resolveRoleLabels";
@@ -75,8 +76,35 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
   const canAccess = managerAccess || isSelf;
   const teamDirectoryHref = adminAccess ? "/dashboard/assigned-teams" : "/dashboard/my-team";
 
-  const { data: usersData, isLoading: loadingUsers } = useGetUsersQuery();
-  const rawUsers = usersData || [];
+  const { data: usersData, isLoading: loadingUsers } = useGetUsersQuery(undefined, { skip: !adminAccess });
+  const { data: myTeamData, isLoading: loadingMyTeam } = useGetMyTeamQuery(undefined, { skip: adminAccess });
+
+  const rawUsers = useMemo<any[]>(() => {
+    if (adminAccess) return (usersData as any[]) || [];
+    const list: any[] = [];
+    const seen = new Set<string>();
+
+    const addUser = (u: any) => {
+      if (!u) return;
+      const id = String(u._id || u.id || "");
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        list.push(u);
+      }
+    };
+
+    if (sessionUser) addUser(sessionUser);
+    if (Array.isArray(myTeamData?.members)) {
+      myTeamData.members.forEach(addUser);
+    }
+    if (Array.isArray(myTeamData?.edges)) {
+      myTeamData.edges.forEach((e: any) => {
+        if (e.manager) addUser(e.manager);
+        if (e.user) addUser(e.user);
+      });
+    }
+    return list;
+  }, [adminAccess, usersData, sessionUser, myTeamData]);
 
   // Backend RTK Query Hooks
   const { data: dbSettings, isLoading: loadingDbSettings } = useGetUserSettingsQuery(userId, { skip: !userId });
@@ -90,6 +118,16 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
   // Available Managers list - strictly users assigned to work_planner portal with manager or admin role
   const availableManagers = useMemo(() => {
     return rawUsers.filter((u: any) => {
+      if (
+        u.department === "super_admin" ||
+        (Array.isArray(u.role_codes) && u.role_codes.includes("super_admin")) ||
+        (Array.isArray(u.roles) && u.roles.includes("super_admin")) ||
+        u.wp_role === "manager" ||
+        u.wp_role === "admin" ||
+        u.wp_role === "super_admin"
+      ) {
+        return true;
+      }
       if (Array.isArray(u.portals)) {
         const wpPortal = u.portals.find((p: any) => {
           const code = p.portal_code || p.portal?.code || p.code || p.portal;

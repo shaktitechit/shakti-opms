@@ -148,10 +148,35 @@ export function WorkFormModal({
   const elevatedRole = isWpElevated(sessionUser);
 
   // Queries for allowed executives
-  const { data: usersData } = useGetUsersQuery(undefined, { skip: !open });
-  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !open || !managerRole });
+  const { data: usersData } = useGetUsersQuery(undefined, { skip: !open || !adminRole });
+  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !open || adminRole || !managerRole });
 
-  const allUsers = useMemo(() => (usersData as ExecutiveUser[]) || [], [usersData]);
+  const allUsers = useMemo<ExecutiveUser[]>(() => {
+    if (adminRole) return (usersData as ExecutiveUser[]) || [];
+    const list: ExecutiveUser[] = [];
+    const seen = new Set<string>();
+
+    const addUser = (u: any) => {
+      if (!u) return;
+      const id = String(u._id || u.id || "");
+      if (id && !seen.has(id)) {
+        seen.add(id);
+        list.push(u as ExecutiveUser);
+      }
+    };
+
+    if (sessionUser) addUser(sessionUser);
+    if (Array.isArray(myTeamData?.members)) {
+      myTeamData.members.forEach(addUser);
+    }
+    if (Array.isArray(myTeamData?.edges)) {
+      myTeamData.edges.forEach((e: any) => {
+        if (e.manager) addUser(e.manager);
+        if (e.user) addUser(e.user);
+      });
+    }
+    return list;
+  }, [adminRole, usersData, sessionUser, myTeamData]);
 
   // Allowed Executives for assignment:
   // - Admin: all portal members with work_planner access
