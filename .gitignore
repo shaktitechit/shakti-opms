@@ -60,3 +60,6 @@ dump.rdb
 # Runtime data volumes (local Docker)
 minio-data/
 backups/
+
+# Project docs (local only)
+docs/
