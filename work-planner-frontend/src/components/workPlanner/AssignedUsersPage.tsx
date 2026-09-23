@@ -99,10 +99,6 @@ export function AssignedUsersPage({ mode = "my-team" }: { mode?: TeamDirectoryMo
   const plans: WorkPlanRecord[] = plansRes?.data || [];
   const expenses: WorkPlanExpenseRecord[] = expensesRes?.data || [];
 
-  const visibleMemberIds = useMemo(() => {
-    // Admins see everyone; managers already have rawUsers scoped to their team
-    return null;
-  }, []);
 
   // Reset pagination when filters change
   useEffect(() => {
@@ -256,9 +252,6 @@ export function AssignedUsersPage({ mode = "my-team" }: { mode?: TeamDirectoryMo
         if (!isWorkPlannerAssigned) return false;
       }
 
-      if (visibleMemberIds && !visibleMemberIds.has(uId)) {
-        return false;
-      }
 
       // Search filter
       if (searchQuery.trim()) {
@@ -288,7 +281,7 @@ export function AssignedUsersPage({ mode = "my-team" }: { mode?: TeamDirectoryMo
 
       return true;
     });
-  }, [rawUsers, adminAccess, searchQuery, departmentFilter, statusFilter, userStatsMap, visibleMemberIds]);
+  }, [rawUsers, adminAccess, searchQuery, departmentFilter, statusFilter, userStatsMap]);
 
   // Total pages and paginated users
   const totalPages = useMemo(() => {
@@ -311,13 +304,13 @@ export function AssignedUsersPage({ mode = "my-team" }: { mode?: TeamDirectoryMo
       const uId = String(u._id || u.id || "");
       const uEmail = (u.email || "").toLowerCase();
       const stats = userStatsMap.get(uId) || userStatsMap.get(uEmail);
-      const isWorkPlannerAssigned =
-        hasWorkPlannerPortalAccess(u) || Boolean(stats && (stats.totalPlans > 0 || stats.totalExpensesCount > 0));
 
-      if (isWorkPlannerAssigned) {
-        if (visibleMemberIds && !visibleMemberIds.has(uId)) {
-          return;
-        }
+      // For admins: apply WP portal gate. For managers: all rawUsers are WP team members.
+      const isIncluded = adminAccess
+        ? hasWorkPlannerPortalAccess(u) || Boolean(stats && (stats.totalPlans > 0 || stats.totalExpensesCount > 0))
+        : true;
+
+      if (isIncluded) {
         totalAssignedCount++;
         if (stats) {
           pendingPlansTotal += stats.pendingPlans;
@@ -333,7 +326,7 @@ export function AssignedUsersPage({ mode = "my-team" }: { mode?: TeamDirectoryMo
       pendingPlans: pendingPlansTotal,
       pendingExpenses: pendingExpensesTotal,
     };
-  }, [rawUsers, userStatsMap, visibleMemberIds]);
+  }, [rawUsers, adminAccess, userStatsMap]);
 
   if (!canAccess) {
     return (
