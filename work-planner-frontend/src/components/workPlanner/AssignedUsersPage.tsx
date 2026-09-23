@@ -76,31 +76,33 @@ export function AssignedUsersPage({ mode = "my-team" }: { mode?: TeamDirectoryMo
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Queries
-  const { data: usersData, isLoading: loadingUsers, refetch: refetchUsers } = useGetUsersQuery();
+  // Admins: fetch full user list from auth service.
+  // Managers: the work-planner /team/my-team endpoint already returns full user objects
+  //           (name, email, department, portals) — no need to hit the auth API.
+  const { data: usersData, isLoading: loadingUsers, refetch: refetchUsers } = useGetUsersQuery(
+    undefined,
+    { skip: !adminAccess }
+  );
   const { data: plansRes, isLoading: loadingPlans, refetch: refetchPlans } = useGetPlansQuery({ limit: 500 });
   const { data: expensesRes, isLoading: loadingExpenses, refetch: refetchExpenses } = useGetExpensesQuery({ limit: 500 });
-  const { data: myTeamData, refetch: refetchMyTeam } = useGetMyTeamQuery(undefined, {
+  const { data: myTeamData, isLoading: loadingMyTeam, refetch: refetchMyTeam } = useGetMyTeamQuery(undefined, {
     skip: !elevatedAccess,
   });
 
-  const rawUsers = usersData || [];
+  // rawUsers: for admins use auth API result; for managers use my-team members directly
+  const rawUsers = useMemo(() => {
+    if (adminAccess) return (usersData as any[]) || [];
+    // Manager mode: myTeamData.members comes from the WP backend with full user info
+    return Array.isArray(myTeamData?.members) ? myTeamData.members : [];
+  }, [adminAccess, usersData, myTeamData]);
+
   const plans: WorkPlanRecord[] = plansRes?.data || [];
   const expenses: WorkPlanExpenseRecord[] = expensesRes?.data || [];
 
   const visibleMemberIds = useMemo(() => {
-    if (mode === "assigned-teams" || adminAccess) return null;
-    const ids = new Set<string>();
-    const members = Array.isArray(myTeamData?.members) ? myTeamData.members : [];
-    members.forEach((m: any) => {
-      const id = String(m._id || m.id || "");
-      if (id) ids.add(id);
-    });
-    if (Array.isArray(myTeamData?.visible_user_ids)) {
-      myTeamData.visible_user_ids.forEach((id: string) => ids.add(String(id)));
-    }
-    if (sessionUser?._id) ids.add(String(sessionUser._id));
-    return ids;
-  }, [mode, adminAccess, myTeamData, sessionUser]);
+    // Admins see everyone; managers already have rawUsers scoped to their team
+    return null;
+  }, []);
 
   // Reset pagination when filters change
   useEffect(() => {
@@ -109,7 +111,7 @@ export function AssignedUsersPage({ mode = "my-team" }: { mode?: TeamDirectoryMo
 
   // Refetch all data
   function handleRefreshAll() {
-    refetchUsers();
+    if (adminAccess) refetchUsers();
     refetchPlans();
     refetchExpenses();
     refetchMyTeam();
@@ -246,12 +248,12 @@ export function AssignedUsersPage({ mode = "my-team" }: { mode?: TeamDirectoryMo
       const stats = userStatsMap.get(uId) || userStatsMap.get(uEmail);
       const userDept = getUserDepartmentName(u);
 
-      // Only list users who have work_planner portal access or have work planner activity
-      const isWorkPlannerAssigned =
-        hasWorkPlannerPortalAccess(u) || Boolean(stats && (stats.totalPlans > 0 || stats.totalExpensesCount > 0));
-
-      if (!isWorkPlannerAssigned) {
-        return false;
+      // For admins (full auth user list): only show WP-assigned users.
+      // For managers: rawUsers is already myTeamData.members (all WP team members), so skip gate.
+      if (adminAccess) {
+        const isWorkPlannerAssigned =
+          hasWorkPlannerPortalAccess(u) || Boolean(stats && (stats.totalPlans > 0 || stats.totalExpensesCount > 0));
+        if (!isWorkPlannerAssigned) return false;
       }
 
       if (visibleMemberIds && !visibleMemberIds.has(uId)) {
@@ -286,7 +288,7 @@ export function AssignedUsersPage({ mode = "my-team" }: { mode?: TeamDirectoryMo
 
       return true;
     });
-  }, [rawUsers, searchQuery, departmentFilter, statusFilter, userStatsMap, visibleMemberIds]);
+  }, [rawUsers, adminAccess, searchQuery, departmentFilter, statusFilter, userStatsMap, visibleMemberIds]);
 
   // Total pages and paginated users
   const totalPages = useMemo(() => {
@@ -351,7 +353,7 @@ export function AssignedUsersPage({ mode = "my-team" }: { mode?: TeamDirectoryMo
     );
   }
 
-  const isLoading = loadingUsers || loadingPlans || loadingExpenses;
+  const isLoading = (adminAccess ? loadingUsers : loadingMyTeam) || loadingPlans || loadingExpenses;
 
   return (
     <div className="space-y-6 font-sans">
