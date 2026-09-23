@@ -52,6 +52,16 @@ exports.unsubscribe = asyncHandler(async (req, res) => {
  * POST /api/push/notify
  * Body: { title: string, body?: string, url?: string, data?: object }
  */
+exports.registerDevice = asyncHandler(async (req, res) => {
+  const data = await service.registerDevice(req.user._id, req.body?.token, req.body?.platform);
+  res.status(201).json({ success: true, message: 'Device registered for push', data });
+});
+
+exports.unregisterDevice = asyncHandler(async (req, res) => {
+  const data = await service.unregisterDevice(req.user._id, req.body?.token);
+  res.json({ success: true, data });
+});
+
 exports.notifySelf = asyncHandler(async (req, res) => {
   const title = typeof req.body?.title === 'string' ? req.body.title.trim() : '';
   if (!title) {

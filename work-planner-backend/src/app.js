@@ -34,6 +34,7 @@ app.use('/api/work-planner', workPlannerRoutes);
 app.use('/api/parties', proxyToPartyService);
 app.use('/api/leads', proxyToLeadManagerService);
 app.use('/api/notifications', proxyToNotificationService);
+app.use('/api/push', proxyToNotificationService);
 app.use('/api/emails', proxyToMessageService);
 app.use('/api/messages', proxyToMessageService);
 app.use('/api/auto-emails', proxyToMessageService);

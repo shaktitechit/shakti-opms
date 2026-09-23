@@ -26,20 +26,30 @@ async function createForUser(userId, payload) {
   sse.emitToUser(String(userId), 'notification', plain);
 
   // Browser Web Push (best-effort; does not block or fail the in-app notification)
+  const pushData = {
+    notificationId: plain._id,
+    type: payload.type || 'info',
+    module: payload.module || 'system',
+    entity_type: payload.entity_type,
+    entity_id: payload.entity_id ? String(payload.entity_id) : undefined,
+  };
   void pushService
     .sendToUser(userId, {
       title: payload.title,
       body: payload.message,
-      data: {
-        notificationId: plain._id,
-        type: payload.type || 'info',
-        module: payload.module || 'system',
-        entity_type: payload.entity_type,
-        entity_id: payload.entity_id ? String(payload.entity_id) : undefined,
-      },
+      data: pushData,
     })
     .catch((err) => {
       console.warn('[notifications] web-push failed', err?.message || err);
+    });
+  void pushService
+    .sendExpoToUser(userId, {
+      title: payload.title,
+      body: payload.message,
+      data: pushData,
+    })
+    .catch((err) => {
+      console.warn('[notifications] device push failed', err?.message || err);
     });
 
   return plain;

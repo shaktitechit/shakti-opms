@@ -7,6 +7,7 @@ const { getModels } = require('../../data/mongoRegistry');
 const { toPlain } = require('../../utils/mongoJson');
 const { ApiError } = require('../../utils/ApiError');
 const activityService = require('../activity/activity.service');
+const notificationService = require('../notifications/notification.service');
 const {
   sendWorkPlanCompletedEmail,
   sendCustomDayEndEmail,
@@ -15,6 +16,12 @@ const {
   renderVisitsTable,
   renderTasksTable,
 } = require('./workPlanNotification.service');
+const {
+  notifyWorkPlanCreated,
+  notifyVisitCreated,
+  notifyTaskCreated,
+  notifyDayEndCompleted,
+} = require('./workPlannerAutoNotification.service');
 const {
   EDITABLE_PLAN_STATUSES,
   EDITABLE_EXPENSE_STATUSES,
@@ -410,16 +417,10 @@ async function completePlan(id, user, dayEndData = null) {
   await plan.save();
   await logActivity(user, id, 'status_changed', 'Work plan marked completed via Day End');
 
-  // Trigger completion notification emails
-  if (dayEndData && dayEndData.to_email) {
-    sendCustomDayEndEmail(id, user, dayEndData).catch((err) =>
-      console.error('[workPlanner.service] Day End custom email error:', err?.message || err)
-    );
-  } else {
-    sendWorkPlanCompletedEmail(id, user).catch((err) =>
-      console.error('[workPlanner.service] completion email error:', err?.message || err)
-    );
-  }
+  // Trigger completion auto notification (in-app + emails to stakeholders)
+  notifyDayEndCompleted({ planId: id, actorUser: user, dayEndData }).catch((err) =>
+    console.error('[workPlanner.service] Day End auto-notification error:', err?.message || err)
+  );
 
   return get(id, user);
 }
@@ -817,6 +818,13 @@ async function create(body, user) {
     await renumberWorks(doc._id);
 
     await logActivity(user, doc._id, 'created', `Work plan created for ${planDate.toISOString().slice(0, 10)}`);
+
+    // Trigger auto-notifications to stakeholders
+    notifyWorkPlanCreated({ planId: doc._id, actorUser: user, creationMailData: body }).catch((err) => {
+      const { logger } = require('../../utils/logger');
+      logger.error(`[WorkPlanService] Failed to dispatch creation notification for plan ${doc._id}: ${err.message}`);
+    });
+
     return get(doc._id, user);
   } catch (err) {
     if (err && err.code === 11000) {
@@ -958,10 +966,10 @@ async function submit(id, user, body = {}) {
 
   await logActivity(user, plan._id, 'submitted', 'Work plan saved as planned and email dispatched');
 
-  // Trigger creation email notification
-  sendCustomWorkPlanCreationEmail(plan._id, user, body).catch((err) => {
+  // Trigger creation auto-notifications (in-app + email)
+  notifyWorkPlanCreated({ planId: plan._id, actorUser: user, creationMailData: body }).catch((err) => {
     const { logger } = require('../../utils/logger');
-    logger.error(`[WorkPlanService] Failed to send creation email for plan ${id}: ${err.message}`);
+    logger.error(`[WorkPlanService] Failed to send creation notification for plan ${id}: ${err.message}`);
   });
 
   return get(plan._id, user);
@@ -994,7 +1002,7 @@ async function approve(id, user) {
     title: 'Work plan approved',
     message: `Your work plan for ${plan.plan_date.toISOString().slice(0, 10)} was approved.`,
     type: 'success',
-    module: 'system',
+    module: 'work_planner',
     entity_type: 'work_plan',
     entity_id: plan._id,
   });
@@ -1029,7 +1037,7 @@ async function reject(id, body, user) {
     title: 'Work plan rejected',
     message: `Your work plan for ${plan.plan_date.toISOString().slice(0, 10)} was rejected. Reason: ${plan.rejection_reason}`,
     type: 'warning',
-    module: 'system',
+    module: 'work_planner',
     entity_type: 'work_plan',
     entity_id: plan._id,
   });
@@ -1123,6 +1131,13 @@ async function addStandaloneVisit(body, user) {
 
     await renumberVisits(existingPlan._id);
     await logActivity(user, existingPlan._id, 'created', `Visit added to work plan for ${planDate.toISOString().slice(0, 10)}`);
+
+    // Auto-notification for visit added
+    notifyVisitCreated({ visit: toPlain(visit), planDoc: existingPlan, actorUser: user }).catch((err) => {
+      const { logger } = require('../../utils/logger');
+      logger.error(`[WorkPlanService] Visit notification error: ${err.message}`);
+    });
+
     return toPlain(visit);
   }
 
@@ -1165,6 +1180,13 @@ async function addStandaloneVisit(body, user) {
   });
 
   await logActivity(user, salesUserId, 'created', `Standalone visit created for ${planDate.toISOString().slice(0, 10)}`);
+
+  // Auto-notification for standalone visit created
+  notifyVisitCreated({ visit: toPlain(visit), planDoc: null, actorUser: user }).catch((err) => {
+    const { logger } = require('../../utils/logger');
+    logger.error(`[WorkPlanService] Standalone visit notification error: ${err.message}`);
+  });
+
   return toPlain(visit);
 }
 
@@ -1356,6 +1378,13 @@ async function addVisit(planId, body, user) {
 
   await renumberVisits(planId);
   await logActivity(user, planId, 'updated', `Visit added (sequence ${sequence})`);
+
+  // Auto-notification for visit created
+  notifyVisitCreated({ visit: toPlain(visit), planDoc: plan, actorUser: user }).catch((err) => {
+    const { logger } = require('../../utils/logger');
+    logger.error(`[WorkPlanService] Visit notification error: ${err.message}`);
+  });
+
   return getWithVisits(planId);
 }
 
@@ -2297,7 +2326,7 @@ async function approveExpense(planId, expenseId, user) {
     title: 'Expense approved',
     message: `Your expense of ${expense.amount} (${expense.category}) was approved.`,
     type: 'success',
-    module: 'system',
+    module: 'work_planner',
     entity_type: 'work_plan',
     entity_id: plan._id,
   });
@@ -2340,7 +2369,7 @@ async function rejectExpense(planId, expenseId, body, user) {
     title: 'Expense rejected',
     message: `Your expense of ${expense.amount} (${expense.category}) was rejected. Reason: ${expense.rejection_reason}`,
     type: 'warning',
-    module: 'system',
+    module: 'work_planner',
     entity_type: 'work_plan',
     entity_id: plan._id,
   });
@@ -2424,7 +2453,7 @@ async function approveAllExpenses(planId, user) {
     title: 'Expenses approved',
     message: `${count} expense(s) on your work plan for ${plan.plan_date.toISOString().slice(0, 10)} were approved.`,
     type: 'success',
-    module: 'system',
+    module: 'work_planner',
     entity_type: 'work_plan',
     entity_id: plan._id,
   });
@@ -2473,7 +2502,7 @@ async function rejectAllExpenses(planId, body, user) {
     title: 'Expenses rejected',
     message: `${count} expense(s) on your work plan for ${plan.plan_date.toISOString().slice(0, 10)} were rejected. Reason: ${reason}`,
     type: 'warning',
-    module: 'system',
+    module: 'work_planner',
     entity_type: 'work_plan',
     entity_id: plan._id,
   });
@@ -2588,6 +2617,13 @@ async function addStandaloneWork(body, user) {
 
     await renumberWorks(existingPlan._id);
     await logActivity(user, existingPlan._id, 'created', `Task added to work plan for ${planDate.toISOString().slice(0, 10)}`);
+
+    // Auto-notification for task added
+    notifyTaskCreated({ task: toPlain(work), planDoc: existingPlan, actorUser: user }).catch((err) => {
+      const { logger } = require('../../utils/logger');
+      logger.error(`[WorkPlanService] Task notification error: ${err.message}`);
+    });
+
     return toPlain(work);
   }
 
@@ -2622,6 +2658,13 @@ async function addStandaloneWork(body, user) {
   });
 
   await logActivity(user, salesUserId, 'created', `Standalone task created for ${planDate.toISOString().slice(0, 10)}`);
+
+  // Auto-notification for standalone task created
+  notifyTaskCreated({ task: toPlain(work), planDoc: null, actorUser: user }).catch((err) => {
+    const { logger } = require('../../utils/logger');
+    logger.error(`[WorkPlanService] Standalone task notification error: ${err.message}`);
+  });
+
   return toPlain(work);
 }
 
@@ -2737,7 +2780,7 @@ async function addWork(planId, body, user) {
     }
   }
 
-  await WorkPlanWork.create({
+  const createdWork = await WorkPlanWork.create({
     work_plan: planId,
     sales_user: plan.sales_user,
     plan_date: plan.plan_date,
@@ -2765,6 +2808,13 @@ async function addWork(planId, body, user) {
 
   await renumberWorks(planId);
   await logActivity(user, planId, 'updated', `Work task added (sequence ${sequence})`);
+
+  // Auto-notification for task created
+  notifyTaskCreated({ task: toPlain(createdWork), planDoc: plan, actorUser: user }).catch((err) => {
+    const { logger } = require('../../utils/logger');
+    logger.error(`[WorkPlanService] Task notification error: ${err.message}`);
+  });
+
   return getWithVisits(planId);
 }
 

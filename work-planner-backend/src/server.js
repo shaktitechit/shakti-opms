@@ -14,6 +14,9 @@ async function startServer() {
     await fixWorkPlanIndexes();
     registerModels();
 
+    const { startSchedulers } = require('./jobs/workPlannerScheduler');
+    startSchedulers();
+
     const serverPort = PORT || 7007;
     app.listen(serverPort, () => {
       logger.info(`work-planner-backend listening on port ${serverPort}`);

@@ -12,6 +12,8 @@ router.get('/push/vapid-public-key', controller.getVapidPublicKey);
 
 router.post('/subscribe', requireAuth, controller.subscribe);
 router.delete('/subscribe', requireAuth, controller.unsubscribe);
+router.post('/push/device', requireAuth, controller.registerDevice);
+router.delete('/push/device', requireAuth, controller.unregisterDevice);
 router.post('/push/notify', requireAuth, controller.notifySelf);
 
 module.exports = router;

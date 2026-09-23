@@ -15,4 +15,9 @@ module.exports = {
   FILE_MANAGEMENT_API_KEY:
     process.env.FILE_MANAGEMENT_API_KEY ||
     '',
+  FRONTEND_URL: process.env.FRONTEND_URL || '',
+  WORK_PLANNER_TZ: process.env.WORK_PLANNER_TZ || 'Asia/Kolkata',
+  WORK_PLAN_PENDING_CRON: process.env.WORK_PLAN_PENDING_CRON || '0 10 * * *',
+  DAY_END_PENDING_CRON: process.env.DAY_END_PENDING_CRON || '0 18 * * *',
+  WORK_PLANNER_REMINDERS_ENABLED: process.env.WORK_PLANNER_REMINDERS_ENABLED || 'true',
 };

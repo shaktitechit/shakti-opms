@@ -15,7 +15,7 @@ function registerModels() {
       },
       module: {
         type: String,
-        enum: ['order', 'finance', 'dispatch', 'transport', 'flag', 'system', 'lead'],
+        enum: ['order', 'finance', 'dispatch', 'transport', 'flag', 'system', 'lead', 'work_planner'],
         default: 'system',
       },
       entity_type: String,
@@ -46,9 +46,22 @@ function registerModels() {
     mongoose.model('PushSubscription', pushSubscriptionSchema);
   }
 
+  const devicePushTokenSchema = new mongoose.Schema(
+    {
+      user: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
+      token: { type: String, required: true, unique: true },
+      platform: { type: String, default: '' },
+    },
+    { timestamps: true }
+  );
+  if (!mongoose.models.DevicePushToken) {
+    mongoose.model('DevicePushToken', devicePushTokenSchema);
+  }
+
   const models = {
     Notification: mongoose.models.Notification || mongoose.model('Notification', notificationSchema),
     PushSubscription: mongoose.models.PushSubscription || mongoose.model('PushSubscription', pushSubscriptionSchema),
+    DevicePushToken: mongoose.models.DevicePushToken || mongoose.model('DevicePushToken', devicePushTokenSchema),
   };
 
   _cached = models;
