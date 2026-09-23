@@ -1,6 +1,6 @@
 # Phase 3 — Threat model notes (lightweight)
 
-**Status:** Working draft from security hardening Phases 0–2. Not a formal pen-test.  
+**Status:** Working draft reflecting Phases 0–3 hardening. Not a formal pen-test.  
 **Last updated:** 2026-09-22
 
 ## Assets
@@ -16,7 +16,7 @@
 
 ## Trust boundaries
 
-1. Internet → nginx TLS  
+1. Internet → nginx TLS (+ login `limit_req` / optional fail2ban)  
 2. Browser → APIs (JWT + portal RBAC)  
 3. Compose network (service JWT for notifications/emails)  
 4. External Mongo / File API  
@@ -25,8 +25,8 @@
 
 | Threat | Mitigation (current) | Residual |
 |--------|----------------------|----------|
-| Credential stuffing on login | App rate limit + nginx `limit_req` on `/api/auth/login` | Add WAF / lockout alerts |
-| Stolen JWT in URL | SSO `?handoff=` one-time codes; legacy `?token=` deprecated | Remove legacy token accept; shorten TTL further / refresh |
+| Credential stuffing on login | App: **40 failed / 15 min per IP** + **20 / 15 min per IP+email** → 429; nginx `limit_req`; optional **fail2ban 15-min ban** | WAF / SIEM alerts |
+| Stolen JWT in URL | SSO `?handoff=` one-time codes; legacy `?token=` deprecated | Remove legacy token accept; refresh tokens |
 | Unauthenticated internal APIs | Service JWT + unpublished ports | mTLS later |
 | Secret leakage in git | Sanitized `.env.docker.example` + gitleaks CI | Rotate historical secrets |
 | Privilege escalation on user APIs | `requireUserManagerAdmin` on `/api/users*` | Align portal seeding |
@@ -35,7 +35,7 @@
 
 ## Recommended pen-test scope (when scheduled)
 
-1. Auth: login, handoff exchange, master password absent  
+1. Auth: login rate limits / 15-min IP block, handoff exchange, master password absent  
 2. Portal RBAC bypass across OPMS / LM / WP / user-manager  
 3. IDOR on attachments / work-plan files  
 4. Webhook forgery  
@@ -46,6 +46,6 @@
 | Area | Owner |
 |------|-------|
 | Secret rotation | Ops |
-| nginx / TLS / WAF | Ops |
+| nginx / TLS / fail2ban / WAF | Ops |
 | Authz middleware | Backend |
 | Pen-test scheduling | Product + Security |

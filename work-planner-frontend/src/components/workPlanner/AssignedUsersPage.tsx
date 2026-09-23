@@ -28,10 +28,10 @@ import {
   XCircle,
 } from "lucide-react";
 import { useGetUsersQuery } from "@/store/api/authApiSlice";
-import { useGetPlansQuery, useGetExpensesQuery } from "@/store/api/workPlannerApiSlice";
-import { isManager, hasWorkPlannerPortalAccess, readSessionFromStorage } from "@/utils/authStorage";
+import { useGetPlansQuery, useGetExpensesQuery, useGetMyTeamQuery } from "@/store/api/workPlannerApiSlice";
+import { isWpAdmin, isWpElevated, isWpManager, hasWorkPlannerPortalAccess, readSessionFromStorage } from "@/utils/authStorage";
 import { resolveRoleLabels } from "@/utils/resolveRoleLabels";
-import type { AuthUser, WorkPlanRecord, WorkPlanExpenseRecord } from "@/types/workPlanner";
+import type { WorkPlanRecord, WorkPlanExpenseRecord } from "@/types/workPlanner";
 import { formatPlanDate, formatCurrency, salesUserLabel } from "./workPlanUtils";
 
 function getUserDepartmentName(u: any): string {
@@ -42,9 +42,28 @@ function getUserDepartmentName(u: any): string {
   return String(u.department);
 }
 
-export function AssignedUsersPage() {
+export type TeamDirectoryMode = "my-team" | "assigned-teams";
+
+export function AssignedUsersPage({ mode = "my-team" }: { mode?: TeamDirectoryMode }) {
   const sessionUser = readSessionFromStorage()?.user;
-  const managerAccess = isManager(sessionUser);
+  const adminAccess = isWpAdmin(sessionUser);
+  const managerAccess = isWpManager(sessionUser);
+  const elevatedAccess = isWpElevated(sessionUser);
+  const canAccess =
+    mode === "assigned-teams" ? adminAccess : elevatedAccess && (managerAccess || adminAccess);
+
+  const pageTitle = mode === "assigned-teams" ? "Assigned Teams" : "My Team";
+  const pageBadge = mode === "assigned-teams" ? "Admin View" : "Manager View";
+  const pageSubtitle =
+    mode === "assigned-teams"
+      ? "All Work Planner teams, plan activity, and expense claims across the organisation."
+      : "Your direct reports and your own Work Planner activity.";
+  const kpiLabel = mode === "assigned-teams" ? "Team Members" : "My Team";
+  const accessDeniedTitle = mode === "assigned-teams" ? "Admin Access Required" : "Manager Access Required";
+  const accessDeniedBody =
+    mode === "assigned-teams"
+      ? "Assigned Teams is restricted to Work Planner admins."
+      : "My Team is restricted to managers and administrators.";
 
   const [searchQuery, setSearchQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
@@ -60,10 +79,28 @@ export function AssignedUsersPage() {
   const { data: usersData, isLoading: loadingUsers, refetch: refetchUsers } = useGetUsersQuery();
   const { data: plansRes, isLoading: loadingPlans, refetch: refetchPlans } = useGetPlansQuery({ limit: 500 });
   const { data: expensesRes, isLoading: loadingExpenses, refetch: refetchExpenses } = useGetExpensesQuery({ limit: 500 });
+  const { data: myTeamData, refetch: refetchMyTeam } = useGetMyTeamQuery(undefined, {
+    skip: !elevatedAccess,
+  });
 
   const rawUsers = usersData || [];
   const plans: WorkPlanRecord[] = plansRes?.data || [];
   const expenses: WorkPlanExpenseRecord[] = expensesRes?.data || [];
+
+  const visibleMemberIds = useMemo(() => {
+    if (mode === "assigned-teams" || adminAccess) return null;
+    const ids = new Set<string>();
+    const members = Array.isArray(myTeamData?.members) ? myTeamData.members : [];
+    members.forEach((m: any) => {
+      const id = String(m._id || m.id || "");
+      if (id) ids.add(id);
+    });
+    if (Array.isArray(myTeamData?.visible_user_ids)) {
+      myTeamData.visible_user_ids.forEach((id: string) => ids.add(String(id)));
+    }
+    if (sessionUser?._id) ids.add(String(sessionUser._id));
+    return ids;
+  }, [mode, adminAccess, myTeamData, sessionUser]);
 
   // Reset pagination when filters change
   useEffect(() => {
@@ -75,6 +112,7 @@ export function AssignedUsersPage() {
     refetchUsers();
     refetchPlans();
     refetchExpenses();
+    refetchMyTeam();
   }
 
   // Calculate per-user aggregated stats
@@ -139,13 +177,24 @@ export function AssignedUsersPage() {
     });
 
     expenses.forEach((e) => {
+      const user =
+        (typeof e.sales_user === "object" && e.sales_user ? e.sales_user : null) ||
+        (typeof e.work_plan === "object" && e.work_plan && typeof (e.work_plan as any).sales_user === "object"
+          ? (e.work_plan as any).sales_user
+          : null) ||
+        (typeof e.created_by === "object" && e.created_by ? e.created_by : null);
+
       const uId =
-        typeof e.sales_user === "object" && e.sales_user
-          ? e.sales_user._id || (e.sales_user as any).id
-          : String(e.sales_user || "");
+        typeof user === "object" && user
+          ? String(user._id || (user as any).id || "")
+          : typeof e.sales_user === "string"
+          ? e.sales_user
+          : typeof e.created_by === "string"
+          ? e.created_by
+          : "";
 
       const uEmail =
-        typeof e.sales_user === "object" && e.sales_user ? e.sales_user.email?.toLowerCase() : "";
+        typeof user === "object" && user && user.email ? user.email.toLowerCase().trim() : "";
 
       const keys = [uId, uEmail].filter(Boolean) as string[];
 
@@ -205,6 +254,10 @@ export function AssignedUsersPage() {
         return false;
       }
 
+      if (visibleMemberIds && !visibleMemberIds.has(uId)) {
+        return false;
+      }
+
       // Search filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -233,7 +286,7 @@ export function AssignedUsersPage() {
 
       return true;
     });
-  }, [rawUsers, searchQuery, departmentFilter, statusFilter, userStatsMap]);
+  }, [rawUsers, searchQuery, departmentFilter, statusFilter, userStatsMap, visibleMemberIds]);
 
   // Total pages and paginated users
   const totalPages = useMemo(() => {
@@ -260,6 +313,9 @@ export function AssignedUsersPage() {
         hasWorkPlannerPortalAccess(u) || Boolean(stats && (stats.totalPlans > 0 || stats.totalExpensesCount > 0));
 
       if (isWorkPlannerAssigned) {
+        if (visibleMemberIds && !visibleMemberIds.has(uId)) {
+          return;
+        }
         totalAssignedCount++;
         if (stats) {
           pendingPlansTotal += stats.pendingPlans;
@@ -275,18 +331,16 @@ export function AssignedUsersPage() {
       pendingPlans: pendingPlansTotal,
       pendingExpenses: pendingExpensesTotal,
     };
-  }, [rawUsers, userStatsMap]);
+  }, [rawUsers, userStatsMap, visibleMemberIds]);
 
-  if (!managerAccess) {
+  if (!canAccess) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center">
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-500 mb-4 border border-amber-500/20 shadow-lg">
           <ShieldCheck className="h-8 w-8" />
         </div>
-        <h2 className="text-xl font-bold text-foreground">Manager Access Required</h2>
-        <p className="mt-2 text-sm text-muted max-w-md">
-          The Assigned Users navigation is restricted to managers and administrators. If you require manager privileges to manage team work plans and expenses, please contact your portal administrator.
-        </p>
+        <h2 className="text-xl font-bold text-foreground">{accessDeniedTitle}</h2>
+        <p className="mt-2 text-sm text-muted max-w-md">{accessDeniedBody}</p>
         <Link
           href="/dashboard"
           className="mt-6 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-xs font-semibold text-primary-foreground hover:opacity-90 transition shadow-sm"
@@ -310,14 +364,14 @@ export function AssignedUsersPage() {
             </div>
             <div>
               <h1 className="text-xl font-black tracking-tight text-foreground flex items-center gap-2">
-                Assigned Work Planner Users
+                {pageTitle}
                 <span className="inline-flex items-center gap-1 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-primary/15 text-primary border border-primary/20">
                   <ShieldCheck className="h-3 w-3" />
-                  Manager View
+                  {pageBadge}
                 </span>
               </h1>
               <p className="text-xs text-muted mt-0.5">
-                Tabular summary of assigned Work Planner representatives, roles, plan activity, and expense claims.
+                {pageSubtitle}
               </p>
             </div>
           </div>
@@ -341,7 +395,7 @@ export function AssignedUsersPage() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-4 shadow-2xs hover:shadow-xs transition">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-muted uppercase tracking-wider">Assigned Users</span>
+            <span className="text-[11px] font-bold text-muted uppercase tracking-wider">{kpiLabel}</span>
             <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-500/10 text-blue-500 border border-blue-500/20">
               <Users className="h-4 w-4" />
             </div>
@@ -925,16 +979,46 @@ export function AssignedUsersPage() {
                 </div>
 
                 {expenses.filter((e) => {
-                  const s = salesUserLabel(e.sales_user).toLowerCase();
-                  return s.includes((selectedUser.name || "").toLowerCase()) || s.includes((selectedUser.email || "").toLowerCase());
+                  const user =
+                    (typeof e.sales_user === "object" && e.sales_user ? e.sales_user : null) ||
+                    (typeof e.work_plan === "object" && e.work_plan && typeof (e.work_plan as any).sales_user === "object"
+                      ? (e.work_plan as any).sales_user
+                      : null) ||
+                    (typeof e.created_by === "object" && e.created_by ? e.created_by : null);
+                  const uId = typeof user === "object" && user ? String(user._id || (user as any).id || "") : String(e.sales_user || e.created_by || "");
+                  const uEmail = (typeof user === "object" && user?.email ? user.email : "").toLowerCase();
+                  const targetId = String(selectedUser._id || selectedUser.id || "");
+                  const targetEmail = (selectedUser.email || "").toLowerCase();
+                  if (targetId && uId && targetId === uId) return true;
+                  if (targetEmail && uEmail && targetEmail === uEmail) return true;
+                  const s = salesUserLabel(user).toLowerCase();
+                  return (
+                    (selectedUser.name && s.includes(selectedUser.name.toLowerCase())) ||
+                    (targetEmail && s.includes(targetEmail))
+                  );
                 }).length === 0 ? (
                   <p className="text-xs text-muted italic bg-surface-muted/30 p-3 rounded-xl">No expense claims filed by this user yet.</p>
                 ) : (
                   <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
                     {expenses
                       .filter((e) => {
-                        const s = salesUserLabel(e.sales_user).toLowerCase();
-                        return s.includes((selectedUser.name || "").toLowerCase()) || s.includes((selectedUser.email || "").toLowerCase());
+                        const user =
+                          (typeof e.sales_user === "object" && e.sales_user ? e.sales_user : null) ||
+                          (typeof e.work_plan === "object" && e.work_plan && typeof (e.work_plan as any).sales_user === "object"
+                            ? (e.work_plan as any).sales_user
+                            : null) ||
+                          (typeof e.created_by === "object" && e.created_by ? e.created_by : null);
+                        const uId = typeof user === "object" && user ? String(user._id || (user as any).id || "") : String(e.sales_user || e.created_by || "");
+                        const uEmail = (typeof user === "object" && user?.email ? user.email : "").toLowerCase();
+                        const targetId = String(selectedUser._id || selectedUser.id || "");
+                        const targetEmail = (selectedUser.email || "").toLowerCase();
+                        if (targetId && uId && targetId === uId) return true;
+                        if (targetEmail && uEmail && targetEmail === uEmail) return true;
+                        const s = salesUserLabel(user).toLowerCase();
+                        return (
+                          (selectedUser.name && s.includes(selectedUser.name.toLowerCase())) ||
+                          (targetEmail && s.includes(targetEmail))
+                        );
                       })
                       .slice(0, 5)
                       .map((e) => (

@@ -125,7 +125,7 @@ function registerModels() {
         },
         plan_type: {
           type: String,
-          enum: ['Visits', 'Leave', 'Work From Home', 'Work From Office'],
+          enum: ['Visits', 'Tasks & Visits', 'Leave', 'Work From Home', 'Work From Office'],
           default: 'Visits',
           index: true,
         },
@@ -185,10 +185,22 @@ function registerModels() {
         work_plan: {
           type: mongoose.Schema.Types.ObjectId,
           ref: 'WorkPlan',
-          required: true,
+          required: false,
+          default: null,
           index: true,
         },
-        sequence: { type: Number, required: true, min: 1 },
+        sales_user: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          required: false,
+          index: true,
+        },
+        plan_date: {
+          type: Date,
+          required: false,
+          index: true,
+        },
+        sequence: { type: Number, required: true, min: 1, default: 1 },
         party_type: {
           type: String,
           enum: ['existing', 'new_party', 'new_lead', 'existing_lead'],
@@ -255,7 +267,7 @@ function registerModels() {
       { work_plan: 1, sequence: 1 },
       {
         unique: true,
-        partialFilterExpression: { deletedAt: null },
+        partialFilterExpression: { work_plan: { $type: 'objectId' }, deletedAt: null },
       }
     );
     workPlanVisitSchema.plugin(softDeletePlugin);
@@ -269,10 +281,22 @@ function registerModels() {
         work_plan: {
           type: mongoose.Schema.Types.ObjectId,
           ref: 'WorkPlan',
-          required: true,
+          required: false,
+          default: null,
           index: true,
         },
-        sequence: { type: Number, required: true, min: 1 },
+        sales_user: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          required: false,
+          index: true,
+        },
+        plan_date: {
+          type: Date,
+          required: false,
+          index: true,
+        },
+        sequence: { type: Number, required: true, min: 1, default: 1 },
         title: { type: String, required: true, trim: true },
         description: { type: String, trim: true },
         planned_start_time: Date,
@@ -306,7 +330,7 @@ function registerModels() {
       { work_plan: 1, sequence: 1 },
       {
         unique: true,
-        partialFilterExpression: { deletedAt: null },
+        partialFilterExpression: { work_plan: { $type: 'objectId' }, deletedAt: null },
       }
     );
     workPlanWorkSchema.plugin(softDeletePlugin);
@@ -409,6 +433,44 @@ function registerModels() {
     mongoose.model('UserWorkPlannerSettings', userWorkPlannerSettingsSchema);
   }
 
+  // WorkPlannerReportingEdge — who reports to whom (executive→manager, manager→admin)
+  if (!mongoose.models.WorkPlannerReportingEdge) {
+    const reportingEdgeSchema = new mongoose.Schema(
+      {
+        subordinate: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          required: true,
+        },
+        manager: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          required: true,
+          index: true,
+        },
+        subordinate_role: {
+          type: String,
+          enum: ['executive', 'manager'],
+          required: true,
+        },
+        manager_role: {
+          type: String,
+          enum: ['manager', 'admin'],
+          required: true,
+        },
+        is_active: { type: Boolean, default: true, index: true },
+        created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      },
+      { timestamps: true }
+    );
+    reportingEdgeSchema.index(
+      { subordinate: 1 },
+      { unique: true, partialFilterExpression: { is_active: true } }
+    );
+    mongoose.model('WorkPlannerReportingEdge', reportingEdgeSchema);
+  }
+
   _cached = {
     User: mongoose.model('User'),
     CompanyInfo: mongoose.models.CompanyInfo || null,
@@ -421,9 +483,40 @@ function registerModels() {
     WorkPlanWork: mongoose.model('WorkPlanWork'),
     WorkPlanExpense: mongoose.model('WorkPlanExpense'),
     UserWorkPlannerSettings: mongoose.model('UserWorkPlannerSettings'),
+    WorkPlannerReportingEdge: mongoose.model('WorkPlannerReportingEdge'),
   };
 
   return _cached;
+}
+
+async function fixWorkPlanIndexes() {
+  try {
+    const db = mongoose.connection.db;
+    if (!db) return;
+
+    for (const colName of ['workplanvisits', 'workplanworks']) {
+      try {
+        const col = db.collection(colName);
+        const indexes = await col.indexes();
+        const dupIdx = indexes.find((idx) => idx.name === 'work_plan_1_sequence_1');
+        if (dupIdx) {
+          const pfe = dupIdx.partialFilterExpression;
+          const isCorrect =
+            pfe &&
+            pfe.work_plan &&
+            pfe.work_plan.$type === 'objectId' &&
+            pfe.deletedAt === null;
+          if (!isCorrect) {
+            await col.dropIndex('work_plan_1_sequence_1');
+          }
+        }
+      } catch (e) {
+        // collection or index might not exist yet, safe to ignore
+      }
+    }
+  } catch (err) {
+    // safe to ignore
+  }
 }
 
 function getModels() {
@@ -434,4 +527,5 @@ function getModels() {
 module.exports = {
   registerModels,
   getModels,
+  fixWorkPlanIndexes,
 };

@@ -1,10 +1,26 @@
-import { AssignedUsersPage } from "@/components/workPlanner/AssignedUsersPage";
+"use client";
 
-export const metadata = {
-  title: "Assigned Users - Work Planner",
-  description: "Manager view for assigned sales representatives, team work plans, and pending expense approvals.",
-};
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { isWpAdmin, isWpManager, readSessionFromStorage } from "@/utils/authStorage";
 
-export default function Page() {
-  return <AssignedUsersPage />;
+export default function AssignedUsersRedirectPage() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const user = readSessionFromStorage()?.user;
+    if (isWpAdmin(user)) {
+      router.replace("/dashboard/assigned-teams");
+    } else if (isWpManager(user)) {
+      router.replace("/dashboard/my-team");
+    } else {
+      router.replace("/dashboard");
+    }
+  }, [router]);
+
+  return (
+    <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted">
+      Redirecting…
+    </div>
+  );
 }

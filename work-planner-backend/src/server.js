@@ -5,12 +5,13 @@
 const app = require('./app');
 const { PORT } = require('./config/env');
 const db = require('./config/db');
-const { registerModels } = require('./data/mongoRegistry');
+const { registerModels, fixWorkPlanIndexes } = require('./data/mongoRegistry');
 const { logger } = require('./utils/logger');
 
 async function startServer() {
   try {
     await db.connect();
+    await fixWorkPlanIndexes();
     registerModels();
 
     const serverPort = PORT || 7007;

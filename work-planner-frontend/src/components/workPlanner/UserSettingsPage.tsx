@@ -34,7 +34,7 @@ import {
   useGetUserSettingsQuery,
   useUpdateUserSettingsMutation,
 } from "@/store/api/workPlannerApiSlice";
-import { isManager, readSessionFromStorage } from "@/utils/authStorage";
+import { isManager, isWpAdmin, readSessionFromStorage } from "@/utils/authStorage";
 import { resolveRoleLabels } from "@/utils/resolveRoleLabels";
 import {
   getUserWorkPlannerSettings,
@@ -60,6 +60,7 @@ interface UserSettingsPageProps {
 
 const WORK_PLAN_TYPES = [
   { id: "Visits", label: "Visits (Field Visits)", description: "Field and client visit plans", icon: Compass, color: "blue" },
+  { id: "Tasks & Visits", label: "Tasks & Visits", description: "Combined tasks and field visits plan", icon: Layers, color: "indigo" },
   { id: "Leave", label: "Leave", description: "Leave and out-of-office plans", icon: Calendar, color: "amber" },
   { id: "Work From Home", label: "Work From Home (WFH)", description: "Remote work task plans", icon: Home, color: "purple" },
   { id: "Work From Office", label: "Work From Office (WFO)", description: "In-office task plans", icon: Briefcase, color: "emerald" },
@@ -69,8 +70,10 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
   const router = useRouter();
   const sessionUser = readSessionFromStorage()?.user;
   const managerAccess = isManager(sessionUser);
+  const adminAccess = isWpAdmin(sessionUser);
   const isSelf = Boolean(sessionUser) && String(sessionUser?._id || (sessionUser as any)?.id || "") === String(userId);
   const canAccess = managerAccess || isSelf;
+  const teamDirectoryHref = adminAccess ? "/dashboard/assigned-teams" : "/dashboard/my-team";
 
   const { data: usersData, isLoading: loadingUsers } = useGetUsersQuery();
   const rawUsers = usersData || [];
@@ -84,15 +87,18 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
     return rawUsers.find((u: any) => String(u._id || u.id || "") === String(userId));
   }, [rawUsers, userId]);
 
-  // Available Managers list
+  // Available Managers list - strictly users assigned to work_planner portal with manager or admin role
   const availableManagers = useMemo(() => {
     return rawUsers.filter((u: any) => {
-      if (u.department === "admin" || u.department === "super_admin") return true;
-      if (Array.isArray(u.roles) && (u.roles.includes("admin") || u.roles.includes("manager") || u.roles.includes("super_admin"))) return true;
       if (Array.isArray(u.portals)) {
-        const wpPortal = u.portals.find((p: any) => (p.portal_code || p.portal) === "work_planner");
+        const wpPortal = u.portals.find((p: any) => {
+          const code = p.portal_code || p.portal?.code || p.code || p.portal;
+          return code === "work_planner";
+        });
         if (wpPortal && Array.isArray(wpPortal.access_roles)) {
-          return wpPortal.access_roles.some((r: string) => ["manager", "admin", "super_admin"].includes(String(r).toLowerCase()));
+          return wpPortal.access_roles.some((r: string) =>
+            ["manager", "admin", "super_admin"].includes(String(r).toLowerCase().trim())
+          );
         }
       }
       return false;
@@ -111,6 +117,7 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
   // Per Work Plan Type Settings State
   const [planTypeSettings, setPlanTypeSettings] = useState<Record<string, PlanTypeSetting>>({
     Visits: { plan_type: "Visits", assignedManagerId: "", ccEmails: [] },
+    "Tasks & Visits": { plan_type: "Tasks & Visits", assignedManagerId: "", ccEmails: [] },
     Leave: { plan_type: "Leave", assignedManagerId: "", ccEmails: [] },
     "Work From Home": { plan_type: "Work From Home", assignedManagerId: "", ccEmails: [] },
     "Work From Office": { plan_type: "Work From Office", assignedManagerId: "", ccEmails: [] },
@@ -122,6 +129,7 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
   // Inputs for adding CC per plan type
   const [newPlanTypeCcInputs, setNewPlanTypeCcInputs] = useState<Record<string, string>>({
     Visits: "",
+    "Tasks & Visits": "",
     Leave: "",
     "Work From Home": "",
     "Work From Office": "",
@@ -458,11 +466,11 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
       <div className="flex flex-col gap-3 border-b border-border/60 pb-5">
         {!hideBreadcrumb && (
           <Link
-            href="/dashboard/assigned-users"
+            href={teamDirectoryHref}
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted hover:text-primary transition"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back to Assigned Users
+            Back to {adminAccess ? "Assigned Teams" : "My Team"}
           </Link>
         )}
 
@@ -480,7 +488,7 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
                 </span>
               </h1>
               <p className="text-xs text-muted mt-0.5">
-                Configure manager assignment & CC email notifications per Work Plan Type (Visits, Leave, WFH, WFO).
+                Assigned manager is set via Team Manager. Configure CC emails and custom work tasks here.
               </p>
             </div>
           </div>
@@ -605,7 +613,7 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
             <div>
               <h2 className="text-base font-bold text-foreground">Work Plan Type Manager & CC Assignments</h2>
               <p className="text-xs text-muted">
-                Configure assigned manager and CC emails individually for each Work Plan Type (Visits, Leave, WFH, WFO).
+                Assigned manager is managed in Team Manager (same for all plan types). Edit CC emails per type below.
               </p>
             </div>
           </div>
@@ -689,7 +697,7 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
                 <select
                   value={activePlanSetting.assignedManagerId || ""}
                   onChange={(e) => handlePlanTypeManagerSelect(activePlanTypeTab, e.target.value)}
-                  disabled={readOnly}
+                  disabled
                   className="w-full rounded-xl border border-border bg-card px-3.5 py-2.5 text-xs font-semibold text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <option value="">-- Use Default Manager ({assignedManagerId ? "Global Manager Selected" : "None"}) --</option>
@@ -711,12 +719,12 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
                       Dedicated Manager Assigned for {activePlanTypeTab}
                     </div>
                     <p className="text-[11px] text-muted">
-                      Submissions of type &quot;{activePlanTypeTab}&quot; will automatically report to this specific manager.
+                      Set automatically from Team Manager reporting. Change it there to update all plan types.
                     </p>
                   </div>
                 ) : (
                   <p className="text-[11px] text-muted italic">
-                    Currently fallback to Global Assigned Manager. Select a manager above to override specifically for &quot;{activePlanTypeTab}&quot;.
+                    No manager mapped yet. Assign reporting in Team Manager to set this for all plan types.
                   </p>
                 )}
               </div>
@@ -807,16 +815,16 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
               </div>
               <div>
                 <h2 className="text-sm font-bold text-foreground">Global Fallback Manager</h2>
-                <p className="text-[11px] text-muted">Default reporting manager when plan-type manager is unset</p>
+                <p className="text-[11px] text-muted">Set via Team Manager (read-only here)</p>
               </div>
             </div>
 
             <div className="space-y-3">
-              <label className="block text-xs font-bold text-foreground">Select Global Manager</label>
+              <label className="block text-xs font-bold text-foreground">Assigned Manager (from Team Manager)</label>
               <select
                 value={assignedManagerId}
                 onChange={(e) => handleGlobalManagerSelect(e.target.value)}
-                disabled={readOnly}
+                disabled
                 className="w-full rounded-xl border border-border bg-background px-3.5 py-2.5 text-xs font-semibold text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <option value="">-- No Global Manager Assigned --</option>
@@ -838,12 +846,12 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
                     Global Default Manager Selected
                   </div>
                   <p className="text-[11px] text-muted">
-                    Used as fallback recipient for work plan submissions unless overridden by plan-type specific manager.
+                    Synced from Team Manager reporting. Change the mapping there to update all plan types.
                   </p>
                 </div>
               ) : (
                 <p className="text-[11px] text-muted italic">
-                  No global manager assigned. Select a manager from the list above.
+                  No manager mapped yet. Use Team Manager to assign who this user reports to.
                 </p>
               )}
             </div>
@@ -1034,7 +1042,7 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
       {!readOnly && (
         <div className="flex items-center justify-between border-t border-border/60 pt-4">
           <Link
-            href="/dashboard/assigned-users"
+            href={teamDirectoryHref}
             className="rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-semibold text-foreground hover:bg-surface-muted transition"
           >
             Cancel

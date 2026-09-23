@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import Link from "next/link";
 import {
   Building2,
@@ -13,11 +13,13 @@ import {
   Sun,
   ShieldCheck,
   Wallet,
-  XCircle,
   type LucideIcon,
 } from "lucide-react";
 import { useGetStatsQuery } from "@/store/api/workPlannerApiSlice";
+import { isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
 import type { WorkPlannerStats } from "@/types/workPlanner";
+
+type OwnershipScope = "mine" | "team";
 
 type StatCard = {
   key: string;
@@ -39,20 +41,45 @@ function formatMoney(n?: number) {
   });
 }
 
-export type WorkPlannerStatsWidgetsProps = {
+function StatsBlock({
+  title,
+  subtitle,
+  tag,
+  scope,
+  fromDate,
+  toDate,
+}: {
+  title: string;
+  subtitle: string;
+  tag?: string;
+  scope?: OwnershipScope;
   fromDate?: string;
   toDate?: string;
-};
+}) {
+  const queryParams = useMemo(() => {
+    const q: Record<string, string | undefined> = {};
+    if (fromDate && toDate) {
+      q.from = fromDate;
+      q.to = toDate;
+    }
+    if (scope) {
+      q.scope = scope;
+    }
+    return Object.keys(q).length > 0 ? q : undefined;
+  }, [fromDate, toDate, scope]);
 
-export function WorkPlannerStatsWidgets({ fromDate, toDate }: WorkPlannerStatsWidgetsProps = {}) {
-  const queryParams = fromDate && toDate ? { from: fromDate, to: toDate } : undefined;
   const { data, isLoading: loading } = useGetStatsQuery(queryParams);
 
   const typeCounts = data?.by_plan_type ?? {};
   const planCount = data?.total_plans ?? 0;
 
-  const querySuffix = fromDate && toDate ? `&from=${fromDate}&to=${toDate}` : "";
-  const baseQuery = fromDate && toDate ? `?from=${fromDate}&to=${toDate}` : "";
+  const scopeParam = scope ? `scope=${scope}` : "";
+  const dateParams = fromDate && toDate ? `from=${fromDate}&to=${toDate}` : "";
+
+  function buildUrl(basePath: string, extraParams: string = "") {
+    const params = [extraParams, scopeParam, dateParams].filter(Boolean).join("&");
+    return params ? `${basePath}?${params}` : basePath;
+  }
 
   const cards: StatCard[] = [
     {
@@ -60,7 +87,7 @@ export function WorkPlannerStatsWidgets({ fromDate, toDate }: WorkPlannerStatsWi
       label: "Total Plans",
       value: planCount,
       sub: `${data?.total_visits ?? 0} visits · ${data?.total_works ?? 0} tasks`,
-      href: `/dashboard/plans${baseQuery}`,
+      href: buildUrl("/dashboard/plans"),
       accent: "bg-primary",
       iconWrap: "bg-primary/10",
       iconTone: "text-primary",
@@ -70,7 +97,7 @@ export function WorkPlannerStatsWidgets({ fromDate, toDate }: WorkPlannerStatsWi
       key: "type-visits",
       label: "Visits",
       value: typeCounts.Visits ?? 0,
-      href: `/dashboard/plans?plan_type=Visits${querySuffix}`,
+      href: buildUrl("/dashboard/plans", "plan_type=Visits"),
       accent: "bg-cyan-500",
       iconWrap: "bg-cyan-500/10",
       iconTone: "text-cyan-500",
@@ -80,7 +107,7 @@ export function WorkPlannerStatsWidgets({ fromDate, toDate }: WorkPlannerStatsWi
       key: "type-leave",
       label: "Leave",
       value: typeCounts.Leave ?? 0,
-      href: `/dashboard/plans?plan_type=Leave${querySuffix}`,
+      href: buildUrl("/dashboard/plans", "plan_type=Leave"),
       accent: "bg-amber-500",
       iconWrap: "bg-amber-500/10",
       iconTone: "text-amber-500",
@@ -90,7 +117,7 @@ export function WorkPlannerStatsWidgets({ fromDate, toDate }: WorkPlannerStatsWi
       key: "type-wfh",
       label: "Work From Home",
       value: typeCounts["Work From Home"] ?? 0,
-      href: `/dashboard/plans?plan_type=Work From Home${querySuffix}`,
+      href: buildUrl("/dashboard/plans", "plan_type=Work From Home"),
       accent: "bg-purple-500",
       iconWrap: "bg-purple-500/10",
       iconTone: "text-purple-500",
@@ -100,7 +127,7 @@ export function WorkPlannerStatsWidgets({ fromDate, toDate }: WorkPlannerStatsWi
       key: "type-wfo",
       label: "Work From Office",
       value: typeCounts["Work From Office"] ?? 0,
-      href: `/dashboard/plans?plan_type=Work From Office${querySuffix}`,
+      href: buildUrl("/dashboard/plans", "plan_type=Work From Office"),
       accent: "bg-teal-500",
       iconWrap: "bg-teal-500/10",
       iconTone: "text-teal-500",
@@ -110,7 +137,7 @@ export function WorkPlannerStatsWidgets({ fromDate, toDate }: WorkPlannerStatsWi
       key: "planned",
       label: "Planned",
       value: data?.by_status?.planned ?? data?.approved ?? 0,
-      href: `/dashboard/plans?status=planned${querySuffix}`,
+      href: buildUrl("/dashboard/plans", "status=planned"),
       accent: "bg-blue-500",
       iconWrap: "bg-blue-500/10",
       iconTone: "text-blue-500",
@@ -123,7 +150,7 @@ export function WorkPlannerStatsWidgets({ fromDate, toDate }: WorkPlannerStatsWi
       key: "completed",
       label: "Completed",
       value: data?.completed ?? 0,
-      href: `/dashboard/plans?status=completed${querySuffix}`,
+      href: buildUrl("/dashboard/plans", "status=completed"),
       accent: "bg-emerald-500",
       iconWrap: "bg-emerald-500/10",
       iconTone: "text-emerald-500",
@@ -136,7 +163,7 @@ export function WorkPlannerStatsWidgets({ fromDate, toDate }: WorkPlannerStatsWi
       key: "exp-total",
       label: "Total Expenses",
       value: `₹${formatMoney(data?.expense_total)}`,
-      href: `/dashboard/expenses${baseQuery}`,
+      href: buildUrl("/dashboard/expenses"),
       accent: "bg-teal-500",
       iconWrap: "bg-teal-500/10",
       iconTone: "text-teal-500",
@@ -146,7 +173,7 @@ export function WorkPlannerStatsWidgets({ fromDate, toDate }: WorkPlannerStatsWi
       key: "exp-pending",
       label: "Pending Expense Approvals",
       value: data?.expense_pending_approval ?? 0,
-      href: `/dashboard/expenses?status=submitted${querySuffix}`,
+      href: buildUrl("/dashboard/expenses", "status=submitted"),
       accent: "bg-primary",
       iconWrap: "bg-primary/10",
       iconTone: "text-primary",
@@ -156,7 +183,7 @@ export function WorkPlannerStatsWidgets({ fromDate, toDate }: WorkPlannerStatsWi
       key: "exp-approved",
       label: "Approved Expenses",
       value: data?.expense_approved_count ?? 0,
-      href: `/dashboard/expenses?status=approved${querySuffix}`,
+      href: buildUrl("/dashboard/expenses", "status=approved"),
       accent: "bg-emerald-500",
       iconWrap: "bg-emerald-500/10",
       iconTone: "text-emerald-500",
@@ -171,18 +198,23 @@ export function WorkPlannerStatsWidgets({ fromDate, toDate }: WorkPlannerStatsWi
     <div className="space-y-3 font-sans w-full">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-xs font-bold uppercase tracking-wider text-muted">
-            Work Planner Overview
-          </h3>
-          <p className="text-xs text-muted">
-            Field visits, tasks, leave, and expense claims summary
-          </p>
+          <div className="flex items-center gap-2">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-muted">
+              {title}
+            </h3>
+            {tag && (
+              <span className="rounded-md bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
+                {tag}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-muted mt-0.5">{subtitle}</p>
         </div>
         <Link
-          href="/dashboard/plans"
+          href={buildUrl("/dashboard/plans")}
           className="text-xs font-semibold text-primary hover:underline"
         >
-          View all plans →
+          View plans →
         </Link>
       </div>
 
@@ -325,3 +357,51 @@ export function WorkPlannerStatsWidgets({ fromDate, toDate }: WorkPlannerStatsWi
     </div>
   );
 }
+
+export type WorkPlannerStatsWidgetsProps = {
+  fromDate?: string;
+  toDate?: string;
+};
+
+export function WorkPlannerStatsWidgets({
+  fromDate,
+  toDate,
+}: WorkPlannerStatsWidgetsProps = {}) {
+  const user = readSessionFromStorage()?.user;
+  const elevatedRole = isWpElevated(user);
+
+  if (!elevatedRole) {
+    return (
+      <StatsBlock
+        title="Work Planner Overview"
+        subtitle="Field visits, tasks, leave, and expense claims summary"
+        scope="mine"
+        fromDate={fromDate}
+        toDate={toDate}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-8 w-full">
+      <StatsBlock
+        title="My Overview"
+        tag="Personal"
+        subtitle="Your own field visits, tasks, leave, and expense claims"
+        scope="mine"
+        fromDate={fromDate}
+        toDate={toDate}
+      />
+
+      <StatsBlock
+        title="Team Overview"
+        tag="Team Oversight"
+        subtitle="Team-wide field visits, tasks, leave, and expense claims"
+        scope="team"
+        fromDate={fromDate}
+        toDate={toDate}
+      />
+    </div>
+  );
+}
+

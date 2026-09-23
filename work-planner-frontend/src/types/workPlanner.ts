@@ -153,6 +153,16 @@ export type WorkPlanVisitRecord = {
   _id?: string;
   id?: string;
   work_plan?: string;
+  sales_user?:
+    | string
+    | {
+        _id?: string;
+        id?: string;
+        name?: string;
+        email?: string;
+        department?: string;
+      };
+  plan_date?: string;
   sequence: number;
   party_type?: WorkPlanVisitPartyType;
   party?:
@@ -214,6 +224,16 @@ export type WorkPlanWorkRecord = {
   _id?: string;
   id?: string;
   work_plan?: string;
+  sales_user?:
+    | string
+    | {
+        _id?: string;
+        id?: string;
+        name?: string;
+        email?: string;
+        department?: string;
+      };
+  plan_date?: string;
   sequence: number;
   title: string;
   description?: string;
@@ -224,6 +244,9 @@ export type WorkPlanWorkRecord = {
   pending_remarks?: string;
   in_progress_remarks?: string;
   outcome?: string;
+  work_type?: "default" | "optional" | string;
+  is_default_task?: boolean;
+  is_template_task?: boolean;
   created_by?: string | { _id?: string; name?: string; email?: string; role?: string };
   created_by_role?: string;
   updated_by?: string | { _id?: string; name?: string; email?: string; role?: string };
@@ -236,6 +259,7 @@ export type WorkPlanWorkRecord = {
 export type WorkPlanRecord = {
   _id?: string;
   id?: string;
+  is_standalone?: boolean;
   company_id?: string;
   plan_date: string;
   sales_user?:
@@ -248,7 +272,7 @@ export type WorkPlanRecord = {
         department?: string;
       };
   status: WorkPlanStatus;
-  plan_type?: "Visits" | "Leave" | "Work From Home" | "Work From Office";
+  plan_type?: "Visits" | "Tasks & Visits" | "Leave" | "Work From Home" | "Work From Office";
   remarks?: string;
   location?: string;
   is_discussed_with_manager?: boolean;

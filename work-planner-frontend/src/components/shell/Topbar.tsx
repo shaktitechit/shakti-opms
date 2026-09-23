@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDown, LogOut, Menu, Moon, Sun, User } from "lucide-react";
 import type { UserSession, ThemeColor } from "@/types/workPlanner";
-import { isManager } from "@/utils/authStorage";
+import { isWpAdmin, isWpManager } from "@/utils/authStorage";
 import { NotificationBell } from "./NotificationBell";
 
 export function Topbar({
@@ -31,9 +31,28 @@ export function Topbar({
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
 
   const user = session?.user;
-  const managerRole = isManager(user);
+  const adminRole = isWpAdmin(user);
+  const managerRole = isWpManager(user);
 
   const getPageHeader = () => {
+    if (pathname.startsWith("/dashboard/team-manager")) {
+      return {
+        title: "Work Planner Portal / Team Manager",
+        subtitle: "Map who reports to whom across teams",
+      };
+    }
+    if (pathname.startsWith("/dashboard/assigned-teams")) {
+      return {
+        title: "Work Planner Portal / Assigned Teams",
+        subtitle: "Organisation-wide team activity & expenses",
+      };
+    }
+    if (pathname.startsWith("/dashboard/my-team") || pathname.startsWith("/dashboard/assigned-users")) {
+      return {
+        title: "Work Planner Portal / My Team",
+        subtitle: "Your direct reports and team activity",
+      };
+    }
     if (pathname.startsWith("/dashboard/profile")) {
       return {
         title: "Work Planner Portal / Profile",
@@ -66,10 +85,10 @@ export function Topbar({
 
   const header = getPageHeader();
 
-  const userRoleBadge = managerRole
+  const userRoleBadge = adminRole
+    ? "ADMIN PORTAL"
+    : managerRole
     ? "MANAGER PORTAL"
-    : user?.department === "super_admin"
-    ? "SUPER ADMIN"
     : "EXECUTIVE PORTAL";
 
   return (

@@ -2236,7 +2236,7 @@ function registerModels() {
     { work_plan: 1, sequence: 1 },
     {
       unique: true,
-      partialFilterExpression: { deletedAt: null },
+      partialFilterExpression: { work_plan: { $type: 'objectId' }, deletedAt: null },
     }
   );
   workPlanVisitSchema.plugin(softDeletePlugin);
@@ -2270,7 +2270,7 @@ function registerModels() {
     { work_plan: 1, sequence: 1 },
     {
       unique: true,
-      partialFilterExpression: { deletedAt: null },
+      partialFilterExpression: { work_plan: { $type: 'objectId' }, deletedAt: null },
     }
   );
   workPlanWorkSchema.plugin(softDeletePlugin);

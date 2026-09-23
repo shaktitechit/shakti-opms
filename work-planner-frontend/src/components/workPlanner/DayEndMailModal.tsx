@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { DayEndRichEditor } from "./DayEndRichEditor";
+import { useGetUsersQuery } from "@/store/api/authApiSlice";
 import {
   useGetDayEndDraftQuery,
   useUploadWorkPlanAttachmentMutation,
@@ -79,6 +80,26 @@ function getFileIcon(mimeType?: string, fileName?: string) {
   return <File className="h-4 w-4 text-slate-400 shrink-0" />;
 }
 
+function getWorkPlannerUserRole(u: any): "Admin" | "Manager" | null {
+  if (!u || !Array.isArray(u.portals) || u.portals.length === 0) {
+    return null;
+  }
+  const wpPortal = u.portals.find((p: any) => {
+    const code = p.portal_code || p.portal?.code || p.code;
+    return code === "work_planner";
+  });
+  if (!wpPortal) return null;
+  const roles: string[] = Array.isArray(wpPortal.access_roles)
+    ? wpPortal.access_roles
+    : (wpPortal as any).access_role
+      ? [(wpPortal as any).access_role]
+      : [];
+  const normalized = roles.map((r) => String(r).toLowerCase().trim());
+  if (normalized.includes("admin") || normalized.includes("super_admin")) return "Admin";
+  if (normalized.includes("manager")) return "Manager";
+  return null;
+}
+
 export function DayEndMailModal({
   planId,
   plan,
@@ -95,6 +116,7 @@ export function DayEndMailModal({
   const { data: draftData, isLoading: draftLoading } = useGetDayEndDraftQuery(planId, {
     skip: !isOpen,
   });
+  const { data: usersData } = useGetUsersQuery();
 
   const [uploadAttachmentMut] = useUploadWorkPlanAttachmentMutation();
 
@@ -126,9 +148,144 @@ export function DayEndMailModal({
   const [uploadingFiles, setUploadingFiles] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  const availableManagers = useMemo(() => {
-    return draftData?.managers || [];
-  }, [draftData]);
+  const allUsers = useMemo(() => (usersData as any[]) || [], [usersData]);
+
+  // Resolve assigned manager for current plan type (or fallback to global default manager)
+  const assignedPlanTypeManager = useMemo(() => {
+    if (!effectiveSettings) return null;
+    const pts = effectiveSettings.planTypeSettings?.[plan?.plan_type || "Visits"];
+    const mgrId = pts?.assignedManagerId;
+    const mgrName = pts?.assignedManagerName;
+    const mgrEmail = pts?.assignedManagerEmail;
+
+    if (mgrId || mgrName) {
+      const matched = allUsers.find(
+        (u) => String(u._id || u.id || "") === String(mgrId)
+      );
+      if (matched) {
+        return {
+          _id: String(matched._id || matched.id || ""),
+          name: matched.name,
+          email: matched.email || mgrEmail || "",
+          badgeText: `${plan?.plan_type || "Visits"} Manager`,
+          isReportingManager: true,
+        };
+      }
+      if (mgrName) {
+        return {
+          _id: mgrId || "",
+          name: mgrName,
+          email: mgrEmail || "",
+          badgeText: `${plan?.plan_type || "Visits"} Manager`,
+          isReportingManager: true,
+        };
+      }
+    }
+
+    const globalId = effectiveSettings.assignedManagerId;
+    const globalName = effectiveSettings.assignedManagerName;
+    const globalEmail = effectiveSettings.assignedManagerEmail;
+
+    if (globalId || globalName) {
+      const matched = allUsers.find(
+        (u) => String(u._id || u.id || "") === String(globalId)
+      );
+      if (matched) {
+        return {
+          _id: String(matched._id || matched.id || ""),
+          name: matched.name,
+          email: matched.email || globalEmail || "",
+          badgeText: "Reporting Manager",
+          isReportingManager: true,
+        };
+      }
+      if (globalName) {
+        return {
+          _id: globalId || "",
+          name: globalName,
+          email: globalEmail || "",
+          badgeText: "Reporting Manager",
+          isReportingManager: true,
+        };
+      }
+    }
+
+    return null;
+  }, [effectiveSettings, plan?.plan_type, allUsers]);
+
+  // Build eligible managers list: 1. Assigned Reporting Manager, 2. Discussed Manager, 3. Portal Admins of work_planner portal
+  const eligibleManagers = useMemo(() => {
+    const map = new Map<string, { _id: string; name: string; email: string; roleBadge: string; isReportingManager: boolean }>();
+
+    // 1. Add assigned reporting manager
+    if (assignedPlanTypeManager && assignedPlanTypeManager.email) {
+      map.set(assignedPlanTypeManager.email.toLowerCase(), {
+        _id: assignedPlanTypeManager._id || assignedPlanTypeManager.email,
+        name: assignedPlanTypeManager.name,
+        email: assignedPlanTypeManager.email,
+        roleBadge: assignedPlanTypeManager.badgeText,
+        isReportingManager: true,
+      });
+    }
+
+    // 2. Add discussed manager if present
+    if (plan?.is_discussed_with_manager) {
+      const mId = typeof plan.discussed_manager_id === "object" ? plan.discussed_manager_id?._id : plan.discussed_manager_id;
+      const mName = plan.discussed_manager_name || (typeof plan.discussed_manager_id === "object" ? plan.discussed_manager_id?.name : "");
+      const mEmail = typeof plan.discussed_manager_id === "object" ? plan.discussed_manager_id?.email : "";
+
+      if (mId || mName || mEmail) {
+        const matched = allUsers.find((u) => String(u._id || u.id) === String(mId) || (mEmail && u.email?.toLowerCase() === mEmail.toLowerCase()));
+        const email = matched?.email || mEmail;
+        if (email && !map.has(email.toLowerCase())) {
+          map.set(email.toLowerCase(), {
+            _id: String(matched?._id || mId || email),
+            name: matched?.name || mName || "Discussed Manager",
+            email: email,
+            roleBadge: "Discussed Manager",
+            isReportingManager: true,
+          });
+        }
+      }
+    }
+
+    // 3. Add Portal Admins of work_planner portal only
+    for (const u of allUsers) {
+      const id = String(u._id || u.id || "");
+      if (!id || !u.email) continue;
+      const role = getWorkPlannerUserRole(u);
+      if (role !== "Admin") continue;
+
+      if (!map.has(u.email.toLowerCase())) {
+        map.set(u.email.toLowerCase(), {
+          _id: id,
+          name: u.name,
+          email: u.email,
+          roleBadge: "Portal Admin",
+          isReportingManager: false,
+        });
+      }
+    }
+
+    // Fallback: If no managers identified, include draftData.managers
+    if (map.size === 0 && draftData?.managers && draftData.managers.length > 0) {
+      draftData.managers.forEach((m) => {
+        if (m.email && !map.has(m.email.toLowerCase())) {
+          map.set(m.email.toLowerCase(), {
+            _id: String(m._id || m.email),
+            name: m.name,
+            email: m.email,
+            roleBadge: "Manager",
+            isReportingManager: false,
+          });
+        }
+      });
+    }
+
+    return Array.from(map.values());
+  }, [allUsers, assignedPlanTypeManager, plan, draftData]);
+
+  const availableManagers = eligibleManagers;
 
   // Initialize draft values once fetched or settings loaded
   useEffect(() => {
@@ -390,22 +547,47 @@ export function DayEndMailModal({
               </div>
 
               {availableManagers.length > 0 && (
-                <div className="flex items-center gap-1.5 overflow-x-auto text-[11px]">
-                  <span className="text-muted text-[11px]">Quick pick:</span>
-                  {availableManagers.map((m) => (
-                    <button
-                      key={m._id}
-                      type="button"
-                      onClick={() => setToEmail(m.email)}
-                      className={`rounded-md border px-2 py-0.5 font-medium transition cursor-pointer ${
-                        toEmail === m.email
-                          ? "border-emerald-500 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                          : "border-border bg-surface hover:bg-surface-muted text-muted"
-                      }`}
-                    >
-                      {m.name}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-1.5 overflow-x-auto text-[11px] flex-wrap pt-1 sm:pt-0">
+                  <span className="text-muted text-[11px] font-semibold shrink-0">Quick pick:</span>
+                  {availableManagers.map((m) => {
+                    const isSelected = toEmail.toLowerCase() === m.email.toLowerCase();
+                    const isInCc = ccEmails.some((e) => e.toLowerCase() === m.email.toLowerCase());
+                    return (
+                      <div key={m._id || m.email} className="inline-flex items-center rounded-lg border border-border bg-surface overflow-hidden shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setToEmail(m.email)}
+                          className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition cursor-pointer text-xs ${
+                            isSelected
+                              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold"
+                              : "hover:bg-surface-muted text-foreground"
+                          }`}
+                          title={`Set TO: ${m.name} (${m.email})`}
+                        >
+                          <span>{m.name}</span>
+                          <span
+                            className={`rounded px-1 py-0.2 text-[9px] font-semibold border ${
+                              m.isReportingManager
+                                ? "bg-primary/15 text-primary border-primary/20"
+                                : "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/20"
+                            }`}
+                          >
+                            {m.roleBadge}
+                          </span>
+                        </button>
+                        {!isSelected && !isInCc && (
+                          <button
+                            type="button"
+                            onClick={() => handleAddCc(m.email)}
+                            className="px-1.5 py-1 text-[10px] text-muted hover:text-primary hover:bg-primary/10 border-l border-border transition cursor-pointer font-semibold"
+                            title={`Add ${m.name} to CC`}
+                          >
+                            +CC
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

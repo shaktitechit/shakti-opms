@@ -236,7 +236,7 @@ export function ItemStatusRemarksModal({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-bold text-foreground">
-                  Update Remarks &amp; Status
+                  {currentStatus === "completed" ? "Edit Remarks & Outcome" : "Update Remarks & Status"}
                 </h2>
                 <span className="rounded bg-surface-muted px-2 py-0.5 text-[10px] font-bold text-muted uppercase">
                   {isVisit ? "Field Visit" : "Work Task"}
@@ -484,7 +484,9 @@ export function ItemStatusRemarksModal({
               ) : (
                 <>
                   <Send className="h-3.5 w-3.5" />
-                  {selectedStatus === "completed" && isVisit
+                  {currentStatus === "completed"
+                    ? "Update Remarks & Outcome"
+                    : selectedStatus === "completed" && isVisit
                     ? "Complete Visit"
                     : "Update Status & Remarks"}
                 </>

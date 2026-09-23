@@ -22,6 +22,16 @@
 
 Sensitive company bank / tax fields are returned only to **authenticated** callers of `GET /api/company-info`. Public GET is branding-only.
 
+## Login abuse controls (rate limit + 15-min IP block)
+
+| Control | Detail |
+|---------|--------|
+| Application | `auth-service` — IP blocker 40/15m (failed only); IP+email 20/15m; returns **429** until window elapses |
+| nginx | `limit_req` on `/api/auth/login` and `/api/auth/handoff/exchange`; dedicated access logs |
+| fail2ban | Jail `opms-auth-login`: maxretry 20 / findtime 15m / **bantime 15m** |
+
+Successful logins do not count toward the app IP/email windows (`skipSuccessfulRequests: true`).
+
 ## MFA (decision)
 
 | Option | Recommendation |

@@ -25,7 +25,7 @@ const workPlanSchema = new mongoose.Schema(
     },
     plan_type: {
       type: String,
-      enum: ["Visits", "Leave", "Work From Home", "Work From Office"],
+      enum: ["Visits", "Tasks & Visits", "Leave", "Work From Home", "Work From Office"],
       default: "Visits",
       index: true,
     },

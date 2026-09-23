@@ -5,11 +5,11 @@ import Link from "next/link";
 import { Plus, CalendarDays, FileText, DollarSign, ArrowRight } from "lucide-react";
 import { WorkPlannerStatsWidgets } from "@/components/workPlanner/WorkPlannerStatsWidgets";
 import { DashboardDateFilter, type DateRange } from "@/components/workPlanner/DashboardDateFilter";
-import { isManager, readSessionFromStorage } from "@/utils/authStorage";
+import { isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
 
 export default function DashboardPage() {
   const user = readSessionFromStorage()?.user;
-  const managerRole = isManager(user);
+  const elevatedRole = isWpElevated(user);
 
   const [dateRange, setDateRange] = useState<{ from: string; to: string }>({
     from: "",
@@ -29,7 +29,7 @@ export default function DashboardPage() {
             Welcome back, {user?.name || "Executive"}!
           </h1>
           <p className="mt-1 text-xs opacity-90 max-w-xl">
-            {managerRole
+            {elevatedRole
               ? "Track field visit activities, inspect executive work plans, and manage expense claims in real-time."
               : "Plan field visits, complete client calls, record tasks, and claim trip expenses seamlessly."}
           </p>

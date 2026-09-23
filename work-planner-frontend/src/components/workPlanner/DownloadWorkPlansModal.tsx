@@ -26,7 +26,7 @@ import {
   CornerDownRight,
   MessageSquare,
 } from "lucide-react";
-import { useLazyGetPlansQuery } from "@/store/api/workPlannerApiSlice";
+import { useLazyGetPlansQuery, useGetMyTeamQuery, useGetTeamTreeQuery } from "@/store/api/workPlannerApiSlice";
 import type { WorkPlanRecord, WorkPlanVisitRecord, WorkPlanWorkRecord } from "@/types/workPlanner";
 import {
   formatDiscussionMethod,
@@ -43,7 +43,8 @@ import { calculateDateRange, type DateFilterPreset, toYmdString } from "./Dashbo
 import { usePdfCompanyLetterhead } from "./pdfCompanyLetterhead";
 import { downloadPdfReport } from "./exportPdfReport";
 import { downloadExcelReport } from "./exportExcelReport";
-import { readSessionFromStorage } from "@/utils/authStorage";
+import { readSessionFromStorage, isWpAdmin, isWpManager, isWpElevated } from "@/utils/authStorage";
+import { Network } from "lucide-react";
 
 export type DownloadWorkPlansModalProps = {
   open: boolean;
@@ -60,6 +61,11 @@ export function DownloadWorkPlansModal({
   onClose,
 }: DownloadWorkPlansModalProps) {
   const letterhead = usePdfCompanyLetterhead();
+  const sessionUser = readSessionFromStorage()?.user;
+  const adminRole = isWpAdmin(sessionUser);
+  const managerRole = isWpManager(sessionUser);
+  const elevatedRole = isWpElevated(sessionUser);
+
   const [downloading, setDownloading] = useState(false);
   const [downloadingExcel, setDownloadingExcel] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
@@ -73,13 +79,46 @@ export function DownloadWorkPlansModal({
   const [customFrom, setCustomFrom] = useState(todayYmd);
   const [customTo, setCustomTo] = useState(todayYmd);
   const [planTypeFilter, setPlanTypeFilter] = useState("all");
+  const [activityTypeFilter, setActivityTypeFilter] = useState<ActivityTypeFilter>("all");
+  const [itemStatusFilter, setItemStatusFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [partyTitleFilter, setPartyTitleFilter] = useState("");
   const [contactDetailsFilter, setContactDetailsFilter] = useState("");
   const [locationCityFilter, setLocationCityFilter] = useState("");
+  const [teamFilter, setTeamFilter] = useState("all");
   const [executiveFilter, setExecutiveFilter] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"tree" | "flat">("tree");
+
+  // Team tree queries (elevated users only)
+  const { data: tree } = useGetTeamTreeQuery(undefined, { skip: !adminRole });
+  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !managerRole });
+
+  // Build team options for the dropdown
+  const teamOptions = useMemo<Array<{ id: string; name: string; memberIds: string[] }>>(() => {
+    if (!elevatedRole) return [];
+    if (adminRole) {
+      const mgrs = (tree?.managers || []) as Array<{ _id?: string; id?: string; name: string; report_ids?: string[] }>;
+      return mgrs.map((m) => {
+        const mId = String(m._id || m.id || "");
+        const reportIds = (m.report_ids || []).map(String);
+        return { id: mId, name: `${m.name}'s Team`, memberIds: [mId, ...reportIds] };
+      });
+    }
+    if (managerRole && sessionUser?._id) {
+      const myTeamMembers = (myTeamData?.members || []) as Array<{ _id?: string; id?: string }>;
+      const memberIds = [String(sessionUser._id), ...myTeamMembers.map((m) => String(m._id || m.id || ""))];
+      return [{ id: String(sessionUser._id), name: "My Reporting Team", memberIds }];
+    }
+    return [];
+  }, [adminRole, managerRole, elevatedRole, tree, myTeamData, sessionUser]);
+
+  // Selected team's member IDs ("all" = no constraint)
+  const selectedTeamMemberIds = useMemo<Set<string> | null>(() => {
+    if (teamFilter === "all") return null;
+    const found = teamOptions.find((t) => t.id === teamFilter);
+    return found ? new Set(found.memberIds) : null;
+  }, [teamFilter, teamOptions]);
 
   // Expand / Collapse state for Parent Work Plans (Map of planId -> boolean)
   const [collapsedPlanIds, setCollapsedPlanIds] = useState<Record<string, boolean>>({});
@@ -141,10 +180,13 @@ export function DownloadWorkPlansModal({
     setCustomFrom(todayYmd);
     setCustomTo(todayYmd);
     setPlanTypeFilter("all");
+    setActivityTypeFilter("all");
+    setItemStatusFilter("all");
     setStatusFilter("all");
     setPartyTitleFilter("");
     setContactDetailsFilter("");
     setLocationCityFilter("");
+    setTeamFilter("all");
     setExecutiveFilter("");
     setSearchQuery("");
   };
@@ -192,6 +234,16 @@ export function DownloadWorkPlansModal({
           return null;
         }
 
+        // Check Team Filter (scope by selected team's member IDs)
+        if (selectedTeamMemberIds !== null) {
+          const salesUserId = typeof salesUser === "object" && salesUser !== null
+            ? String((salesUser as any)._id || (salesUser as any).id || "")
+            : String(salesUser || "");
+          if (!selectedTeamMemberIds.has(salesUserId)) {
+            return null;
+          }
+        }
+
         // Check Executive Filter
         if (
           executiveFilter.trim() &&
@@ -201,7 +253,7 @@ export function DownloadWorkPlansModal({
         }
 
         // Process Visits
-        const rawVisits: WorkPlanVisitRecord[] = plan.visits || [];
+        const rawVisits: WorkPlanVisitRecord[] = activityTypeFilter === "tasks" ? [] : (plan.visits || []);
         const visits = rawVisits
           .map((v, vIdx) => {
             const partyObj = typeof v.party === "object" && v.party !== null ? (v.party as Record<string, unknown>) : null;
@@ -245,6 +297,9 @@ export function DownloadWorkPlansModal({
             };
           })
           .filter((v) => {
+            if (itemStatusFilter !== "all" && v.status.toLowerCase() !== itemStatusFilter.toLowerCase()) {
+              return false;
+            }
             if (partyTitleQuery && !v.partyName.toLowerCase().includes(partyTitleQuery)) {
               return false;
             }
@@ -259,7 +314,7 @@ export function DownloadWorkPlansModal({
           });
 
         // Process Work Tasks
-        const rawWorks: WorkPlanWorkRecord[] = plan.works || [];
+        const rawWorks: WorkPlanWorkRecord[] = activityTypeFilter === "visits" ? [] : (plan.works || []);
         const tasks = rawWorks
           .map((w, wIdx) => {
             const startTime = w.planned_start_time ? formatTime(w.planned_start_time) : "";
@@ -277,6 +332,9 @@ export function DownloadWorkPlansModal({
             };
           })
           .filter((w) => {
+            if (itemStatusFilter !== "all" && w.status.toLowerCase() !== itemStatusFilter.toLowerCase()) {
+              return false;
+            }
             if (partyTitleQuery && !w.title.toLowerCase().includes(partyTitleQuery)) {
               return false;
             }
@@ -289,6 +347,21 @@ export function DownloadWorkPlansModal({
             }
             return true;
           });
+
+        // If activityTypeFilter is specifically "visits" and plan has no matching visits, exclude plan
+        if (activityTypeFilter === "visits" && visits.length === 0) {
+          return null;
+        }
+
+        // If activityTypeFilter is specifically "tasks" and plan has no matching tasks, exclude plan
+        if (activityTypeFilter === "tasks" && tasks.length === 0) {
+          return null;
+        }
+
+        // If itemStatusFilter is active and plan has 0 matching visits and 0 matching tasks, exclude plan
+        if (itemStatusFilter !== "all" && visits.length === 0 && tasks.length === 0) {
+          return null;
+        }
 
         // If partyTitleQuery or contactQuery is active and plan has no matching visits/tasks, check plan details
         if ((partyTitleQuery || contactQuery) && visits.length === 0 && tasks.length === 0) {
@@ -369,7 +442,10 @@ export function DownloadWorkPlansModal({
       .filter((p): p is NonNullable<typeof p> => p !== null);
   }, [
     plans,
+    activityTypeFilter,
+    itemStatusFilter,
     locationCityFilter,
+    selectedTeamMemberIds,
     executiveFilter,
     partyTitleFilter,
     contactDetailsFilter,
@@ -396,20 +472,26 @@ export function DownloadWorkPlansModal({
     let count = 0;
     if (datePreset !== "all") count++;
     if (planTypeFilter !== "all") count++;
+    if (activityTypeFilter !== "all") count++;
+    if (itemStatusFilter !== "all") count++;
     if (statusFilter !== "all") count++;
     if (partyTitleFilter.trim()) count++;
     if (contactDetailsFilter.trim()) count++;
     if (locationCityFilter.trim()) count++;
+    if (teamFilter !== "all") count++;
     if (executiveFilter.trim()) count++;
     if (searchQuery.trim()) count++;
     return count;
   }, [
     datePreset,
     planTypeFilter,
+    activityTypeFilter,
+    itemStatusFilter,
     statusFilter,
     partyTitleFilter,
     contactDetailsFilter,
     locationCityFilter,
+    teamFilter,
     executiveFilter,
     searchQuery,
   ]);
@@ -682,6 +764,8 @@ export function DownloadWorkPlansModal({
       const activeFilterPanel: Array<{ label: string; value: string }> = [
         { label: "Date Filter", value: datePreset === "custom" ? `${customFrom} to ${customTo}` : datePreset.toUpperCase() },
         { label: "Plan Type", value: planTypeFilter === "all" ? "All Types" : planTypeFilter },
+        { label: "Activity / Items", value: activityTypeFilter === "all" ? "All (Visits & Tasks)" : activityTypeFilter === "visits" ? "Field Visits Only" : "Work Tasks Only" },
+        { label: "Item Status", value: itemStatusFilter === "all" ? "All Item Statuses" : itemStatusFilter.toUpperCase() },
         { label: "Plan Status", value: statusFilter === "all" ? "All Statuses" : statusFilter.toUpperCase() },
         { label: "Party / Task Title", value: partyTitleFilter.trim() || "All" },
         { label: "Contact / Address", value: contactDetailsFilter.trim() || "All" },
@@ -884,7 +968,7 @@ export function DownloadWorkPlansModal({
             </div>
 
             {/* Filter Controls Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
               {/* 1. Plan Date Range */}
               <div className="space-y-1">
                 <label className="text-[11px] font-semibold text-muted">Plan Date</label>
@@ -918,43 +1002,37 @@ export function DownloadWorkPlansModal({
                 </select>
               </div>
 
-              {/* 3. Location / City */}
+              {/* 3. Visits & Tasks Activity Filter */}
               <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-muted">Location / City</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Indore, Bhopal..."
-                  value={locationCityFilter}
-                  onChange={(e) => setLocationCityFilter(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
-                />
+                <label className="text-[11px] font-semibold text-muted">Visits &amp; Tasks</label>
+                <select
+                  value={activityTypeFilter}
+                  onChange={(e) => setActivityTypeFilter(e.target.value as ActivityTypeFilter)}
+                  className="w-full rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary font-medium text-cyan-600 dark:text-cyan-400"
+                >
+                  <option value="all">All (Visits &amp; Tasks)</option>
+                  <option value="visits">Field Visits Only</option>
+                  <option value="tasks">Work Tasks Only</option>
+                </select>
               </div>
 
-              {/* 4. Party & Task Title Search */}
+              {/* 4. Visit / Task Item Status */}
               <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-muted">Party Name & Task Title</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Fortis, AIIMS, Product Demo..."
-                  value={partyTitleFilter}
-                  onChange={(e) => setPartyTitleFilter(e.target.value)}
+                <label className="text-[11px] font-semibold text-muted">Visit / Task Status</label>
+                <select
+                  value={itemStatusFilter}
+                  onChange={(e) => setItemStatusFilter(e.target.value)}
                   className="w-full rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
-                />
+                >
+                  <option value="all">All Item Statuses</option>
+                  <option value="created">Created</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="pending">Pending</option>
+                </select>
               </div>
 
-              {/* 5. Contact Details & Address Search */}
-              <div className="space-y-1">
-                <label className="text-[11px] font-semibold text-muted">Contact Details & Address</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Dr. Verma, 98260..., Ring Road..."
-                  value={contactDetailsFilter}
-                  onChange={(e) => setContactDetailsFilter(e.target.value)}
-                  className="w-full rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
-                />
-              </div>
-
-              {/* 6. Overall Plan Status */}
+              {/* 5. Overall Plan Status */}
               <div className="space-y-1">
                 <label className="text-[11px] font-semibold text-muted">Overall Plan Status</label>
                 <select
@@ -969,6 +1047,76 @@ export function DownloadWorkPlansModal({
                   <option value="completed">Completed</option>
                   <option value="rejected">Rejected</option>
                 </select>
+              </div>
+
+              {/* 6. Location / City */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-muted">Location / City</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Indore, Bhopal..."
+                  value={locationCityFilter}
+                  onChange={(e) => setLocationCityFilter(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
+                />
+              </div>
+
+              {/* 7. Party Name & Task Title Search */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-muted">Party Name &amp; Task Title</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Fortis, AIIMS, Demo..."
+                  value={partyTitleFilter}
+                  onChange={(e) => setPartyTitleFilter(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
+                />
+              </div>
+
+              {/* 8. Contact Details & Address Search */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-muted">Contact Details &amp; Address</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Dr. Verma, 98260..."
+                  value={contactDetailsFilter}
+                  onChange={(e) => setContactDetailsFilter(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
+                />
+              </div>
+
+              {/* 9. Team Filter (elevated users only) */}
+              {elevatedRole && teamOptions.length > 0 && (
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-muted flex items-center gap-1">
+                    <Network className="h-3 w-3" /> Team
+                  </label>
+                  <select
+                    value={teamFilter}
+                    onChange={(e) => {
+                      setTeamFilter(e.target.value);
+                      setExecutiveFilter("");
+                    }}
+                    className="w-full rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
+                  >
+                    <option value="all">All Teams</option>
+                    {teamOptions.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* 10. Sales Executive Filter */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-semibold text-muted">Sales Executive</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Rahul, executive@..."
+                  value={executiveFilter}
+                  onChange={(e) => setExecutiveFilter(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
+                />
               </div>
             </div>
 

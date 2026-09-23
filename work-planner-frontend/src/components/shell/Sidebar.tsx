@@ -15,7 +15,7 @@ import {
   X,
 } from "lucide-react";
 import type { UserSession } from "@/types/workPlanner";
-import { isManager, readSessionFromStorage } from "@/utils/authStorage";
+import { isWpAdmin, isWpManager, readSessionFromStorage } from "@/utils/authStorage";
 
 export function Sidebar({
   mobileNavOpen,
@@ -46,7 +46,8 @@ export function Sidebar({
     }
   }, [session]);
 
-  const managerRole = isManager(activeUser);
+  const managerRole = isWpManager(activeUser);
+  const adminRole = isWpAdmin(activeUser);
 
   const companyLogoUrl = companyInfo?.logo_url || process.env.NEXT_PUBLIC_COMPANY_LOGO_URL || "";
   const companyTitle = companyInfo?.trade_name || companyInfo?.legal_name || process.env.NEXT_PUBLIC_COMPANY_NAME || "Portal";
@@ -57,6 +58,9 @@ export function Sidebar({
   const isCalendarActive = pathname.startsWith("/dashboard/plans/calendar");
   const isExpensesActive = pathname.startsWith("/dashboard/expenses");
   const isAssignedUsersActive = pathname.startsWith("/dashboard/assigned-users");
+  const isMyTeamActive = pathname.startsWith("/dashboard/my-team");
+  const isAssignedTeamsActive = pathname.startsWith("/dashboard/assigned-teams");
+  const isTeamManagerActive = pathname.startsWith("/dashboard/team-manager");
 
   return (
     <>
@@ -200,28 +204,74 @@ export function Sidebar({
             {!desktopCollapsed && <span>Expense Claims</span>}
           </Link>
 
-          {/* Assigned Users (Manager Access) */}
+          {/* My Team (Manager) */}
           {managerRole && (
             <Link
-              href="/dashboard/assigned-users"
+              href="/dashboard/my-team"
               onClick={() => setMobileNavOpen(false)}
               className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
-                isAssignedUsersActive
+                isMyTeamActive || isAssignedUsersActive
                   ? "bg-primary/15 border border-primary/30 text-primary font-bold shadow-xs"
                   : "text-muted hover:bg-surface-muted hover:text-foreground border border-transparent"
               }`}
-              title="Assigned Users (Manager)"
+              title="My Team"
             >
-              <Users className={`h-4 w-4 shrink-0 ${isAssignedUsersActive ? "text-primary" : ""}`} />
+              <Users className={`h-4 w-4 shrink-0 ${isMyTeamActive ? "text-primary" : ""}`} />
               {!desktopCollapsed && (
                 <div className="flex items-center justify-between flex-1 min-w-0">
-                  <span className="truncate">Assigned Users</span>
+                  <span className="truncate">My Team</span>
                   <span className="ml-1 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-primary/20 text-primary shrink-0">
                     Manager
                   </span>
                 </div>
               )}
             </Link>
+          )}
+
+          {/* Assigned Teams + Team Manager (Admin) */}
+          {adminRole && (
+            <>
+              <Link
+                href="/dashboard/assigned-teams"
+                onClick={() => setMobileNavOpen(false)}
+                className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+                  isAssignedTeamsActive
+                    ? "bg-primary/15 border border-primary/30 text-primary font-bold shadow-xs"
+                    : "text-muted hover:bg-surface-muted hover:text-foreground border border-transparent"
+                }`}
+                title="Assigned Teams"
+              >
+                <Users className={`h-4 w-4 shrink-0 ${isAssignedTeamsActive ? "text-primary" : ""}`} />
+                {!desktopCollapsed && (
+                  <div className="flex items-center justify-between flex-1 min-w-0">
+                    <span className="truncate">Assigned Teams</span>
+                    <span className="ml-1 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-primary/20 text-primary shrink-0">
+                      Admin
+                    </span>
+                  </div>
+                )}
+              </Link>
+              <Link
+                href="/dashboard/team-manager"
+                onClick={() => setMobileNavOpen(false)}
+                className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+                  isTeamManagerActive
+                    ? "bg-primary/15 border border-primary/30 text-primary font-bold shadow-xs"
+                    : "text-muted hover:bg-surface-muted hover:text-foreground border border-transparent"
+                }`}
+                title="Team Manager"
+              >
+                <Users className={`h-4 w-4 shrink-0 ${isTeamManagerActive ? "text-primary" : ""}`} />
+                {!desktopCollapsed && (
+                  <div className="flex items-center justify-between flex-1 min-w-0">
+                    <span className="truncate">Team Manager</span>
+                    <span className="ml-1 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-primary/20 text-primary shrink-0">
+                      Admin
+                    </span>
+                  </div>
+                )}
+              </Link>
+            </>
           )}
         </div>
 

@@ -58,6 +58,52 @@ exports.getDayEndDraft = asyncHandler(async (req, res) => {
 });
 
 
+exports.addStandaloneVisit = asyncHandler(async (req, res) => {
+  validation.assertVisitCreate(req.body || {});
+  res.status(201).json({
+    success: true,
+    data: await service.addStandaloneVisit(req.body, req.user),
+  });
+});
+
+exports.updateStandaloneVisit = asyncHandler(async (req, res) => {
+  validation.assertVisitUpdate(req.body || {});
+  res.json({
+    success: true,
+    data: await service.updateStandaloneVisit(req.params.visitId, req.body, req.user),
+  });
+});
+
+exports.removeStandaloneVisit = asyncHandler(async (req, res) => {
+  res.json({
+    success: true,
+    data: await service.removeStandaloneVisit(req.params.visitId, req.user),
+  });
+});
+
+exports.addStandaloneWork = asyncHandler(async (req, res) => {
+  validation.assertWorkCreate(req.body || {});
+  res.status(201).json({
+    success: true,
+    data: await service.addStandaloneWork(req.body, req.user),
+  });
+});
+
+exports.updateStandaloneWork = asyncHandler(async (req, res) => {
+  validation.assertWorkUpdate(req.body || {});
+  res.json({
+    success: true,
+    data: await service.updateStandaloneWork(req.params.workId, req.body, req.user),
+  });
+});
+
+exports.removeStandaloneWork = asyncHandler(async (req, res) => {
+  res.json({
+    success: true,
+    data: await service.removeStandaloneWork(req.params.workId, req.user),
+  });
+});
+
 exports.addVisit = asyncHandler(async (req, res) => {
   validation.assertVisitCreate(req.body || {});
   res.status(201).json({

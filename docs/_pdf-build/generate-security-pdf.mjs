@@ -15,6 +15,9 @@ const CHROME =
 
 const FILES = [
   '08-security/01-security-overview.md',
+  '08-security/02-threat-model.md',
+  '08-security/03-data-protection-and-ops.md',
+  '08-security/04-authorization-model.md',
   '02-architecture/07-authentication-authorization.md',
   '04-api/02-authentication.md',
   '03-functional/authentication.md',
@@ -134,7 +137,7 @@ async function main() {
   const body = `
 <div class="cover">
   <h1>OPMS Security Documentation</h1>
-  <p class="subtitle">Authentication, authorization, secrets, edge TLS, and known risks</p>
+  <p class="subtitle">Authentication, authorization, rate limits / 15-min IP block, secrets, edge TLS, and hardening plan</p>
   <p class="meta">Generated: ${date}</p>
   <p class="meta">Diagrams rendered with Mermaid 11 · Secrets redacted</p>
 </div>

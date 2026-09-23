@@ -24,6 +24,12 @@ async function proxyToNotificationService(req, res, next) {
 
     res.status(response.status).send(response.data);
   } catch (err) {
+    if (err.code === 'ECONNREFUSED') {
+      if (req.method === 'GET') {
+        return res.status(200).json({ success: true, data: [] });
+      }
+      return res.status(503).json({ success: false, message: 'Notification service temporarily unavailable' });
+    }
     next(err);
   }
 }

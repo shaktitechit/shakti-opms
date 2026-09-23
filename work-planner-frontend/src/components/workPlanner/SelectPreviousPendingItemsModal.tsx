@@ -68,7 +68,7 @@ export function SelectPreviousPendingItemsModal({
         for (const v of p.visits) {
           const vId = String(v._id || v.id || "");
           if (!vId || excludeSet.has(vId)) continue;
-          if (["pending", "in_progress", "checked_in"].includes(v.status)) {
+          if (["created", "pending", "in_progress", "checked_in"].includes(v.status)) {
             list.push({
               id: vId,
               planDate: pDate,
@@ -85,7 +85,7 @@ export function SelectPreviousPendingItemsModal({
         for (const w of p.works) {
           const wId = String(w._id || w.id || "");
           if (!wId || excludeSet.has(wId)) continue;
-          if (["pending", "in_progress"].includes(w.status)) {
+          if (["created", "pending", "in_progress"].includes(w.status)) {
             list.push({
               id: wId,
               planDate: pDate,
@@ -148,7 +148,7 @@ export function SelectPreviousPendingItemsModal({
           <div className="flex items-center gap-2">
             <CheckSquare className="h-5 w-5 text-primary" />
             <h2 className="text-base font-bold text-foreground">
-              Add Previous Pending / In-Progress {mode === "visits" ? "Visits" : "Tasks"}
+              Add Previous Pending / In-Progress / Created {mode === "visits" ? "Visits" : "Tasks"}
             </h2>
           </div>
           <button
@@ -197,7 +197,7 @@ export function SelectPreviousPendingItemsModal({
             <p className="text-xs text-muted text-center py-10">Loading previous items...</p>
           ) : filteredItems.length === 0 ? (
             <p className="text-xs text-muted text-center py-10">
-              No previous pending or in-progress {mode} found to add.
+              No previous created, pending or in-progress {mode} found to add.
             </p>
           ) : (
             filteredItems.map((item) => {

@@ -19,6 +19,7 @@ export const baseApi = createApi({
     "CompanyInfo",
     "WorkPlan",
     "WorkPlannerStats",
+    "WorkPlannerTeam",
     "Expense",
     "Product",
     "Party",

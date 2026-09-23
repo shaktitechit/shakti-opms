@@ -251,6 +251,54 @@ export const workPlannerApiSlice = baseApi.injectEndpoints({
       }),
       invalidatesTags: [{ type: "WorkPlan", id: "LIST" }, "WorkPlannerStats"],
     }),
+    // Standalone Visits
+    addStandaloneVisit: builder.mutation<any, { body: unknown }>({
+      query: ({ body }) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/standalone-visits`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: [{ type: "WorkPlan", id: "LIST" }, "WorkPlannerStats"],
+    }),
+    updateStandaloneVisit: builder.mutation<any, { visitId: string; body: unknown }>({
+      query: ({ visitId, body }) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/standalone-visits/${visitId}`,
+        method: "PATCH",
+        body,
+      }),
+      invalidatesTags: [{ type: "WorkPlan", id: "LIST" }, "WorkPlannerStats"],
+    }),
+    removeStandaloneVisit: builder.mutation<any, { visitId: string }>({
+      query: ({ visitId }) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/standalone-visits/${visitId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: [{ type: "WorkPlan", id: "LIST" }, "WorkPlannerStats"],
+    }),
+    // Standalone Works
+    addStandaloneWork: builder.mutation<any, { body: unknown }>({
+      query: ({ body }) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/standalone-works`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: [{ type: "WorkPlan", id: "LIST" }, "WorkPlannerStats"],
+    }),
+    updateStandaloneWork: builder.mutation<any, { workId: string; body: unknown }>({
+      query: ({ workId, body }) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/standalone-works/${workId}`,
+        method: "PATCH",
+        body,
+      }),
+      invalidatesTags: [{ type: "WorkPlan", id: "LIST" }, "WorkPlannerStats"],
+    }),
+    removeStandaloneWork: builder.mutation<any, { workId: string }>({
+      query: ({ workId }) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/standalone-works/${workId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: [{ type: "WorkPlan", id: "LIST" }, "WorkPlannerStats"],
+    }),
     // Works
     addWork: builder.mutation<WorkPlanRecord, { planId: string; body: unknown }>({
       query: ({ planId, body }) => ({
@@ -387,6 +435,44 @@ export const workPlannerApiSlice = baseApi.injectEndpoints({
       transformResponse: (res: any) => res.data || res,
       invalidatesTags: (_result, _error, { userId }) => [{ type: "WorkPlan" as const, id: `USER_SETTINGS_${userId}` }],
     }),
+    getTeamTree: builder.query<any, void>({
+      query: () => `${WORK_PLANNER_SERVICE_URL}/api/work-planner/team/tree`,
+      transformResponse: (res: any) => res.data || res,
+      providesTags: ["WorkPlannerTeam"],
+    }),
+    getMyTeam: builder.query<any, void>({
+      query: () => `${WORK_PLANNER_SERVICE_URL}/api/work-planner/team/my-team`,
+      transformResponse: (res: any) => res.data || res,
+      providesTags: ["WorkPlannerTeam"],
+    }),
+    getTeamMembers: builder.query<any, void>({
+      query: () => `${WORK_PLANNER_SERVICE_URL}/api/work-planner/team/members`,
+      transformResponse: (res: any) => res.data || res,
+      providesTags: ["WorkPlannerTeam"],
+    }),
+    upsertTeamEdge: builder.mutation<any, { subordinate: string; manager: string }>({
+      query: (body) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/team/edges`,
+        method: "PUT",
+        body,
+      }),
+      transformResponse: (res: any) => res.data || res,
+      invalidatesTags: (_result, _error, arg) => [
+        "WorkPlannerTeam",
+        { type: "WorkPlan" as const, id: `USER_SETTINGS_${arg.subordinate}` },
+      ],
+    }),
+    removeTeamEdge: builder.mutation<any, string>({
+      query: (subordinateId) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/team/edges/${subordinateId}`,
+        method: "DELETE",
+      }),
+      transformResponse: (res: any) => res.data || res,
+      invalidatesTags: (_result, _error, subordinateId) => [
+        "WorkPlannerTeam",
+        { type: "WorkPlan" as const, id: `USER_SETTINGS_${subordinateId}` },
+      ],
+    }),
   }),
 });
 
@@ -406,6 +492,9 @@ export const {
   useAddVisitMutation,
   useUpdateVisitMutation,
   useRemoveVisitMutation,
+  useAddStandaloneVisitMutation,
+  useUpdateStandaloneVisitMutation,
+  useRemoveStandaloneVisitMutation,
   useCheckInMutation,
   useCheckOutMutation,
   useCompleteVisitMutation,
@@ -413,6 +502,9 @@ export const {
   useAddWorkMutation,
   useUpdateWorkMutation,
   useRemoveWorkMutation,
+  useAddStandaloneWorkMutation,
+  useUpdateStandaloneWorkMutation,
+  useRemoveStandaloneWorkMutation,
   useGetExpensesQuery,
   useLazyGetExpensesQuery,
   useAddExpenseMutation,
@@ -430,4 +522,9 @@ export const {
   useUploadWorkPlanAttachmentMutation,
   useGetUserSettingsQuery,
   useUpdateUserSettingsMutation,
+  useGetTeamTreeQuery,
+  useGetMyTeamQuery,
+  useGetTeamMembersQuery,
+  useUpsertTeamEdgeMutation,
+  useRemoveTeamEdgeMutation,
 } = workPlannerApiSlice;

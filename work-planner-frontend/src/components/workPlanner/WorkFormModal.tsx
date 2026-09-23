@@ -1,8 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useState, useMemo, useRef } from "react";
+import { Calendar, CheckCircle2, Info, Plus, Sparkles, User, X } from "lucide-react";
 import type { WorkPlanWorkRecord } from "@/types/workPlanner";
+import { useGetUsersQuery } from "@/store/api/authApiSlice";
+import { useGetMyTeamQuery, useGetPlansQuery, useGetUserSettingsQuery } from "@/store/api/workPlannerApiSlice";
+import {
+  isWpAdmin,
+  isWpManager,
+  isWpElevated,
+  readSessionFromStorage,
+} from "@/utils/authStorage";
+import { getUserWorkPlannerSettings, type CustomWorkTaskTemplate } from "@/utils/userWorkPlannerSettings";
 import { formatPlanDate, formatAuditUser, formatDateTime } from "./workPlanUtils";
 
 export type WorkFormModalProps = {
@@ -10,10 +19,78 @@ export type WorkFormModalProps = {
   mode: "create" | "edit";
   initial?: WorkPlanWorkRecord | null;
   planDate?: string | null;
+  /** Assigned executive on the parent work plan — used to scope assignment. */
+  salesUserId?: string | null;
   isSaving: boolean;
   onClose: () => void;
   onSubmit: (body: Record<string, unknown>) => void | Promise<void>;
 };
+
+interface ExecutiveUser {
+  _id: string;
+  id?: string;
+  name: string;
+  email: string;
+  department?: string;
+  portals?: Array<{
+    portal_code?: string;
+    portal?: { code?: string };
+    code?: string;
+    access_roles?: string[];
+  }>;
+}
+
+function hasWorkPlannerAccess(u: ExecutiveUser, sessionUserId?: string): boolean {
+  if (!u) return false;
+  const uId = String(u._id || u.id || "");
+  if (sessionUserId && uId === String(sessionUserId)) return true;
+
+  const uAny = u as any;
+  if (
+    uAny.department === "super_admin" ||
+    (Array.isArray(uAny.role_codes) && uAny.role_codes.includes("super_admin")) ||
+    (Array.isArray(uAny.roles) && uAny.roles.includes("super_admin"))
+  ) {
+    return true;
+  }
+
+  const portals = Array.isArray(u.portals)
+    ? u.portals
+    : Array.isArray(uAny.portal_access)
+    ? uAny.portal_access
+    : [];
+
+  if (portals.length === 0) {
+    return true;
+  }
+
+  const wpPortal = portals.find((p: any) => {
+    if (!p) return false;
+    const code = p.portal_code || p.portal?.code || p.code || p.portal;
+    return code === "work_planner";
+  });
+
+  if (!wpPortal) return false;
+
+  const roles: string[] = Array.isArray(wpPortal.access_roles)
+    ? wpPortal.access_roles
+    : (wpPortal as any).access_role
+      ? [(wpPortal as any).access_role]
+      : [];
+
+  if (roles.length === 0) return true;
+
+  return roles.some((r) => {
+    const normalized = String(r).toLowerCase().trim();
+    return (
+      normalized === "executive" ||
+      normalized === "manager" ||
+      normalized === "admin" ||
+      normalized === "sales" ||
+      normalized === "super_admin"
+    );
+  });
+}
 
 const inputClass =
   "w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-60";
@@ -25,7 +102,10 @@ function ymdFromPlanDate(planDate?: string | null): string {
   if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed.slice(0, 10);
   const d = new Date(trimmed);
   if (isNaN(d.getTime())) return "";
-  return d.toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function timeFromIso(value?: string | null): string {
@@ -56,23 +136,104 @@ export function WorkFormModal({
   mode,
   initial,
   planDate,
+  salesUserId,
   isSaving,
   onClose,
   onSubmit,
 }: WorkFormModalProps) {
+  const sessionUser = useMemo(() => readSessionFromStorage()?.user, []);
+  const sessionUserId = sessionUser?._id || (sessionUser as { id?: string })?.id || "";
+  const adminRole = isWpAdmin(sessionUser);
+  const managerRole = isWpManager(sessionUser);
+  const elevatedRole = isWpElevated(sessionUser);
+
+  // Queries for allowed executives
+  const { data: usersData } = useGetUsersQuery(undefined, { skip: !open });
+  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !open || !managerRole });
+
+  const allUsers = useMemo(() => (usersData as ExecutiveUser[]) || [], [usersData]);
+
+  // Allowed Executives for assignment:
+  // - Admin: all portal members with work_planner access
+  // - Manager: himself + executives reporting to him
+  // - Executive: himself only
+  const allowedExecutives = useMemo<ExecutiveUser[]>(() => {
+    if (!elevatedRole) {
+      if (!sessionUser) return [];
+      return [
+        {
+          _id: sessionUserId,
+          id: sessionUserId,
+          name: `${sessionUser.name} (Self)`,
+          email: sessionUser.email,
+          department: sessionUser.department,
+        },
+      ];
+    }
+
+    if (adminRole) {
+      return allUsers.filter((u) => hasWorkPlannerAccess(u, sessionUserId));
+    }
+
+    const myTeamMembers = (myTeamData?.members || []) as Array<{ _id?: string; id?: string }>;
+    const teamIdSet = new Set<string>(
+      myTeamMembers.map((m) => String(m._id || m.id || ""))
+    );
+    if (sessionUserId) {
+      teamIdSet.add(String(sessionUserId));
+    }
+    return allUsers.filter((u) => teamIdSet.has(String(u._id || u.id || "")));
+  }, [allUsers, sessionUser, sessionUserId, adminRole, elevatedRole, myTeamData]);
+
+  // Modal internal editable states
+  const [internalPlanDate, setInternalPlanDate] = useState<string>(
+    () => ymdFromPlanDate(planDate) || new Date().toISOString().slice(0, 10)
+  );
+  const [internalSalesUserId, setInternalSalesUserId] = useState<string>(
+    () => salesUserId || sessionUserId || ""
+  );
+
+  const effectiveSalesUserId = internalSalesUserId || sessionUserId || "";
+  const { data: plansData, isFetching: isCheckingPlan } = useGetPlansQuery(
+    {
+      sales_user: effectiveSalesUserId,
+      date: internalPlanDate,
+      limit: 1,
+    },
+    { skip: !open || !internalPlanDate || !effectiveSalesUserId }
+  );
+
+  const existingPlan = useMemo(() => {
+    const list = plansData?.data || [];
+    return list.find((p) => !(p as any).deletedAt && !String(p._id || p.id).startsWith("standalone"));
+  }, [plansData]);
+
+  // Fetch custom task templates configured for this executive
+  const { data: dbUserSettings } = useGetUserSettingsQuery(effectiveSalesUserId, {
+    skip: !open || !effectiveSalesUserId,
+  });
+  const customTemplates = useMemo<CustomWorkTaskTemplate[]>(() => {
+    if (dbUserSettings?.customWorkTemplates && Array.isArray(dbUserSettings.customWorkTemplates)) {
+      return dbUserSettings.customWorkTemplates as CustomWorkTaskTemplate[];
+    }
+    if (effectiveSalesUserId) {
+      return (getUserWorkPlannerSettings(effectiveSalesUserId).customWorkTemplates || []) as CustomWorkTaskTemplate[];
+    }
+    return [];
+  }, [dbUserSettings, effectiveSalesUserId]);
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [plannedStartTime, setPlannedStartTime] = useState("");
   const [plannedEndTime, setPlannedEndTime] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const planDateYmd = ymdFromPlanDate(planDate);
-  const planDateLabel = planDateYmd
-    ? formatPlanDate(`${planDateYmd}T00:00:00`)
-    : "—";
-
+  // Only re-initialize when modal transitions from closed to open or when initial record changes
+  const prevOpenRef = useRef(false);
   useEffect(() => {
-    if (open) {
+    if (open && (!prevOpenRef.current || initial)) {
+      setInternalPlanDate(ymdFromPlanDate(planDate) || new Date().toISOString().slice(0, 10));
+      setInternalSalesUserId(salesUserId || sessionUserId || "");
       if (initial) {
         setTitle(initial.title || "");
         setDescription(initial.description || "");
@@ -86,12 +247,16 @@ export function WorkFormModal({
       }
       setErrors({});
     }
-  }, [open, initial]);
+    prevOpenRef.current = open;
+  }, [open, initial, planDate, salesUserId, sessionUserId]);
 
   if (!open) return null;
 
   function handleSave() {
     const errs: Record<string, string> = {};
+    if (!internalPlanDate) {
+      errs.planDate = "Plan date is required";
+    }
     if (!title.trim()) {
       errs.title = "Task title/description is required";
     }
@@ -101,10 +266,12 @@ export function WorkFormModal({
     }
 
     onSubmit({
+      planDate: internalPlanDate,
+      salesUserId: internalSalesUserId || sessionUserId,
       title: title.trim(),
       description: description.trim() || undefined,
-      planned_start_time: combinePlanDateAndTime(planDate, plannedStartTime),
-      planned_end_time: combinePlanDateAndTime(planDate, plannedEndTime),
+      planned_start_time: combinePlanDateAndTime(internalPlanDate, plannedStartTime),
+      planned_end_time: combinePlanDateAndTime(internalPlanDate, plannedEndTime),
     });
   }
 
@@ -126,50 +293,173 @@ export function WorkFormModal({
               {mode === "create" ? "Add Work Task" : "Edit Work Task"}
             </h2>
             <p className="text-xs text-muted">
-              For plan date: <span className="font-medium">{planDateLabel}</span>
+              {adminRole
+                ? "Portal Admin — Assign and schedule task for any portal member"
+                : managerRole
+                ? "Portal Manager — Assign and schedule task for yourself or your reporting team"
+                : "Schedule your work task details"}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             disabled={isSaving}
-            className="rounded-lg p-1 text-muted hover:bg-surface-muted hover:text-foreground"
+            className="rounded-lg p-1 text-muted hover:bg-surface-muted hover:text-foreground cursor-pointer"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         <div className="space-y-4 px-5 py-4">
+          {/* Date & Executive Assignment Bar within Scope */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-surface-muted/60 rounded-xl border border-border">
+            <div>
+              <label className={labelClass}>
+                <Calendar className="inline h-3.5 w-3.5 mr-1 text-primary" />
+                Plan Date <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={internalPlanDate}
+                onChange={(e) => setInternalPlanDate(e.target.value)}
+                disabled={isSaving}
+                className={inputClass}
+              />
+              {errors.planDate && (
+                <p className="mt-1 text-xs text-rose-500">{errors.planDate}</p>
+              )}
+            </div>
+
+            <div>
+              <label className={labelClass}>
+                <User className="inline h-3.5 w-3.5 mr-1 text-primary" />
+                Assign Executive / Team Member <span className="text-rose-500">*</span>
+              </label>
+              {elevatedRole ? (
+                <select
+                  value={internalSalesUserId}
+                  onChange={(e) => setInternalSalesUserId(e.target.value)}
+                  disabled={isSaving}
+                  className={inputClass}
+                >
+                  {allowedExecutives.map((exec) => (
+                    <option key={exec._id || exec.id} value={exec._id || exec.id}>
+                      {exec.name} {exec._id === sessionUserId ? "(Self)" : ""}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground">
+                  {sessionUser?.name || "Self"} (Executive)
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Work Plan Detection Banner */}
+          {internalPlanDate && (
+            <div
+              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition ${
+                existingPlan
+                  ? "border-emerald-500/30 bg-emerald-50/70 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300"
+                  : "border-border bg-surface-muted/40 text-muted"
+              }`}
+            >
+              {isCheckingPlan ? (
+                <div className="flex items-center gap-2">
+                  <div className="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                  <span>Checking for work plan…</span>
+                </div>
+              ) : existingPlan ? (
+                <>
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <div>
+                    <span className="font-semibold text-emerald-900 dark:text-emerald-200">
+                      Work Plan Found ({existingPlan.status || "planned"}):
+                    </span>{" "}
+                    This task will be automatically added to the work plan for{" "}
+                    {formatPlanDate(internalPlanDate)}.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Info className="h-4 w-4 shrink-0 text-muted" />
+                  <div>
+                    <span className="font-medium text-foreground">No work plan for this date:</span>{" "}
+                    This task will be created as a standalone task.
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Quick-fill Custom Work Task Templates */}
+          {customTemplates.length > 0 && mode === "create" && (
+            <div className="space-y-1.5 p-3 rounded-xl border border-primary/20 bg-primary/5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-primary flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Quick Fill from Custom Task Templates ({customTemplates.length})
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {customTemplates.map((tpl: CustomWorkTaskTemplate) => (
+                  <button
+                    key={tpl.id}
+                    type="button"
+                    disabled={isSaving}
+                    onClick={() => {
+                      setTitle(tpl.title);
+                      if (tpl.description) setDescription(tpl.description);
+                      if (tpl.planned_start_time) setPlannedStartTime(tpl.planned_start_time);
+                      if (tpl.planned_end_time) setPlannedEndTime(tpl.planned_end_time);
+                      setErrors((prev) => ({ ...prev, title: "" }));
+                    }}
+                    className="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground hover:border-primary hover:bg-surface-muted transition cursor-pointer"
+                  >
+                    <Plus className="h-3 w-3 text-primary" />
+                    <span>{tpl.title}</span>
+                    {tpl.planned_start_time && (
+                      <span className="text-[10px] text-muted">
+                        ({tpl.planned_start_time}{tpl.planned_end_time ? `-${tpl.planned_end_time}` : ""})
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div>
             <label className={labelClass}>
-              Task Title / Summary <span className="text-rose-500">*</span>
+              Task Title / Core Objective <span className="text-rose-500">*</span>
             </label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g. Quotation review, Client follow-up call, Product documentation..."
               disabled={isSaving}
-              placeholder="e.g. Documentation, Client calls, Remote support"
               className={inputClass}
             />
-            {errors.title ? (
+            {errors.title && (
               <p className="mt-1 text-xs text-rose-500">{errors.title}</p>
-            ) : null}
+            )}
           </div>
 
           <div>
-            <label className={labelClass}>Task Description / Notes</label>
+            <label className={labelClass}>Task Description &amp; Details</label>
             <textarea
+              rows={3}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
+              placeholder="Detailed description, deliverables, or action points..."
               disabled={isSaving}
-              rows={3}
-              placeholder="Detailed notes on planned activities..."
               className={inputClass}
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelClass}>Planned Start Time</label>
               <input
@@ -180,6 +470,7 @@ export function WorkFormModal({
                 className={inputClass}
               />
             </div>
+
             <div>
               <label className={labelClass}>Planned End Time</label>
               <input
@@ -191,44 +482,22 @@ export function WorkFormModal({
               />
             </div>
           </div>
-
-          {initial && (initial.created_by || initial.updated_by || initial.createdAt || initial.updatedAt) && (
-            <div className="rounded-lg border border-border bg-surface-muted/60 p-3 space-y-1.5 text-xs text-muted">
-              <div className="font-semibold text-foreground">Audit Information</div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                {(initial.created_by || initial.created_by_role) && (
-                  <div>
-                    <span className="font-medium text-foreground">Created By:</span>{" "}
-                    {formatAuditUser(initial.created_by, initial.created_by_role)}
-                    {initial.createdAt && ` on ${formatDateTime(initial.createdAt)}`}
-                  </div>
-                )}
-                {(initial.updated_by || initial.updated_by_role) && (
-                  <div>
-                    <span className="font-medium text-foreground">Updated By:</span>{" "}
-                    {formatAuditUser(initial.updated_by, initial.updated_by_role)}
-                    {initial.updatedAt && ` on ${formatDateTime(initial.updatedAt)}`}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3 bg-surface-muted/50">
+        <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3 bg-surface-muted/30">
           <button
             type="button"
-            disabled={isSaving}
             onClick={onClose}
-            className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-muted disabled:opacity-50 transition"
+            disabled={isSaving}
+            className="rounded-lg border border-border px-4 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition cursor-pointer"
           >
             Cancel
           </button>
           <button
             type="button"
-            disabled={isSaving}
             onClick={handleSave}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-50 transition"
+            disabled={isSaving}
+            className="rounded-lg bg-primary px-5 py-2 text-xs font-bold text-primary-foreground hover:bg-primary-hover shadow-xs transition cursor-pointer"
           >
             {isSaving ? "Saving…" : mode === "create" ? "Add Task" : "Save Changes"}
           </button>

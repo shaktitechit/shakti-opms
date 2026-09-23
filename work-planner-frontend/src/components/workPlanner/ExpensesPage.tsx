@@ -9,7 +9,7 @@ import {
   useApproveExpenseMutation,
   useRejectExpenseMutation,
 } from "@/store/api/workPlannerApiSlice";
-import { isManager, readSessionFromStorage } from "@/utils/authStorage";
+import { isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
 import { resolvePublicAssetUrl, withFileAccessToken } from "@/lib/env";
 import type { WorkPlanExpenseRecord } from "@/types/workPlanner";
 import { DownloadExpensesModal } from "./DownloadExpensesModal";
@@ -24,17 +24,23 @@ import {
   salesUserLabel,
 } from "./workPlanUtils";
 
+type OwnershipScope = "mine" | "team";
+
 export function ExpensesPage() {
   const searchParams = useSearchParams();
   const sessionUser = readSessionFromStorage()?.user;
   const sessionToken = readSessionFromStorage()?.token;
-  const managerRole = isManager(sessionUser);
+  const elevatedRole = isWpElevated(sessionUser);
   const { previewDoc, previewBlobUrl, previewLoading, openPreview, closePreview, downloadFile } =
     useFilePreview(sessionToken);
 
   const initialSearch = searchParams.get("search") || searchParams.get("q") || "";
+  const initialScope = (searchParams.get("scope") === "team" ? "team" : "mine") as OwnershipScope;
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState(initialSearch);
+  const [ownershipScope, setOwnershipScope] = useState<OwnershipScope>(
+    elevatedRole ? initialScope : "mine"
+  );
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -54,8 +60,11 @@ export function ExpensesPage() {
     if (statusFilter !== "all") q.status = statusFilter;
     if (dateFrom) q.from = dateFrom;
     if (dateTo) q.to = dateTo;
+    if (elevatedRole) {
+      q.scope = ownershipScope;
+    }
     return q;
-  }, [currentPage, statusFilter, dateFrom, dateTo]);
+  }, [currentPage, statusFilter, dateFrom, dateTo, elevatedRole, ownershipScope]);
 
   const { data: expensesRes, isLoading: loading, refetch: loadExpenses } = useGetExpensesQuery(queryParams);
 
@@ -107,8 +116,10 @@ export function ExpensesPage() {
             Expense Claims Management
           </h1>
           <p className="text-xs text-muted">
-            {managerRole
-              ? "Review and approve field travel, DA, lodging, and stay expenses"
+            {elevatedRole
+              ? ownershipScope === "mine"
+                ? "Your own field visit expenses — track submissions and reimbursements"
+                : "Team expense claims — review, approve, and audit field claims"
               : "Track and submit your field visit expense claims"}
           </p>
         </div>
@@ -131,6 +142,40 @@ export function ExpensesPage() {
           </button>
         </div>
       </div>
+
+      {/* My Expenses vs Team Expenses (admin / manager) */}
+      {elevatedRole && (
+        <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              setOwnershipScope("mine");
+              setCurrentPage(1);
+            }}
+            className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
+              ownershipScope === "mine"
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "text-muted hover:bg-surface-muted hover:text-foreground"
+            }`}
+          >
+            My Expenses
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOwnershipScope("team");
+              setCurrentPage(1);
+            }}
+            className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
+              ownershipScope === "team"
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "text-muted hover:bg-surface-muted hover:text-foreground"
+            }`}
+          >
+            Team Expenses
+          </button>
+        </div>
+      )}
 
       {/* Filter Tabs */}
       <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1.5">
@@ -294,7 +339,7 @@ export function ExpensesPage() {
                       </td>
                       <td className="px-4 py-3">{renderExpenseStatusBadge(exp.status)}</td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
-                        {managerRole && exp.status === "submitted" && planId ? (
+                        {elevatedRole && exp.status === "submitted" && planId ? (
                           <div className="flex items-center justify-end gap-1.5">
                             <button
                               type="button"

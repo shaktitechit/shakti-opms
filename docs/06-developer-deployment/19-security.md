@@ -6,7 +6,9 @@
 - HTTPS via nginx TLS configs; auth login/handoff edge rate limits + optional fail2ban 15-min IP ban
 - Webhook secrets for Google Sheets
 - Soft-delete vs hard-delete for many records
-- Login rate limiting (auth-service: IP block + IP/email, 15 min) + SSO one-time handoff codes
+- Login rate limiting (auth-service: **40 failed / 15 min per IP** + **20 / 15 min per IP+email** → 429)
+- nginx `limit_req` on login/handoff + optional **fail2ban 15-minute IP ban**
+- SSO one-time handoff codes
 - Service JWT on notification `/api/notifications/internal/*`
 - Auth on terms / attachments / work-planner attachment view
 - Redis AUTH + localhost-only host publish; message/notification not host-published

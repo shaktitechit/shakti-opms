@@ -42,7 +42,7 @@ import {
   useUpdateWorkMutation,
   useCompleteVisitMutation,
 } from "@/store/api/workPlannerApiSlice";
-import { isManager, readSessionFromStorage } from "@/utils/authStorage";
+import { isWpAdmin, isWpManager, isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
 import type {
   DayEndPayload,
   WorkPlanRecord,
@@ -102,7 +102,15 @@ function RichTextDisplay({ content, className = "" }: { content?: string; classN
 export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   const router = useRouter();
   const sessionUser = readSessionFromStorage()?.user;
-  const managerRole = isManager(sessionUser);
+  const adminRole = isWpAdmin(sessionUser);
+  const managerRole = isWpManager(sessionUser);
+  const elevatedRole = isWpElevated(sessionUser);
+
+  function isManagerOrAdminCreatedItem(item?: Record<string, any>): boolean {
+    if (!item) return false;
+    const role = String(item.created_by_role || "").toLowerCase().trim();
+    return ["manager", "admin", "super_admin", "super admin"].includes(role);
+  }
 
   const { data: plan, isLoading: loading, refetch: loadPlan } = useGetPlanQuery(planId);
   const [actionLoading, setActionLoading] = useState(false);
@@ -187,7 +195,11 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
     }
   }
 
-  async function handleRemoveVisit(visitId: string) {
+  async function handleRemoveVisit(visitId: string, visitItem?: WorkPlanVisitRecord) {
+    if (!elevatedRole && visitItem && isManagerOrAdminCreatedItem(visitItem)) {
+      toast.error("Visits created by a Portal Admin or Portal Manager cannot be removed by Executives.");
+      return;
+    }
     if (!confirm("Are you sure you want to remove this visit?")) return;
     try {
       await removeVisitMut({ planId, visitId }).unwrap();
@@ -198,7 +210,16 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
     }
   }
 
-  async function handleRemoveWork(workId: string) {
+  async function handleRemoveWork(workId: string, workItem?: WorkPlanWorkRecord) {
+    const isDefaultTask = workItem?.work_type === "default" || (workItem as any)?.is_default_task;
+    if (isDefaultTask) {
+      toast.error("Default work tasks cannot be removed.");
+      return;
+    }
+    if (!elevatedRole && workItem && isManagerOrAdminCreatedItem(workItem)) {
+      toast.error("Tasks created by a Portal Admin or Portal Manager cannot be removed by Executives.");
+      return;
+    }
     if (!confirm("Are you sure you want to remove this task?")) return;
     try {
       await removeWorkMut({ planId, workId }).unwrap();
@@ -445,7 +466,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
         ) : null}
       </div>
 
-      {/* Section 1: Field Visits (Visits plan only) */}
+      {/* Section 1: Field Visits */}
       {visitsPlan && (
         <div className="rounded-xl border border-border bg-card p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b border-border pb-3">
@@ -455,6 +476,19 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                 Field Visits ({visits.length})
               </h2>
             </div>
+            {showStructureActions && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingVisit(null);
+                  setVisitModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add Visit
+              </button>
+            )}
           </div>
 
           {!canCompleteAction && !isCompleted && (
@@ -543,43 +577,66 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                       </div>
                     )}
 
-                    {/* Visit actions (Hidden once completed) */}
-                    {showStructureActions && v.status !== "completed" && (
+                    {/* Visit actions */}
+                    {showStructureActions && (
                       <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border">
-                        <button
-                          type="button"
-                          disabled={!canCompleteAction}
-                          onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/20 transition disabled:opacity-50 cursor-pointer"
-                        >
-                          <MessageSquare className="h-3.5 w-3.5" />
-                          <span>Remarks &amp; Status</span>
-                        </button>
-
-                        <div className="flex items-center gap-1">
+                        {v.status === "completed" ? (
                           <button
                             type="button"
-                            onClick={() => {
-                              setEditingVisit(v);
-                              setVisitModalOpen(true);
-                            }}
-                            className="rounded p-1 text-muted hover:bg-card hover:text-foreground transition cursor-pointer"
-                            title="Edit visit"
+                            disabled={!canCompleteAction}
+                            onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition disabled:opacity-50 cursor-pointer"
                           >
                             <Edit3 className="h-3.5 w-3.5" />
+                            <span>Edit Remarks &amp; Outcome</span>
                           </button>
-
-                          {managerRole && (
+                        ) : (
+                          <>
                             <button
                               type="button"
-                              onClick={() => handleRemoveVisit(vId)}
-                              className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition cursor-pointer"
-                              title="Remove visit"
+                              disabled={!canCompleteAction}
+                              onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/20 transition disabled:opacity-50 cursor-pointer"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <MessageSquare className="h-3.5 w-3.5" />
+                              <span>Remarks &amp; Status</span>
                             </button>
-                          )}
-                        </div>
+
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingVisit(v);
+                                  setVisitModalOpen(true);
+                                }}
+                                className="rounded p-1 text-muted hover:bg-card hover:text-foreground transition cursor-pointer"
+                                title="Edit visit"
+                              >
+                                <Edit3 className="h-3.5 w-3.5" />
+                              </button>
+
+                              {elevatedRole || !isManagerOrAdminCreatedItem(v) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveVisit(vId, v)}
+                                  className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition cursor-pointer"
+                                  title="Remove visit"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="rounded p-1 text-muted/30 cursor-not-allowed opacity-50"
+                                  title="Created by Portal Admin / Manager — cannot be removed by Executive"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -590,7 +647,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
         </div>
       )}
 
-      {/* Section 2: Tasks / Work Entries (Work Task plans only) */}
+      {/* Section 2: Tasks / Work Entries */}
       {taskPlan && (
         <div className="rounded-xl border border-border bg-card p-5 shadow-xs space-y-4">
           <div className="flex items-center justify-between border-b border-border pb-3">
@@ -600,6 +657,19 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                 Work Tasks ({works.length})
               </h2>
             </div>
+            {showStructureActions && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingWork(null);
+                  setWorkModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add Task
+              </button>
+            )}
           </div>
 
           {!canCompleteAction && !isCompleted && (
@@ -616,6 +686,8 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
             <div className="space-y-3">
               {works.map((w, idx) => {
                 const wId = w._id || w.id || String(idx);
+                const isDefaultTask = w.work_type === "default" || (w as any).is_default_task;
+                const canRemoveWork = !isDefaultTask && (elevatedRole || !isManagerOrAdminCreatedItem(w));
                 return (
                   <div
                     key={wId}
@@ -639,36 +711,65 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                         </div>
                       </div>
 
-                      {/* Work Task actions (Hidden once completed) */}
-                      {showStructureActions && w.status !== "completed" && (
+                      {/* Work Task actions */}
+                      {showStructureActions && (
                         <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            disabled={!canCompleteAction}
-                            onClick={() => setStatusRemarksTarget({ type: "task", item: w })}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-3 py-1 text-xs font-bold text-primary hover:bg-primary/20 transition disabled:opacity-50 cursor-pointer"
-                          >
-                            <MessageSquare className="h-3.5 w-3.5" />
-                            <span>Remarks &amp; Status</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingWork(w);
-                              setWorkModalOpen(true);
-                            }}
-                            className="rounded p-1 text-muted hover:bg-card hover:text-foreground transition cursor-pointer"
-                          >
-                            <Edit3 className="h-3.5 w-3.5" />
-                          </button>
-                          {managerRole && (
+                          {w.status === "completed" ? (
                             <button
                               type="button"
-                              onClick={() => handleRemoveWork(wId)}
-                              className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition cursor-pointer"
+                              disabled={!canCompleteAction}
+                              onClick={() => setStatusRemarksTarget({ type: "task", item: w })}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition disabled:opacity-50 cursor-pointer"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Edit3 className="h-3.5 w-3.5" />
+                              <span>Edit Remarks &amp; Outcome</span>
                             </button>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                disabled={!canCompleteAction}
+                                onClick={() => setStatusRemarksTarget({ type: "task", item: w })}
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-3 py-1 text-xs font-bold text-primary hover:bg-primary/20 transition disabled:opacity-50 cursor-pointer"
+                              >
+                                <MessageSquare className="h-3.5 w-3.5" />
+                                <span>Remarks &amp; Status</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingWork(w);
+                                  setWorkModalOpen(true);
+                                }}
+                                className="rounded p-1 text-muted hover:bg-card hover:text-foreground transition cursor-pointer"
+                                title="Edit task"
+                              >
+                                <Edit3 className="h-3.5 w-3.5" />
+                              </button>
+                              {canRemoveWork ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveWork(wId, w)}
+                                  className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition cursor-pointer"
+                                  title="Remove task"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="rounded p-1 text-muted/30 cursor-not-allowed opacity-50"
+                                  title={
+                                    isDefaultTask
+                                      ? "Default task — cannot be removed"
+                                      : "Created by Portal Admin / Manager — cannot be removed by Executive"
+                                  }
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                            </>
                           )}
                         </div>
                       )}

@@ -1,15 +1,16 @@
 # OPMS Security Documentation
 
-**Status:** Verified from repository implementation unless marked otherwise.  
-**Scope:** Authentication, authorization, secrets, transport security, known risks, consolidated challenges (§11), and a phased improvement plan (§12) derived from code/config — not a penetration-test report.
+**Status:** Verified from repository implementation (Phases 0–3 hardening applied) unless marked otherwise.  
+**Scope:** Authentication, authorization, secrets, transport security, known risks, consolidated challenges (§11), phased improvement plan (§12), plus threat model / data-protection / authorization companion docs — not a penetration-test report.
 
 **Sources:**
-- `auth-service/`, `opms-backend/src/middlewares/`
-- Portal middlewares (lead-manager, work-planner)
-- `nginx/` TLS configs
+- `auth-service/`, `opms-backend/src/middlewares/`, portal middlewares (lead-manager, work-planner)
+- `nginx/` TLS + `logging.conf` / `auth-rate-limit.conf` / fail2ban jails
 - `docker-compose.yml`, `.env.docker.example`, `DOCKER.md`
+- `.github/workflows/security-scans.yml`
 - `docs/02-architecture/07-authentication-authorization.md`
 - `docs/06-developer-deployment/19-security.md`
+- Companion: [02-threat-model](./02-threat-model.md), [03-data-protection-and-ops](./03-data-protection-and-ops.md), [04-authorization-model](./04-authorization-model.md)
 
 ---
 
@@ -90,15 +91,57 @@ Authorization: Bearer <token>
 
 | App | Primary storage | Notes |
 |-----|-----------------|-------|
-| app-frontend | `shakti.app.session` + cookies | SSO hub; launches peers with `?token=` |
-| opms-frontend | `medica.auth` + cookies | Consumes SSO token |
-| user / lead / work planner | per-app `shakti.*.session` | Shared cookie names used for middleware gates |
+| app-frontend | `shakti.app.session` + cookies | SSO hub; launches peers with one-time `?handoff=` |
+| opms-frontend | `medica.auth` + cookies | Exchanges handoff (middleware + bootstrap); legacy `?token=` still accepted |
+| user / lead / work planner | per-app `shakti.*.session` | Middleware exchanges `?handoff=` → session cookies |
 
-**Risk note:** Portal SSO now prefers one-time `?handoff=` codes (`POST /api/auth/handoff` → peer `POST /api/auth/handoff/exchange`). Legacy `?token=` is still accepted during rollout. SSE/file `?token=` for browser navigations remains a separate pattern (Phase 3+ may use cookies only).
+### SSO handoff (preferred)
 
-Default access-token TTL is **`JWT_EXPIRES_IN=8h`** (was `7d`). Refresh tokens are not implemented yet — users re-login after expiry.
+```http
+POST /api/auth/handoff
+Authorization: Bearer <access-token>
+
+→ { "code": "<one-time>", "expires_in": 60 }
+
+POST /api/auth/handoff/exchange
+Content-Type: application/json
+
+{ "code": "<one-time>" }
+
+→ { "token": "<jwt>", "user": { ... } }
+```
+
+**Risk note:** Prefer `?handoff=` over putting JWTs in URLs. Legacy `?token=` remains during rollout. SSE/file browser navigations may still append `?token=` (separate from portal SSO).
+
+Default access-token TTL is **`JWT_EXPIRES_IN=8h`**. Refresh tokens are not implemented — users re-login after expiry.
 
 Password policy (create user / change password): **min 10 characters**, at least one letter and one number, no spaces.
+
+### Login rate limiting & 15-minute IP block
+
+Brute-force controls are layered (app → nginx → optional fail2ban).
+
+| Layer | Where | Rule | Effect |
+|-------|-------|------|--------|
+| App — IP | `auth-service` `loginIpBlocker` | **40** failed logins / **15 min** per IP (`skipSuccessfulRequests`) | HTTP **429** — try again in 15 minutes |
+| App — IP+email | `loginEmailRateLimiter` | **20** failed / **15 min** per IP+email | HTTP **429** |
+| App — handoff | `handoffExchangeRateLimiter` | **40** / **15 min** | Protects SSO code exchange |
+| Edge — nginx | `snippets/auth-rate-limit.conf` | `limit_req` on `POST /api/auth/login` (and handoff exchange) | HTTP **429** at edge; writes `auth-login.access.log` |
+| Host — fail2ban | `nginx/fail2ban/jail.d/opms-auth.conf` | **20** matches in **15 min** → **bantime 15m** | Hard IP ban at firewall for **15 minutes** |
+
+```mermaid
+flowchart LR
+  Client --> NGINX[nginx limit_req]
+  NGINX -->|429| Client
+  NGINX --> Auth[auth-service]
+  Auth -->|IP 40/15m or IP+email 20/15m| Block[429 for 15 min window]
+  Auth -->|ok| JWT[Issue JWT]
+  NGINX --> Log[auth-login.access.log]
+  Log --> F2B[fail2ban optional]
+  F2B -->|20 hits / 15m| Ban[iptables ban 15 min]
+```
+
+**Deploy fail2ban (ops):** copy `nginx/fail2ban/filter.d/*` and `jail.d/*` to `/etc/fail2ban/`, ensure `logging.conf` is included from nginx `http {}`, then `fail2ban-client reload`.
 
 ## 3. Authorization (RBAC)
 
@@ -117,7 +160,7 @@ Password policy (create user / change password): **min 10 characters**, at least
 | `opms` | Yes (`DEFAULT_PORTALS`) | `super_admin`, `admin`, `sales`, `finance`, `account`, `dispatch` |
 | `work_planner` | **No** | `admin`, `manager`, `executive` (+ admin bypasses) |
 | `lead_manager` | **No** | `admin`, `manager`, `executive` |
-| `user_manager` | **No** | Frontend admin/super-admin style gate — exact role list **Unknown** |
+| `user_manager` | **No** | `admin`, `super_admin` (FE + `requireUserManagerAdmin` on `/api/users*`) |
 
 ### Middleware gates
 
@@ -127,6 +170,8 @@ Password policy (create user / change password): **min 10 characters**, at least
 | `requireOpmsAccess` | OPMS domain APIs |
 | `requireLeadManagerAccess` | Lead Manager (most routes) |
 | `requireWorkPlannerAccess` | Work Planner routes |
+| `requireUserManagerAdmin` | auth-service `/api/users*` and roles |
+| `requireInternalService` | notification `/api/notifications/internal/*` |
 | Webhook secret | Google Sheet ingest |
 
 Missing `opms` portal ⇒ **403** even if `department` is set (documented in Swagger + middleware behavior).
@@ -156,14 +201,18 @@ flowchart TD
 - Let's Encrypt cert paths for `*.spspl.com` / `*.medicaent.in`
 - HTTP → HTTPS redirect after cert bootstrap
 - SSE-specific proxy settings for notification streams
+- Access log format + `limit_req` zones: `nginx/snippets/logging.conf` (include from `http {}`)
+- Auth login/handoff rate limits: `nginx/snippets/auth-rate-limit.conf` on `auth.spspl.com`
+- Optional fail2ban jails under `nginx/fail2ban/` (15-min IP ban)
 
 ### CORS
 
-Configured via `CORS_ORIGINS` (comma-separated). In **production**, missing/empty `CORS_ORIGINS` fails closed. Dev allows localhost portal ports plus any listed origins. Incorrect CORS is a browser-enforced issue, not a substitute for authz.
+Configured via `CORS_ORIGINS` (comma-separated). Unknown origins are denied without Express 500.  
+If empty, origins are derived from `NEXT_PUBLIC_*` / public URL env vars. Local Compose `localhost:*` ports are allowed when the allowlist is empty or includes localhost (disable with `CORS_ALLOW_LOCALHOST=0`).
 
 ### Docker network
 
-Services communicate on the Compose bridge using internal URLs (`http://auth-service:7003`, etc.). Assume **network trust inside the compose network** for some internal endpoints (see §6).
+Services communicate on the Compose bridge using internal URLs (`http://auth-service:7003`, etc.). `message-service` and `notification-service` are **not** published on the host. Internal notification routes require **service JWT**.
 
 ---
 
@@ -201,24 +250,26 @@ Documented carefully for threat modeling. Status reflects post Phase 0–1 harde
 
 | Surface | Auth | Risk / status |
 |---------|------|---------------|
-| `POST /api/auth/login` | Public + **rate limit** (40 / 15 min per IP; 20 / 15 min per IP+email) + nginx `limit_req` + optional fail2ban 15-min ban | Brute force mitigated at app + edge |
-| `GET /api/company-info` | Public (auth-service) | Info disclosure of branding/company fields |
+| `POST /api/auth/login` | Public + **rate limit** (40 / 15 min per IP; 20 / 15 min per IP+email) + nginx `limit_req` + optional fail2ban | Brute force mitigated at app + edge |
+| `GET /api/company-info` | Public = branding only; full doc when authenticated | Hardened (no bank/tax on anonymous GET) |
 | Google Sheet webhooks | Shared secret | Secret leakage ⇒ data injection |
 | WhatsApp webhooks | Provider verify | Must validate hub challenge/signature per Meta rules |
-| `POST /api/notifications/internal/*` | **Service JWT** (`requireInternalService`) | Hardened — callers send Bearer service token |
+| `POST /api/notifications/internal/*` | **Service JWT** (`requireInternalService`) | Hardened |
 | opms `/api/terms-and-conditions` | **`requireAuth` + `requireOpmsAccess`** | Hardened |
 | lead-manager `/api/attachments` | **`requireAuth` + `requireLeadManagerAccess`** | Hardened |
-| work-planner attachment view | **`requireAuth` + portal gate**; FE appends `?token=` | Hardened (no longer anonymous) |
+| work-planner attachment view | **`requireAuth` + portal gate**; FE may pass `?token=` for new-tab | Hardened |
+| auth `/api/users*` | **`requireAuth` + `requireUserManagerAdmin`** | Hardened |
 
 ```mermaid
 flowchart LR
   Internet --> Nginx
-  Nginx --> PublishedPorts[Host published API ports]
-  PublishedPorts --> Weak[Remaining public surfaces]
-  Weak --> Impact[Login / company-info / webhooks]
+  Nginx --> AuthEdge[auth.spspl.com limit_req]
+  Nginx --> APIs[Domain APIs]
+  AuthEdge --> Login[Login / handoff]
+  APIs --> Protected[JWT + portal RBAC]
 ```
 
-**Hardening:** see **§12** for remaining Phase 2–3 work. Phase 0–1 code/compose changes are in-repo; ops must still rotate secrets and set `REDIS_PASSWORD` in live `.env.docker`.
+**Ops:** rotate any historically exposed secrets; set `REDIS_PASSWORD` in live `.env.docker`; deploy nginx snippets + optional fail2ban; keep `MASTER_PASSWORD` empty.
 
 ---
 
@@ -227,12 +278,14 @@ flowchart LR
 | Control | Status |
 |---------|--------|
 | Password hashing (bcrypt) | Implemented |
+| Password strength policy | Min 10 + letter + number |
 | Soft-delete (recoverable) | Many domain models |
 | Append-only workflow history | OrderWorkflow / status history |
 | HTTPS at edge | nginx configs |
 | File binaries outside app DB | External File Management API |
-| Field-level encryption at rest in app | **Not identified** |
-| Audit log completeness for all portals | Partial (ActivityLog + workflow) |
+| ActivityLog (OPMS / LM / WP) | Actor + timestamp + IP/UA via audit context |
+| Field-level encryption at rest in app | **Not required** for v1 (Atlas at-rest + bcrypt) — see [03-data-protection-and-ops](./03-data-protection-and-ops.md) |
+| Public company-info projection | Branding only when unauthenticated |
 
 ---
 
@@ -240,12 +293,12 @@ flowchart LR
 
 | Item | Finding |
 |------|---------|
-| Redis | **AUTH via `REDIS_PASSWORD`**; host port bound to `127.0.0.1` only |
+| Redis | **AUTH via `REDIS_PASSWORD`**; host port bound to `127.0.0.1` only; Compose builds `REDIS_URL` from password |
 | message / notification | **Not published** to host (Compose `expose` / network only) |
 | MongoDB | External; protect via Atlas IP allowlists / strong credentials |
-| Frontends | No compose healthchecks; not a direct auth issue |
-| CI/CD secrets scanning | **Not identified** (no GitHub Actions) |
-| Container user hardening | Default Node images — deep review **Not identified** |
+| Containers | Production images run as **`USER node`** (non-root) |
+| CI secrets scanning | **Gitleaks** workflow + auth-service `npm audit` (`.github/workflows/security-scans.yml`) |
+| nginx edge | `limit_req` on login/handoff + dedicated access logs; optional fail2ban |
 
 ---
 
@@ -253,12 +306,15 @@ flowchart LR
 
 | Topic | Status |
 |-------|--------|
-| Authentication | JWT |
-| Authorization | Portal RBAC |
+| Authentication | JWT (`8h` default) + SSO handoff codes |
+| Authorization | Portal RBAC + User Manager admin gate |
 | Confidentiality in transit | TLS at nginx |
-| Rate limiting | Login: IP + IP/email `express-rate-limit` (15 min); nginx `limit_req`; optional fail2ban |
-| Centralized security monitoring / WAF | **Not identified** |
-| Formal threat model / pen-test artifacts | **Not identified** |
+| Rate limiting | Login IP + IP/email (15 min); handoff exchange limit; nginx `limit_req`; optional fail2ban |
+| Secrets scanning | Gitleaks CI |
+| Threat model notes | [02-threat-model.md](./02-threat-model.md) |
+| Centralized WAF | **Not identified** (ops backlog) |
+| Formal pen-test | Scope listed; scheduling **pending** |
+| MFA | **Deferred** (IdP vs TOTP) |
 
 ---
 
@@ -267,9 +323,10 @@ flowchart LR
 1. Rotate `JWT_SECRET` → forces re-login everywhere (coordinate downtime)  
 2. Rotate Mongo, File API, Graph, WhatsApp, VAPID, webhook secrets  
 3. Clear `MASTER_PASSWORD` in production env  
-4. Review nginx access logs for scraping of public/weak routes  
+4. Review nginx `auth-login.access.log` / fail2ban for brute-force (429 spikes)  
 5. Restart services after secret rotation: `docker compose --env-file .env.docker up -d`  
 6. Rebuild frontends if any `NEXT_PUBLIC_*` changed  
+7. Confirm login IP block still returns 429 for 15 minutes after abuse tests  
 
 ---
 
@@ -277,22 +334,22 @@ flowchart LR
 
 Challenges below are derived from §§2–9. Severity is relative to a typical internet-facing Compose + nginx deployment.
 
-| ID | Challenge | Severity | Evidence |
-|----|-----------|----------|----------|
-| C1 | Example/env hygiene — real-looking secrets in `.env.docker.example` | **Critical** | §5 |
-| C2 | Unauthenticated internal notification create routes | **High** | §6 |
-| C3 | Unauthenticated terms-and-conditions and lead-manager attachments routers | **High** | §6 |
-| C4 | Redis without AUTH + host port published (`7014`) | **High** | §8 |
-| C5 | No login rate limiting / account lockout | **High** | §6, §9 |
-| C6 | `MASTER_PASSWORD` break-glass if set in production | **High** | §2, §5 |
-| C7 | JWT SSO handoff via `?token=` query string (Referer/log/history leak) | **Medium** | §2 |
-| C8 | Assume network trust for some service→service routes; published API ports widen blast radius | **Medium** | §4, §6 |
-| C9 | Public `company-info` / webhook surfaces (info disclosure / injection if secret leaks) | **Medium** | §6 |
-| C10 | Work-planner attachment view before auth — intent unclear | **Medium** | §6, §11 |
-| C11 | No field-level encryption at rest; audit coverage only partial | **Medium** | §7 |
-| C12 | No CI secrets scanning, WAF, or formal threat model / pen-test | **Low–Medium** | §8, §9 |
-| C13 | Long JWT TTL (`7d` example); no MFA / password policy in codebase | **Low–Medium** | §2, §11 |
-| C14 | Portal RBAC gaps (user_manager roles Unknown; Permission-code model vs portal roles) | **Low** | §3, §11 |
+| ID | Challenge | Severity | Status | Evidence |
+|----|-----------|----------|--------|----------|
+| C1 | Example/env hygiene — real-looking secrets in `.env.docker.example` | **Critical** | Example sanitized; **rotate if exposed** | §5 |
+| C2 | Unauthenticated internal notification create routes | **High** | **Mitigated** (service JWT) | §6 |
+| C3 | Unauthenticated terms / lead attachments routers | **High** | **Mitigated** | §6 |
+| C4 | Redis without AUTH + host port published | **High** | **Mitigated** (AUTH + localhost bind) | §8 |
+| C5 | No login rate limiting / account lockout | **High** | **Mitigated** (app 15-min windows + nginx + optional fail2ban 15-min ban) | §2, §6, §9 |
+| C6 | `MASTER_PASSWORD` break-glass if set in production | **High** | **Ops:** keep empty | §2, §5 |
+| C7 | JWT SSO handoff via `?token=` query string | **Medium** | **Mitigated** (`?handoff=`; legacy token still accepted) | §2 |
+| C8 | Published API ports / network trust | **Medium** | **Mitigated** (message/notification unpublished) | §4, §6 |
+| C9 | Public `company-info` / webhook surfaces | **Medium** | company-info slimmed; webhooks still secret-dependent | §6 |
+| C10 | Work-planner attachment view before auth | **Medium** | **Mitigated** (behind auth) | §6 |
+| C11 | Field encryption / audit coverage | **Medium** | Audit IP/UA done; app field encryption not required v1 | §7 |
+| C12 | No CI secrets scanning / threat notes | **Low–Medium** | **Mitigated** (gitleaks + threat model doc); WAF/pen-test pending | §8, §9 |
+| C13 | Long JWT TTL / no MFA / no password policy | **Low–Medium** | **Partial** (8h + password policy); MFA deferred | §2 |
+| C14 | Portal RBAC gaps / Permission-code ambiguity | **Low** | **Decided** (portal roles; user_manager gated) | §3 |
 
 ```mermaid
 flowchart TB

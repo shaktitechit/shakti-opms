@@ -6,7 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { CalendarDays, Copy, Download, ExternalLink, Plus, RefreshCw, Trash2, Search, FileSpreadsheet, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { useGetPlansQuery, useDeletePlanMutation } from "@/store/api/workPlannerApiSlice";
-import { isManager, readSessionFromStorage } from "@/utils/authStorage";
+import { isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
 import type { WorkPlanRecord } from "@/types/workPlanner";
 import { ConfirmDeleteWorkPlanModal } from "./ConfirmDeleteWorkPlanModal";
 import { DownloadWorkPlansModal } from "./DownloadWorkPlansModal";
@@ -17,6 +17,7 @@ import {
   canEditPlan,
   formatDiscussionMethod,
   formatPlanDate,
+  planActivityLabel,
   planIdOf,
   renderPlanStatusBadge,
   salesUserLabel,
@@ -24,18 +25,24 @@ import {
 
 import { CopyWorkPlanModal } from "./CopyWorkPlanModal";
 
+type OwnershipScope = "mine" | "team";
+
 export function WorkPlansPage() {
   const searchParams = useSearchParams();
 
   const user = readSessionFromStorage()?.user;
-  const managerRole = isManager(user);
+  const elevatedRole = isWpElevated(user);
 
   const initialStatus = searchParams.get("status") || "all";
   const initialPlanType = searchParams.get("plan_type") || "all";
   const initialSearch = searchParams.get("search") || searchParams.get("q") || "";
+  const initialScope = (searchParams.get("scope") === "team" ? "team" : "mine") as OwnershipScope;
   const [statusFilter, setStatusFilter] = useState(initialStatus);
   const [planTypeFilter, setPlanTypeFilter] = useState(initialPlanType);
   const [searchQuery, setSearchQuery] = useState(initialSearch);
+  const [ownershipScope, setOwnershipScope] = useState<OwnershipScope>(
+    elevatedRole ? initialScope : "mine"
+  );
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -55,8 +62,11 @@ export function WorkPlansPage() {
     if (planTypeFilter && planTypeFilter !== "all") q.plan_type = planTypeFilter;
     if (dateFrom) q.from = dateFrom;
     if (dateTo) q.to = dateTo;
+    if (elevatedRole) {
+      q.scope = ownershipScope;
+    }
     return q;
-  }, [currentPage, itemsPerPage, statusFilter, planTypeFilter, dateFrom, dateTo]);
+  }, [currentPage, itemsPerPage, statusFilter, planTypeFilter, dateFrom, dateTo, elevatedRole, ownershipScope]);
 
   const { data: plansRes, isLoading: loading, refetch: loadData } = useGetPlansQuery(queryParams);
 
@@ -120,8 +130,10 @@ export function WorkPlansPage() {
             Work Plans Management
           </h1>
           <p className="text-xs text-muted">
-            {managerRole
-              ? "Oversee team work plans, review visits, and approve claims"
+            {elevatedRole
+              ? ownershipScope === "mine"
+                ? "Your own work plans — create, track, and complete"
+                : "Team work plans — review visits, tasks, and approvals"
               : "Plan and track daily field visits, tasks, and expense entries"}
           </p>
         </div>
@@ -158,6 +170,40 @@ export function WorkPlansPage() {
           </Link>
         </div>
       </div>
+
+      {/* My Plans vs Team Plans (admin / manager) */}
+      {elevatedRole && (
+        <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              setOwnershipScope("mine");
+              setCurrentPage(1);
+            }}
+            className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
+              ownershipScope === "mine"
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "text-muted hover:bg-surface-muted hover:text-foreground"
+            }`}
+          >
+            My Plans
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setOwnershipScope("team");
+              setCurrentPage(1);
+            }}
+            className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
+              ownershipScope === "team"
+                ? "bg-primary text-primary-foreground shadow-xs"
+                : "text-muted hover:bg-surface-muted hover:text-foreground"
+            }`}
+          >
+            Team Plans
+          </button>
+        </div>
+      )}
 
       {/* Status tabs */}
       <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1.5">
@@ -267,7 +313,7 @@ export function WorkPlansPage() {
               ) : (
                 filteredPlans.map((r) => {
                   const id = planIdOf(r);
-                  const canEdit = canEditPlan(r.status, { isAdmin: managerRole });
+                  const canEdit = canEditPlan(r.status, { isAdmin: elevatedRole });
                   const visitsCount = r.visit_count ?? (r.visits?.length || 0);
                   const worksCount = r.work_count ?? (r.works?.length || 0);
 
@@ -317,11 +363,7 @@ export function WorkPlansPage() {
                         )}
                       </td>
                       <td className="px-4 py-3 text-muted font-medium">
-                        {r.plan_type === "Work From Home" || r.plan_type === "Work From Office"
-                          ? `${worksCount} task${worksCount === 1 ? "" : "s"}`
-                          : r.plan_type === "Leave"
-                          ? "Leave"
-                          : `${visitsCount} visit${visitsCount === 1 ? "" : "s"}`}
+                        {planActivityLabel(r)}
                       </td>
                       <td className="px-4 py-3">{renderPlanStatusBadge(r.status)}</td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">

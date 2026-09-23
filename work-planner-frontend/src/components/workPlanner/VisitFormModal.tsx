@@ -1,12 +1,32 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Building2, Check, ChevronDown, Phone, Search, UserCheck, X } from "lucide-react";
+import { useEffect, useRef, useState, useMemo } from "react";
+import {
+  Building2,
+  Calendar,
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  Info,
+  Phone,
+  Search,
+  User,
+  UserCheck,
+  X,
+} from "lucide-react";
 import type { WorkPlanVisitPartyType, WorkPlanVisitRecord } from "@/types/workPlanner";
 import type { PartyRecord } from "@/types/party";
 import type { LeadRecord } from "@/types/lead";
 import { useGetPartiesQuery } from "@/store/api/partyApiSlice";
 import { useGetLeadsQuery } from "@/store/api/leadsApiSlice";
+import { useGetUsersQuery } from "@/store/api/authApiSlice";
+import { useGetMyTeamQuery, useGetPlansQuery } from "@/store/api/workPlannerApiSlice";
+import {
+  isWpAdmin,
+  isWpManager,
+  isWpElevated,
+  readSessionFromStorage,
+} from "@/utils/authStorage";
 import { formatPlanDate, formatAuditUser, formatDateTime } from "./workPlanUtils";
 
 export type VisitFormModalProps = {
@@ -14,12 +34,78 @@ export type VisitFormModalProps = {
   mode: "create" | "edit";
   initial?: WorkPlanVisitRecord | null;
   planDate?: string | null;
-  /** Assigned executive on the parent work plan — used to scope Existing Leads search. */
+  /** Assigned executive on the parent work plan — used to scope Existing Leads search & assignment. */
   salesUserId?: string | null;
   isSaving: boolean;
   onClose: () => void;
   onSubmit: (body: Record<string, unknown>) => void | Promise<void>;
 };
+
+interface ExecutiveUser {
+  _id: string;
+  id?: string;
+  name: string;
+  email: string;
+  department?: string;
+  portals?: Array<{
+    portal_code?: string;
+    portal?: { code?: string };
+    code?: string;
+    access_roles?: string[];
+  }>;
+}
+
+function hasWorkPlannerAccess(u: ExecutiveUser, sessionUserId?: string): boolean {
+  if (!u) return false;
+  const uId = String(u._id || u.id || "");
+  if (sessionUserId && uId === String(sessionUserId)) return true;
+
+  const uAny = u as any;
+  if (
+    uAny.department === "super_admin" ||
+    (Array.isArray(uAny.role_codes) && uAny.role_codes.includes("super_admin")) ||
+    (Array.isArray(uAny.roles) && uAny.roles.includes("super_admin"))
+  ) {
+    return true;
+  }
+
+  const portals = Array.isArray(u.portals)
+    ? u.portals
+    : Array.isArray(uAny.portal_access)
+    ? uAny.portal_access
+    : [];
+
+  if (portals.length === 0) {
+    return true;
+  }
+
+  const wpPortal = portals.find((p: any) => {
+    if (!p) return false;
+    const code = p.portal_code || p.portal?.code || p.code || p.portal;
+    return code === "work_planner";
+  });
+
+  if (!wpPortal) return false;
+
+  const roles: string[] = Array.isArray(wpPortal.access_roles)
+    ? wpPortal.access_roles
+    : (wpPortal as any).access_role
+      ? [(wpPortal as any).access_role]
+      : [];
+
+  if (roles.length === 0) return true;
+
+  return roles.some((r) => {
+    const normalized = String(r).toLowerCase().trim();
+    return (
+      normalized === "executive" ||
+      normalized === "manager" ||
+      normalized === "admin" ||
+      normalized === "sales" ||
+      normalized === "super_admin"
+    );
+  });
+}
 
 const PARTY_TYPE_OPTIONS: Array<{ value: WorkPlanVisitPartyType; label: string }> = [
   { value: "existing", label: "Existing Party" },
@@ -38,7 +124,10 @@ function ymdFromPlanDate(planDate?: string | null): string {
   if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed.slice(0, 10);
   const d = new Date(trimmed);
   if (isNaN(d.getTime())) return "";
-  return d.toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function timeFromIso(value?: string | null): string {
@@ -126,6 +215,73 @@ export function VisitFormModal({
   onClose,
   onSubmit,
 }: VisitFormModalProps) {
+  const sessionUser = useMemo(() => readSessionFromStorage()?.user, []);
+  const sessionUserId = sessionUser?._id || (sessionUser as { id?: string })?.id || "";
+  const adminRole = isWpAdmin(sessionUser);
+  const managerRole = isWpManager(sessionUser);
+  const elevatedRole = isWpElevated(sessionUser);
+
+  // Queries for allowed executives
+  const { data: usersData } = useGetUsersQuery(undefined, { skip: !open });
+  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !open || !managerRole });
+
+  const allUsers = useMemo(() => (usersData as ExecutiveUser[]) || [], [usersData]);
+
+  // Allowed Executives for assignment:
+  // - Admin: all portal members with work_planner access
+  // - Manager: himself + executives reporting to him
+  // - Executive: himself only
+  const allowedExecutives = useMemo<ExecutiveUser[]>(() => {
+    if (!elevatedRole) {
+      if (!sessionUser) return [];
+      return [
+        {
+          _id: sessionUserId,
+          id: sessionUserId,
+          name: `${sessionUser.name} (Self)`,
+          email: sessionUser.email,
+          department: sessionUser.department,
+        },
+      ];
+    }
+
+    if (adminRole) {
+      return allUsers.filter((u) => hasWorkPlannerAccess(u, sessionUserId));
+    }
+
+    const myTeamMembers = (myTeamData?.members || []) as Array<{ _id?: string; id?: string }>;
+    const teamIdSet = new Set<string>(
+      myTeamMembers.map((m) => String(m._id || m.id || ""))
+    );
+    if (sessionUserId) {
+      teamIdSet.add(String(sessionUserId));
+    }
+    return allUsers.filter((u) => teamIdSet.has(String(u._id || u.id || "")));
+  }, [allUsers, sessionUser, sessionUserId, adminRole, elevatedRole, myTeamData]);
+
+  // Modal internal editable states
+  const [internalPlanDate, setInternalPlanDate] = useState<string>(
+    () => ymdFromPlanDate(planDate) || new Date().toISOString().slice(0, 10)
+  );
+  const [internalSalesUserId, setInternalSalesUserId] = useState<string>(
+    () => salesUserId || sessionUserId || ""
+  );
+
+  const effectiveSalesUserId = internalSalesUserId || sessionUserId || "";
+  const { data: plansData, isFetching: isCheckingPlan } = useGetPlansQuery(
+    {
+      sales_user: effectiveSalesUserId,
+      date: internalPlanDate,
+      limit: 1,
+    },
+    { skip: !open || !internalPlanDate || !effectiveSalesUserId }
+  );
+
+  const existingPlan = useMemo(() => {
+    const list = plansData?.data || [];
+    return list.find((p) => !(p as any).deletedAt && !String(p._id || p.id).startsWith("standalone"));
+  }, [plansData]);
+
   const [partyType, setPartyType] = useState<WorkPlanVisitPartyType>("existing");
   const [selectedPartyId, setSelectedPartyId] = useState<string>("");
   const [selectedLeadId, setSelectedLeadId] = useState<string>("");
@@ -149,7 +305,7 @@ export function VisitFormModal({
   const isExistingParty = partyType === "existing";
   const isExistingLead = partyType === "existing_lead";
   const isExistingType = isExistingParty || isExistingLead;
-  const assignedExecutiveId = salesUserId?.trim() || "";
+  const assignedExecutiveId = internalSalesUserId?.trim() || "";
 
   const { data: partiesData = [], isLoading: isPartiesLoading } = useGetPartiesQuery(
     { search: partySearch.trim() },
@@ -166,11 +322,6 @@ export function VisitFormModal({
     { skip: !open || !isExistingLead }
   );
 
-  const planDateYmd = ymdFromPlanDate(planDate);
-  const planDateLabel = planDateYmd
-    ? formatPlanDate(`${planDateYmd}T00:00:00`)
-    : "—";
-
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -182,8 +333,12 @@ export function VisitFormModal({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Only re-initialize when modal transitions from closed to open or when initial record changes
+  const prevOpenRef = useRef(false);
   useEffect(() => {
-    if (open) {
+    if (open && (!prevOpenRef.current || initial)) {
+      setInternalPlanDate(ymdFromPlanDate(planDate) || new Date().toISOString().slice(0, 10));
+      setInternalSalesUserId(salesUserId || sessionUserId || "");
       if (initial) {
         setPartyType(initial.party_type || "existing");
         const pId =
@@ -223,7 +378,8 @@ export function VisitFormModal({
       setLeadDropdownOpen(false);
       setErrors({});
     }
-  }, [open, initial]);
+    prevOpenRef.current = open;
+  }, [open, initial, planDate, salesUserId, sessionUserId]);
 
   if (!open) return null;
 
@@ -279,6 +435,9 @@ export function VisitFormModal({
 
   function handleSave() {
     const errs: Record<string, string> = {};
+    if (!internalPlanDate) {
+      errs.planDate = "Plan date is required";
+    }
     if (!partyName.trim()) {
       errs.partyName = isExistingLead
         ? "Lead / company name is required"
@@ -307,8 +466,10 @@ export function VisitFormModal({
         ? contactEmail.trim()
         : `${(contactPerson.trim().toLowerCase().replace(/[^a-z0-9]/g, "") || "contact")}@client.com`;
 
-    // Backend only accepts `party` for party_type=existing; omit for leads / new entries.
+    // Backend accepts `party` for party_type=existing; omit for leads / new entries.
     onSubmit({
+      planDate: internalPlanDate,
+      salesUserId: internalSalesUserId || sessionUserId,
       party_type: partyType,
       ...(isExistingParty && selectedPartyId ? { party: selectedPartyId } : {}),
       party_name: partyName.trim(),
@@ -318,8 +479,8 @@ export function VisitFormModal({
       address: address.trim() || undefined,
       purpose: purpose.trim() || undefined,
       notes: notes.trim() || undefined,
-      planned_start_time: combinePlanDateAndTime(planDate, plannedStartTime),
-      planned_end_time: combinePlanDateAndTime(planDate, plannedEndTime),
+      planned_start_time: combinePlanDateAndTime(internalPlanDate, plannedStartTime),
+      planned_end_time: combinePlanDateAndTime(internalPlanDate, plannedEndTime),
     });
   }
 
@@ -354,23 +515,109 @@ export function VisitFormModal({
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <div>
             <h2 className="text-base font-semibold text-foreground">
-              {mode === "create" ? "Add Visit" : "Edit Visit"}
+              {mode === "create" ? "Add Field Visit" : "Edit Field Visit"}
             </h2>
             <p className="text-xs text-muted">
-              For plan date: <span className="font-medium">{planDateLabel}</span>
+              {adminRole
+                ? "Portal Admin — Assign and schedule visit for any portal member"
+                : managerRole
+                ? "Portal Manager — Assign and schedule visit for yourself or your reporting team"
+                : "Schedule your field visit details"}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
             disabled={isSaving}
-            className="rounded-lg p-1 text-muted hover:bg-surface-muted hover:text-foreground"
+            className="rounded-lg p-1 text-muted hover:bg-surface-muted hover:text-foreground cursor-pointer"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-4 px-5 py-4">
+          {/* Date & Executive Assignment Bar within Scope */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-surface-muted/60 rounded-xl border border-border">
+            <div>
+              <label className={labelClass}>
+                <Calendar className="inline h-3.5 w-3.5 mr-1 text-primary" />
+                Plan Date <span className="text-rose-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={internalPlanDate}
+                onChange={(e) => setInternalPlanDate(e.target.value)}
+                disabled={isSaving}
+                className={inputClass}
+              />
+              {errors.planDate && (
+                <p className="mt-1 text-xs text-rose-500">{errors.planDate}</p>
+              )}
+            </div>
+
+            <div>
+              <label className={labelClass}>
+                <User className="inline h-3.5 w-3.5 mr-1 text-primary" />
+                Assign Executive / Team Member <span className="text-rose-500">*</span>
+              </label>
+              {elevatedRole ? (
+                <select
+                  value={internalSalesUserId}
+                  onChange={(e) => setInternalSalesUserId(e.target.value)}
+                  disabled={isSaving}
+                  className={inputClass}
+                >
+                  {allowedExecutives.map((exec) => (
+                    <option key={exec._id || exec.id} value={exec._id || exec.id}>
+                      {exec.name} {exec._id === sessionUserId ? "(Self)" : ""}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground">
+                  {sessionUser?.name || "Self"} (Executive)
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Work Plan Detection Banner */}
+          {internalPlanDate && (
+            <div
+              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition ${
+                existingPlan
+                  ? "border-emerald-500/30 bg-emerald-50/70 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300"
+                  : "border-border bg-surface-muted/40 text-muted"
+              }`}
+            >
+              {isCheckingPlan ? (
+                <div className="flex items-center gap-2">
+                  <div className="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                  <span>Checking for work plan…</span>
+                </div>
+              ) : existingPlan ? (
+                <>
+                  <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <div>
+                    <span className="font-semibold text-emerald-900 dark:text-emerald-200">
+                      Work Plan Found ({existingPlan.status || "planned"}):
+                    </span>{" "}
+                    This visit will be automatically added to the work plan for{" "}
+                    {formatPlanDate(internalPlanDate)}.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Info className="h-4 w-4 shrink-0 text-muted" />
+                  <div>
+                    <span className="font-medium text-foreground">No work plan for this date:</span>{" "}
+                    This visit will be created as a standalone visit.
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           <div>
             <label className={labelClass}>
               Party Category / Type <span className="text-rose-500">*</span>
@@ -418,7 +665,7 @@ export function VisitFormModal({
 
               {isExistingLead && !assignedExecutiveId ? (
                 <p className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-800">
-                  Showing all accessible leads. Select an executive on the work plan to filter by specific assignee.
+                  Showing all accessible leads. Select an executive above to filter by specific assignee.
                 </p>
               ) : null}
 
@@ -450,147 +697,104 @@ export function VisitFormModal({
                   <button
                     type="button"
                     onClick={() => {
+                      setPartyName("");
                       setSelectedPartyId("");
                       setSelectedLeadId("");
-                      setPartyName("");
                       setPartySearch("");
                       setLeadSearch("");
-                      if (isExistingLead) setLeadDropdownOpen(true);
-                      else setPartyDropdownOpen(true);
                     }}
                     className="absolute right-2.5 top-2.5 text-muted hover:text-foreground"
-                    title="Clear selection"
                   >
                     <X className="h-4 w-4" />
                   </button>
-                ) : (
-                  <ChevronDown className="absolute right-2.5 top-2.5 h-4 w-4 text-muted pointer-events-none" />
-                )}
+                ) : null}
               </div>
-              {errors.partyName ? (
-                <p className="mt-1 text-xs text-rose-500">{errors.partyName}</p>
-              ) : null}
+
+              {errors.partyName && (
+                <p className="text-xs text-rose-500">{errors.partyName}</p>
+              )}
 
               {dropdownOpen && (
-                <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-60 overflow-y-auto rounded-xl border border-border bg-card shadow-xl p-1.5 space-y-1">
+                <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-60 overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
                   {isSearchLoading ? (
-                    <div className="p-3 text-center text-xs text-muted">
-                      {isExistingLead ? "Searching leads…" : "Searching parties…"}
-                    </div>
+                    <div className="p-3 text-center text-xs text-muted">Searching…</div>
                   ) : isExistingLead ? (
                     leadsData.length === 0 ? (
                       <div className="p-3 text-center text-xs text-muted">
-                        No matching leads for this executive. You can type details manually below.
+                        No leads found. You can switch to &quot;New Leads&quot; to add manually.
                       </div>
                     ) : (
-                      leadsData.map((lead) => {
-                        const leadId = lead._id || lead.id || "";
-                        const isSelected = leadId === selectedLeadId;
-                        const leadAddr = formatLeadAddress(lead);
+                      leadsData.map((lead: LeadRecord) => {
+                        const lId = lead._id || lead.id || "";
                         const primary = primaryLeadContact(lead);
+                        const isSelected = selectedLeadId === lId;
                         return (
-                          <button
-                            key={leadId}
-                            type="button"
+                          <div
+                            key={lId}
                             onClick={() => handleSelectLead(lead)}
-                            className={`w-full flex items-start justify-between rounded-lg p-2.5 text-left text-xs transition ${
-                              isSelected
-                                ? "bg-primary-muted text-primary font-semibold"
-                                : "hover:bg-surface-muted text-foreground"
+                            className={`flex cursor-pointer items-start justify-between border-b border-border/50 p-2.5 text-xs hover:bg-surface-muted transition ${
+                              isSelected ? "bg-primary/10" : ""
                             }`}
                           >
-                            <div className="space-y-0.5 truncate">
-                              <div className="flex items-center gap-2 font-bold text-sm">
-                                <Building2 className="h-4 w-4 shrink-0 text-muted" />
-                                <span className="truncate">{leadDisplayName(lead)}</span>
-                                {lead.lead_no ? (
-                                  <span className="rounded bg-surface-muted px-1.5 py-0.2 text-[10px] font-normal text-muted">
-                                    {lead.lead_no}
-                                  </span>
-                                ) : null}
-                                {lead.status ? (
-                                  <span className="rounded bg-surface-muted px-1.5 py-0.2 text-[10px] font-normal text-muted capitalize">
-                                    {String(lead.status).replace(/_/g, " ")}
-                                  </span>
-                                ) : null}
+                            <div className="space-y-0.5 min-w-0 flex-1">
+                              <div className="font-semibold text-foreground truncate">
+                                {leadDisplayName(lead)}
                               </div>
-                              <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted">
-                                {(primary?.name || lead.name) && (
-                                  <span className="flex items-center gap-1">
-                                    <UserCheck className="h-3 w-3 text-muted" />
-                                    {primary?.name || lead.name}
-                                  </span>
-                                )}
-                                {(primary?.phone || lead.phone) && (
-                                  <span className="flex items-center gap-1">
-                                    <Phone className="h-3 w-3 text-muted" />
-                                    {primary?.phone || lead.phone}
-                                  </span>
-                                )}
-                              </div>
-                              {leadAddr ? (
-                                <p className="text-[11px] text-muted truncate">{leadAddr}</p>
+                              {primary?.name ? (
+                                <div className="text-muted text-[11px] truncate">
+                                  {primary.name}
+                                  {primary.phone ? ` • ${primary.phone}` : ""}
+                                </div>
+                              ) : null}
+                              {formatLeadAddress(lead) ? (
+                                <div className="text-muted/80 text-[11px] truncate">
+                                  {formatLeadAddress(lead)}
+                                </div>
                               ) : null}
                             </div>
                             {isSelected && (
                               <Check className="h-4 w-4 text-primary shrink-0 ml-2 mt-0.5" />
                             )}
-                          </button>
+                          </div>
                         );
                       })
                     )
                   ) : partiesData.length === 0 ? (
                     <div className="p-3 text-center text-xs text-muted">
-                      No matching parties found. You can type party details manually below.
+                      No parties found. You can switch to &quot;New Party&quot; to add manually.
                     </div>
                   ) : (
-                    partiesData.map((party) => {
+                    partiesData.map((party: PartyRecord) => {
                       const pId = party._id || party.id || "";
-                      const isSelected = pId === selectedPartyId;
-                      const partyAddr = formatPartyAddress(party);
+                      const isSelected = selectedPartyId === pId;
                       return (
-                        <button
+                        <div
                           key={pId}
-                          type="button"
                           onClick={() => handleSelectParty(party)}
-                          className={`w-full flex items-start justify-between rounded-lg p-2.5 text-left text-xs transition ${
-                            isSelected
-                              ? "bg-primary-muted text-primary font-semibold"
-                              : "hover:bg-surface-muted text-foreground"
+                          className={`flex cursor-pointer items-start justify-between border-b border-border/50 p-2.5 text-xs hover:bg-surface-muted transition ${
+                            isSelected ? "bg-primary/10" : ""
                           }`}
                         >
-                          <div className="space-y-0.5 truncate">
-                            <div className="flex items-center gap-2 font-bold text-sm">
-                              <Building2 className="h-4 w-4 shrink-0 text-muted" />
-                              <span className="truncate">{party.party_name}</span>
-                              {party.party_type && (
-                                <span className="rounded bg-surface-muted px-1.5 py-0.2 text-[10px] font-normal text-muted">
-                                  {party.party_type}
-                                </span>
-                              )}
+                          <div className="space-y-0.5 min-w-0 flex-1">
+                            <div className="font-semibold text-foreground truncate">
+                              {party.party_name}
                             </div>
-                            <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted">
-                              {(party.contact_person || party.contacts?.[0]?.contact_person) && (
-                                <span className="flex items-center gap-1">
-                                  <UserCheck className="h-3 w-3 text-muted" />
-                                  {party.contact_person || party.contacts?.[0]?.contact_person}
-                                </span>
-                              )}
-                              {(party.mobile || party.contacts?.[0]?.contact_number) && (
-                                <span className="flex items-center gap-1">
-                                  <Phone className="h-3 w-3 text-muted" />
-                                  {party.mobile || party.contacts?.[0]?.contact_number}
-                                </span>
-                              )}
-                            </div>
-                            {partyAddr ? (
-                              <p className="text-[11px] text-muted truncate">{partyAddr}</p>
+                            {party.contact_person ? (
+                              <div className="text-muted text-[11px] truncate">
+                                {party.contact_person}
+                                {party.mobile ? ` • ${party.mobile}` : ""}
+                              </div>
+                            ) : null}
+                            {formatPartyAddress(party) ? (
+                              <div className="text-muted/80 text-[11px] truncate">
+                                {formatPartyAddress(party)}
+                              </div>
                             ) : null}
                           </div>
                           {isSelected && (
                             <Check className="h-4 w-4 text-primary shrink-0 ml-2 mt-0.5" />
                           )}
-                        </button>
+                        </div>
                       );
                     })
                   )}
@@ -600,84 +804,89 @@ export function VisitFormModal({
           ) : (
             <div>
               <label className={labelClass}>
-                Party / Company Name <span className="text-rose-500">*</span>
+                {partyType === "new_lead" ? "Lead / Company Name" : "Party / Company Name"}{" "}
+                <span className="text-rose-500">*</span>
               </label>
               <input
                 type="text"
                 value={partyName}
                 onChange={(e) => setPartyName(e.target.value)}
+                placeholder="e.g. Apex Health Systems"
                 disabled={isSaving}
-                placeholder="Hospital / Clinic / Party Name"
                 className={inputClass}
               />
-              {errors.partyName ? (
+              {errors.partyName && (
                 <p className="mt-1 text-xs text-rose-500">{errors.partyName}</p>
-              ) : null}
+              )}
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelClass}>
-                Contact Person <span className="text-rose-500">*</span>
+                Contact Person Name <span className="text-rose-500">*</span>
               </label>
               <input
                 type="text"
                 value={contactPerson}
                 onChange={(e) => setContactPerson(e.target.value)}
+                placeholder="Dr. Rajesh Gupta / Mr. Sharma"
                 disabled={isSaving}
-                placeholder="Dr. John Doe / Manager"
                 className={inputClass}
               />
-              {errors.contactPerson ? (
+              {errors.contactPerson && (
                 <p className="mt-1 text-xs text-rose-500">{errors.contactPerson}</p>
-              ) : null}
+              )}
             </div>
+
             <div>
               <label className={labelClass}>
-                Contact Number <span className="text-rose-500">*</span>
+                Contact Phone / Mobile <span className="text-rose-500">*</span>
               </label>
               <input
-                type="text"
+                type="tel"
                 value={contactNumber}
                 onChange={(e) => setContactNumber(e.target.value)}
+                placeholder="9876543210"
                 disabled={isSaving}
-                placeholder="+91 98765 43210"
                 className={inputClass}
               />
-              {errors.contactNumber ? (
+              {errors.contactNumber && (
                 <p className="mt-1 text-xs text-rose-500">{errors.contactNumber}</p>
-              ) : null}
+              )}
             </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className={labelClass}>Contact Email</label>
+              <label className={labelClass}>Contact Email (Optional)</label>
               <input
                 type="email"
                 value={contactEmail}
                 onChange={(e) => setContactEmail(e.target.value)}
+                placeholder="contact@client.com"
                 disabled={isSaving}
-                placeholder="contact@hospital.com"
                 className={inputClass}
               />
-              {errors.contactEmail ? (
+              {errors.contactEmail && (
                 <p className="mt-1 text-xs text-rose-500">{errors.contactEmail}</p>
-              ) : null}
+              )}
+            </div>
+
+            <div>
+              <label className={labelClass}>Address / Location</label>
+              <input
+                type="text"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                placeholder="City, State, or full address"
+                disabled={isSaving}
+                className={inputClass}
+              />
             </div>
           </div>
 
-          <div>
-            <label className={labelClass}>Address / Location</label>
-            <input
-              type="text"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              disabled={isSaving}
-              placeholder="Street address, city, area"
-              className={inputClass}
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className={labelClass}>Planned Start Time</label>
               <input
@@ -688,6 +897,7 @@ export function VisitFormModal({
                 className={inputClass}
               />
             </div>
+
             <div>
               <label className={labelClass}>Planned End Time</label>
               <input
@@ -701,66 +911,44 @@ export function VisitFormModal({
           </div>
 
           <div>
-            <label className={labelClass}>Visit Purpose</label>
+            <label className={labelClass}>Purpose / Objective</label>
             <input
               type="text"
               value={purpose}
               onChange={(e) => setPurpose(e.target.value)}
+              placeholder="e.g. Product Demo, Order collection, Follow-up meeting..."
               disabled={isSaving}
-              placeholder="e.g. Product demo, Payment collection, Routine check"
               className={inputClass}
             />
           </div>
 
           <div>
-            <label className={labelClass}>Pre-visit Notes</label>
+            <label className={labelClass}>Notes (Optional)</label>
             <textarea
+              rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
+              placeholder="Any preparatory notes, reference quotes, or key discussion points"
               disabled={isSaving}
-              rows={2}
-              placeholder="Additional background notes or reminders..."
               className={inputClass}
             />
           </div>
-
-          {initial && (initial.created_by || initial.updated_by || initial.createdAt || initial.updatedAt) && (
-            <div className="rounded-lg border border-border bg-surface-muted/60 p-3 space-y-1.5 text-xs text-muted">
-              <div className="font-semibold text-foreground">Audit Information</div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                {(initial.created_by || initial.created_by_role) && (
-                  <div>
-                    <span className="font-medium text-foreground">Created By:</span>{" "}
-                    {formatAuditUser(initial.created_by, initial.created_by_role)}
-                    {initial.createdAt && ` on ${formatDateTime(initial.createdAt)}`}
-                  </div>
-                )}
-                {(initial.updated_by || initial.updated_by_role) && (
-                  <div>
-                    <span className="font-medium text-foreground">Updated By:</span>{" "}
-                    {formatAuditUser(initial.updated_by, initial.updated_by_role)}
-                    {initial.updatedAt && ` on ${formatDateTime(initial.updatedAt)}`}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3 bg-surface-muted/50">
+        <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3 bg-surface-muted/30">
           <button
             type="button"
-            disabled={isSaving}
             onClick={onClose}
-            className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-muted disabled:opacity-50 transition"
+            disabled={isSaving}
+            className="rounded-lg border border-border px-4 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition cursor-pointer"
           >
             Cancel
           </button>
           <button
             type="button"
-            disabled={isSaving}
             onClick={handleSave}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-50 transition"
+            disabled={isSaving}
+            className="rounded-lg bg-primary px-5 py-2 text-xs font-bold text-primary-foreground hover:bg-primary-hover shadow-xs transition cursor-pointer"
           >
             {isSaving ? "Saving…" : mode === "create" ? "Add Visit" : "Save Changes"}
           </button>

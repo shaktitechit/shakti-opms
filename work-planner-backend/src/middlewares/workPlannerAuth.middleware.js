@@ -3,7 +3,15 @@
  * @module middlewares/workPlannerAuth.middleware
  */
 const { ApiError } = require('../utils/ApiError');
-const { isManager, isExecutive } = require('../modules/workPlanner/workPlanner.constants');
+const {
+  isManager,
+  isExecutive,
+  isWpAdmin,
+  isWpManager,
+  isWpElevated,
+  isSuperAdminBypass,
+  getWorkPlannerAccessRoles,
+} = require('../modules/workPlanner/workPlanner.constants');
 
 /**
  * Validates that the user has access to work_planner portal.
@@ -11,6 +19,9 @@ const { isManager, isExecutive } = require('../modules/workPlanner/workPlanner.c
 function requireWorkPlannerAccess(req, res, next) {
   if (!req.user) {
     return next(new ApiError(401, 'Authentication required'));
+  }
+  if (isSuperAdminBypass(req.user)) {
+    return next();
   }
   const portalAccess = Array.isArray(req.user.portals)
     ? req.user.portals.find((p) => p.portal_code === 'work_planner')
@@ -23,23 +34,23 @@ function requireWorkPlannerAccess(req, res, next) {
 }
 
 /**
- * Requires one of the specified portal roles (e.g. 'manager', 'executive') on work_planner portal.
+ * Requires one of the specified portal roles (e.g. 'manager', 'admin') on work_planner portal.
+ * Super-admin bypass always allowed.
  */
 function requireWorkPlannerRole(...allowedRoles) {
+  const allowed = allowedRoles.map((r) => String(r).toLowerCase());
   return (req, res, next) => {
     if (!req.user) {
       return next(new ApiError(401, 'Authentication required'));
     }
+    if (isSuperAdminBypass(req.user)) {
+      return next();
+    }
 
-    const portalAccess = Array.isArray(req.user.portals)
-      ? req.user.portals.find((p) => p.portal_code === 'work_planner')
-      : null;
-
-    if (portalAccess && Array.isArray(portalAccess.access_roles)) {
-      const hasRole = allowedRoles.some((role) => portalAccess.access_roles.includes(role));
-      if (hasRole) {
-        return next();
-      }
+    const portalRoles = getWorkPlannerAccessRoles(req.user);
+    const hasRole = allowed.some((role) => portalRoles.includes(role));
+    if (hasRole) {
+      return next();
     }
 
     return next(
@@ -54,6 +65,9 @@ function requireWorkPlannerRole(...allowedRoles) {
 module.exports = {
   isManager,
   isExecutive,
+  isWpAdmin,
+  isWpManager,
+  isWpElevated,
   requireWorkPlannerAccess,
   requireWorkPlannerRole,
 };

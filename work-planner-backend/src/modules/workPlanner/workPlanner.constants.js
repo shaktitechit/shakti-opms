@@ -134,56 +134,80 @@ function isExpenseReceiptRequired(amount) {
   return Number(amount) > EXPENSE_RECEIPT_REQUIRED_ABOVE;
 }
 
-/**
- * Manager role on work_planner portal.
- * Evaluates portal assignment `work_planner` role `manager`.
- */
-function isManager(user) {
-  if (!user) return false;
-  const roles = [
+function normalizeRole(r) {
+  return String(r || '')
+    .trim()
+    .toLowerCase();
+}
+
+function globalRoleTokens(user) {
+  if (!user) return [];
+  return [
     ...(Array.isArray(user.roles) ? user.roles : []),
     ...(Array.isArray(user.role_codes) ? user.role_codes : []),
     user.role,
+    user.user_role,
     user.department,
-  ].filter(Boolean).map((r) => String(r).toLowerCase());
+  ]
+    .filter(Boolean)
+    .map(normalizeRole);
+}
 
-  if (roles.some((r) => ['super_admin', 'admin', 'manager'].includes(r))) return true;
-
+/** Portal access_roles on work_planner only (source of truth for WP RBAC). */
+function getWorkPlannerAccessRoles(user) {
+  if (!user) return [];
   const portalAccess = Array.isArray(user.portals)
-    ? user.portals.find((p) => p && String(p.portal_code || '').toLowerCase() === 'work_planner')
+    ? user.portals.find((p) => p && normalizeRole(p.portal_code || p.portal) === 'work_planner')
     : null;
-  if (portalAccess && Array.isArray(portalAccess.access_roles)) {
-    return portalAccess.access_roles.some((r) =>
-      ['manager', 'admin', 'super_admin'].includes(String(r).toLowerCase())
-    );
-  }
-  return false;
+  if (!portalAccess || !Array.isArray(portalAccess.access_roles)) return [];
+  return portalAccess.access_roles.map(normalizeRole).filter(Boolean);
+}
+
+/** Global super_admin bypass only (department/role admin alone is not WP admin). */
+function isSuperAdminBypass(user) {
+  return globalRoleTokens(user).includes('super_admin');
+}
+
+/**
+ * Work Planner admin: portal role `admin`, or global super_admin bypass.
+ * Sees all plans / tasks / visits / expenses.
+ */
+function isWpAdmin(user) {
+  if (!user) return false;
+  if (isSuperAdminBypass(user)) return true;
+  return getWorkPlannerAccessRoles(user).includes('admin');
+}
+
+/**
+ * Work Planner manager: portal role `manager` (not admin).
+ * Sees self + direct-report executives.
+ */
+function isWpManager(user) {
+  if (!user) return false;
+  if (isWpAdmin(user)) return false;
+  return getWorkPlannerAccessRoles(user).includes('manager');
+}
+
+/** Admin or manager — elevated actions (approve, edit team plans, etc.). */
+function isWpElevated(user) {
+  return isWpAdmin(user) || isWpManager(user);
 }
 
 function isExecutive(user) {
   if (!user) return false;
-  const roles = [
-    ...(Array.isArray(user.roles) ? user.roles : []),
-    ...(Array.isArray(user.role_codes) ? user.role_codes : []),
-    user.role,
-    user.department,
-  ].filter(Boolean).map((r) => String(r).toLowerCase());
-
-  if (roles.some((r) => ['executive', 'sales'].includes(r))) return true;
-
-  const portalAccess = Array.isArray(user.portals)
-    ? user.portals.find((p) => p && String(p.portal_code || '').toLowerCase() === 'work_planner')
-    : null;
-  if (portalAccess && Array.isArray(portalAccess.access_roles)) {
-    return portalAccess.access_roles.some((r) =>
-      ['executive', 'sales'].includes(String(r).toLowerCase())
-    );
-  }
-  return false;
+  const portalRoles = getWorkPlannerAccessRoles(user);
+  if (portalRoles.some((r) => ['executive', 'sales'].includes(r))) return true;
+  return globalRoleTokens(user).some((r) => ['executive', 'sales'].includes(r));
 }
 
+/** @deprecated Use isWpElevated — kept for call-site compatibility. */
+function isManager(user) {
+  return isWpElevated(user);
+}
+
+/** @deprecated Use isWpElevated — privilege checks (not "see all"). */
 function isAdminDept(user) {
-  return isManager(user);
+  return isWpElevated(user);
 }
 
 function isSalesDept(user) {
@@ -209,6 +233,11 @@ module.exports = {
   isExpenseAddWindowOpen,
   isExpenseAddWindowEnded,
   isExpenseReceiptRequired,
+  getWorkPlannerAccessRoles,
+  isSuperAdminBypass,
+  isWpAdmin,
+  isWpManager,
+  isWpElevated,
   isManager,
   isExecutive,
   isAdminDept,

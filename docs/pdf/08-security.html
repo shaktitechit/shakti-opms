@@ -37,26 +37,27 @@
 
 <div class="cover">
   <h1>OPMS Security Documentation</h1>
-  <p class="subtitle">Authentication, authorization, secrets, edge TLS, and known risks</p>
+  <p class="subtitle">Authentication, authorization, rate limits / 15-min IP block, secrets, edge TLS, and hardening plan</p>
   <p class="meta">Generated: 2026-09-22</p>
   <p class="meta">Diagrams rendered with Mermaid 11 · Secrets redacted</p>
 </div>
 <nav class="toc">
   <h1>Contents</h1>
-  <ul><li>08-security/01-security-overview.md</li><li>02-architecture/07-authentication-authorization.md</li><li>04-api/02-authentication.md</li><li>03-functional/authentication.md</li><li>06-developer-deployment/19-security.md</li><li>06-developer-deployment/05-environment-variables.md</li></ul>
+  <ul><li>08-security/01-security-overview.md</li><li>08-security/02-threat-model.md</li><li>08-security/03-data-protection-and-ops.md</li><li>08-security/04-authorization-model.md</li><li>02-architecture/07-authentication-authorization.md</li><li>04-api/02-authentication.md</li><li>03-functional/authentication.md</li><li>06-developer-deployment/19-security.md</li><li>06-developer-deployment/05-environment-variables.md</li></ul>
 </nav>
 <section class="doc-section" data-source="08-security/01-security-overview.md">
   <p class="source-path">Source: 08-security/01-security-overview.md</p>
   <h1>OPMS Security Documentation</h1>
-<p><strong>Status:</strong> Verified from repository implementation unless marked otherwise.<br><strong>Scope:</strong> Authentication, authorization, secrets, transport security, known risks, and hardening guidance derived from code/config — not a penetration-test report.</p>
+<p><strong>Status:</strong> Verified from repository implementation (Phases 0–3 hardening applied) unless marked otherwise.<br><strong>Scope:</strong> Authentication, authorization, secrets, transport security, known risks, consolidated challenges (§11), phased improvement plan (§12), plus threat model / data-protection / authorization companion docs — not a penetration-test report.</p>
 <p><strong>Sources:</strong></p>
 <ul>
-<li><code>auth-service/</code>, <code>opms-backend/src/middlewares/</code></li>
-<li>Portal middlewares (lead-manager, work-planner)</li>
-<li><code>nginx/</code> TLS configs</li>
+<li><code>auth-service/</code>, <code>opms-backend/src/middlewares/</code>, portal middlewares (lead-manager, work-planner)</li>
+<li><code>nginx/</code> TLS + <code>logging.conf</code> / <code>auth-rate-limit.conf</code> / fail2ban jails</li>
 <li><code>docker-compose.yml</code>, <code>.env.docker.example</code>, <code>DOCKER.md</code></li>
+<li><code>.github/workflows/security-scans.yml</code></li>
 <li><code>docs/02-architecture/07-authentication-authorization.md</code></li>
 <li><code>docs/06-developer-deployment/19-security.md</code></li>
+<li>Companion: <a href="./02-threat-model.md">02-threat-model</a>, <a href="./03-data-protection-and-ops.md">03-data-protection-and-ops</a>, <a href="./04-authorization-model.md">04-authorization-model</a></li>
 </ul>
 <hr>
 <h2>1. Security model overview</h2>
@@ -68,7 +69,7 @@
   API --&gt;|verify JWT_SECRET| JWT[Shared JWT secret]
   API --&gt;|portal_code + access_roles| RBAC[Portal RBAC]
   API --&gt; MONGO[(MongoDB external)]
-  API --&gt; REDIS[(Redis - no AUTH in compose)]
+  API --&gt; REDIS[(Redis + AUTH)]
   API --&gt; FAPI[File Management API + API key]</div></div>
 <h3>Trust boundaries</h3>
 <table>
@@ -92,7 +93,7 @@
 <tr>
 <td>Service → service</td>
 <td>Internal HTTP on compose network</td>
-<td>Shared JWT; some internal routes unauthenticated</td>
+<td>Shared JWT; internal notification routes require service JWT</td>
 </tr>
 <tr>
 <td>Service → Mongo</td>
@@ -102,7 +103,7 @@
 <tr>
 <td>Service → Redis</td>
 <td>Queue/jobs</td>
-<td>No Redis password in current compose</td>
+<td>Redis AUTH (<code>REDIS_PASSWORD</code>); host bind <code>127.0.0.1</code> only</td>
 </tr>
 <tr>
 <td>Service → File API</td>
@@ -116,8 +117,10 @@
 <ul>
 <li><strong>JWT</strong> signed with shared <code>JWT_SECRET</code> across services</li>
 <li>Passwords hashed with <strong>bcrypt</strong> (<code>bcryptjs</code>)</li>
-<li>Token TTL via <code>JWT_EXPIRES_IN</code> (example default <code>7d</code>)</li>
+<li>Token TTL via <code>JWT_EXPIRES_IN</code> (default <strong><code>8h</code></strong>)</li>
 <li>Optional <strong><code>MASTER_PASSWORD</code></strong>: break-glass login as any user if set — <strong>must be empty in production</strong></li>
+<li>Password policy: min <strong>10</strong> chars, letter + number, no spaces (create user / change password)</li>
+<li>Portal SSO: one-time <strong><code>?handoff=</code></strong> codes (legacy <code>?token=</code> still accepted)</li>
 </ul>
 <h3>Login flow</h3>
 <div class="mermaid-wrap"><div class="mermaid">sequenceDiagram
@@ -154,21 +157,87 @@ Authorization: Bearer &lt;token&gt;
 <tbody><tr>
 <td>app-frontend</td>
 <td><code>shakti.app.session</code> + cookies</td>
-<td>SSO hub; launches peers with <code>?token=</code></td>
+<td>SSO hub; launches peers with one-time <code>?handoff=</code></td>
 </tr>
 <tr>
 <td>opms-frontend</td>
 <td><code>medica.auth</code> + cookies</td>
-<td>Consumes SSO token</td>
+<td>Exchanges handoff (middleware + bootstrap); legacy <code>?token=</code> still accepted</td>
 </tr>
 <tr>
 <td>user / lead / work planner</td>
 <td>per-app <code>shakti.*.session</code></td>
-<td>Shared cookie names used for middleware gates</td>
+<td>Middleware exchanges <code>?handoff=</code> → session cookies</td>
 </tr>
 </tbody></table>
-<p><strong>Risk note:</strong> JWT in query string for SSO is convenient but can leak via Referer/logs/history. Prefer short-lived handoff and strip token after consume (apps attempt strip after bootstrap).</p>
-<hr>
+<h3>SSO handoff (preferred)</h3>
+<pre><code class="language-http">POST /api/auth/handoff
+Authorization: Bearer &lt;access-token&gt;
+
+→ { &quot;code&quot;: &quot;&lt;one-time&gt;&quot;, &quot;expires_in&quot;: 60 }
+
+POST /api/auth/handoff/exchange
+Content-Type: application/json
+
+{ &quot;code&quot;: &quot;&lt;one-time&gt;&quot; }
+
+→ { &quot;token&quot;: &quot;&lt;jwt&gt;&quot;, &quot;user&quot;: { ... } }
+</code></pre>
+<p><strong>Risk note:</strong> Prefer <code>?handoff=</code> over putting JWTs in URLs. Legacy <code>?token=</code> remains during rollout. SSE/file browser navigations may still append <code>?token=</code> (separate from portal SSO).</p>
+<p>Default access-token TTL is <strong><code>JWT_EXPIRES_IN=8h</code></strong>. Refresh tokens are not implemented — users re-login after expiry.</p>
+<p>Password policy (create user / change password): <strong>min 10 characters</strong>, at least one letter and one number, no spaces.</p>
+<h3>Login rate limiting &amp; 15-minute IP block</h3>
+<p>Brute-force controls are layered (app → nginx → optional fail2ban).</p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Where</th>
+<th>Rule</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>App — IP</td>
+<td><code>auth-service</code> <code>loginIpBlocker</code></td>
+<td><strong>40</strong> failed logins / <strong>15 min</strong> per IP (<code>skipSuccessfulRequests</code>)</td>
+<td>HTTP <strong>429</strong> — try again in 15 minutes</td>
+</tr>
+<tr>
+<td>App — IP+email</td>
+<td><code>loginEmailRateLimiter</code></td>
+<td><strong>20</strong> failed / <strong>15 min</strong> per IP+email</td>
+<td>HTTP <strong>429</strong></td>
+</tr>
+<tr>
+<td>App — handoff</td>
+<td><code>handoffExchangeRateLimiter</code></td>
+<td><strong>40</strong> / <strong>15 min</strong></td>
+<td>Protects SSO code exchange</td>
+</tr>
+<tr>
+<td>Edge — nginx</td>
+<td><code>snippets/auth-rate-limit.conf</code></td>
+<td><code>limit_req</code> on <code>POST /api/auth/login</code> (and handoff exchange)</td>
+<td>HTTP <strong>429</strong> at edge; writes <code>auth-login.access.log</code></td>
+</tr>
+<tr>
+<td>Host — fail2ban</td>
+<td><code>nginx/fail2ban/jail.d/opms-auth.conf</code></td>
+<td><strong>20</strong> matches in <strong>15 min</strong> → <strong>bantime 15m</strong></td>
+<td>Hard IP ban at firewall for <strong>15 minutes</strong></td>
+</tr>
+</tbody></table>
+<div class="mermaid-wrap"><div class="mermaid">flowchart LR
+  Client --&gt; NGINX[nginx limit_req]
+  NGINX --&gt;|429| Client
+  NGINX --&gt; Auth[auth-service]
+  Auth --&gt;|IP 40/15m or IP+email 20/15m| Block[429 for 15 min window]
+  Auth --&gt;|ok| JWT[Issue JWT]
+  NGINX --&gt; Log[auth-login.access.log]
+  Log --&gt; F2B[fail2ban optional]
+  F2B --&gt;|20 hits / 15m| Ban[iptables ban 15 min]</div></div>
+<p><strong>Deploy fail2ban (ops):</strong> copy <code>nginx/fail2ban/filter.d/*</code> and <code>jail.d/*</code> to <code>/etc/fail2ban/</code>, ensure <code>logging.conf</code> is included from nginx <code>http {}</code>, then <code>fail2ban-client reload</code>.</p>
 <h2>3. Authorization (RBAC)</h2>
 <h3>Layers</h3>
 <ol>
@@ -205,7 +274,7 @@ Authorization: Bearer &lt;token&gt;
 <tr>
 <td><code>user_manager</code></td>
 <td><strong>No</strong></td>
-<td>Frontend admin/super-admin style gate — exact role list <strong>Unknown</strong></td>
+<td><code>admin</code>, <code>super_admin</code> (FE + <code>requireUserManagerAdmin</code> on <code>/api/users*</code>)</td>
 </tr>
 </tbody></table>
 <h3>Middleware gates</h3>
@@ -233,6 +302,14 @@ Authorization: Bearer &lt;token&gt;
 <td>Work Planner routes</td>
 </tr>
 <tr>
+<td><code>requireUserManagerAdmin</code></td>
+<td>auth-service <code>/api/users*</code> and roles</td>
+</tr>
+<tr>
+<td><code>requireInternalService</code></td>
+<td>notification <code>/api/notifications/internal/*</code></td>
+</tr>
+<tr>
 <td>Webhook secret</td>
 <td>Google Sheet ingest</td>
 </tr>
@@ -258,11 +335,14 @@ Authorization: Bearer &lt;token&gt;
 <li>Let&#39;s Encrypt cert paths for <code>*.spspl.com</code> / <code>*.medicaent.in</code></li>
 <li>HTTP → HTTPS redirect after cert bootstrap</li>
 <li>SSE-specific proxy settings for notification streams</li>
+<li>Access log format + <code>limit_req</code> zones: <code>nginx/snippets/logging.conf</code> (include from <code>http {}</code>)</li>
+<li>Auth login/handoff rate limits: <code>nginx/snippets/auth-rate-limit.conf</code> on <code>auth.spspl.com</code></li>
+<li>Optional fail2ban jails under <code>nginx/fail2ban/</code> (15-min IP ban)</li>
 </ul>
 <h3>CORS</h3>
-<p>Configured via <code>CORS_ORIGINS</code> / service CORS settings. Production frontends must be listed. Incorrect CORS is a browser-enforced issue, not a substitute for authz.</p>
+<p>Configured via <code>CORS_ORIGINS</code> (comma-separated). Unknown origins are denied without Express 500.<br>If empty, origins are derived from <code>NEXT_PUBLIC_*</code> / public URL env vars. Local Compose <code>localhost:*</code> ports are allowed when the allowlist is empty or includes localhost (disable with <code>CORS_ALLOW_LOCALHOST=0</code>).</p>
 <h3>Docker network</h3>
-<p>Services communicate on the Compose bridge using internal URLs (<code>http://auth-service:7003</code>, etc.). Assume <strong>network trust inside the compose network</strong> for some internal endpoints (see §6).</p>
+<p>Services communicate on the Compose bridge using internal URLs (<code>http://auth-service:7003</code>, etc.). <code>message-service</code> and <code>notification-service</code> are <strong>not</strong> published on the host. Internal notification routes require <strong>service JWT</strong>.</p>
 <hr>
 <h2>5. Secrets &amp; configuration hygiene</h2>
 <table>
@@ -304,6 +384,11 @@ Authorization: Bearer &lt;token&gt;
 <td>Webhook auth</td>
 </tr>
 <tr>
+<td><code>REDIS_PASSWORD</code></td>
+<td><strong>Yes</strong></td>
+<td>Redis AUTH (compose <code>--requirepass</code>)</td>
+</tr>
+<tr>
 <td><code>SEED_PASSWORD</code></td>
 <td><strong>Yes</strong></td>
 <td>Demo only</td>
@@ -314,35 +399,36 @@ Authorization: Bearer &lt;token&gt;
 <td>Baked into FE builds — never put secrets here</td>
 </tr>
 </tbody></table>
-<h3>Critical finding</h3>
-<p><strong>SECRET DETECTED IN SOURCE — NOT REPEATED HERE:</strong> <code>.env.docker.example</code> appears to contain real-looking credentials (JWT, Mongo URI, API keys, passwords).  </p>
-<p><strong>Actions required (ops):</strong></p>
+<h3>Critical finding (remediated in example file)</h3>
+<p><code>.env.docker.example</code> previously contained real-looking credentials. <strong>It now uses placeholders only.</strong>  </p>
+<p><strong>Ops still required:</strong></p>
 <ol>
-<li>Rotate all exposed secrets  </li>
-<li>Replace example file with placeholders only  </li>
-<li>Ensure <code>.env.docker</code> remains gitignored and never committed</li>
+<li>Rotate any secrets that may have been exposed while the old example was in git history  </li>
+<li>Ensure <code>.env.docker</code> remains gitignored and never committed  </li>
+<li>Set <code>REDIS_PASSWORD</code> and <code>REDIS_URL=redis://:&lt;password&gt;@redis:6379</code> in <code>.env.docker</code> before <code>compose up</code>  </li>
+<li>Keep <code>MASTER_PASSWORD</code> empty in production</li>
 </ol>
 <p>Do not re-declare <code>MONGO_URI</code> / <code>JWT_SECRET</code> under Compose <code>environment:</code> with empty interpolation — empty values override <code>env_file</code> (see <code>DOCKER.md</code>).</p>
 <hr>
 <h2>6. Public and weakly protected surfaces</h2>
-<p>Documented carefully for threat modeling. <strong>Verified</strong> from route files.</p>
+<p>Documented carefully for threat modeling. Status reflects post Phase 0–1 hardening where noted.</p>
 <table>
 <thead>
 <tr>
 <th>Surface</th>
 <th>Auth</th>
-<th>Risk</th>
+<th>Risk / status</th>
 </tr>
 </thead>
 <tbody><tr>
 <td><code>POST /api/auth/login</code></td>
-<td>Public</td>
-<td>Brute force — <strong>rate limiting not identified</strong></td>
+<td>Public + <strong>rate limit</strong> (40 / 15 min per IP; 20 / 15 min per IP+email) + nginx <code>limit_req</code> + optional fail2ban</td>
+<td>Brute force mitigated at app + edge</td>
 </tr>
 <tr>
 <td><code>GET /api/company-info</code></td>
-<td>Public (auth-service)</td>
-<td>Info disclosure of branding/company fields</td>
+<td>Public = branding only; full doc when authenticated</td>
+<td>Hardened (no bank/tax on anonymous GET)</td>
 </tr>
 <tr>
 <td>Google Sheet webhooks</td>
@@ -356,38 +442,37 @@ Authorization: Bearer &lt;token&gt;
 </tr>
 <tr>
 <td><code>POST /api/notifications/internal/*</code></td>
-<td><strong>No requireAuth</strong></td>
-<td>Anyone who can reach the port can create notifications</td>
+<td><strong>Service JWT</strong> (<code>requireInternalService</code>)</td>
+<td>Hardened</td>
 </tr>
 <tr>
-<td>opms <code>/api/terms-and-conditions</code> router</td>
-<td><strong>No requireAuth on router</strong></td>
-<td>Read/write exposure if port reachable</td>
+<td>opms <code>/api/terms-and-conditions</code></td>
+<td><strong><code>requireAuth</code> + <code>requireOpmsAccess</code></strong></td>
+<td>Hardened</td>
 </tr>
 <tr>
-<td>lead-manager <code>/api/attachments</code> router</td>
-<td><strong>No requireAuth on router</strong></td>
-<td>Attachment abuse if reachable</td>
+<td>lead-manager <code>/api/attachments</code></td>
+<td><strong><code>requireAuth</code> + <code>requireLeadManagerAccess</code></strong></td>
+<td>Hardened</td>
 </tr>
 <tr>
-<td>work-planner attachment view path</td>
-<td>Before auth</td>
-<td>Public file view redirect — <strong>Requires confirmation</strong> if intentional</td>
+<td>work-planner attachment view</td>
+<td><strong><code>requireAuth</code> + portal gate</strong>; FE may pass <code>?token=</code> for new-tab</td>
+<td>Hardened</td>
+</tr>
+<tr>
+<td>auth <code>/api/users*</code></td>
+<td><strong><code>requireAuth</code> + <code>requireUserManagerAdmin</code></strong></td>
+<td>Hardened</td>
 </tr>
 </tbody></table>
 <div class="mermaid-wrap"><div class="mermaid">flowchart LR
   Internet --&gt; Nginx
-  Nginx --&gt; PublishedPorts[Host published API ports]
-  PublishedPorts --&gt; Weak[Weakly protected routes]
-  Weak --&gt; Impact[Data injection / file access / spam]</div></div>
-<p><strong>Hardening (recommended, not implemented in-repo):</strong></p>
-<ul>
-<li>Bind internal-only routes to Docker network (do not publish message/notification internal ports publicly where avoidable)</li>
-<li>Add <code>requireAuth</code> or shared service token to internal notification/create routes</li>
-<li>Add auth to terms and attachments routers</li>
-<li>Add login rate limiting / lockout</li>
-<li>Enable Redis AUTH and avoid publishing Redis on host</li>
-</ul>
+  Nginx --&gt; AuthEdge[auth.spspl.com limit_req]
+  Nginx --&gt; APIs[Domain APIs]
+  AuthEdge --&gt; Login[Login / handoff]
+  APIs --&gt; Protected[JWT + portal RBAC]</div></div>
+<p><strong>Ops:</strong> rotate any historically exposed secrets; set <code>REDIS_PASSWORD</code> in live <code>.env.docker</code>; deploy nginx snippets + optional fail2ban; keep <code>MASTER_PASSWORD</code> empty.</p>
 <hr>
 <h2>7. Data protection controls present</h2>
 <table>
@@ -400,6 +485,10 @@ Authorization: Bearer &lt;token&gt;
 <tbody><tr>
 <td>Password hashing (bcrypt)</td>
 <td>Implemented</td>
+</tr>
+<tr>
+<td>Password strength policy</td>
+<td>Min 10 + letter + number</td>
 </tr>
 <tr>
 <td>Soft-delete (recoverable)</td>
@@ -418,12 +507,16 @@ Authorization: Bearer &lt;token&gt;
 <td>External File Management API</td>
 </tr>
 <tr>
-<td>Field-level encryption at rest in app</td>
-<td><strong>Not identified</strong></td>
+<td>ActivityLog (OPMS / LM / WP)</td>
+<td>Actor + timestamp + IP/UA via audit context</td>
 </tr>
 <tr>
-<td>Audit log completeness for all portals</td>
-<td>Partial (ActivityLog + workflow)</td>
+<td>Field-level encryption at rest in app</td>
+<td><strong>Not required</strong> for v1 (Atlas at-rest + bcrypt) — see <a href="./03-data-protection-and-ops.md">03-data-protection-and-ops</a></td>
+</tr>
+<tr>
+<td>Public company-info projection</td>
+<td>Branding only when unauthenticated</td>
 </tr>
 </tbody></table>
 <hr>
@@ -437,23 +530,27 @@ Authorization: Bearer &lt;token&gt;
 </thead>
 <tbody><tr>
 <td>Redis</td>
-<td>No password in compose; host port <code>7014</code> published — exposure risk if host is reachable</td>
+<td><strong>AUTH via <code>REDIS_PASSWORD</code></strong>; host port bound to <code>127.0.0.1</code> only; Compose builds <code>REDIS_URL</code> from password</td>
+</tr>
+<tr>
+<td>message / notification</td>
+<td><strong>Not published</strong> to host (Compose <code>expose</code> / network only)</td>
 </tr>
 <tr>
 <td>MongoDB</td>
 <td>External; protect via Atlas IP allowlists / strong credentials</td>
 </tr>
 <tr>
-<td>Frontends</td>
-<td>No compose healthchecks; not a direct auth issue</td>
+<td>Containers</td>
+<td>Production images run as <strong><code>USER node</code></strong> (non-root)</td>
 </tr>
 <tr>
-<td>CI/CD secrets scanning</td>
-<td><strong>Not identified</strong> (no GitHub Actions)</td>
+<td>CI secrets scanning</td>
+<td><strong>Gitleaks</strong> workflow + auth-service <code>npm audit</code> (<code>.github/workflows/security-scans.yml</code>)</td>
 </tr>
 <tr>
-<td>Container user hardening</td>
-<td>Default Node images — deep review <strong>Not identified</strong></td>
+<td>nginx edge</td>
+<td><code>limit_req</code> on login/handoff + dedicated access logs; optional fail2ban</td>
 </tr>
 </tbody></table>
 <hr>
@@ -467,11 +564,11 @@ Authorization: Bearer &lt;token&gt;
 </thead>
 <tbody><tr>
 <td>Authentication</td>
-<td>JWT</td>
+<td>JWT (<code>8h</code> default) + SSO handoff codes</td>
 </tr>
 <tr>
 <td>Authorization</td>
-<td>Portal RBAC</td>
+<td>Portal RBAC + User Manager admin gate</td>
 </tr>
 <tr>
 <td>Confidentiality in transit</td>
@@ -479,15 +576,27 @@ Authorization: Bearer &lt;token&gt;
 </tr>
 <tr>
 <td>Rate limiting</td>
-<td><strong>Not identified</strong></td>
+<td>Login IP + IP/email (15 min); handoff exchange limit; nginx <code>limit_req</code>; optional fail2ban</td>
 </tr>
 <tr>
-<td>Centralized security monitoring / WAF</td>
-<td><strong>Not identified</strong></td>
+<td>Secrets scanning</td>
+<td>Gitleaks CI</td>
 </tr>
 <tr>
-<td>Formal threat model / pen-test artifacts</td>
-<td><strong>Not identified</strong></td>
+<td>Threat model notes</td>
+<td><a href="./02-threat-model.md">02-threat-model.md</a></td>
+</tr>
+<tr>
+<td>Centralized WAF</td>
+<td><strong>Not identified</strong> (ops backlog)</td>
+</tr>
+<tr>
+<td>Formal pen-test</td>
+<td>Scope listed; scheduling <strong>pending</strong></td>
+</tr>
+<tr>
+<td>MFA</td>
+<td><strong>Deferred</strong> (IdP vs TOTP)</td>
 </tr>
 </tbody></table>
 <hr>
@@ -496,29 +605,711 @@ Authorization: Bearer &lt;token&gt;
 <li>Rotate <code>JWT_SECRET</code> → forces re-login everywhere (coordinate downtime)  </li>
 <li>Rotate Mongo, File API, Graph, WhatsApp, VAPID, webhook secrets  </li>
 <li>Clear <code>MASTER_PASSWORD</code> in production env  </li>
-<li>Review nginx access logs for scraping of public/weak routes  </li>
+<li>Review nginx <code>auth-login.access.log</code> / fail2ban for brute-force (429 spikes)  </li>
 <li>Restart services after secret rotation: <code>docker compose --env-file .env.docker up -d</code>  </li>
-<li>Rebuild frontends if any <code>NEXT_PUBLIC_*</code> changed</li>
+<li>Rebuild frontends if any <code>NEXT_PUBLIC_*</code> changed  </li>
+<li>Confirm login IP block still returns 429 for 15 minutes after abuse tests</li>
 </ol>
 <hr>
-<h2>11. Requires confirmation (product / security team)</h2>
+<h2>11. Security challenges (consolidated)</h2>
+<p>Challenges below are derived from §§2–9. Severity is relative to a typical internet-facing Compose + nginx deployment.</p>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Challenge</th>
+<th>Severity</th>
+<th>Status</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>C1</td>
+<td>Example/env hygiene — real-looking secrets in <code>.env.docker.example</code></td>
+<td><strong>Critical</strong></td>
+<td>Example sanitized; <strong>rotate if exposed</strong></td>
+<td>§5</td>
+</tr>
+<tr>
+<td>C2</td>
+<td>Unauthenticated internal notification create routes</td>
+<td><strong>High</strong></td>
+<td><strong>Mitigated</strong> (service JWT)</td>
+<td>§6</td>
+</tr>
+<tr>
+<td>C3</td>
+<td>Unauthenticated terms / lead attachments routers</td>
+<td><strong>High</strong></td>
+<td><strong>Mitigated</strong></td>
+<td>§6</td>
+</tr>
+<tr>
+<td>C4</td>
+<td>Redis without AUTH + host port published</td>
+<td><strong>High</strong></td>
+<td><strong>Mitigated</strong> (AUTH + localhost bind)</td>
+<td>§8</td>
+</tr>
+<tr>
+<td>C5</td>
+<td>No login rate limiting / account lockout</td>
+<td><strong>High</strong></td>
+<td><strong>Mitigated</strong> (app 15-min windows + nginx + optional fail2ban 15-min ban)</td>
+<td>§2, §6, §9</td>
+</tr>
+<tr>
+<td>C6</td>
+<td><code>MASTER_PASSWORD</code> break-glass if set in production</td>
+<td><strong>High</strong></td>
+<td><strong>Ops:</strong> keep empty</td>
+<td>§2, §5</td>
+</tr>
+<tr>
+<td>C7</td>
+<td>JWT SSO handoff via <code>?token=</code> query string</td>
+<td><strong>Medium</strong></td>
+<td><strong>Mitigated</strong> (<code>?handoff=</code>; legacy token still accepted)</td>
+<td>§2</td>
+</tr>
+<tr>
+<td>C8</td>
+<td>Published API ports / network trust</td>
+<td><strong>Medium</strong></td>
+<td><strong>Mitigated</strong> (message/notification unpublished)</td>
+<td>§4, §6</td>
+</tr>
+<tr>
+<td>C9</td>
+<td>Public <code>company-info</code> / webhook surfaces</td>
+<td><strong>Medium</strong></td>
+<td>company-info slimmed; webhooks still secret-dependent</td>
+<td>§6</td>
+</tr>
+<tr>
+<td>C10</td>
+<td>Work-planner attachment view before auth</td>
+<td><strong>Medium</strong></td>
+<td><strong>Mitigated</strong> (behind auth)</td>
+<td>§6</td>
+</tr>
+<tr>
+<td>C11</td>
+<td>Field encryption / audit coverage</td>
+<td><strong>Medium</strong></td>
+<td>Audit IP/UA done; app field encryption not required v1</td>
+<td>§7</td>
+</tr>
+<tr>
+<td>C12</td>
+<td>No CI secrets scanning / threat notes</td>
+<td><strong>Low–Medium</strong></td>
+<td><strong>Mitigated</strong> (gitleaks + threat model doc); WAF/pen-test pending</td>
+<td>§8, §9</td>
+</tr>
+<tr>
+<td>C13</td>
+<td>Long JWT TTL / no MFA / no password policy</td>
+<td><strong>Low–Medium</strong></td>
+<td><strong>Partial</strong> (8h + password policy); MFA deferred</td>
+<td>§2</td>
+</tr>
+<tr>
+<td>C14</td>
+<td>Portal RBAC gaps / Permission-code ambiguity</td>
+<td><strong>Low</strong></td>
+<td><strong>Decided</strong> (portal roles; user_manager gated)</td>
+<td>§3</td>
+</tr>
+</tbody></table>
+<div class="mermaid-wrap"><div class="mermaid">flowchart TB
+  subgraph critical [Critical / High]
+    C1[C1 Secrets in example]
+    C2[C2 Internal notifications]
+    C3[C3 Unauthed routers]
+    C4[C4 Redis exposure]
+    C5[C5 No rate limit]
+    C6[C6 MASTER_PASSWORD]
+  end
+  subgraph medium [Medium]
+    C7[C7 SSO query JWT]
+    C8[C8 Port / network trust]
+    C9[C9 Public / webhooks]
+    C10[C10 Attachment view]
+    C11[C11 Encryption / audit]
+  end
+  subgraph later [Later]
+    C12[C12 Monitoring / scanning]
+    C13[C13 Session / MFA]
+    C14[C14 RBAC clarity]
+  end
+  critical --&gt; P0[Phase 0–1]
+  medium --&gt; P2[Phase 2]
+  later --&gt; P3[Phase 3+]</div></div>
+<hr>
+<h2>12. Security improvement plan</h2>
+<p><strong>Goal:</strong> Close Critical/High findings first, shrink the trusted network, then raise authn/authz and ops maturity.<br><strong>Owners (suggested):</strong> Ops = deploy/env; Backend = API middleware/routes; Frontend = SSO/session; Product = intent decisions in §13.</p>
+<h3>Phase 0 — Immediate (ops, days)</h3>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Addresses</th>
+<th>Owner</th>
+<th>Status</th>
+<th>Acceptance criteria</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Rotate all credentials that may have appeared in <code>.env.docker.example</code></td>
+<td>C1</td>
+<td>Ops</td>
+<td><strong>Ops pending</strong></td>
+<td>New secrets live; old ones revoked; services restarted</td>
+</tr>
+<tr>
+<td>Sanitize <code>.env.docker.example</code> to placeholders only; confirm <code>.env.docker</code> is gitignored</td>
+<td>C1</td>
+<td>Ops + Backend</td>
+<td><strong>Done</strong> (example sanitized)</td>
+<td>Example file has no real values; <code>git check-ignore -v .env.docker</code> passes</td>
+</tr>
+<tr>
+<td>Ensure production <code>MASTER_PASSWORD</code> is empty / unset</td>
+<td>C6</td>
+<td>Ops</td>
+<td><strong>Ops pending</strong></td>
+<td>Login with master password fails in prod</td>
+</tr>
+<tr>
+<td>Redis <code>requirepass</code> + bind <code>127.0.0.1</code>; wire <code>REDIS_URL</code></td>
+<td>C4</td>
+<td>Ops + Backend</td>
+<td><strong>Done</strong> in compose (set <code>REDIS_PASSWORD</code> in <code>.env.docker</code>)</td>
+<td>Port not reachable from untrusted networks; AUTH required</td>
+</tr>
+<tr>
+<td>Unpublish notification/message host ports</td>
+<td>C2, C8</td>
+<td>Backend</td>
+<td><strong>Done</strong> in compose</td>
+<td>Internal routes not reachable from internet via host ports</td>
+</tr>
+</tbody></table>
+<h3>Phase 1 — Authz gaps on weak surfaces (backend, 1–2 sprints)</h3>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Addresses</th>
+<th>Owner</th>
+<th>Status</th>
+<th>Acceptance criteria</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Protect <code>POST /api/notifications/internal/*</code> with service JWT</td>
+<td>C2</td>
+<td>Backend</td>
+<td><strong>Done</strong></td>
+<td>Unauthenticated create returns 401/403; callers send Bearer service token</td>
+</tr>
+<tr>
+<td>Add <code>requireAuth</code> + portal gate to opms <code>/api/terms-and-conditions</code></td>
+<td>C3</td>
+<td>Backend</td>
+<td><strong>Done</strong></td>
+<td>Anonymous read/write fails</td>
+</tr>
+<tr>
+<td>Add <code>requireAuth</code> / portal gate to lead-manager <code>/api/attachments</code></td>
+<td>C3</td>
+<td>Backend</td>
+<td><strong>Done</strong></td>
+<td>Anonymous attachment ops fail</td>
+</tr>
+<tr>
+<td>Work-planner attachment view behind auth; FE appends <code>?token=</code> for new-tab opens</td>
+<td>C10</td>
+<td>Backend + Frontend</td>
+<td><strong>Done</strong></td>
+<td>Anonymous view fails; authenticated users can open files</td>
+</tr>
+<tr>
+<td>Login rate limiting (IP + email) on auth-service</td>
+<td>C5</td>
+<td>Backend</td>
+<td><strong>Done</strong></td>
+<td>Sustained brute force yields 429</td>
+</tr>
+<tr>
+<td>Login IP block (40 / 15 min) + fail2ban jail for hard 15-min ban</td>
+<td>C5</td>
+<td>Backend + Ops</td>
+<td><strong>Done</strong> (deploy fail2ban)</td>
+<td>IP blocked for 15 min after abuse</td>
+</tr>
+<tr>
+<td>Validate WhatsApp webhook signature per Meta; rotate Google Sheet webhook secret</td>
+<td>C9</td>
+<td>Backend + Ops</td>
+<td><strong>Partial / ops</strong></td>
+<td>Invalid signature/secret rejected</td>
+</tr>
+</tbody></table>
+<h3>Phase 2 — Session &amp; transport hardening (1–2 sprints)</h3>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Addresses</th>
+<th>Owner</th>
+<th>Status</th>
+<th>Acceptance criteria</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Replace SSO <code>?token=</code> with one-time handoff code (<code>POST /api/auth/handoff</code> + <code>/exchange</code>); peers exchange then strip</td>
+<td>C7</td>
+<td>Frontend + Backend</td>
+<td><strong>Done</strong> (legacy <code>?token=</code> still accepted)</td>
+<td>Token not required in durable URL; handoff single-use ~60s</td>
+</tr>
+<tr>
+<td>Shorten access-token TTL to <code>8h</code> (cookie maxAge aligned); refresh tokens deferred</td>
+<td>C13</td>
+<td>Backend + Frontend</td>
+<td><strong>Done</strong> (TTL); refresh <strong>deferred</strong></td>
+<td>Access token hours not days</td>
+</tr>
+<tr>
+<td>Enforce password min 10 + letter + number on create/change</td>
+<td>C13</td>
+<td>Backend</td>
+<td><strong>Done</strong></td>
+<td>Weak passwords rejected</td>
+</tr>
+<tr>
+<td>CORS allowlist from <code>CORS_ORIGINS</code>; fail closed in production if unset</td>
+<td>C8</td>
+<td>Backend</td>
+<td><strong>Done</strong></td>
+<td>Unknown origins blocked; prod requires config</td>
+</tr>
+<tr>
+<td>Public <code>GET /api/company-info</code> returns branding fields only; full doc when authenticated</td>
+<td>C9</td>
+<td>Backend</td>
+<td><strong>Done</strong></td>
+<td>No bank/tax fields on anonymous GET</td>
+</tr>
+</tbody></table>
+<h3>Phase 3 — Data protection, RBAC clarity, observability</h3>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Addresses</th>
+<th>Owner</th>
+<th>Status</th>
+<th>Acceptance criteria</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Harden ActivityLog with request IP/UA (LM / WP / OPMS via AsyncLocalStorage)</td>
+<td>C11</td>
+<td>Backend</td>
+<td><strong>Done</strong></td>
+<td>Mutations capture actor + timestamp + IP/UA when available</td>
+</tr>
+<tr>
+<td>Portal <code>access_roles</code> is authz source of truth; Permission codes deferred; user_manager admin gated on <code>/api/users*</code></td>
+<td>C14</td>
+<td>Backend + Docs</td>
+<td><strong>Done</strong></td>
+<td>See <a href="./04-authorization-model.md">04-authorization-model.md</a></td>
+</tr>
+<tr>
+<td>Document Atlas IP allowlists, backup encryption, app-level field encryption stance</td>
+<td>C11</td>
+<td>Docs</td>
+<td><strong>Done</strong></td>
+<td>See <a href="./03-data-protection-and-ops.md">03-data-protection-and-ops.md</a></td>
+</tr>
+<tr>
+<td>Gitleaks CI + npm audit job; <code>.gitleaks.toml</code></td>
+<td>C12</td>
+<td>Backend + Ops</td>
+<td><strong>Done</strong></td>
+<td><code>.github/workflows/security-scans.yml</code></td>
+</tr>
+<tr>
+<td>nginx login/handoff <code>limit_req</code> + access logs</td>
+<td>C5, C12</td>
+<td>Ops</td>
+<td><strong>Done</strong> (deploy snippets)</td>
+<td><code>nginx/snippets/logging.conf</code> + <code>auth-rate-limit.conf</code></td>
+</tr>
+<tr>
+<td>Lightweight threat model notes; pen-test scope listed</td>
+<td>C12</td>
+<td>Docs</td>
+<td><strong>Done</strong></td>
+<td><a href="./02-threat-model.md">02-threat-model.md</a></td>
+</tr>
+<tr>
+<td>MFA evaluation for admin / super_admin</td>
+<td>C13</td>
+<td>Product</td>
+<td><strong>Deferred</strong> (IdP vs TOTP)</td>
+<td>Decision recorded in data-protection doc</td>
+</tr>
+<tr>
+<td>Non-root <code>USER node</code> on production Dockerfiles</td>
+<td>C12</td>
+<td>Ops</td>
+<td><strong>Done</strong></td>
+<td>All prod images run as <code>node</code></td>
+</tr>
+</tbody></table>
+<h3>Priority order (execution sequence)</h3>
 <ol>
-<li>Is work-planner public attachment view intentional?  </li>
+<li><strong>Phase 0</strong> — <del>sanitize example / Redis / ports</del>; <strong>ops still: rotate secrets + set <code>REDIS_PASSWORD</code> + clear <code>MASTER_PASSWORD</code></strong>  </li>
+<li><strong>Phase 1</strong> — <del>auth weak routers / rate-limit / attachment view</del>; WhatsApp signature hardening remaining  </li>
+<li><strong>Phase 2</strong> — <del>SSO handoff / 8h JWT / password policy / CORS / slim company-info</del>; refresh tokens deferred  </li>
+<li><strong>Phase 3</strong> — <del>audit IP/UA / RBAC docs / scanning / nginx limits / non-root / threat notes</del>; MFA + pen-test scheduling remaining</li>
+</ol>
+<h3>Tracking</h3>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Suggestion</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Backlog</td>
+<td>MFA IdP decision; pen-test scheduling; WhatsApp signature validation</td>
+</tr>
+<tr>
+<td>Definition of done</td>
+<td>Acceptance criteria in tables above + docs updated when behavior changes</td>
+</tr>
+<tr>
+<td>Verify</td>
+<td>Re-check route files and compose publish list after each phase; refresh this document’s Status line</td>
+</tr>
+</tbody></table>
+<div class="mermaid-wrap"><div class="mermaid">gantt
+  title OPMS security improvement (indicative)
+  dateFormat  YYYY-MM-DD
+  section Phase0
+  Rotate sanitize secrets     :p0a, 2026-09-22, 3d
+  Redis and port lockdown     :p0b, after p0a, 2d
+  section Phase1
+  Auth weak routes            :p1a, after p0b, 10d
+  Login rate limit            :p1b, after p0b, 7d
+  Attachment view decision    :p1c, after p0b, 5d
+  section Phase2
+  SSO handoff redesign        :p2a, after p1a, 14d
+  Session and password policy :p2b, after p1a, 10d
+  section Phase3
+  Audit RBAC scanning MFA     :p3a, after p2a, 30d</div></div>
+<hr>
+<h2>13. Requires confirmation (product / security team)</h2>
+<ol>
+<li>Is work-planner public attachment view intentional? <em>(resolved: secured behind auth; FE uses <code>?token=</code> for new-tab)</em>  </li>
 <li>Should non-<code>opms</code> portals be seeded by default?  </li>
-<li>Is Permission-code RBAC (opms Permission model) still a goal vs portal roles only?  </li>
-<li>Target password policy / session length / MFA — <strong>not in codebase</strong>  </li>
-<li>Who owns secret rotation and env hygiene for <code>.env.docker.example</code>?</li>
+<li>Is Permission-code RBAC (opms Permission model) still a goal vs portal roles only? <em>(C14 — <strong>decided: portal roles; Permission codes deferred</strong>)</em>  </li>
+<li>Target password policy / session length / MFA — password + 8h done; <strong>MFA deferred to IdP decision</strong> <em>(C13)</em>  </li>
+<li>Who owns secret rotation and env hygiene for <code>.env.docker.example</code>? <em>(C1 / Phase 0 — example sanitized; rotation still Ops)</em>  </li>
+<li>Are notification and attachment services intended to be reachable only via nginx, or also via published host ports? <em>(resolved: compose no longer publishes message/notification)</em></li>
 </ol>
 <hr>
 <h2>Related documents</h2>
 <ul>
+<li><a href="./02-threat-model.md">Threat model notes</a></li>
+<li><a href="./03-data-protection-and-ops.md">Data protection &amp; ops</a></li>
+<li><a href="./04-authorization-model.md">Authorization model</a></li>
 <li><a href="../02-architecture/07-authentication-authorization.md">Authentication &amp; Authorization (Architecture)</a></li>
 <li><a href="../04-api/02-authentication.md">API Authentication</a></li>
 <li><a href="../03-functional/authentication.md">Functional: Authentication</a></li>
 <li><a href="../06-developer-deployment/05-environment-variables.md">Environment Variables</a></li>
+<li><a href="../06-developer-deployment/19-security.md">Security (developer-deployment summary)</a></li>
 <li><a href="../06-developer-deployment/18-troubleshooting.md">Troubleshooting</a></li>
 <li><a href="../DOCUMENTATION-AUDIT.md">Documentation Audit</a></li>
 </ul>
+
+</section>
+<section class="doc-section" data-source="08-security/02-threat-model.md">
+  <p class="source-path">Source: 08-security/02-threat-model.md</p>
+  <h1>Phase 3 — Threat model notes (lightweight)</h1>
+<p><strong>Status:</strong> Working draft reflecting Phases 0–3 hardening. Not a formal pen-test.<br><strong>Last updated:</strong> 2026-09-22</p>
+<h2>Assets</h2>
+<table>
+<thead>
+<tr>
+<th>Asset</th>
+<th>Sensitivity</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>JWT / <code>JWT_SECRET</code></td>
+<td>Critical</td>
+</tr>
+<tr>
+<td>MongoDB (orders, parties, users, leads, plans)</td>
+<td>High</td>
+</tr>
+<tr>
+<td>File Management API key + binaries</td>
+<td>High</td>
+</tr>
+<tr>
+<td>Redis queues</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td>Company bank fields (authenticated company-info)</td>
+<td>High</td>
+</tr>
+<tr>
+<td>Webhook secrets (Google Sheet, WhatsApp)</td>
+<td>High</td>
+</tr>
+</tbody></table>
+<h2>Trust boundaries</h2>
+<ol>
+<li>Internet → nginx TLS (+ login <code>limit_req</code> / optional fail2ban)  </li>
+<li>Browser → APIs (JWT + portal RBAC)  </li>
+<li>Compose network (service JWT for notifications/emails)  </li>
+<li>External Mongo / File API</li>
+</ol>
+<h2>Top threats (STRIDE-lite)</h2>
+<table>
+<thead>
+<tr>
+<th>Threat</th>
+<th>Mitigation (current)</th>
+<th>Residual</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Credential stuffing on login</td>
+<td>App: <strong>40 failed / 15 min per IP</strong> + <strong>20 / 15 min per IP+email</strong> → 429; nginx <code>limit_req</code>; optional <strong>fail2ban 15-min ban</strong></td>
+<td>WAF / SIEM alerts</td>
+</tr>
+<tr>
+<td>Stolen JWT in URL</td>
+<td>SSO <code>?handoff=</code> one-time codes; legacy <code>?token=</code> deprecated</td>
+<td>Remove legacy token accept; refresh tokens</td>
+</tr>
+<tr>
+<td>Unauthenticated internal APIs</td>
+<td>Service JWT + unpublished ports</td>
+<td>mTLS later</td>
+</tr>
+<tr>
+<td>Secret leakage in git</td>
+<td>Sanitized <code>.env.docker.example</code> + gitleaks CI</td>
+<td>Rotate historical secrets</td>
+</tr>
+<tr>
+<td>Privilege escalation on user APIs</td>
+<td><code>requireUserManagerAdmin</code> on <code>/api/users*</code></td>
+<td>Align portal seeding</td>
+</tr>
+<tr>
+<td>Redis exposure</td>
+<td>AUTH + localhost bind</td>
+<td>Strong unique password in prod</td>
+</tr>
+<tr>
+<td>XSS → session theft</td>
+<td>Existing FE hygiene (out of scope here)</td>
+<td>CSP headers at nginx</td>
+</tr>
+</tbody></table>
+<h2>Recommended pen-test scope (when scheduled)</h2>
+<ol>
+<li>Auth: login rate limits / 15-min IP block, handoff exchange, master password absent  </li>
+<li>Portal RBAC bypass across OPMS / LM / WP / user-manager  </li>
+<li>IDOR on attachments / work-plan files  </li>
+<li>Webhook forgery  </li>
+<li>CORS / origin misconfiguration</li>
+</ol>
+<h2>Owners</h2>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Owner</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Secret rotation</td>
+<td>Ops</td>
+</tr>
+<tr>
+<td>nginx / TLS / fail2ban / WAF</td>
+<td>Ops</td>
+</tr>
+<tr>
+<td>Authz middleware</td>
+<td>Backend</td>
+</tr>
+<tr>
+<td>Pen-test scheduling</td>
+<td>Product + Security</td>
+</tr>
+</tbody></table>
+
+</section>
+<section class="doc-section" data-source="08-security/03-data-protection-and-ops.md">
+  <p class="source-path">Source: 08-security/03-data-protection-and-ops.md</p>
+  <h1>Phase 3 — Data protection &amp; ops controls</h1>
+<h2>MongoDB (Atlas / external)</h2>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Guidance</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Network</td>
+<td>Restrict to host / VPC IP allowlist; prefer private endpoint</td>
+</tr>
+<tr>
+<td>Auth</td>
+<td>Strong DB user passwords; no shared admin from apps</td>
+</tr>
+<tr>
+<td>Encryption at rest</td>
+<td>Atlas default encryption ON; customer KMS optional</td>
+</tr>
+<tr>
+<td>Backups</td>
+<td>Atlas continuous backup / snapshots; test restore quarterly</td>
+</tr>
+<tr>
+<td>App-level field encryption</td>
+<td><strong>Not required</strong> for v1 unless Product mandates PII-at-rest beyond Atlas; passwords already bcrypt</td>
+</tr>
+</tbody></table>
+<h2>Redis</h2>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>AUTH (<code>REDIS_PASSWORD</code>)</td>
+<td>Required in Compose</td>
+</tr>
+<tr>
+<td>Host publish</td>
+<td><code>127.0.0.1</code> only</td>
+</tr>
+<tr>
+<td>Persistence</td>
+<td>Volume <code>redis_data</code>; treat as ephemeral queues + cache</td>
+</tr>
+</tbody></table>
+<h2>Application PII</h2>
+<p>Sensitive company bank / tax fields are returned only to <strong>authenticated</strong> callers of <code>GET /api/company-info</code>. Public GET is branding-only.</p>
+<h2>Login abuse controls (rate limit + 15-min IP block)</h2>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>Detail</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Application</td>
+<td><code>auth-service</code> — IP blocker 40/15m (failed only); IP+email 20/15m; returns <strong>429</strong> until window elapses</td>
+</tr>
+<tr>
+<td>nginx</td>
+<td><code>limit_req</code> on <code>/api/auth/login</code> and <code>/api/auth/handoff/exchange</code>; dedicated access logs</td>
+</tr>
+<tr>
+<td>fail2ban</td>
+<td>Jail <code>opms-auth-login</code>: maxretry 20 / findtime 15m / <strong>bantime 15m</strong></td>
+</tr>
+</tbody></table>
+<p>Successful logins do not count toward the app IP/email windows (<code>skipSuccessfulRequests: true</code>).</p>
+<h2>MFA (decision)</h2>
+<table>
+<thead>
+<tr>
+<th>Option</th>
+<th>Recommendation</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>TOTP for <code>super_admin</code> / User Manager admins</td>
+<td><strong>Backlog</strong> — implement after IdP decision</td>
+</tr>
+<tr>
+<td>SSO IdP (Google/Microsoft Entra)</td>
+<td>Preferred long-term for admin portals</td>
+</tr>
+<tr>
+<td>Current</td>
+<td>Password + JWT 8h; no MFA in codebase</td>
+</tr>
+</tbody></table>
+<p>Product should choose IdP vs in-app TOTP before build.</p>
+<h2>Container hardening</h2>
+<p>Production images run as <strong><code>USER node</code></strong> (non-root). Read-only root filesystem is not enabled yet (Next.js / Node need writable tmp).</p>
+
+</section>
+<section class="doc-section" data-source="08-security/04-authorization-model.md">
+  <p class="source-path">Source: 08-security/04-authorization-model.md</p>
+  <h1>Authorization model (Phase 3 decision)</h1>
+<h2>Source of truth: portal <code>access_roles</code></h2>
+<p>OPMS and satellite portals authorize with:</p>
+<ol>
+<li>Valid JWT (<code>requireAuth</code>)</li>
+<li><code>user.portals[]</code> contains required <code>portal_code</code></li>
+<li><code>access_roles</code> on that portal membership (plus coded admin bypasses)</li>
+</ol>
+<table>
+<thead>
+<tr>
+<th>portal_code</th>
+<th>Typical access_roles</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>opms</code></td>
+<td><code>super_admin</code>, <code>admin</code>, <code>sales</code>, <code>finance</code>, <code>account</code>, <code>dispatch</code></td>
+</tr>
+<tr>
+<td><code>work_planner</code></td>
+<td><code>admin</code>, <code>manager</code>, <code>executive</code></td>
+</tr>
+<tr>
+<td><code>lead_manager</code></td>
+<td><code>admin</code>, <code>manager</code>, <code>executive</code></td>
+</tr>
+<tr>
+<td><code>user_manager</code></td>
+<td><code>admin</code>, <code>super_admin</code> (FE + <strong>auth-service <code>/api/users*</code> gate</strong>)</td>
+</tr>
+</tbody></table>
+<h2>Permission-code RBAC (opms Permission / Role collections)</h2>
+<p><strong>Deferred / legacy.</strong> <code>requirePermissions</code> in opms-backend currently aliases <code>requireAuth</code> and does <strong>not</strong> enforce permission codes. Do not build new features on Permission codes until Product re-opens that initiative.</p>
+<h2>User Manager</h2>
+<ul>
+<li>Frontend: <code>hasSuperAdminAccess()</code>  </li>
+<li>Backend: <code>requireUserManagerAdmin</code> on all <code>/api/users</code> and <code>/api/users/roles*</code> routes</li>
+</ul>
+<p>Any authenticated user without admin/user_manager admin roles receives <strong>403</strong>.</p>
 
 </section>
 <section class="doc-section" data-source="02-architecture/07-authentication-authorization.md">
@@ -705,13 +1496,23 @@ Authorization: Bearer &lt;token&gt;
   <h1>Security</h1>
 <h2>Implemented</h2>
 <ul>
-<li>JWT auth + bcrypt passwords</li>
-<li>Portal RBAC</li>
-<li>HTTPS via nginx TLS configs</li>
+<li>JWT auth + bcrypt passwords + password strength policy (min 10, letter+number)</li>
+<li>Portal RBAC (<code>access_roles</code>); User Manager admin gate on <code>/api/users*</code></li>
+<li>HTTPS via nginx TLS configs; auth login/handoff edge rate limits + optional fail2ban 15-min IP ban</li>
 <li>Webhook secrets for Google Sheets</li>
 <li>Soft-delete vs hard-delete for many records</li>
+<li>Login rate limiting (auth-service: <strong>40 failed / 15 min per IP</strong> + <strong>20 / 15 min per IP+email</strong> → 429)</li>
+<li>nginx <code>limit_req</code> on login/handoff + optional <strong>fail2ban 15-minute IP ban</strong></li>
+<li>SSO one-time handoff codes</li>
+<li>Service JWT on notification <code>/api/notifications/internal/*</code></li>
+<li>Auth on terms / attachments / work-planner attachment view</li>
+<li>Redis AUTH + localhost-only host publish; message/notification not host-published</li>
+<li>ActivityLog IP/UA via request audit context (OPMS / LM / WP)</li>
+<li>Production containers run as non-root <code>USER node</code></li>
+<li>Gitleaks CI workflow (<code>.github/workflows/security-scans.yml</code>)</li>
+<li><code>.env.docker.example</code> placeholders only</li>
 </ul>
-<h2>Risks identified in codebase (document, do not &quot;fix&quot; here)</h2>
+<h2>Remaining / deferred</h2>
 <table>
 <thead>
 <tr>
@@ -720,42 +1521,35 @@ Authorization: Bearer &lt;token&gt;
 </tr>
 </thead>
 <tbody><tr>
-<td>Secrets in <code>.env.docker.example</code></td>
-<td>Appears to contain real credentials — rotate &amp; sanitize</td>
+<td>Historical secrets in git</td>
+<td>Rotate if old example was ever pushed</td>
 </tr>
 <tr>
 <td><code>MASTER_PASSWORD</code></td>
-<td>Break-glass; must be empty in prod</td>
+<td>Must stay empty in prod (ops)</td>
 </tr>
 <tr>
-<td>Redis without AUTH + published port</td>
-<td>Network exposure risk</td>
+<td>Legacy SSO <code>?token=</code></td>
+<td>Still accepted; prefer <code>?handoff=</code></td>
 </tr>
 <tr>
-<td>Notification internal routes unauthenticated</td>
-<td>Network trust assumed</td>
+<td>MFA</td>
+<td>Deferred — IdP vs TOTP decision</td>
 </tr>
 <tr>
-<td>opms terms-and-conditions router without requireAuth</td>
-<td>Exposure risk</td>
+<td>Formal pen-test</td>
+<td>Scope in <a href="../08-security/02-threat-model.md">threat model</a></td>
 </tr>
 <tr>
-<td>lead-manager attachments router without requireAuth</td>
-<td>Exposure risk</td>
-</tr>
-<tr>
-<td>work-planner attachment view before auth</td>
-<td>Intentional public view? <strong>Requires confirmation</strong></td>
-</tr>
-<tr>
-<td>Duplicated schema registries</td>
-<td>Drift / authz inconsistency risk</td>
+<td>WAF / centralized alerting</td>
+<td>Ops — watch auth-login access logs</td>
 </tr>
 </tbody></table>
-<h2>Rate limiting</h2>
-<p><strong>Not identified</strong>.</p>
+<h2>Improvement plan</h2>
+<p><a href="../08-security/01-security-overview.md">Security Overview §11–§12</a> · <a href="../08-security/02-threat-model.md">Threat model</a> · <a href="../08-security/03-data-protection-and-ops.md">Data protection</a> · <a href="../08-security/04-authorization-model.md">Authorization</a></p>
 <h2>Related</h2>
 <ul>
+<li><a href="../08-security/01-security-overview.md">Security overview</a></li>
 <li><a href="../02-architecture/07-authentication-authorization.md">Auth architecture</a></li>
 </ul>
 
@@ -763,7 +1557,7 @@ Authorization: Bearer &lt;token&gt;
 <section class="doc-section" data-source="06-developer-deployment/05-environment-variables.md">
   <p class="source-path">Source: 06-developer-deployment/05-environment-variables.md</p>
   <h1>Environment Variables</h1>
-<p><strong>IMPORTANT:</strong> Never copy real secrets into documentation.<br><strong>SECRET DETECTED IN SOURCE — NOT INCLUDED IN DOCUMENTATION:</strong> <code>.env.docker.example</code> currently contains values that look like live JWT secrets, Mongo credentials, API keys, and passwords. Treat as a credential-hygiene incident; rotate if exposed; replace example file with placeholders.</p>
+<p><strong>IMPORTANT:</strong> Never copy real secrets into documentation.<br><code>.env.docker.example</code> uses <strong>placeholders only</strong>. Rotate any credentials that may have been committed historically.</p>
 <table>
 <thead>
 <tr>
@@ -792,7 +1586,7 @@ Authorization: Bearer &lt;token&gt;
 <td>JWT_EXPIRES_IN</td>
 <td>no</td>
 <td>Token TTL</td>
-<td><code>7d</code></td>
+<td><code>8h</code></td>
 <td>no</td>
 </tr>
 <tr>
@@ -824,16 +1618,23 @@ Authorization: Bearer &lt;token&gt;
 <td>no</td>
 </tr>
 <tr>
+<td>REDIS_PASSWORD</td>
+<td><strong>yes</strong> (compose)</td>
+<td>Redis AUTH</td>
+<td><code>replace-with-redis-password</code></td>
+<td><strong>yes</strong></td>
+</tr>
+<tr>
 <td>REDIS_URL</td>
-<td>no</td>
-<td>Redis</td>
-<td><code>redis://redis:6379</code></td>
-<td>no*</td>
+<td><strong>yes</strong> (compose)</td>
+<td>Redis (with password)</td>
+<td><code>redis://:PASSWORD@redis:6379</code></td>
+<td><strong>yes</strong>*</td>
 </tr>
 <tr>
 <td>REDIS_PORT</td>
 <td>no</td>
-<td>Host publish</td>
+<td>Localhost publish</td>
 <td><code>7014</code></td>
 <td>no</td>
 </tr>
@@ -957,7 +1758,7 @@ Authorization: Bearer &lt;token&gt;
 <td>no</td>
 </tr>
 </tbody></table>
-<p>* Redis currently unauthenticated in compose.</p>
+<p>* Redis requires AUTH in compose (<code>--requirepass</code>). Host port is bound to <code>127.0.0.1</code> only. message-service and notification-service are not published on the host.</p>
 <p>Source: <code>.env.docker.example</code>, service <code>env.js</code> files, compose.</p>
 
 </section>

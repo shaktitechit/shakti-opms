@@ -10,6 +10,7 @@ export const WORK_PLAN_STATUS_TABS = [
 export const WORK_PLAN_TYPE_TABS = [
   { id: "all", label: "All types" },
   { id: "Visits", label: "Visits" },
+  { id: "Tasks & Visits", label: "Tasks & Visits" },
   { id: "Leave", label: "Leave" },
   { id: "Work From Home", label: "Work From Home" },
   { id: "Work From Office", label: "Work From Office" },
@@ -49,12 +50,16 @@ export function planTypeOf(planType?: string | null): string {
 
 export function isVisitsPlan(planType?: string | null): boolean {
   const t = planTypeOf(planType);
-  return t === "Visits" || t === "Field Visit";
+  return t === "Visits" || t === "Field Visit" || t === "Tasks & Visits";
 }
 
 export function isWorkTaskPlan(planType?: string | null): boolean {
   const t = planTypeOf(planType);
-  return t === "Work From Home" || t === "Work From Office";
+  return t === "Work From Home" || t === "Work From Office" || t === "Tasks & Visits";
+}
+
+export function isBothTasksAndVisitsPlan(planType?: string | null): boolean {
+  return planTypeOf(planType) === "Tasks & Visits";
 }
 
 export function isLeavePlan(planType?: string | null): boolean {
@@ -65,6 +70,7 @@ export function planTypeShort(planType?: string | null): string {
   const t = planTypeOf(planType);
   if (t === "Work From Home") return "WFH";
   if (t === "Work From Office") return "WFO";
+  if (t === "Tasks & Visits") return "Tasks & Visits";
   return t;
 }
 
@@ -72,19 +78,26 @@ export function planActivityLabel(plan: {
   plan_type?: string | null;
   visit_count?: number;
   work_count?: number;
+  visits?: unknown[];
   works?: unknown[];
 }): string {
   const type = planTypeOf(plan.plan_type);
   if (type === "Leave") return "Leave";
-  if (isWorkTaskPlan(type)) {
-    const n =
-      Number(plan.work_count) ||
-      (Array.isArray(plan.works) ? plan.works.length : 0) ||
-      0;
-    return `${n} task${n === 1 ? "" : "s"}`;
+  const vCount =
+    Number(plan.visit_count) ||
+    (Array.isArray(plan.visits) ? plan.visits.length : 0) ||
+    0;
+  const wCount =
+    Number(plan.work_count) ||
+    (Array.isArray(plan.works) ? plan.works.length : 0) ||
+    0;
+  if (type === "Tasks & Visits") {
+    return `${vCount} visit${vCount === 1 ? "" : "s"}, ${wCount} task${wCount === 1 ? "" : "s"}`;
   }
-  const n = Number(plan.visit_count) || 0;
-  return `${n} visit${n === 1 ? "" : "s"}`;
+  if (isWorkTaskPlan(type)) {
+    return `${wCount} task${wCount === 1 ? "" : "s"}`;
+  }
+  return `${vCount} visit${vCount === 1 ? "" : "s"}`;
 }
 
 export const WORK_PLAN_EXPENSE_STATUS_TABS = [

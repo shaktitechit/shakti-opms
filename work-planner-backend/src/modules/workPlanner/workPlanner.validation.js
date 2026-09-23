@@ -63,8 +63,8 @@ function assertCreate(body) {
   if (body.status && !PLAN_STATUSES.includes(body.status)) {
     throw new ApiError(400, `status must be one of: ${PLAN_STATUSES.join(', ')}`);
   }
-  if (body.plan_type && !['Visits', 'Leave', 'Work From Home', 'Work From Office'].includes(body.plan_type)) {
-    throw new ApiError(400, 'plan_type must be one of: Visits, Leave, Work From Home, Work From Office');
+  if (body.plan_type && !['Visits', 'Tasks & Visits', 'Leave', 'Work From Home', 'Work From Office'].includes(body.plan_type)) {
+    throw new ApiError(400, 'plan_type must be one of: Visits, Tasks & Visits, Leave, Work From Home, Work From Office');
   }
 }
 
@@ -78,8 +78,8 @@ function assertUpdate(body) {
   if (body.status !== undefined && !PLAN_STATUSES.includes(body.status)) {
     throw new ApiError(400, `status must be one of: ${PLAN_STATUSES.join(', ')}`);
   }
-  if (body.plan_type !== undefined && !['Visits', 'Leave', 'Work From Home', 'Work From Office'].includes(body.plan_type)) {
-    throw new ApiError(400, 'plan_type must be one of: Visits, Leave, Work From Home, Work From Office');
+  if (body.plan_type !== undefined && !['Visits', 'Tasks & Visits', 'Leave', 'Work From Home', 'Work From Office'].includes(body.plan_type)) {
+    throw new ApiError(400, 'plan_type must be one of: Visits, Tasks & Visits, Leave, Work From Home, Work From Office');
   }
 }
 

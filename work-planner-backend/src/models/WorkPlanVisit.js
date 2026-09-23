@@ -21,10 +21,22 @@ const workPlanVisitSchema = new mongoose.Schema(
     work_plan: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "WorkPlan",
-      required: true,
+      required: false,
+      default: null,
       index: true,
     },
-    sequence: { type: Number, required: true, min: 1 },
+    sales_user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false,
+      index: true,
+    },
+    plan_date: {
+      type: Date,
+      required: false,
+      index: true,
+    },
+    sequence: { type: Number, required: true, min: 1, default: 1 },
     party_type: {
       type: String,
       enum: ["existing", "new_party", "new_lead", "existing_lead"],
@@ -92,7 +104,7 @@ workPlanVisitSchema.index(
   { work_plan: 1, sequence: 1 },
   {
     unique: true,
-    partialFilterExpression: { deletedAt: null },
+    partialFilterExpression: { work_plan: { $type: "objectId" }, deletedAt: null },
   }
 );
 

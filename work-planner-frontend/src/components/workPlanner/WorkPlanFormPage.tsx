@@ -25,6 +25,7 @@ import {
   Mail,
   AlertTriangle,
   Lock,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useGetUsersQuery } from "@/store/api/authApiSlice";
@@ -41,9 +42,10 @@ import {
   useUpdateWorkMutation,
   useRemoveWorkMutation,
   useGetUserSettingsQuery,
+  useGetMyTeamQuery,
 } from "@/store/api/workPlannerApiSlice";
-import { isManager, readSessionFromStorage } from "@/utils/authStorage";
-import { getUserWorkPlannerSettings } from "@/utils/userWorkPlannerSettings";
+import { isWpAdmin, isWpManager, isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
+import { getUserWorkPlannerSettings, type CustomWorkTaskTemplate } from "@/utils/userWorkPlannerSettings";
 import type { WorkPlanRecord, WorkPlanVisitRecord, WorkPlanWorkRecord } from "@/types/workPlanner";
 import {
   WORK_PLAN_TYPE_TABS,
@@ -96,7 +98,6 @@ interface ExecutiveUser {
 
 function hasWorkPlannerAccess(u: ExecutiveUser, sessionUserId?: string): boolean {
   if (u._id === sessionUserId || u.id === sessionUserId) return true;
-  if (u.department === "super_admin") return true;
 
   if (!Array.isArray(u.portals) || u.portals.length === 0) {
     return false;
@@ -119,13 +120,13 @@ function hasWorkPlannerAccess(u: ExecutiveUser, sessionUserId?: string): boolean
 
   return roles.some((r) => {
     const normalized = String(r).toLowerCase().trim();
-    return normalized === "executive" || normalized === "manager";
+    return normalized === "executive" || normalized === "manager" || normalized === "admin" || normalized === "sales";
   });
 }
 
-function hasWorkPlannerManagerAccess(u: ExecutiveUser): boolean {
+function getWorkPlannerUserRole(u: ExecutiveUser): "Admin" | "Manager" | null {
   if (!Array.isArray(u.portals) || u.portals.length === 0) {
-    return false;
+    return null;
   }
 
   const wpPortal = u.portals.find((p) => {
@@ -133,7 +134,7 @@ function hasWorkPlannerManagerAccess(u: ExecutiveUser): boolean {
     return code === "work_planner";
   });
 
-  if (!wpPortal) return false;
+  if (!wpPortal) return null;
 
   const roles: string[] = Array.isArray(wpPortal.access_roles)
     ? wpPortal.access_roles
@@ -141,7 +142,40 @@ function hasWorkPlannerManagerAccess(u: ExecutiveUser): boolean {
       ? [(wpPortal as any).access_role]
       : [];
 
-  return roles.some((r) => String(r).toLowerCase().trim() === "manager");
+  const normalized = roles.map((r) => String(r).toLowerCase().trim());
+  if (normalized.includes("admin") || normalized.includes("super_admin")) return "Admin";
+  if (normalized.includes("manager")) return "Manager";
+  return null;
+}
+
+function getWorkPlannerUserPortalRole(
+  u: ExecutiveUser | { portals?: any[] } | null | undefined
+): "Admin" | "Manager" | "Executive" | null {
+  if (u && isWpAdmin(u as any)) return "Admin";
+  if (u && isWpManager(u as any)) return "Manager";
+  if (!u) return null;
+
+  if (Array.isArray(u.portals) && u.portals.length > 0) {
+    const wpPortal = u.portals.find((p) => {
+      const code = p.portal_code || p.portal?.code || p.code || (p as any).portal;
+      return code === "work_planner";
+    });
+
+    if (wpPortal) {
+      const roles: string[] = Array.isArray(wpPortal.access_roles)
+        ? wpPortal.access_roles
+        : (wpPortal as any).access_role
+          ? [(wpPortal as any).access_role]
+          : [];
+
+      const normalized = roles.map((r) => String(r).toLowerCase().trim());
+      if (normalized.includes("admin") || normalized.includes("super_admin")) return "Admin";
+      if (normalized.includes("manager")) return "Manager";
+      return "Executive";
+    }
+  }
+
+  return null;
 }
 
 export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPageProps) {
@@ -156,7 +190,11 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   const isEditing = Boolean(activePlanId);
   const isCopying = Boolean(copyId) && !isEditing;
   const sessionUser = readSessionFromStorage()?.user;
-  const managerRole = isManager(sessionUser);
+  const adminRole = isWpAdmin(sessionUser);
+  const isManagerOnly = isWpManager(sessionUser);
+  const elevatedRole = isWpElevated(sessionUser);
+  const managerRole = elevatedRole;
+  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !isManagerOnly });
   const prevFetchedKey = useRef<string>("");
   const copiedVisitsRef = useRef<any[]>([]);
   const copiedWorksRef = useRef<any[]>([]);
@@ -207,8 +245,6 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   const [isDiscussedWithManager, setIsDiscussedWithManager] = useState(false);
   const [discussedManagerId, setDiscussedManagerId] = useState<string>("");
   const [discussedManagerName, setDiscussedManagerName] = useState<string>("");
-  const [isCustomManager, setIsCustomManager] = useState(false);
-  const [customManagerName, setCustomManagerName] = useState("");
   const [discussionMethod, setDiscussionMethod] = useState<"on_call" | "on_direct_meeting" | "on_email" | "other">("on_call");
   const [managerSearch, setManagerSearch] = useState("");
   const [managerDropdownOpen, setManagerDropdownOpen] = useState(false);
@@ -325,15 +361,6 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   }, [effectiveSettings, planType, allUsers]);
 
   const currentDisplayedManager = useMemo(() => {
-    if (isCustomManager && customManagerName) {
-      return {
-        name: customManagerName,
-        email: "Custom Manager",
-        badgeText: "Custom Manager",
-        isSpecificPlanType: false,
-      };
-    }
-
     if (discussedManagerId) {
       const matched = allUsers.find(
         (u) => String(u._id || u.id || "") === String(discussedManagerId)
@@ -347,14 +374,18 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           assignedPlanTypeManager?._id &&
           String(assignedPlanTypeManager._id) === String(matched._id || matched.id);
 
+        const portalRole = getWorkPlannerUserRole(matched);
+
         return {
           name: matched.name,
           email: matched.email,
           badgeText: isPlanTypeMgr
             ? `${planType} Manager`
             : isDefaultMgr
-            ? "Default Manager"
-            : "Assigned Manager",
+            ? "Reporting Manager"
+            : portalRole === "Admin"
+            ? "Portal Admin"
+            : "Portal Manager",
           isSpecificPlanType: isPlanTypeMgr,
         };
       }
@@ -374,7 +405,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         badgeText: isPlanTypeMgr
           ? `${planType} Manager`
           : isDefaultMgr
-          ? "Default Manager"
+          ? "Reporting Manager"
           : "Discussed Manager",
         isSpecificPlanType: isPlanTypeMgr,
       };
@@ -386,7 +417,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         email: assignedPlanTypeManager.email || "Reporting Manager configured in User Settings",
         badgeText: assignedPlanTypeManager.isSpecificPlanType
           ? `${planType} Manager`
-          : "Default Manager",
+          : "Reporting Manager",
         isSpecificPlanType: assignedPlanTypeManager.isSpecificPlanType,
       };
     }
@@ -395,8 +426,6 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   }, [
     discussedManagerId,
     discussedManagerName,
-    isCustomManager,
-    customManagerName,
     assignedPlanTypeManager,
     allUsers,
     planType,
@@ -448,13 +477,9 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
             if (mId) {
               setDiscussedManagerId(String(mId));
               setDiscussedManagerName(mName);
-              setIsCustomManager(false);
-              setCustomManagerName("");
             } else if (mName) {
               setDiscussedManagerId("");
               setDiscussedManagerName(mName);
-              setIsCustomManager(true);
-              setCustomManagerName(mName);
             }
             if (plan.discussion_method) {
               setDiscussionMethod(plan.discussion_method as any);
@@ -462,8 +487,6 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           } else {
             setDiscussedManagerId("");
             setDiscussedManagerName("");
-            setIsCustomManager(false);
-            setCustomManagerName("");
             setDiscussionMethod("on_call");
           }
 
@@ -521,13 +544,9 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
             if (mId) {
               setDiscussedManagerId(String(mId));
               setDiscussedManagerName(mName);
-              setIsCustomManager(false);
-              setCustomManagerName("");
             } else if (mName) {
               setDiscussedManagerId("");
               setDiscussedManagerName(mName);
-              setIsCustomManager(true);
-              setCustomManagerName(mName);
             }
             if (plan.discussion_method) {
               setDiscussionMethod(plan.discussion_method as any);
@@ -538,30 +557,38 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
 
           // When copying: if plan is within 3 days and item is uncompleted, reassign it; if plan > 3 days old or item is completed, create new
           if (Array.isArray(plan.visits)) {
-            const mappedVisits = plan.visits.map((v: any) => {
-              if (!isSourceExpired && v.status !== "completed") {
-                return { ...v };
-              }
-              const { _id, id, status, check_in_time, check_out_time, outcome, ...rest } = v;
-              return { ...rest };
-            });
-            copiedVisitsRef.current = mappedVisits;
-            setVisits(mappedVisits);
+            const copiedVisits = plan.visits
+              .filter((v: any) => !isSourceExpired || v.status === "completed")
+              .map((v: any, idx: number) => ({
+                ...v,
+                sequence: idx + 1,
+                _id: isSourceExpired || v.status === "completed" ? undefined : v._id,
+                id: isSourceExpired || v.status === "completed" ? undefined : v.id,
+                status: isSourceExpired || v.status === "completed" ? "created" : v.status,
+                is_from_previous_plan: true,
+                previous_plan_date: plan.plan_date,
+              }));
+            setVisits(copiedVisits);
+            copiedVisitsRef.current = copiedVisits;
           }
           if (Array.isArray(plan.works)) {
-            const mappedWorks = plan.works.map((w: any) => {
-              if (!isSourceExpired && w.status !== "completed") {
-                return { ...w };
-              }
-              const { _id, id, status, outcome, completion_remarks, ...rest } = w;
-              return { ...rest };
-            });
-            copiedWorksRef.current = mappedWorks;
-            setWorks(mappedWorks);
+            const copiedWorks = plan.works
+              .filter((w: any) => !isSourceExpired || w.status === "completed")
+              .map((w: any, idx: number) => ({
+                ...w,
+                sequence: idx + 1,
+                _id: isSourceExpired || w.status === "completed" ? undefined : w._id,
+                id: isSourceExpired || w.status === "completed" ? undefined : w.id,
+                status: isSourceExpired || w.status === "completed" ? "created" : w.status,
+                is_from_previous_plan: true,
+                previous_plan_date: plan.plan_date,
+              }));
+            setWorks(copiedWorks);
+            copiedWorksRef.current = copiedWorks;
           }
         }
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "Failed to load plan for copying";
+        const msg = err instanceof Error ? err.message : "Failed to load copy plan";
         toast.error(msg);
       } finally {
         setLoading(false);
@@ -570,64 +597,97 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     loadSourcePlan();
   }, [copyId, isEditing, fetchPlan]);
 
-  // Effect: Auto-fetch existing work plan for selected date and target executive if already created
+  // Load existing plan automatically if one exists on the selected planDate / targetUserId
   useEffect(() => {
-    if (planId || !planDate || !targetUserId) return;
+    let isMounted = true;
+    if (planId) return; // Only skip if fixed planId was passed in route props
+    if (!planDate || !targetUserId) return;
 
-    const currentKey = `${planDate}_${targetUserId}`;
+    const currentKey = `${targetUserId}_${planDate}`;
     if (prevFetchedKey.current === currentKey) return;
 
-    let isMounted = true;
     async function checkPlanForSelectedDate() {
       try {
         setCheckingExisting(true);
         const res = await lazyGetPlans({
-          date: planDate,
           sales_user: targetUserId,
+          sales_user_id: targetUserId,
+          from: planDate,
+          to: planDate,
           limit: 1,
+          include_standalone: true,
+          include_visits: true,
+          include_works: true,
         }).unwrap();
 
         if (!isMounted) return;
 
-        const rawPlans = res?.data || [];
-        const foundPlans = rawPlans.filter(
-          (p: any) => String(p.status) !== "deleted" && !p.deletedAt && !p.is_deleted
-        );
-        if (foundPlans.length > 0) {
-          const found = foundPlans[0];
-          const foundId = String(found._id || found.id || "").trim();
-          if (!foundId) return;
+        const found = res?.data?.[0];
+        if (found) {
           prevFetchedKey.current = currentKey;
+          const foundId = String(found._id || found.id);
+          const isStandaloneVirtual = Boolean(
+            found?.is_standalone ||
+            foundId.startsWith("standalone_")
+          );
 
-          // Fetch full plan with visits & works
-          let fullPlan: WorkPlanRecord | null = null;
-          try {
-            fullPlan = await fetchPlan(foundId).unwrap();
-          } catch {
-            fullPlan = null;
+          if (isStandaloneVirtual) {
+            // Standalone tasks/visits exist, but no WorkPlan document has been saved yet -> New Create Mode!
+            setExistingPlanId(null);
+            setDetectedPlan(null);
+            setPlanStatus(null);
+          } else {
+            // Real existing WorkPlan document -> Update Mode
+            setExistingPlanId(foundId);
+            setDetectedPlan(found);
+            setPlanStatus(found.status || null);
           }
 
+          // Populate with full existing plan or standalone data
+          const fullPlan = await fetchPlan(foundId).unwrap();
           if (!isMounted) return;
 
-          if (fullPlan && String(fullPlan.status) !== "deleted" && !(fullPlan as any).deletedAt) {
-            setExistingPlanId(foundId);
-            setDetectedPlan(fullPlan);
-            setPlanStatus(fullPlan.status || found.status || null);
+          if (fullPlan) {
+            const planVisits = Array.isArray(fullPlan.visits) ? fullPlan.visits : [];
+            const planWorks = Array.isArray(fullPlan.works) ? fullPlan.works : [];
 
-            if (fullPlan.plan_date) {
-              setPlanDate(new Date(fullPlan.plan_date).toISOString().split("T")[0]);
-            }
-            setPlanType(fullPlan.plan_type || "Visits");
+            // Add custom work templates additionally to existing plan tasks if not already included
+            const templates = effectiveSettings?.customWorkTemplates || [];
+            const mergedWorksWithTemplates = [...planWorks];
+            templates.forEach((t: any) => {
+              const alreadyExists = mergedWorksWithTemplates.some(
+                (w) => String(w.title || "").trim().toLowerCase() === String(t.title || "").trim().toLowerCase()
+              );
+              if (!alreadyExists) {
+                mergedWorksWithTemplates.push({
+                  sequence: mergedWorksWithTemplates.length + 1,
+                  title: t.title,
+                  description: t.description || "",
+                  planned_start_time: t.planned_start_time || "",
+                  planned_end_time: t.planned_end_time || "",
+                  work_type: t.work_type || "default",
+                  is_template_task: true,
+                  status: "created",
+                });
+              }
+            });
+
+            const resolvedType =
+              fullPlan.plan_type === "Leave"
+                ? "Leave"
+                : planVisits.length > 0 && mergedWorksWithTemplates.length > 0
+                ? "Tasks & Visits"
+                : planVisits.length > 0
+                ? "Visits"
+                : mergedWorksWithTemplates.length > 0
+                ? fullPlan.plan_type === "Work From Home"
+                  ? "Work From Home"
+                  : "Work From Office"
+                : fullPlan.plan_type || "Visits";
+
+            setPlanType(resolvedType);
             setLocation(fullPlan.location || "");
             setRemarks(fullPlan.remarks || "");
-
-            if (fullPlan.sales_user) {
-              const sUser =
-                typeof fullPlan.sales_user === "object"
-                  ? fullPlan.sales_user._id || fullPlan.sales_user.id
-                  : fullPlan.sales_user;
-              if (sUser) setSalesUserId(String(sUser));
-            }
 
             // Discussion state
             const isDiscussed = Boolean(fullPlan.is_discussed_with_manager);
@@ -646,22 +706,22 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
               if (mId) {
                 setDiscussedManagerId(String(mId));
                 setDiscussedManagerName(mName);
-                setIsCustomManager(false);
-                setCustomManagerName("");
               } else if (mName) {
                 setDiscussedManagerId("");
                 setDiscussedManagerName(mName);
-                setIsCustomManager(true);
-                setCustomManagerName(mName);
               }
               if (fullPlan.discussion_method) {
                 setDiscussionMethod(fullPlan.discussion_method as any);
               }
+            } else if (assignedPlanTypeManager) {
+              setIsDiscussedWithManager(true);
+              setDiscussedManagerId(assignedPlanTypeManager._id || "");
+              setDiscussedManagerName(assignedPlanTypeManager.name || "");
+              setDiscussionMethod("on_call");
             } else {
+              setIsDiscussedWithManager(false);
               setDiscussedManagerId("");
               setDiscussedManagerName("");
-              setIsCustomManager(false);
-              setCustomManagerName("");
               setDiscussionMethod("on_call");
             }
 
@@ -678,32 +738,27 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
               ];
               setVisits(mergedVisits);
 
-              const existingWorks = Array.isArray(fullPlan.works) ? fullPlan.works : [];
               const copiedWorks = copiedWorksRef.current || [];
               const mergedWorks = [
-                ...existingWorks,
+                ...mergedWorksWithTemplates,
                 ...copiedWorks.map((cw, idx) => ({
                   ...cw,
-                  sequence: existingWorks.length + idx + 1,
+                  sequence: mergedWorksWithTemplates.length + idx + 1,
                 })),
               ];
               setWorks(mergedWorks);
             } else {
-              if (Array.isArray(fullPlan.visits)) {
-                setVisits(fullPlan.visits);
-              } else {
-                setVisits([]);
-              }
-              if (Array.isArray(fullPlan.works)) {
-                setWorks(fullPlan.works);
-              } else {
-                setWorks([]);
-              }
+              setVisits(planVisits);
+              setWorks(mergedWorksWithTemplates);
             }
 
             if (fullPlan.status === "completed") {
               toast.error(`Work plan for ${planDate} is Completed. No editing or updating allowed.`, {
                 id: `completed-plan-${foundId}`,
+              });
+            } else if (isStandaloneVirtual) {
+              toast.info(`Pre-planned tasks & visits found for ${planDate}. Loaded into new work plan draft.`, {
+                id: `standalone-activities-${foundId}`,
               });
             } else {
               toast.info(
@@ -715,43 +770,53 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                 }
               );
             }
-          } else {
-            // Full plan was deleted or not found
-            prevFetchedKey.current = currentKey;
-            if (existingPlanId && !planId) {
-              setExistingPlanId(null);
-              setDetectedPlan(null);
-              setPlanStatus(null);
-              setLocation("");
-              setRemarks("");
-              if (copyId) {
-                setVisits(copiedVisitsRef.current);
-                setWorks(copiedWorksRef.current);
-              } else {
-                setVisits([]);
-                setWorks([]);
-              }
-              toast.info(`No active work plan found for ${planDate}. Switched to Create Work Plan mode.`);
-            }
           }
         } else {
-          // No active plan for this date -> reset if we previously auto-detected one
+          // No active plan for this date & member -> switch to create mode and reset form fields
           prevFetchedKey.current = currentKey;
-          if (existingPlanId && !planId) {
-            setExistingPlanId(null);
-            setDetectedPlan(null);
-            setPlanStatus(null);
-            setLocation("");
-            setRemarks("");
-            if (copyId) {
-              setVisits(copiedVisitsRef.current);
-              setWorks(copiedWorksRef.current);
+          setExistingPlanId(null);
+          setDetectedPlan(null);
+          setPlanStatus(null);
+          setLocation("");
+          setRemarks("");
+
+          if (copyId) {
+            setVisits(copiedVisitsRef.current);
+            setWorks(copiedWorksRef.current);
+          } else {
+            setVisits([]);
+            const templates = effectiveSettings?.customWorkTemplates || [];
+            if (templates.length > 0) {
+              const loadedWorks = templates.map((t: any, idx: number) => ({
+                sequence: idx + 1,
+                title: t.title,
+                description: t.description || "",
+                planned_start_time: t.planned_start_time || "",
+                planned_end_time: t.planned_end_time || "",
+                work_type: t.work_type || "default",
+                is_template_task: true,
+                status: "created",
+              }));
+              setWorks(loadedWorks);
+              setPlanType("Tasks & Visits");
             } else {
-              setVisits([]);
               setWorks([]);
+              setPlanType("Visits");
             }
-            toast.info(`No active work plan found for ${planDate}. Switched to Create Work Plan mode.`);
           }
+
+          if (assignedPlanTypeManager) {
+            setIsDiscussedWithManager(true);
+            setDiscussedManagerId(assignedPlanTypeManager._id || "");
+            setDiscussedManagerName(assignedPlanTypeManager.name || "");
+          } else {
+            setIsDiscussedWithManager(false);
+            setDiscussedManagerId("");
+            setDiscussedManagerName("");
+          }
+          setDiscussionMethod("on_call");
+
+          toast.info(`Switched to Create Work Plan mode for ${planDate}.`);
         }
       } catch (err) {
         console.error("Error checking existing plan by date:", err);
@@ -761,27 +826,35 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     }
 
     checkPlanForSelectedDate();
-  }, [planDate, targetUserId, planId, copyId, lazyGetPlans, fetchPlan, existingPlanId]);
+  }, [planDate, targetUserId, planId, copyId, lazyGetPlans, fetchPlan, effectiveSettings, assignedPlanTypeManager]);
 
-  // Effect 1: Auto-populate custom work tasks when creating a new plan for Work From Home or Work From Office
+  // Effect 1: Auto-populate custom work tasks additionally when switching to a task-enabled plan
   useEffect(() => {
     if (isEditing || isCopying) return;
     if (isWorkTaskPlan(planType)) {
       const templates = effectiveSettings?.customWorkTemplates || [];
       if (templates.length > 0) {
-        const loadedWorks = templates.map((t: any, idx: number) => ({
-          sequence: idx + 1,
-          title: t.title,
-          description: t.description || "",
-          planned_start_time: t.planned_start_time || "",
-          planned_end_time: t.planned_end_time || "",
-          work_type: t.work_type || "default",
-          is_template_task: true,
-          status: "created",
-        }));
-        setWorks(loadedWorks);
-      } else {
-        setWorks([]);
+        setWorks((prevWorks) => {
+          const merged = [...prevWorks];
+          templates.forEach((t: any) => {
+            const alreadyExists = merged.some(
+              (w) => String(w.title || "").trim().toLowerCase() === String(t.title || "").trim().toLowerCase()
+            );
+            if (!alreadyExists) {
+              merged.push({
+                sequence: merged.length + 1,
+                title: t.title,
+                description: t.description || "",
+                planned_start_time: t.planned_start_time || "",
+                planned_end_time: t.planned_end_time || "",
+                work_type: t.work_type || "default",
+                is_template_task: true,
+                status: "created",
+              });
+            }
+          });
+          return merged;
+        });
       }
     }
   }, [planType, effectiveSettings, isEditing, isCopying]);
@@ -791,35 +864,124 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     if (isEditing) return;
     if (assignedPlanTypeManager) {
       setIsDiscussedWithManager(true);
-      setIsCustomManager(false);
-      setCustomManagerName("");
       setDiscussedManagerId(assignedPlanTypeManager._id || "");
       setDiscussedManagerName(assignedPlanTypeManager.name || "");
       setShowManagerPicker(false);
     }
   }, [planType, assignedPlanTypeManager, isEditing]);
 
-  // Filter eligible managers for discussion dropdown: strictly only users assigned to work_planner portal with manager access
+  // Filter eligible managers for discussion dropdown: strictly reporting manager, portal admins, and portal managers
   const eligibleManagers = useMemo(() => {
-    const managers = allUsers.filter(hasWorkPlannerManagerAccess);
-    if (!managerSearch.trim()) return managers;
+    const map = new Map<
+      string,
+      {
+        _id: string;
+        name: string;
+        email: string;
+        department?: string;
+        roleBadge: string;
+        isReportingManager: boolean;
+      }
+    >();
+
+    // 1. If assignedPlanTypeManager is configured, insert as the top option
+    if (assignedPlanTypeManager && (assignedPlanTypeManager._id || assignedPlanTypeManager.name)) {
+      const id = String(assignedPlanTypeManager._id || assignedPlanTypeManager.name);
+      map.set(id, {
+        _id: String(assignedPlanTypeManager._id || ""),
+        name: assignedPlanTypeManager.name,
+        email: assignedPlanTypeManager.email || "",
+        department: assignedPlanTypeManager.department || "",
+        roleBadge: assignedPlanTypeManager.isSpecificPlanType
+          ? `${planType} Manager`
+          : "Reporting Manager",
+        isReportingManager: true,
+      });
+    }
+
+    // 2. Add Portal Admins of work_planner portal
+    for (const u of allUsers) {
+      const id = String(u._id || u.id || "");
+      if (!id) continue;
+      const role = getWorkPlannerUserRole(u);
+      if (role !== "Admin") continue; // Strictly portal admins only!
+
+      if (!map.has(id)) {
+        map.set(id, {
+          _id: id,
+          name: u.name,
+          email: u.email || "",
+          department: u.department || "",
+          roleBadge: "Portal Admin",
+          isReportingManager: false,
+        });
+      }
+    }
+
+    const list = Array.from(map.values());
+
+    if (!managerSearch.trim()) return list;
     const q = managerSearch.toLowerCase().trim();
-    return managers.filter(
+    return list.filter(
       (u) =>
         u.name?.toLowerCase().includes(q) ||
         u.email?.toLowerCase().includes(q) ||
+        u.roleBadge?.toLowerCase().includes(q) ||
         u.department?.toLowerCase().includes(q)
     );
-  }, [allUsers, managerSearch]);
+  }, [allUsers, assignedPlanTypeManager, planType, managerSearch]);
 
   const selectedManager = useMemo(() => {
     if (!discussedManagerId) return null;
+    const fromEligible = eligibleManagers.find((u) => u._id === discussedManagerId);
+    if (fromEligible) return fromEligible;
     return allUsers.find((u) => u._id === discussedManagerId || u.id === discussedManagerId) || null;
-  }, [discussedManagerId, allUsers]);
+  }, [discussedManagerId, eligibleManagers, allUsers]);
 
-  // Filter executives assigned to Work Planner portal + match search query
+  // Filter executives assigned to Work Planner portal according to role hierarchy:
+  // - Admin: can make plan for all portal members
+  // - Manager: can make plan for himself and executives reporting to him only
+  // - Executive: can make plan for himself only
   const eligibleExecutives = useMemo(() => {
-    const list = executives.filter((u) => hasWorkPlannerAccess(u, sessionUser?._id));
+    // 1. Regular executive can only make plans for himself
+    if (!elevatedRole) {
+      if (!sessionUser) return [];
+      return [{
+        _id: sessionUser._id,
+        id: sessionUser._id,
+        name: `${sessionUser.name} (Self)`,
+        email: sessionUser.email,
+        department: sessionUser.department,
+      }];
+    }
+
+    // 2. Admin can make plans for all portal members
+    if (adminRole) {
+      const list = executives.filter((u) => hasWorkPlannerAccess(u, sessionUser?._id));
+      if (!execSearch.trim()) return list;
+      const q = execSearch.toLowerCase().trim();
+      return list.filter(
+        (u) =>
+          u.name?.toLowerCase().includes(q) ||
+          u.email?.toLowerCase().includes(q) ||
+          u.department?.toLowerCase().includes(q)
+      );
+    }
+
+    // 3. Manager can make plans for himself and executives reporting to him only
+    const myTeamMembers = (myTeamData?.members || []) as Array<{ _id?: string; id?: string }>;
+    const teamIdSet = new Set<string>(
+      myTeamMembers.map((m) => String(m._id || m.id || ""))
+    );
+    if (sessionUser?._id) {
+      teamIdSet.add(String(sessionUser._id));
+    }
+
+    const list = executives.filter((u) => {
+      const uId = String(u._id || u.id || "");
+      return teamIdSet.has(uId);
+    });
+
     if (!execSearch.trim()) return list;
     const q = execSearch.toLowerCase().trim();
     return list.filter(
@@ -828,25 +990,38 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         u.email?.toLowerCase().includes(q) ||
         u.department?.toLowerCase().includes(q)
     );
-  }, [executives, sessionUser, execSearch]);
+  }, [executives, sessionUser, adminRole, isManagerOnly, elevatedRole, myTeamData, execSearch]);
 
   const selectedExecutive = useMemo(() => {
     if (!salesUserId || salesUserId === sessionUser?._id) {
       return {
         _id: sessionUser?._id || "",
-        name: `${sessionUser?.name || "Current User"} (Self)`,
+        name: sessionUser?.name || "Current User",
         email: sessionUser?.email || "",
         department: sessionUser?.department || "sales",
+        portals: sessionUser?.portals,
+        isSelf: true,
       };
     }
-    return (
-      executives.find((u) => u._id === salesUserId || u.id === salesUserId) || {
-        _id: salesUserId,
-        name: "Selected Executive",
-        email: "",
-      }
-    );
+    const found = executives.find((u) => u._id === salesUserId || u.id === salesUserId);
+    if (found) {
+      return {
+        ...found,
+        isSelf: (found._id || found.id) === sessionUser?._id,
+      };
+    }
+    return {
+      _id: salesUserId,
+      name: "Selected Executive",
+      email: "",
+      portals: [],
+      isSelf: false,
+    };
   }, [salesUserId, executives, sessionUser]);
+
+  const selectedExecutivePortalRole = useMemo(() => {
+    return getWorkPlannerUserPortalRole(selectedExecutive);
+  }, [selectedExecutive]);
 
   function isManagerCreatedItem(item?: Record<string, any>): boolean {
     if (!item) return false;
@@ -897,8 +1072,8 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     }
     const v = visits[index];
     if (!v) return;
-    if (!managerRole && isManagerCreatedItem(v)) {
-      toast.error("Visits created by a Manager cannot be removed by Executives.");
+    if (!elevatedRole && isManagerCreatedItem(v)) {
+      toast.error("Visits created by a Portal Admin or Portal Manager cannot be removed by Executives.");
       return;
     }
     if (isEditing && activePlanId && (v?._id || v?.id)) {
@@ -964,8 +1139,8 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       toast.error("Default work tasks cannot be removed.");
       return;
     }
-    if (!managerRole && isManagerCreatedItem(w)) {
-      toast.error("Tasks created by a Manager cannot be removed by Executives.");
+    if (!elevatedRole && isManagerCreatedItem(w)) {
+      toast.error("Tasks created by a Portal Admin or Portal Manager cannot be removed by Executives.");
       return;
     }
     if (isEditing && activePlanId && (w?._id || w?.id)) {
@@ -1002,16 +1177,9 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     }
 
     if (isDiscussedWithManager) {
-      if (isCustomManager) {
-        if (!customManagerName.trim()) {
-          toast.error("Please enter the custom manager name");
-          return;
-        }
-      } else {
-        if (!discussedManagerId && !discussedManagerName.trim()) {
-          toast.error("Please select a manager or enter custom manager name");
-          return;
-        }
+      if (!discussedManagerId && !discussedManagerName.trim()) {
+        toast.error("Please select a manager from the list");
+        return;
       }
     }
 
@@ -1024,13 +1192,11 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         remarks: remarks.trim(),
         is_discussed_with_manager: isDiscussedWithManager,
         discussed_manager_id:
-          isDiscussedWithManager && !isCustomManager && discussedManagerId
+          isDiscussedWithManager && discussedManagerId
             ? discussedManagerId
             : undefined,
         discussed_manager_name: isDiscussedWithManager
-          ? isCustomManager
-            ? customManagerName.trim()
-            : selectedManager?.name || discussedManagerName.trim() || undefined
+          ? selectedManager?.name || discussedManagerName.trim() || undefined
           : undefined,
         discussion_method: isDiscussedWithManager ? discussionMethod : undefined,
         ...(managerRole && salesUserId ? { sales_user: salesUserId } : {}),
@@ -1048,13 +1214,11 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         remarks: remarks.trim(),
         is_discussed_with_manager: isDiscussedWithManager,
         discussed_manager_id:
-          isDiscussedWithManager && !isCustomManager && selectedManager
+          isDiscussedWithManager && selectedManager
             ? ({ _id: selectedManager._id, name: selectedManager.name, email: selectedManager.email } as any)
             : discussedManagerId || undefined,
         discussed_manager_name: isDiscussedWithManager
-          ? isCustomManager
-            ? customManagerName.trim()
-            : selectedManager?.name || discussedManagerName.trim() || undefined
+          ? selectedManager?.name || discussedManagerName.trim() || undefined
           : undefined,
         discussion_method: isDiscussedWithManager ? discussionMethod : undefined,
         sales_user: selectedExec as any,
@@ -1341,18 +1505,32 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         </div>
       ) : null}
 
-      {/* Form Card */}
-      <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-card p-6 shadow-xs space-y-6">
-        <div className="grid gap-5 sm:grid-cols-2">
-          {/* Executive Selection with Search (Manager only) */}
-          {managerRole && (
-            <div className="sm:col-span-2 relative" ref={dropdownRef}>
+      {/* Top Controls Card: Date & Assigned Executive Selection (Outside of Form) */}
+      <div className="rounded-xl border border-border bg-card p-5 shadow-xs space-y-4">
+        <div className="flex items-center justify-between border-b border-border pb-3">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-primary" />
+            <h2 className="text-sm font-bold text-foreground">
+              Schedule &amp; Assigned Executive
+            </h2>
+          </div>
+          <span className="text-[11px] text-muted">
+            {isEditing ? "Editing work plan" : "Select executive & plan date"}
+          </span>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          {/* Executive Selection with Search (Admin or Manager) */}
+          {elevatedRole && (
+            <div className="relative" ref={dropdownRef}>
               <label className="mb-1.5 flex items-center justify-between text-xs font-semibold text-foreground">
                 <span>
                   Assigned Executive / User <span className="text-rose-500">*</span>
                 </span>
                 <span className="text-[11px] font-normal text-muted">
-                  Showing users assigned to Work Planner Portal (Executive / Manager)
+                  {adminRole
+                    ? "All portal members (Admin)"
+                    : "Reporting team & self (Manager)"}
                 </span>
               </label>
 
@@ -1360,24 +1538,51 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
               <button
                 type="button"
                 onClick={() => setExecDropdownOpen((prev) => !prev)}
-                className="w-full flex items-center justify-between rounded-lg border border-border bg-surface-muted px-3 py-2.5 text-xs font-medium text-foreground outline-none focus:border-primary transition hover:bg-surface-muted/80 disabled:opacity-60 disabled:cursor-not-allowed"
+                className="w-full flex items-center justify-between rounded-lg border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary transition hover:bg-surface-muted/80 disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <div className="flex items-center gap-2.5 overflow-hidden">
                   <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary shrink-0">
                     <UserIcon className="h-3.5 w-3.5" />
                   </div>
-                  <div className="text-left truncate">
+                  <div className="text-left truncate flex items-center gap-1.5 flex-wrap">
                     <span className="font-semibold text-foreground">
                       {selectedExecutive.name}
                     </span>
+                    {selectedExecutive.isSelf && (
+                      <span className="rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-bold text-primary">
+                        Self
+                      </span>
+                    )}
+                    {selectedExecutivePortalRole && (
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${
+                          selectedExecutivePortalRole === "Admin"
+                            ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/20"
+                            : selectedExecutivePortalRole === "Manager"
+                            ? "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/20"
+                            : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                        }`}
+                      >
+                        {selectedExecutivePortalRole === "Admin"
+                          ? "Portal Admin"
+                          : selectedExecutivePortalRole === "Manager"
+                          ? "Portal Manager"
+                          : "Executive"}
+                      </span>
+                    )}
+                    {selectedExecutive.department && (
+                      <span className="rounded border border-border px-1.5 py-0.5 text-[10px] text-muted">
+                        {selectedExecutive.department}
+                      </span>
+                    )}
                     {selectedExecutive.email && (
-                      <span className="text-muted ml-1.5 text-[11px]">
+                      <span className="text-muted ml-1 text-[11px]">
                         ({selectedExecutive.email})
                       </span>
                     )}
                   </div>
                 </div>
-                <ChevronDown className={`h-4 w-4 text-muted transition-transform duration-200 ${execDropdownOpen ? "rotate-180" : ""}`} />
+                <ChevronDown className={`h-4 w-4 text-muted transition-transform duration-200 shrink-0 ml-2 ${execDropdownOpen ? "rotate-180" : ""}`} />
               </button>
 
               {/* Dropdown Card */}
@@ -1416,37 +1621,58 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                         const uId = u._id || u.id || "";
                         const isSelf = uId === sessionUser?._id;
                         const isSelected = uId === salesUserId || (isSelf && salesUserId === sessionUser?._id);
+                        const userRole = getWorkPlannerUserPortalRole(u);
                         return (
                           <button
                             key={uId}
                             type="button"
                             onClick={() => {
+                              prevFetchedKey.current = "";
                               setSalesUserId(uId);
                               setExecDropdownOpen(false);
                               setExecSearch("");
                             }}
-                            className={`w-full flex items-center justify-between rounded-lg p-2 text-xs text-left transition ${isSelected
+                            className={`w-full flex items-center justify-between rounded-lg p-2 text-xs text-left transition ${
+                              isSelected
                                 ? "bg-primary/10 text-primary font-semibold"
                                 : "hover:bg-surface-muted text-foreground"
-                              }`}
+                            }`}
                           >
                             <div className="flex items-center gap-2.5 truncate">
                               <div
-                                className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold shrink-0 ${isSelected
+                                className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold shrink-0 ${
+                                  isSelected
                                     ? "bg-primary text-primary-foreground"
                                     : "bg-surface-muted text-muted"
-                                  }`}
+                                }`}
                               >
                                 {u.name ? u.name.charAt(0).toUpperCase() : "U"}
                               </div>
                               <div className="truncate">
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className="font-semibold text-foreground">
                                     {u.name}
                                   </span>
                                   {isSelf && (
                                     <span className="rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-bold text-primary">
                                       Self
+                                    </span>
+                                  )}
+                                  {userRole && (
+                                    <span
+                                      className={`rounded px-1.5 py-0.5 text-[10px] font-semibold border ${
+                                        userRole === "Admin"
+                                          ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/20"
+                                          : userRole === "Manager"
+                                          ? "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/20"
+                                          : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                                      }`}
+                                    >
+                                      {userRole === "Admin"
+                                        ? "Portal Admin"
+                                        : userRole === "Manager"
+                                        ? "Portal Manager"
+                                        : "Executive"}
                                     </span>
                                   )}
                                   {u.department && (
@@ -1470,7 +1696,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           )}
 
           {/* Plan Date */}
-          <div>
+          <div className={elevatedRole ? "" : "sm:col-span-2"}>
             <label className="mb-1.5 flex items-center justify-between text-xs font-semibold text-foreground">
               <span>
                 Plan Date <span className="text-rose-500">*</span>
@@ -1488,7 +1714,10 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                 required
                 value={planDate}
                 min={minPlanDate}
-                onChange={(e) => setPlanDate(e.target.value)}
+                onChange={(e) => {
+                  prevFetchedKey.current = "";
+                  setPlanDate(e.target.value);
+                }}
                 className="w-full rounded-lg border border-border bg-surface-muted pl-9 pr-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
               />
             </div>
@@ -1498,30 +1727,43 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
               </p>
             )}
           </div>
+        </div>
+      </div>
 
-          {/* Plan Type */}
+      {/* Form Card */}
+      <form onSubmit={handleSubmit} className="rounded-xl border border-border bg-card p-6 shadow-xs space-y-6">
+        <div className="space-y-4">
+          {/* Plan Type Selector */}
           <div>
             <label className="mb-1.5 block text-xs font-semibold text-foreground">
               Plan Type <span className="text-rose-500">*</span>
             </label>
-            <select
-              value={planType}
-              disabled={isPlanCompleted}
-              onChange={(e) => {
-                const val = e.target.value;
-                setPlanType(val);
-                if (val === "Work From Home" && !location) setLocation("Remote / Work From Home");
-                else if (val === "Work From Office" && !location) setLocation("Head Office / Branch Office");
-                else if (val === "Leave") setLocation("");
-              }}
-              className="w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
-            >
-              {WORK_PLAN_TYPE_TABS.filter((t) => t.id !== "all").map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              {WORK_PLAN_TYPE_TABS.filter((t) => t.id !== "all").map((t) => {
+                const isSelected = planType === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    disabled={isPlanCompleted}
+                    onClick={() => {
+                      const val = t.id;
+                      setPlanType(val);
+                      if (val === "Work From Home" && !location) setLocation("Remote / Work From Home");
+                      else if (val === "Work From Office" && !location) setLocation("Head Office / Branch Office");
+                      else if (val === "Leave") setLocation("");
+                    }}
+                    className={`rounded-lg px-3 py-2.5 text-xs font-semibold border transition text-center flex flex-col items-center justify-center gap-1 cursor-pointer ${
+                      isSelected
+                        ? "border-primary bg-primary/10 text-primary shadow-xs"
+                        : "border-border bg-surface-muted/50 text-foreground hover:bg-surface-muted"
+                    } disabled:opacity-60 disabled:cursor-not-allowed`}
+                  >
+                    <span>{t.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -1595,8 +1837,6 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                       if (e.target.checked) {
                         setIsDiscussedWithManager(true);
                         if (assignedPlanTypeManager) {
-                          setIsCustomManager(false);
-                          setCustomManagerName("");
                           setDiscussedManagerId(assignedPlanTypeManager._id || "");
                           setDiscussedManagerName(assignedPlanTypeManager.name || "");
                           setShowManagerPicker(false);
@@ -1618,8 +1858,6 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                         setIsDiscussedWithManager(false);
                         setDiscussedManagerId("");
                         setDiscussedManagerName("");
-                        setIsCustomManager(false);
-                        setCustomManagerName("");
                       }
                     }}
                     className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20 accent-primary cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
@@ -1654,20 +1892,13 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                         Change Manager
                       </button>
                     )}
-                    {showManagerPicker && !isPlanCompleted && (
+                    {showManagerPicker && assignedPlanTypeManager && !isPlanCompleted && (
                       <button
                         type="button"
-                        onClick={() => {
-                          setIsCustomManager(!isCustomManager);
-                          if (!isCustomManager) {
-                            setDiscussedManagerId("");
-                          } else {
-                            setCustomManagerName("");
-                          }
-                        }}
+                        onClick={() => setShowManagerPicker(false)}
                         className="text-[11px] font-medium text-primary hover:underline cursor-pointer"
                       >
-                        {isCustomManager ? "← Select from List" : "+ Custom Manager"}
+                        ← Back to Default
                       </button>
                     )}
                   </div>
@@ -1709,16 +1940,6 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                         </button>
                       )}
                     </div>
-                  ) : isCustomManager ? (
-                    <input
-                      type="text"
-                      disabled={isPlanCompleted}
-                      placeholder="Enter manager's name..."
-                      value={customManagerName}
-                      onChange={(e) => setCustomManagerName(e.target.value)}
-                      className="w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
-                      required
-                    />
                   ) : (
                     <div className="relative" ref={managerDropdownRef}>
                       <button
@@ -1738,7 +1959,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                           ) : discussedManagerName ? (
                             <span className="font-semibold text-foreground">{discussedManagerName}</span>
                           ) : (
-                            <span className="text-muted">Search &amp; select manager...</span>
+                            <span className="text-muted">Search &amp; select manager or admin...</span>
                           )}
                         </div>
                         <ChevronDown className="h-4 w-4 text-muted shrink-0 ml-2" />
@@ -1750,7 +1971,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted" />
                             <input
                               type="text"
-                              placeholder="Search manager by name or email..."
+                              placeholder="Search manager or admin by name, email, role..."
                               value={managerSearch}
                               onChange={(e) => setManagerSearch(e.target.value)}
                               className="w-full rounded-lg border border-border bg-surface-muted pl-8 pr-3 py-1.5 text-xs text-foreground outline-none focus:border-primary"
@@ -1760,19 +1981,20 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                           <div className="max-h-48 overflow-y-auto space-y-1">
                             {eligibleManagers.length === 0 ? (
                               <div className="p-3 text-center text-xs text-muted">
-                                No managers found
+                                No reporting managers or admins found
                               </div>
                             ) : (
                               eligibleManagers.map((u) => {
                                 const isSelected =
-                                  (u._id || u.id) === discussedManagerId;
+                                  (u._id) === discussedManagerId;
                                 return (
                                   <button
-                                    key={u._id || u.id}
+                                    key={u._id || u.name}
                                     type="button"
                                     onClick={() => {
-                                      setDiscussedManagerId(u._id || u.id || "");
+                                      setDiscussedManagerId(u._id || "");
                                       setDiscussedManagerName(u.name || "");
+                                      setShowManagerPicker(false);
                                       setManagerDropdownOpen(false);
                                     }}
                                     className={`flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-xs transition ${
@@ -1782,7 +2004,18 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                                     }`}
                                   >
                                     <div className="truncate">
-                                      <div className="font-semibold">{u.name}</div>
+                                      <div className="flex items-center gap-1.5 flex-wrap">
+                                        <span className="font-semibold">{u.name}</span>
+                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                          u.isReportingManager
+                                            ? "bg-primary/15 text-primary"
+                                            : u.roleBadge === "Portal Admin"
+                                            ? "bg-purple-500/15 text-purple-600 dark:text-purple-400"
+                                            : "bg-blue-500/15 text-blue-600 dark:text-blue-400"
+                                        }`}>
+                                          {u.roleBadge}
+                                        </span>
+                                      </div>
                                       <div className="text-[11px] text-muted truncate">{u.email}</div>
                                     </div>
                                     {isSelected && <Check className="h-3.5 w-3.5 text-primary shrink-0 ml-2" />}
@@ -1790,20 +2023,6 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                                 );
                               })
                             )}
-                          </div>
-                          <div className="border-t border-border mt-2 pt-1.5">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsCustomManager(true);
-                                setDiscussedManagerId("");
-                                setManagerDropdownOpen(false);
-                              }}
-                              className="flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium text-primary hover:bg-primary/10 transition"
-                            >
-                              <Plus className="h-3.5 w-3.5" />
-                              <span>Enter Custom Manager Name...</span>
-                            </button>
                           </div>
                         </div>
                       )}
@@ -1851,7 +2070,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                     className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition shadow-xs cursor-pointer"
                   >
                     <Plus className="h-3.5 w-3.5" />
-                    Add Previous Pending Visits
+                    Add Previous Created / Pending Visits
                   </button>
                   <button
                     type="button"
@@ -1923,7 +2142,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                           >
                             <Edit3 className="h-3.5 w-3.5" />
                           </button>
-                          {managerRole || !isManagerCreatedItem(v) ? (
+                          {elevatedRole || !isManagerCreatedItem(v) ? (
                             <button
                               type="button"
                               onClick={() => handleRemoveVisit(idx)}
@@ -1937,7 +2156,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                               type="button"
                               disabled
                               className="rounded p-1 text-muted/30 cursor-not-allowed opacity-50"
-                              title="Created by Manager — Executive cannot remove"
+                              title="Created by Portal Admin / Manager — cannot be removed by Executive"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -1970,7 +2189,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                     className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition shadow-xs cursor-pointer"
                   >
                     <Plus className="h-3.5 w-3.5" />
-                    Add Previous Pending Tasks
+                    Add Previous Created / Pending Tasks
                   </button>
                   <button
                     type="button"
@@ -1987,6 +2206,109 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
               )}
             </div>
 
+            {/* Custom Work Task Templates from User Settings */}
+            {effectiveSettings?.customWorkTemplates &&
+              effectiveSettings.customWorkTemplates.length > 0 &&
+              !isPlanCompleted && (
+                <div className="rounded-lg border border-primary/25 bg-primary/5 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-primary flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Custom Work Task Templates ({effectiveSettings.customWorkTemplates.length})
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const templates: CustomWorkTaskTemplate[] =
+                          (effectiveSettings.customWorkTemplates as CustomWorkTaskTemplate[]) || [];
+                        const toAdd = templates.filter(
+                          (t: CustomWorkTaskTemplate) =>
+                            !works.some(
+                              (w: any) =>
+                                String(w.title || "").trim().toLowerCase() ===
+                                String(t.title || "").trim().toLowerCase()
+                            )
+                        );
+                        if (toAdd.length === 0) {
+                          toast.info("All custom task templates are already added to this plan.");
+                          return;
+                        }
+                        const newWorks = [
+                          ...works,
+                          ...toAdd.map((t: CustomWorkTaskTemplate, i: number) => ({
+                            sequence: works.length + i + 1,
+                            title: t.title,
+                            description: t.description || "",
+                            planned_start_time: t.planned_start_time || "",
+                            planned_end_time: t.planned_end_time || "",
+                            work_type: t.work_type || "default",
+                            is_template_task: true,
+                            status: "created",
+                          })),
+                        ];
+                        setWorks(newWorks);
+                        toast.success(`Added ${toAdd.length} custom work task${toAdd.length > 1 ? "s" : ""}`);
+                      }}
+                      className="text-[11px] font-bold text-primary hover:underline cursor-pointer"
+                    >
+                      + Add All Templates
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {effectiveSettings.customWorkTemplates.map((t: CustomWorkTaskTemplate) => {
+                      const isAdded = works.some(
+                        (w: any) =>
+                          String(w.title || "").trim().toLowerCase() ===
+                          String(t.title || "").trim().toLowerCase()
+                      );
+                      return (
+                        <button
+                          key={t.id}
+                          type="button"
+                          onClick={() => {
+                            if (isAdded) {
+                              toast.info(`"${t.title}" is already added.`);
+                              return;
+                            }
+                            setWorks((prev) => [
+                              ...prev,
+                              {
+                                sequence: prev.length + 1,
+                                title: t.title,
+                                description: t.description || "",
+                                planned_start_time: t.planned_start_time || "",
+                                planned_end_time: t.planned_end_time || "",
+                                work_type: t.work_type || "default",
+                                is_template_task: true,
+                                status: "created",
+                              },
+                            ]);
+                            toast.success(`Added "${t.title}" to planned tasks`);
+                          }}
+                          className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition cursor-pointer ${
+                            isAdded
+                              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 opacity-80"
+                              : "border-border bg-card text-foreground hover:border-primary/40 hover:bg-surface-muted"
+                          }`}
+                        >
+                          {isAdded ? (
+                            <Check className="h-3 w-3 text-emerald-500" />
+                          ) : (
+                            <Plus className="h-3 w-3 text-primary" />
+                          )}
+                          <span className="font-semibold">{t.title}</span>
+                          {t.planned_start_time && (
+                            <span className="text-[10px] text-muted">
+                              ({t.planned_start_time}{t.planned_end_time ? `-${t.planned_end_time}` : ""})
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
             {works.length === 0 ? (
               <p className="text-xs text-muted py-3 text-center">
                 No work tasks added yet. {isPlanCompleted ? "" : "Click \"Add Task\" to add tasks for this plan date."}
@@ -1995,7 +2317,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
               <div className="space-y-2">
                 {works.map((w, idx) => {
                   const isDefaultTask = w.work_type === "default" || w.is_default_task;
-                  const isManagerItem = !managerRole && isManagerCreatedItem(w);
+                  const isManagerItem = !elevatedRole && isManagerCreatedItem(w);
                   const canRemove = !isDefaultTask && !isManagerItem;
 
                   return (
@@ -2065,7 +2387,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                               title={
                                 isDefaultTask
                                   ? "Default task — cannot be removed"
-                                  : "Created by Manager — Executive cannot remove"
+                                  : "Created by Portal Admin / Manager — cannot be removed by Executive"
                               }
                             >
                               <Trash2 className="h-3.5 w-3.5" />
