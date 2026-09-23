@@ -117,7 +117,9 @@ export async function uploadMulterFile(file, resourceType, resourceId) {
 }
 
 export async function getViewPresignedUrl(fileId) {
-  const data = await fmJson(`/files/${fileId}/view-url`, undefined, "GET");
+  const data = await fmJson(`/files/${fileId}/view-url`, undefined, "GET", {
+    timeoutMs: 8000,
+  });
   return data.url;
 }
 

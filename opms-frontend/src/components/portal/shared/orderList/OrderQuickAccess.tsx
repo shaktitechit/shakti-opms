@@ -12,7 +12,9 @@ import { getOrderWorkflowTabAccent } from "./orderWorkflowTabMeta";
 import type { OrderWorkflowCategoryOptions } from "./orderWorkflowTabs";
 
 export type OrderQuickAccessProps = {
-  orders: unknown[];
+  orders?: unknown[];
+  /** Unfiltered tab counts from the dashboard summary. */
+  counts?: Record<string, number>;
   isOrdersFetching: boolean;
   categoryOptions?: OrderWorkflowCategoryOptions;
   role: OrderQuickAccessRole;
@@ -25,7 +27,8 @@ export type OrderQuickAccessProps = {
  * workflow tabs (`ORDER_WORKFLOW_TABS` + `computeOrderWorkflowTabStats`).
  */
 export default function OrderQuickAccess({
-  orders,
+  orders = [],
+  counts,
   isOrdersFetching,
   categoryOptions,
   role,
@@ -34,10 +37,14 @@ export default function OrderQuickAccess({
   const config = ORDER_QUICK_ACCESS_ROLE_CONFIG[role] ?? ORDER_QUICK_ACCESS_ROLE_CONFIG.admin;
   const basePath = portalHome ?? config.path;
 
-  const orderStats = useMemo(
-    () => config.compute(orders, categoryOptions),
-    [config, orders, categoryOptions],
-  );
+  const orderStats = useMemo(() => {
+    if (counts) {
+      return Object.fromEntries(
+        Object.entries(counts).map(([id, count]) => [id, { count }]),
+      );
+    }
+    return config.compute(orders, categoryOptions);
+  }, [config, orders, categoryOptions, counts]);
 
   return (
     <div className="space-y-2.5">

@@ -27,6 +27,7 @@ import {
   useFeaturedMatrixCatalog,
   type FeaturedMatrixCatalog,
 } from "./useFeaturedMatrixCatalog";
+import type { DashboardOrdersSummary } from "@/store/api/slices/dashboardApi";
 
 interface FeaturedProductGroupFeaturedPartyTableProps {
   orders: any[];
@@ -41,6 +42,7 @@ interface FeaturedProductGroupFeaturedPartyTableProps {
   forceMetric?: MatrixMetric;
   catalog?: FeaturedMatrixCatalog;
   enabled?: boolean;
+  contributions?: DashboardOrdersSummary["contributions"];
 }
 
 export default function FeaturedProductGroupFeaturedPartyTable({
@@ -53,6 +55,7 @@ export default function FeaturedProductGroupFeaturedPartyTable({
   forceMetric,
   catalog: propCatalog,
   enabled = true,
+  contributions,
 }: FeaturedProductGroupFeaturedPartyTableProps) {
   const [metricState, setMetric] = useState<MatrixMetric>("quantity");
   const metric = forceMetric ?? metricState;
@@ -122,6 +125,23 @@ export default function FeaturedProductGroupFeaturedPartyTable({
       }
     }
 
+    if (contributions) {
+      for (const cell of contributions) {
+        const partyId = cell.partyId;
+        if (!partyId || !partyIdSet.has(partyId)) continue;
+        const productId = cell.productId;
+        if (!productId) continue;
+        const val = metric === "volume" ? cell.volume : cell.quantity;
+        const gId = productToGroupMap.get(productId);
+        if (!gId || !groupIdSet.has(gId)) continue;
+        const pMap = map.get(productId);
+        if (pMap) pMap.set(partyId, (pMap.get(partyId) ?? 0) + val);
+        const gMap = map.get(gId);
+        if (gMap) gMap.set(partyId, (gMap.get(partyId) ?? 0) + val);
+      }
+      return map;
+    }
+
     for (const order of filteredOrders) {
       if (!shouldIncludeOrder(order, qtyBasis)) continue;
       const partyId = resolveOrderPartyId(order);
@@ -157,6 +177,7 @@ export default function FeaturedProductGroupFeaturedPartyTable({
     productsByGroup,
     metric,
     qtyBasis,
+    contributions,
   ]);
 
   const toggleGroup = (groupId: string) => {

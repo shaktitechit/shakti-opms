@@ -17,8 +17,6 @@ import { pickOrders } from "./pickOrders";
 import { PortalBusyOverlay } from "./PortalBusyOverlay";
 import { usePortalDashboardKpi } from "./usePortalDashboardKpi";
 
-import { ORDER_WORKFLOW_LIST_QUERY } from "./orderList/orderWorkflowTabs";
-
 type PortalOverviewShellProps = { portal: PortalKey };
 
 export default function PortalOverviewShell({
@@ -44,7 +42,13 @@ export default function PortalOverviewShell({
     );
   }, [error, isError, skipKpi]);
 
-  const ordersQ = useListOrdersQuery(ORDER_WORKFLOW_LIST_QUERY);
+  const ordersQ = useListOrdersQuery({
+    exclude_status: "draft",
+    view: "list",
+    paginate: "true",
+    page: "1",
+    limit: "8",
+  });
   const orders = pickOrders(ordersQ.data);
 
   const ordersErrToastShown = useRef(false);
@@ -101,7 +105,7 @@ export default function PortalOverviewShell({
 
       <DashboardCard
         title="Orders snapshot"
-        description="Latest rows via `GET /api/orders`."
+        description="Latest page of non-draft orders."
       >
         <OrderTable
           orders={orders}

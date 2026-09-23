@@ -12,9 +12,12 @@ import {
   shouldIncludeOrder,
 } from "./leaderboardUtils";
 import { isKitShellOrderLine } from "@/components/portal/shared/orderLineQuantities";
+import type { DashboardOrdersSummary } from "@/store/api/slices/dashboardApi";
 
 interface MonthlyPerformanceChartProps {
-  orders: any[];
+  orders?: any[];
+  monthly?: DashboardOrdersSummary["monthly"];
+  chartYears?: number[];
   isOrdersFetching: boolean;
   forceMetric?: Metric;
   qtyBasis?: QtyBasis;
@@ -37,6 +40,15 @@ const MONTH_LABELS = [
   "Nov",
   "Dec",
 ] as const;
+
+const EMPTY_ORDERS: never[] = [];
+
+function sameNumbers(left: number[], right: number[]) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
 
 const YEAR_COLORS = [
   { fill: "fill-blue-500", hover: "fill-blue-400", swatch: "bg-blue-500" },
@@ -80,6 +92,23 @@ function orderMetricValue(order: any, metric: Metric, basis: QtyBasis): number {
   return total;
 }
 
+function monthlySeriesHasValues(
+  monthly: NonNullable<MonthlyPerformanceChartProps["monthly"]>,
+): boolean {
+  for (const basis of ["approved", "dispatched"] as const) {
+    const basisGrid = monthly[basis];
+    if (!basisGrid) continue;
+    for (const metricKey of ["quantity", "volume"] as const) {
+      const grids = basisGrid[metricKey];
+      if (!grids) continue;
+      for (const row of Object.values(grids)) {
+        if (Array.isArray(row) && row.some((value) => Number(value) > 0)) return true;
+      }
+    }
+  }
+  return false;
+}
+
 function orderYearMonth(
   order: any,
   basis: QtyBasis = "approved",
@@ -120,7 +149,9 @@ function formatTooltipValue(v: number, metric: Metric): string {
 }
 
 export default function MonthlyPerformanceChart({
-  orders,
+  orders = EMPTY_ORDERS,
+  monthly,
+  chartYears,
   isOrdersFetching,
   forceMetric,
   qtyBasis: propQtyBasis = "approved",
@@ -139,15 +170,33 @@ export default function MonthlyPerformanceChart({
   const yearMenuRef = useRef<HTMLDivElement>(null);
 
   const availableYears = useMemo(() => {
+    if (monthly) {
+      const years = new Set<number>([new Date().getFullYear()]);
+      for (const basis of ["approved", "dispatched"] as const) {
+        const basisGrid = monthly[basis];
+        if (!basisGrid) continue;
+        for (const metricKey of ["quantity", "volume"] as const) {
+          const grids = basisGrid[metricKey];
+          if (!grids) continue;
+          for (const year of Object.keys(grids)) {
+            const n = Number(year);
+            if (Number.isFinite(n)) years.add(n);
+          }
+        }
+      }
+      if (chartYears?.length) {
+        for (const year of chartYears) years.add(year);
+      }
+      return Array.from(years).sort((a, b) => b - a);
+    }
     const years = new Set<number>();
     for (const o of orders) {
       const ym = orderYearMonth(o, qtyBasis);
       if (ym) years.add(ym.year);
     }
-    const currentYear = new Date().getFullYear();
-    years.add(currentYear);
+    years.add(new Date().getFullYear());
     return Array.from(years).sort((a, b) => b - a);
-  }, [orders, qtyBasis]);
+  }, [orders, qtyBasis, chartYears, monthly]);
 
   useEffect(() => {
     if (availableYears.length === 0) return;
@@ -156,9 +205,10 @@ export default function MonthlyPerformanceChart({
       ? [currentYear]
       : [availableYears[0]];
     setSelectedYears((prev) => {
-      if (prev.length === 0) return fallback;
+      if (prev.length === 0) return sameNumbers(prev, fallback) ? prev : fallback;
       const next = prev.filter((y) => availableYears.includes(y));
-      return next.length > 0 ? next : fallback;
+      const resolved = next.length > 0 ? next : fallback;
+      return sameNumbers(prev, resolved) ? prev : resolved;
     });
   }, [availableYears]);
 
@@ -183,6 +233,15 @@ export default function MonthlyPerformanceChart({
     for (const year of activeYears) {
       map.set(year, Array.from({ length: 12 }, () => 0));
     }
+    if (monthly) {
+      const basisKey = qtyBasis === "dispatched" ? "dispatched" : "approved";
+      const grids = monthly[basisKey]?.[metric];
+      for (const year of activeYears) {
+        const row = grids?.[String(year)];
+        if (row) map.set(year, row);
+      }
+      return map;
+    }
     for (const o of orders) {
       const ym = orderYearMonth(o, qtyBasis);
       if (!ym || !map.has(ym.year)) continue;
@@ -190,7 +249,7 @@ export default function MonthlyPerformanceChart({
       row[ym.month] += orderMetricValue(o, metric, qtyBasis);
     }
     return map;
-  }, [orders, activeYears, metric, qtyBasis]);
+  }, [orders, activeYears, metric, qtyBasis, monthly]);
 
   const maxVal = useMemo(() => {
     let max = 0;
@@ -254,11 +313,14 @@ export default function MonthlyPerformanceChart({
     );
   };
 
-  const chartEmpty = !isOrdersFetching && orders.length === 0;
+  const hasMonthlySeries = monthly ? monthlySeriesHasValues(monthly) : false;
+  const chartEmpty =
+    !isOrdersFetching && (monthly ? !hasMonthlySeries : orders.length === 0);
+  const showChartSpinner = isOrdersFetching && !hasMonthlySeries && orders.length === 0;
 
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-slate-900 relative z-10">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between border-b border-slate-100 pb-4 dark:border-white/5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between border-b border-slate-100 pb-4 dark:border-white/5 relative z-30">
         <div className="flex items-start gap-2.5">
           <BarChart3 className="mt-0.5 h-5 w-5 text-blue-600 dark:text-blue-400" />
           <div>
@@ -401,7 +463,7 @@ export default function MonthlyPerformanceChart({
       )}
 
       <div className="mt-6 relative z-20 h-[280px] w-full flex items-center justify-center">
-        {isOrdersFetching ? (
+        {showChartSpinner ? (
           <div className="flex flex-col items-center justify-center space-y-2">
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
             <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">

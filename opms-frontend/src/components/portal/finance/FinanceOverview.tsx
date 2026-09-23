@@ -8,15 +8,8 @@ import PartyLeaderboard from "@/components/portal/shared/dashboard/PartyLeaderbo
 import ProductLeaderboard from "@/components/portal/shared/dashboard/ProductLeaderboard";
 import SalesLeaderboard from "@/components/portal/shared/dashboard/SalesLeaderboard";
 import FeaturedMatrixSection from "@/components/portal/shared/dashboard/FeaturedMatrixSection";
-import { computeFinanceOrderStats } from "./financeOrderUtils";
 import { formatPeriodCaption } from "@/components/portal/shared/dashboard/PeriodHeadingCaption";
-import { ORDER_WORKFLOW_LIST_QUERY } from "@/components/portal/shared/orderList/orderWorkflowTabs";
-import { useOrderWorkflowCategoryOptions } from "@/components/portal/shared/orderList/useOrderWorkflowCategoryOptions";
 import {
-  useGetDashboardFinanceQuery,
-  useListOrdersQuery,
-  useListPartiesQuery,
-  useListUsersQuery,
   useNotifyPushMutation,
   useSubscribePushMutation,
 } from "@/store/api";
@@ -30,9 +23,6 @@ import { publicVapidKey } from "@/lib/env";
 import { toast } from "@/lib/toast";
 import { useAppSelector } from "@/store/hooks";
 import { OverviewFlagsWidget } from "@/components/portal/shared/OverviewFlagsWidget";
-import { pickOrders } from "@/components/portal/shared/pickOrders";
-import { buildPartyNameById } from "@/components/portal/sales/partyDisplay";
-import { buildUserNameById } from "@/components/portal/shared/userDisplay";
 import {
   Bell,
   BellOff,
@@ -40,7 +30,7 @@ import {
   X,
 } from "lucide-react";
 import PeriodFilter from "@/components/portal/shared/dashboard/PeriodFilter";
-import { usePeriodFilter } from "@/components/portal/shared/dashboard/usePeriodFilter";
+import { useDashboardSummary } from "@/components/portal/shared/dashboard/useDashboardSummary";
 const FINANCE_PENDING_PUSH_INTERVAL_MS = 300_000;
 const FINANCE_PENDING_ALERT_URL = "/finance/orders?tab=pending_finance_approval";
 
@@ -54,19 +44,25 @@ export default function FinanceOverview() {
     typeof user?.name === "string" ? user.name : "Finance Specialist";
 
   const {
-    isFetching: isKpiFetching,
-    refetch: refetchKpi,
-  } = useGetDashboardFinanceQuery();
+    isFetching: isSummaryFetching,
+    refetch: refetchSummary,
+    summary,
+    dataType,
+    setDataType,
+    qtyBasis,
+    availableYears,
+    selectedYears,
+    setSelectedYears,
+    selectedMonths,
+    setSelectedMonths,
+    dateFilter,
+    setDateFilter,
+    customDateFrom,
+    setCustomDateFrom,
+    customDateTo,
+    setCustomDateTo,
+  } = useDashboardSummary();
 
-  const {
-    data: ordersData,
-    isFetching: isOrdersFetching,
-    refetch: refetchOrders,
-  } = useListOrdersQuery(ORDER_WORKFLOW_LIST_QUERY);
-
-  const { data: partiesData } = useListPartiesQuery({});
-  const { data: usersData } = useListUsersQuery({ department: "sales" });
-  const categoryOptions = useOrderWorkflowCategoryOptions();
   const [notifyPush] = useNotifyPushMutation();
   const [subscribePush] = useSubscribePushMutation();
 
@@ -90,26 +86,6 @@ export default function FinanceOverview() {
     setNotifPermission(Notification.permission);
   }, []);
 
-  const orders = useMemo(() => pickOrders(ordersData) as any[], [ordersData]);
-
-  const {
-    dataType,
-    setDataType,
-    qtyBasis,
-    availableYears,
-    selectedYears,
-    setSelectedYears,
-    selectedMonths,
-    setSelectedMonths,
-    dateFilter,
-    setDateFilter,
-    customDateFrom,
-    setCustomDateFrom,
-    customDateTo,
-    setCustomDateTo,
-    filteredOrders,
-  } = usePeriodFilter(orders);
-
   const filterCaption = useMemo(() => {
     return formatPeriodCaption(
       dateFilter,
@@ -120,12 +96,7 @@ export default function FinanceOverview() {
     );
   }, [dateFilter, customDateFrom, customDateTo, selectedYears, selectedMonths]);
 
-  const orderStats = useMemo(
-    () => computeFinanceOrderStats(orders, categoryOptions),
-    [orders, categoryOptions],
-  );
-
-  const pendingFinanceCount = orderStats.pending_finance_approval.count;
+  const pendingFinanceCount = summary?.queueCounts.pending_finance_approval ?? 0;
   const pendingFinanceCountRef = useRef(pendingFinanceCount);
   pendingFinanceCountRef.current = pendingFinanceCount;
   const hasPendingFinance = pendingFinanceCount > 0;
@@ -179,8 +150,8 @@ export default function FinanceOverview() {
 
   const sendPendingReminderRef = useRef(sendPendingReminder);
   sendPendingReminderRef.current = sendPendingReminder;
-  const refetchOrdersRef = useRef(refetchOrders);
-  refetchOrdersRef.current = refetchOrders;
+  const refetchSummaryRef = useRef(refetchSummary);
+  refetchSummaryRef.current = refetchSummary;
 
   // Alert immediately when pending exists, then every 5 minutes while overview stays open.
   useEffect(() => {
@@ -196,7 +167,7 @@ export default function FinanceOverview() {
     const tick = () => {
       if (cancelled) return;
       void sendPendingReminderRef.current();
-      void refetchOrdersRef.current();
+      void refetchSummaryRef.current();
     };
 
     const first = window.setTimeout(tick, 1_000);
@@ -305,24 +276,11 @@ export default function FinanceOverview() {
     }
   };
 
-  const partyNameById = useMemo(
-    () => buildPartyNameById(partiesData),
-    [partiesData],
-  );
-
-  const userNameById = useMemo(
-    () => buildUserNameById(usersData),
-    [usersData],
-  );
-
   const [isRefreshing, setIsRefreshing] = useState(false);
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      await Promise.all([
-        refetchKpi().unwrap(),
-        refetchOrders().unwrap(),
-      ]);
+      await refetchSummary().unwrap();
     } catch (e) {
       // Ignore errors
     } finally {
@@ -330,8 +288,7 @@ export default function FinanceOverview() {
     }
   };
 
-  const isAnyLoading =
-    isKpiFetching || isOrdersFetching || isRefreshing;
+  const isAnyLoading = isSummaryFetching || isRefreshing;
 
   const showEnableBanner =
     hasPendingFinance &&
@@ -465,10 +422,9 @@ export default function FinanceOverview() {
       </div>
 
       <OverviewWidgets
-        orders={orders}
-        filteredOrders={filteredOrders}
-        isOrdersFetching={isOrdersFetching}
-        categoryOptions={categoryOptions}
+        tabStats={summary?.tabStats}
+        queueCounts={summary?.queueCounts}
+        isOrdersFetching={isSummaryFetching}
         role="finance"
         selectedYears={selectedYears}
         selectedMonths={selectedMonths}
@@ -478,40 +434,36 @@ export default function FinanceOverview() {
         qtyBasis={qtyBasis}
       />
 
-
-
       <MonthlyPerformanceChart
-        orders={orders}
-        isOrdersFetching={isOrdersFetching}
+        monthly={summary?.monthly}
+        isOrdersFetching={isSummaryFetching}
         qtyBasis={qtyBasis}
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <ProductLeaderboard
-          orders={filteredOrders}
-          isOrdersFetching={isOrdersFetching}
+          rows={summary?.leaderboards.products}
+          isOrdersFetching={isSummaryFetching}
           externalFilterCaption={filterCaption}
           qtyBasis={qtyBasis}
         />
         <PartyLeaderboard
-          orders={filteredOrders}
-          isOrdersFetching={isOrdersFetching}
-          partyNameById={partyNameById}
+          rows={summary?.leaderboards.parties}
+          isOrdersFetching={isSummaryFetching}
           externalFilterCaption={filterCaption}
           qtyBasis={qtyBasis}
         />
         <SalesLeaderboard
-          orders={filteredOrders}
-          isOrdersFetching={isOrdersFetching}
-          userNameById={userNameById}
+          rows={summary?.leaderboards.salesUsers}
+          isOrdersFetching={isSummaryFetching}
           externalFilterCaption={filterCaption}
           qtyBasis={qtyBasis}
         />
       </div>
 
       <FeaturedMatrixSection
-        orders={filteredOrders}
-        isOrdersFetching={isOrdersFetching}
+        contributions={summary?.contributions}
+        isOrdersFetching={isSummaryFetching}
         externalFilterCaption={filterCaption}
         qtyBasis={qtyBasis}
       />

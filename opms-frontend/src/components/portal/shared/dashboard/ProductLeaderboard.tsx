@@ -11,9 +11,11 @@ import ReportDownloadButton from "./ReportDownloadButton";
 import { formatPeriodLabel } from "./periodFilterUtils";
 import { downloadCsvFile, reportFilename } from "./reportDownloadUtils";
 import { shouldIncludeOrder } from "./featuredMatrixUtils";
+import type { DashboardLeaderboardRow } from "@/store/api/slices/dashboardApi";
 
 interface ProductLeaderboardProps {
-  orders: any[];
+  orders?: any[];
+  rows?: DashboardLeaderboardRow[];
   isOrdersFetching: boolean;
   forceMetric?: Metric;
   disableInternalFilter?: boolean;
@@ -42,7 +44,8 @@ function resolveProductName(item: any): string {
 }
 
 export default function ProductLeaderboard({
-  orders,
+  orders = [],
+  rows,
   isOrdersFetching,
   forceMetric,
   disableInternalFilter = true,
@@ -67,6 +70,31 @@ export default function ProductLeaderboard({
   const displayOrders = disableInternalFilter ? orders : filteredOrders;
 
   const { productRows, footerTotals } = useMemo(() => {
+    if (rows) {
+      const bucketOf = (row: DashboardLeaderboardRow) =>
+        metric === "volume" ? row.volume : row.quantity;
+      const kitOf = (row: DashboardLeaderboardRow) =>
+        metric === "volume" ? row.volumeKit : row.quantityKit;
+      const productRows = rows
+        .map((row) => ({ name: row.name, ...bucketOf(row) }))
+        .sort((a, b) => b.total - a.total);
+      const footer = rows.reduce(
+        (acc, row) => {
+          const bucket = bucketOf(row);
+          const kit = kitOf(row) ?? { total: 0, sr: 0, sra: 0, cr: 0 };
+          const kitCounts = metric === "quantity";
+          return {
+            total: acc.total + (kitCounts ? bucket.total - kit.total : bucket.total),
+            kitTotal: acc.kitTotal + (kitCounts ? kit.total : 0),
+            sr: acc.sr + (kitCounts ? bucket.sr - kit.sr : bucket.sr),
+            sra: acc.sra + (kitCounts ? bucket.sra - kit.sra : bucket.sra),
+            cr: acc.cr + (kitCounts ? bucket.cr - kit.cr : bucket.cr),
+          };
+        },
+        { total: 0, kitTotal: 0, sr: 0, sra: 0, cr: 0 },
+      );
+      return { productRows, footerTotals: footer };
+    }
     const map = new Map<string, RateBucket>();
     const footer = {
       total: 0,
@@ -113,7 +141,7 @@ export default function ProductLeaderboard({
         .sort((a, b) => b.total - a.total),
       footerTotals: footer,
     };
-  }, [displayOrders, metric, qtyBasis]);
+  }, [displayOrders, metric, qtyBasis, rows]);
 
   const valueLabel =
     qtyBasis === "dispatched"

@@ -22,11 +22,9 @@ import {
 import {
   getOrderWorkflowTabCategory,
   ORDER_WORKFLOW_TAB_LABELS,
-  workflowTabQueryParams,
   type OrderWorkflowTabCategory,
 } from "@/components/portal/shared/orderList/orderWorkflowTabs";
 import { useOrderWorkflowCategoryOptions } from "@/components/portal/shared/orderList/useOrderWorkflowCategoryOptions";
-import { pickOrders } from "@/components/portal/shared/pickOrders";
 import { mutationRejectedMessage } from "@/lib/mutationMessages";
 import { toast } from "@/lib/toast";
 import {
@@ -34,7 +32,6 @@ import {
   useCreateTransportPlanMutation,
   useGetTransportPlanQuery,
   useListEligibleTransportOrdersQuery,
-  useListOrdersQuery,
   useListPartiesQuery,
   useListTransportAgentsQuery,
   useListTransportsQuery,
@@ -304,18 +301,13 @@ export default function TransportPlanFormPage({
   const readOnly = mode === "edit" && !!planQ.data && !canEditPlan(planQ.data.status);
   const skipOrderPool = mode === "edit" && readOnly && !!activePlanId;
 
-  // Same RTK pool as ListOrdersPage / Quick Access / Google Sheet.
-  const ordersQ = useListOrdersQuery(workflowTabQueryParams(), {
-    skip: skipOrderPool,
-  });
+  const eligibleOrdersQ = useListEligibleTransportOrdersQuery(
+    { all: "true" },
+    { skip: skipOrderPool },
+  );
   const partiesQ = useListPartiesQuery({}, { skip: skipOrderPool });
   const categoryOptions = useOrderWorkflowCategoryOptions();
   const transportsQ = useListTransportsQuery({}, { skip: skipOrderPool });
-  // Plan/shipment enrichment for Mapped + plan date + shipment name columns.
-  const eligibleEnrichmentQ = useListEligibleTransportOrdersQuery(
-    { limit: 200 },
-    { skip: skipOrderPool },
-  );
 
   const partyNameById = useMemo(
     () => buildPartyNameById(partiesQ.data),
@@ -404,7 +396,7 @@ export default function TransportPlanFormPage({
       });
     }
 
-    for (const row of eligibleEnrichmentQ.data?.data ?? []) {
+    for (const row of eligibleOrdersQ.data?.data ?? []) {
       const oid = String(row._id || row.id || "");
       if (!oid) continue;
       const plan = row.transport_plan;
@@ -442,20 +434,21 @@ export default function TransportPlanFormPage({
     return map;
   }, [
     transportByOrderId,
-    eligibleEnrichmentQ.data,
+    eligibleOrdersQ.data,
     planOrders,
     planQ.data?.plan_date,
     planQ.data?.transport_agent,
   ]);
 
   const eligible = useMemo(() => {
-    const orders = pickOrders(ordersQ.data) as OrderListRow[];
+    const orders = (eligibleOrdersQ.data?.data ?? []) as OrderListRow[];
     const q = searchQuery.trim().toLowerCase();
     const area = areaFilter.trim().toLowerCase();
     const priority = priorityFilter === "all" ? "" : priorityFilter.toLowerCase();
 
     return orders.filter((row) => {
-      const cat = getOrderWorkflowTabCategory(row, categoryOptions);
+      const tagged = (row as { workflow_tab?: OrderWorkflowTabCategory }).workflow_tab;
+      const cat = tagged || getOrderWorkflowTabCategory(row, categoryOptions);
       if (!cat || !TRANSPORT_PLAN_ORDER_TABS.has(cat)) return false;
 
       if (priority) {
@@ -479,7 +472,7 @@ export default function TransportPlanFormPage({
       return true;
     });
   }, [
-    ordersQ.data,
+    eligibleOrdersQ.data,
     categoryOptions,
     searchQuery,
     priorityFilter,
@@ -703,7 +696,7 @@ export default function TransportPlanFormPage({
       // Keep editing so the order list updates Mapped / plan date / shipment.
       await Promise.all([
         planQ.refetch(),
-        eligibleEnrichmentQ.refetch(),
+        eligibleOrdersQ.refetch(),
       ]);
     } catch (rejected) {
       toast.error(mutationRejectedMessage(rejected));
@@ -721,7 +714,7 @@ export default function TransportPlanFormPage({
   };
 
   const isLoadingOrders =
-    ordersQ.isLoading || ordersQ.isFetching || transportsQ.isFetching;
+    eligibleOrdersQ.isLoading || eligibleOrdersQ.isFetching || transportsQ.isFetching;
 
   return (
     <div className="relative flex h-full min-h-0 flex-col gap-3 p-3 sm:p-4">

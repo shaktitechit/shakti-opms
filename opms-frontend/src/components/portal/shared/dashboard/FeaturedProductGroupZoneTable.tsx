@@ -24,6 +24,7 @@ import {
   useFeaturedMatrixCatalog,
   type FeaturedMatrixCatalog,
 } from "./useFeaturedMatrixCatalog";
+import type { DashboardOrdersSummary } from "@/store/api/slices/dashboardApi";
 
 interface FeaturedProductGroupZoneTableProps {
   orders: any[];
@@ -38,6 +39,7 @@ interface FeaturedProductGroupZoneTableProps {
   forceMetric?: MatrixMetric;
   catalog?: FeaturedMatrixCatalog;
   enabled?: boolean;
+  contributions?: DashboardOrdersSummary["contributions"];
 }
 
 export default function FeaturedProductGroupZoneTable({
@@ -50,6 +52,7 @@ export default function FeaturedProductGroupZoneTable({
   forceMetric,
   catalog: propCatalog,
   enabled = true,
+  contributions,
 }: FeaturedProductGroupZoneTableProps) {
   const [metricState, setMetric] = useState<MatrixMetric>("quantity");
   const metric = forceMetric ?? metricState;
@@ -136,6 +139,24 @@ export default function FeaturedProductGroupZoneTable({
       }
     }
 
+    if (contributions) {
+      for (const cell of contributions) {
+        const partyId = cell.partyId;
+        const zoneId = (partyId && partyToZoneMap.get(partyId)) || "unzoned";
+        if (!zoneIdSet.has(zoneId)) continue;
+        const productId = cell.productId;
+        if (!productId) continue;
+        const val = metric === "volume" ? cell.volume : cell.quantity;
+        const gId = productToGroupMap.get(productId);
+        if (!gId || !groupIdSet.has(gId)) continue;
+        const pMap = map.get(productId);
+        if (pMap) pMap.set(zoneId, (pMap.get(zoneId) ?? 0) + val);
+        const gMap = map.get(gId);
+        if (gMap) gMap.set(zoneId, (gMap.get(zoneId) ?? 0) + val);
+      }
+      return map;
+    }
+
     for (const order of filteredOrders) {
       if (!shouldIncludeOrder(order, qtyBasis)) continue;
       const partyId = resolveOrderPartyId(order);
@@ -173,6 +194,7 @@ export default function FeaturedProductGroupZoneTable({
     metric,
     qtyBasis,
     partyToZoneMap,
+    contributions,
   ]);
 
   const toggleGroup = (groupId: string) => {

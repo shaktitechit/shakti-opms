@@ -10,8 +10,7 @@ import {
 } from "react";
 
 import { useBrowserTabAlert } from "@/hooks/useBrowserTabAlert";
-import { pickOrders } from "@/components/portal/shared/pickOrders";
-import { useListOrdersQuery } from "@/store/api";
+import { useGetOrdersStatsQuery } from "@/store/api";
 
 const OverrideContext = createContext<(count: number | null) => void>(() => {});
 
@@ -49,16 +48,20 @@ function AdminTabAlertInner({
 }: {
   overrideCount: number | null;
 }) {
-  const { data, isError } = useListOrdersQuery(
-    { status: "pending_review" },
+  const { data, isError } = useGetOrdersStatsQuery(
+    { counts_only: "true" },
     {
+      skip: overrideCount != null,
       pollingInterval: 30_000,
       refetchOnFocus: true,
       refetchOnReconnect: true,
     },
   );
 
-  const queryCount = useMemo(() => pickOrders(data).length, [data]);
+  const queryCount = Number(
+    (data as { pending_admin_approval?: { count?: number } } | undefined)
+      ?.pending_admin_approval?.count,
+  ) || 0;
   const count = overrideCount ?? queryCount;
 
   useBrowserTabAlert({

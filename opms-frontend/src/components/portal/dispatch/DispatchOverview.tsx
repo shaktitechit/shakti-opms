@@ -4,13 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useDispatchTabAlertOverride } from "./DispatchTabAlert";
 import OverviewWidgets from "@/components/portal/shared/dashboard/OverviewWidgets";
 import TransportPlannerStatsWidgets from "@/components/portal/shared/transportPlanner/TransportPlannerStatsWidgets";
-import { computeDispatchOrderStats } from "./dispatchOrderUtils";
 import {
-  useGetDashboardDispatchQuery,
   useGetTransportPlanStatsQuery,
-  useListDispatchesQuery,
-  useListOrdersQuery,
-  useListTransportsQuery,
   useNotifyPushMutation,
   useSubscribePushMutation,
 } from "@/store/api";
@@ -24,9 +19,6 @@ import { publicVapidKey } from "@/lib/env";
 import { toast } from "@/lib/toast";
 import { useAppSelector } from "@/store/hooks";
 import { OverviewFlagsWidget } from "@/components/portal/shared/OverviewFlagsWidget";
-import { pickOrders } from "@/components/portal/shared/pickOrders";
-import { ORDER_WORKFLOW_LIST_QUERY } from "@/components/portal/shared/orderList/orderWorkflowTabs";
-import { useOrderWorkflowCategoryOptions } from "@/components/portal/shared/orderList/useOrderWorkflowCategoryOptions";
 import {
   Bell,
   BellOff,
@@ -34,7 +26,7 @@ import {
   X,
 } from "lucide-react";
 import PeriodFilter from "@/components/portal/shared/dashboard/PeriodFilter";
-import { usePeriodFilter } from "@/components/portal/shared/dashboard/usePeriodFilter";
+import { useDashboardSummary } from "@/components/portal/shared/dashboard/useDashboardSummary";
 import { dashboardPeriodToStatsQuery } from "@/components/portal/shared/dashboard/periodFilterUtils";
 const TRANSPORT_PENDING_PUSH_INTERVAL_MS = 300_000;
 const TRANSPORT_PENDING_ALERT_URL =
@@ -50,19 +42,25 @@ export default function DispatchOverview() {
     typeof user?.name === "string" ? user.name : "Dispatch Specialist";
 
   const {
-    isFetching: isKpiFetching,
-    refetch: refetchKpi,
-  } = useGetDashboardDispatchQuery();
+    isFetching: isSummaryFetching,
+    refetch: refetchSummary,
+    summary,
+    dataType,
+    setDataType,
+    qtyBasis,
+    availableYears,
+    selectedYears,
+    setSelectedYears,
+    selectedMonths,
+    setSelectedMonths,
+    dateFilter,
+    setDateFilter,
+    customDateFrom,
+    setCustomDateFrom,
+    customDateTo,
+    setCustomDateTo,
+  } = useDashboardSummary();
 
-  const {
-    data: ordersData,
-    isFetching: isOrdersFetching,
-    refetch: refetchOrders,
-  } = useListOrdersQuery(ORDER_WORKFLOW_LIST_QUERY);
-
-  const { refetch: refetchTransports } = useListTransportsQuery({});
-  const { refetch: refetchDispatches } = useListDispatchesQuery({});
-  const categoryOptions = useOrderWorkflowCategoryOptions();
   const [notifyPush] = useNotifyPushMutation();
   const [subscribePush] = useSubscribePushMutation();
 
@@ -86,29 +84,6 @@ export default function DispatchOverview() {
     setNotifPermission(Notification.permission);
   }, []);
 
-  const orders = useMemo(
-    () => pickOrders(ordersData) as Record<string, unknown>[],
-    [ordersData],
-  );
-
-  const {
-    dataType,
-    setDataType,
-    qtyBasis,
-    availableYears,
-    selectedYears,
-    setSelectedYears,
-    selectedMonths,
-    setSelectedMonths,
-    dateFilter,
-    setDateFilter,
-    customDateFrom,
-    setCustomDateFrom,
-    customDateTo,
-    setCustomDateTo,
-    filteredOrders,
-  } = usePeriodFilter(orders);
-
   const periodStatsQuery = useMemo(
     () =>
       dashboardPeriodToStatsQuery({
@@ -126,12 +101,7 @@ export default function DispatchOverview() {
     refetch: refetchTransportPlanStats,
   } = useGetTransportPlanStatsQuery(periodStatsQuery);
 
-  const orderStats = useMemo(
-    () => computeDispatchOrderStats(orders, categoryOptions),
-    [orders, categoryOptions],
-  );
-
-  const pendingTransportCount = orderStats.transport_pending.count;
+  const pendingTransportCount = summary?.queueCounts.transport_pending ?? 0;
   const pendingTransportCountRef = useRef(pendingTransportCount);
   pendingTransportCountRef.current = pendingTransportCount;
   const hasPendingTransport = pendingTransportCount > 0;
@@ -185,12 +155,8 @@ export default function DispatchOverview() {
 
   const sendPendingReminderRef = useRef(sendPendingReminder);
   sendPendingReminderRef.current = sendPendingReminder;
-  const refetchOrdersRef = useRef(refetchOrders);
-  refetchOrdersRef.current = refetchOrders;
-  const refetchTransportsRef = useRef(refetchTransports);
-  refetchTransportsRef.current = refetchTransports;
-  const refetchDispatchesRef = useRef(refetchDispatches);
-  refetchDispatchesRef.current = refetchDispatches;
+  const refetchSummaryRef = useRef(refetchSummary);
+  refetchSummaryRef.current = refetchSummary;
 
   // Alert immediately when pending exists, then every 5 minutes while overview stays open.
   useEffect(() => {
@@ -206,9 +172,7 @@ export default function DispatchOverview() {
     const tick = () => {
       if (cancelled) return;
       void sendPendingReminderRef.current();
-      void refetchOrdersRef.current();
-      void refetchTransportsRef.current();
-      void refetchDispatchesRef.current();
+      void refetchSummaryRef.current();
     };
 
     const first = window.setTimeout(tick, 1_000);
@@ -325,10 +289,7 @@ export default function DispatchOverview() {
     setIsRefreshing(true);
     try {
       await Promise.all([
-        refetchKpi().unwrap(),
-        refetchOrders().unwrap(),
-        refetchTransports().unwrap(),
-        refetchDispatches().unwrap(),
+        refetchSummary().unwrap(),
         refetchTransportPlanStats().unwrap(),
       ]);
     } catch {
@@ -339,7 +300,7 @@ export default function DispatchOverview() {
   };
 
   const isAnyLoading =
-    isKpiFetching || isOrdersFetching || isTransportPlanStatsFetching || isRefreshing;
+    isSummaryFetching || isTransportPlanStatsFetching || isRefreshing;
 
   const showEnableBanner =
     hasPendingTransport &&
@@ -473,10 +434,9 @@ export default function DispatchOverview() {
       </div>
 
       <OverviewWidgets
-        orders={orders}
-        filteredOrders={filteredOrders}
-        isOrdersFetching={isOrdersFetching}
-        categoryOptions={categoryOptions}
+        tabStats={summary?.tabStats}
+        queueCounts={summary?.queueCounts}
+        isOrdersFetching={isSummaryFetching}
         role="dispatch"
         selectedYears={selectedYears}
         selectedMonths={selectedMonths}

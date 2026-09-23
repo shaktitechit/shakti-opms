@@ -12,11 +12,13 @@ import ReportDownloadButton from "./ReportDownloadButton";
 import { formatPeriodLabel } from "./periodFilterUtils";
 import { downloadCsvFile, reportFilename } from "./reportDownloadUtils";
 import { shouldIncludeOrder } from "./featuredMatrixUtils";
+import type { DashboardLeaderboardRow } from "@/store/api/slices/dashboardApi";
 
 interface PartyLeaderboardProps {
-  orders: any[];
+  orders?: any[];
+  rows?: DashboardLeaderboardRow[];
   isOrdersFetching: boolean;
-  partyNameById: Map<string, string>;
+  partyNameById?: Map<string, string>;
   forceMetric?: Metric;
   disableInternalFilter?: boolean;
   externalFilterCaption?: string;
@@ -34,9 +36,10 @@ import {
 } from "./leaderboardUtils";
 
 export default function PartyLeaderboard({
-  orders,
+  orders = [],
+  rows,
   isOrdersFetching,
-  partyNameById,
+  partyNameById = new Map<string, string>(),
   forceMetric,
   disableInternalFilter = true,
   externalFilterCaption,
@@ -60,6 +63,14 @@ export default function PartyLeaderboard({
   const displayOrders = disableInternalFilter ? orders : filteredOrders;
 
   const partyRows = useMemo(() => {
+    if (rows) {
+      return rows
+        .map((row) => ({
+          name: row.name,
+          ...(metric === "volume" ? row.volume : row.quantity),
+        }))
+        .sort((a, b) => b.total - a.total);
+    }
     const map = new Map<string, RateBucket>();
     for (const o of displayOrders) {
       if (!shouldIncludeOrder(o, qtyBasis)) continue;
@@ -79,7 +90,7 @@ export default function PartyLeaderboard({
     return Array.from(map.entries())
       .map(([name, stats]) => ({ name, ...stats }))
       .sort((a, b) => b.total - a.total);
-  }, [filteredOrders, partyNameById, metric, qtyBasis]);
+  }, [displayOrders, partyNameById, metric, qtyBasis, rows]);
 
   const totals = useMemo(
     () =>

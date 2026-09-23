@@ -1150,24 +1150,55 @@ async function listEligibleOrders(query = {}, user) {
   ];
   const excludeObjectIds = [...new Set(excludeDispatchIds)].filter(Boolean);
 
-  const sharedFilters = {
-    party: query.party,
-    customer: query.customer,
-    priority: query.priority,
-    dateFrom: query.from,
-    dateTo: query.to,
-    search: query.search,
-  };
-
-  // Union the same exclusive workflow tabs used on the orders list.
-  const tabIdSets = await Promise.all(
-    ELIGIBLE_ORDER_WORKFLOW_TABS.map(async (tab) => {
-      const tabQuery = await orderService.buildBaseQuery({ ...sharedFilters, tab }, user);
-      const ids = await Order.distinct('_id', tabQuery);
-      return ids.map(String);
-    })
+  const { indexVisibleOrders } = require('../orders/orderListPage.service');
+  const scopeQuery = await orderService.buildBaseQuery(
+    {
+      exclude_status: 'draft',
+      party: query.party,
+      customer: query.customer,
+    },
+    user,
   );
-  const eligibleIds = [...new Set(tabIdSets.flat())];
+  const { classified } = await indexVisibleOrders(scopeQuery, false);
+  const wanted = new Set(ELIGIBLE_ORDER_WORKFLOW_TABS);
+  let matched = classified.filter((item) => wanted.has(item.tab));
+
+  if (query.priority && String(query.priority).toLowerCase() !== 'all') {
+    const priority = String(query.priority).toLowerCase();
+    matched = matched.filter(
+      (item) => String(item.row.priority || '').toLowerCase() === priority,
+    );
+  }
+
+  const search = String(query.search || '').trim().toLowerCase();
+  if (search) {
+    matched = matched.filter((item) => {
+      const row = item.row || {};
+      return [row.order_no, row.order_number, row._id]
+        .join(' ')
+        .toLowerCase()
+        .includes(search);
+    });
+  }
+
+  const fromRaw = query.from || query.dateFrom;
+  const toRaw = query.to || query.dateTo;
+  const from = fromRaw ? new Date(fromRaw) : null;
+  const to = toRaw ? new Date(toRaw) : null;
+  if ((from && !Number.isNaN(from.getTime())) || (to && !Number.isNaN(to.getTime()))) {
+    matched = matched.filter((item) => {
+      const raw = item.row?.order_date || item.row?.createdAt;
+      if (!raw) return false;
+      const d = new Date(raw);
+      if (Number.isNaN(d.getTime())) return false;
+      if (from && !Number.isNaN(from.getTime()) && d < from) return false;
+      if (to && !Number.isNaN(to.getTime()) && d > to) return false;
+      return true;
+    });
+  }
+
+  const eligibleIds = matched.map((item) => String(item.row._id));
+  const tabById = new Map(matched.map((item) => [String(item.row._id), item.tab]));
 
   if (eligibleIds.length === 0) {
     return { total: 0, page: 1, limit: 50, pages: 0, data: [] };
@@ -1272,6 +1303,7 @@ async function listEligibleOrders(query = {}, user) {
       ...order,
       city,
       invoice_value: order.grand_total || 0,
+      workflow_tab: tabById.get(orderId) || null,
       transport_plan: apo ? apo.transport_plan : null,
       transport: shipment,
     };
@@ -1300,9 +1332,12 @@ async function listEligibleOrders(query = {}, user) {
     eligibleData.push(orderItem);
   }
 
-  const limit = Math.min(parseInt(query.limit, 10) || 50, 200);
-  const page = Math.max(parseInt(query.page, 10) || 1, 1);
   const total = eligibleData.length;
+  const returnAll = query.all === 'true' || query.all === true || query.all === '1';
+  const limit = returnAll
+    ? Math.max(total, 1)
+    : Math.min(parseInt(query.limit, 10) || 50, 200);
+  const page = returnAll ? 1 : Math.max(parseInt(query.page, 10) || 1, 1);
   const skip = (page - 1) * limit;
   const paginatedData = eligibleData.slice(skip, skip + limit);
 

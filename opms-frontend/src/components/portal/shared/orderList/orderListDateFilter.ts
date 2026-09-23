@@ -69,6 +69,51 @@ export function orderMatchesDateFilter(
   return true;
 }
 
+/** Same window as `orderMatchesDateFilter`, as absolute instants for the list API. */
+export function dateFilterToRange(
+  dateFilter: string,
+  customDateFrom: string,
+  customDateTo: string,
+): { dateFrom?: string; dateTo?: string } {
+  if (dateFilter === "all") return {};
+
+  const now = new Date();
+  let dateFrom: Date | null = null;
+  let dateTo: Date | null = null;
+
+  if (dateFilter === "today") {
+    dateFrom = startOfDay(now);
+    dateTo = endOfDay(now);
+  } else if (dateFilter === "yesterday") {
+    const y = new Date(now);
+    y.setDate(y.getDate() - 1);
+    dateFrom = startOfDay(y);
+    dateTo = endOfDay(y);
+  } else if (dateFilter === "last_week") {
+    const w = new Date(now);
+    w.setDate(w.getDate() - 7);
+    dateFrom = startOfDay(w);
+    dateTo = endOfDay(now);
+  } else if (dateFilter === "last_month") {
+    const m = new Date(now);
+    m.setMonth(m.getMonth() - 1);
+    dateFrom = startOfDay(m);
+    dateTo = endOfDay(now);
+  } else if (dateFilter === "custom") {
+    if (customDateFrom) dateFrom = startOfDay(new Date(customDateFrom));
+    if (customDateTo) dateTo = endOfDay(new Date(customDateTo));
+  }
+
+  return {
+    dateFrom:
+      dateFrom && !Number.isNaN(dateFrom.getTime())
+        ? dateFrom.toISOString()
+        : undefined,
+    dateTo:
+      dateTo && !Number.isNaN(dateTo.getTime()) ? dateTo.toISOString() : undefined,
+  };
+}
+
 export const dateFilterSelectClass =
   "shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs text-slate-900 outline-none transition focus:border-purple-600 focus:ring-2 focus:ring-purple-500/20 dark:border-white/10 dark:bg-slate-950 dark:text-slate-100 cursor-pointer";
 

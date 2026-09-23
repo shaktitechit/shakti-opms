@@ -1,9 +1,63 @@
 import { medicaApi } from "../baseApi";
 import { unwrapEnvelope, type ApiEnvelope } from "../unwrap";
 
+export type DashboardRateBucket = {
+  total: number;
+  sr: number;
+  sra: number;
+  cr: number;
+};
+
+export type DashboardLeaderboardRow = {
+  name: string;
+  quantity: DashboardRateBucket;
+  volume: DashboardRateBucket;
+  quantityKit?: DashboardRateBucket;
+  volumeKit?: DashboardRateBucket;
+};
+
+export type DashboardMonthGrids = Record<string, number[]>;
+
+export type DashboardOrdersSummary = {
+  availableYears: number[];
+  queueCounts: Record<string, number>;
+  tabStats: Record<
+    string,
+    { count: number; quantity: number; kitQuantity: number; amount: number }
+  >;
+  monthly: {
+    approved: { quantity: DashboardMonthGrids; volume: DashboardMonthGrids };
+    dispatched: { quantity: DashboardMonthGrids; volume: DashboardMonthGrids };
+  };
+  leaderboards: {
+    parties: DashboardLeaderboardRow[];
+    products: DashboardLeaderboardRow[];
+    salesUsers: DashboardLeaderboardRow[];
+  };
+  contributions: Array<{
+    productId: string;
+    salesUserId: string;
+    partyId: string;
+    quantity: number;
+    volume: number;
+  }>;
+};
+
 /** `/api/dashboard/*` — each mount is dept-only (`requireDepartmentOnly`); no admin pass-through on other slices. */
 export const dashboardApi = medicaApi.injectEndpoints({
   endpoints: (build) => ({
+    getDashboardOrdersSummary: build.query<
+      DashboardOrdersSummary,
+      Record<string, string>
+    >({
+      query: (params) => ({ url: "dashboard/orders-summary", params }),
+      transformResponse: (raw: ApiEnvelope<DashboardOrdersSummary>) =>
+        unwrapEnvelope(raw),
+      providesTags: [
+        { type: "Dashboard", id: "ORDERS_SUMMARY" },
+        { type: "Orders", id: "LIST" },
+      ],
+    }),
     getDashboardAdmin: build.query<unknown, void>({
       query: () => ({ url: "dashboard/admin", method: "GET" }),
       transformResponse: (raw: ApiEnvelope<unknown>) => unwrapEnvelope(raw),
@@ -38,6 +92,7 @@ export const dashboardApi = medicaApi.injectEndpoints({
 });
 
 export const {
+  useGetDashboardOrdersSummaryQuery,
   useGetDashboardAdminQuery,
   useGetDashboardSalesQuery,
   useGetDashboardFinanceQuery,

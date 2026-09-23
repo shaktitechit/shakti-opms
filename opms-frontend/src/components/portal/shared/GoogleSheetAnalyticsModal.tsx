@@ -33,6 +33,7 @@ import {
   useListUsersQuery,
 } from "@/store/api";
 import { pickOrders } from "@/components/portal/shared/pickOrders";
+import { ORDER_WORKFLOW_LIST_QUERY } from "@/components/portal/shared/orderList/orderWorkflowTabs";
 import FeaturedProductGroupSalesUserTable from "@/components/portal/shared/dashboard/FeaturedProductGroupSalesUserTable";
 import FeaturedProductGroupFeaturedPartyTable from "@/components/portal/shared/dashboard/FeaturedProductGroupFeaturedPartyTable";
 import { itemNetQty } from "@/components/portal/shared/dashboard/featuredMatrixUtils";
@@ -282,7 +283,7 @@ export function GoogleSheetAnalyticsModal({
 
   // Fetch all orders (unpaginated) when modal is active
   const { data: ordersData, isFetching: isOrdersFetching, isLoading: isOrdersLoading, refetch } = useListOrdersQuery(
-    {},
+    ORDER_WORKFLOW_LIST_QUERY,
     { skip: !isOpen }
   );
 

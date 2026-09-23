@@ -7,54 +7,25 @@ import MonthlyPerformanceChart from "@/components/portal/shared/dashboard/Monthl
 import PartyLeaderboard from "@/components/portal/shared/dashboard/PartyLeaderboard";
 import ProductLeaderboard from "@/components/portal/shared/dashboard/ProductLeaderboard";
 import FeaturedProductGroupSalesUserTable from "@/components/portal/shared/dashboard/FeaturedProductGroupSalesUserTable";
-import {
-  useGetDashboardSalesQuery,
-  useListOrdersQuery,
-  useListPartiesQuery,
-} from "@/store/api";
 import { useAppSelector } from "@/store/hooks";
 import { OverviewFlagsWidget } from "@/components/portal/shared/OverviewFlagsWidget";
-import { pickOrders } from "@/components/portal/shared/pickOrders";
-import { filterOrdersForSalesUser } from "@/components/portal/sales/orderUtils";
 import { formatPeriodCaption } from "@/components/portal/shared/dashboard/PeriodHeadingCaption";
-import { useOrderWorkflowCategoryOptions } from "@/components/portal/shared/orderList/useOrderWorkflowCategoryOptions";
-import { buildPartyNameById } from "@/components/portal/sales/partyDisplay";
 import {
   FilePlus,
   RefreshCw,
 } from "lucide-react";
 
 import PeriodFilter from "@/components/portal/shared/dashboard/PeriodFilter";
-import { usePeriodFilter } from "@/components/portal/shared/dashboard/usePeriodFilter";
-import { dashboardPeriodToStatsQuery } from "@/components/portal/shared/dashboard/periodFilterUtils";
+import { useDashboardSummary } from "@/components/portal/shared/dashboard/useDashboardSummary";
 export default function SalesOverview() {
   const user = useAppSelector((state) => state.auth.user);
   const userName =
     typeof user?.name === "string" ? user.name : "Sales Representative";
 
   const {
-    isFetching: isKpiFetching,
-    refetch: refetchKpi,
-  } = useGetDashboardSalesQuery();
-
-  const {
-    data: ordersData,
-    isFetching: isOrdersFetching,
-    refetch: refetchOrders,
-  } = useListOrdersQuery({});
-
-  const { data: partiesData } = useListPartiesQuery({});
-  const categoryOptions = useOrderWorkflowCategoryOptions();
-
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
-  // KPI / charts / leaderboards: only this sales user's portfolio
-  const orders = useMemo(
-    () => filterOrdersForSalesUser(pickOrders(ordersData), user) as any[],
-    [ordersData, user],
-  );
-
-  const {
+    isFetching: isSummaryFetching,
+    refetch: refetchSummary,
+    summary,
     dataType,
     setDataType,
     qtyBasis,
@@ -69,8 +40,9 @@ export default function SalesOverview() {
     setCustomDateFrom,
     customDateTo,
     setCustomDateTo,
-    filteredOrders,
-  } = usePeriodFilter(orders);
+  } = useDashboardSummary();
+
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const filterCaption = useMemo(() => {
     return formatPeriodCaption(
@@ -86,15 +58,10 @@ export default function SalesOverview() {
 
 
 
-  const partyNameById = useMemo(
-    () => buildPartyNameById(partiesData),
-    [partiesData],
-  );
-
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      await refetchOrders().unwrap();
+      await refetchSummary().unwrap();
     } catch {
       // Ignore errors
     } finally {
@@ -102,10 +69,7 @@ export default function SalesOverview() {
     }
   };
 
-  const isAnyLoading =
-    isKpiFetching ||
-    isOrdersFetching ||
-    isRefreshing;
+  const isAnyLoading = isSummaryFetching || isRefreshing;
 
   return (
     <div className="space-y-8 pb-10">
@@ -168,10 +132,9 @@ export default function SalesOverview() {
       </div>
 
       <OverviewWidgets
-        orders={orders}
-        filteredOrders={filteredOrders}
-        isOrdersFetching={isOrdersFetching}
-        categoryOptions={categoryOptions}
+        tabStats={summary?.tabStats}
+        queueCounts={summary?.queueCounts}
+        isOrdersFetching={isSummaryFetching}
         role="sales"
         selectedYears={selectedYears}
         selectedMonths={selectedMonths}
@@ -181,28 +144,24 @@ export default function SalesOverview() {
         qtyBasis={qtyBasis}
       />
 
-
-
       <MonthlyPerformanceChart
-        orders={orders}
-        isOrdersFetching={isOrdersFetching}
+        monthly={summary?.monthly}
+        isOrdersFetching={isSummaryFetching}
         forceMetric="quantity"
         qtyBasis={qtyBasis}
       />
 
-      {/* TWO COLUMN GRID: TOP PRODUCTS & TOP PARTIES */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <ProductLeaderboard
-          orders={filteredOrders}
-          isOrdersFetching={isOrdersFetching}
+          rows={summary?.leaderboards.products}
+          isOrdersFetching={isSummaryFetching}
           forceMetric="quantity"
           externalFilterCaption={filterCaption}
           qtyBasis={qtyBasis}
         />
         <PartyLeaderboard
-          orders={filteredOrders}
-          isOrdersFetching={isOrdersFetching}
-          partyNameById={partyNameById}
+          rows={summary?.leaderboards.parties}
+          isOrdersFetching={isSummaryFetching}
           forceMetric="quantity"
           externalFilterCaption={filterCaption}
           qtyBasis={qtyBasis}
@@ -211,8 +170,9 @@ export default function SalesOverview() {
 
       <div className="space-y-6">
         <FeaturedProductGroupSalesUserTable
-          orders={filteredOrders}
-          isOrdersFetching={isOrdersFetching}
+          orders={[]}
+          contributions={summary?.contributions}
+          isOrdersFetching={isSummaryFetching}
           forceMetric="quantity"
           forceSalesUserId={user?._id || user?.id ? String(user?._id || user?.id) : undefined}
           forceSalesUserName={userName}

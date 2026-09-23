@@ -7,7 +7,7 @@ const { toPlain } = require('../../utils/mongoJson');
 const { ApiError } = require('../../utils/ApiError');
 const { softDeleteActiveById, restoreSoftDeletedById, listDeletedLean } = require('../../utils/mongoSoftDelete');
 const { generateDueSheetNo } = require('../../utils/generateDueSheetNo');
-const { uploadMulterFile, getFileMeta, getViewPresignedUrl } = require('../../services/fileManagement/index');
+const { uploadMulterFile, getFileMeta } = require('../../services/fileManagement/index');
 const { API_PUBLIC_BASE_URL, FILE_DOCUMENT_LINKS_RELATIVE } = require('../../config/fileManagement');
 const activityService = require('../activity/activity.service');
 const attachmentService = require('../attachments/attachment.service');
@@ -26,53 +26,9 @@ const {
 
 const SHEET_NF = 'Order due sheet not found';
 
-function resolveFileIdFromDoc(doc) {
-  if (!doc) return null;
-  const entityIdStr = String(doc.entity_id || doc.order || doc._id || '');
-
-  if (doc.filename && !String(doc.filename).includes('/')) {
-    return String(doc.filename);
-  }
-  if (doc.fileId && !String(doc.fileId).includes('/')) {
-    return String(doc.fileId);
-  }
-
-  if (doc.key) {
-    const parts = String(doc.key).split('/');
-    const last = parts[parts.length - 1];
-    if (last && last !== entityIdStr && last !== String(doc._id || '')) {
-      return last;
-    }
-  }
-  if (doc.url) {
-    const match = String(doc.url).match(/\/(?:api\/)?files\/([^/?#]+)/);
-    if (match && match[1] && match[1] !== 'view' && match[1] !== 'download') {
-      const candidate = match[1];
-      if (candidate !== entityIdStr && candidate !== String(doc._id || '')) {
-        return candidate;
-      }
-    }
-  }
-  return null;
-}
-
-async function decorateDueSheet(row) {
+function decorateDueSheet(row) {
   if (!row) return row;
-  const plain = toPlain(row);
-  if (plain.document && typeof plain.document === 'object') {
-    const fileId = resolveFileIdFromDoc(plain.document);
-    if (fileId) {
-      try {
-        const freshUrl = await getViewPresignedUrl(fileId);
-        if (freshUrl) {
-          plain.document.url = freshUrl;
-        }
-      } catch (_err) {
-        // Fall back to stored URL if FM lookup fails
-      }
-    }
-  }
-  return plain;
+  return toPlain(row);
 }
 
 function formatEmailDate(value) {

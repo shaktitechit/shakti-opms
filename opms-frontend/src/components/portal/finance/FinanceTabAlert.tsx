@@ -10,13 +10,7 @@ import {
 } from "react";
 
 import { useBrowserTabAlert } from "@/hooks/useBrowserTabAlert";
-import { pickOrders } from "@/components/portal/shared/pickOrders";
-import { useOrderWorkflowCategoryOptions } from "@/components/portal/shared/orderList/useOrderWorkflowCategoryOptions";
-import { useListOrdersQuery } from "@/store/api";
-import {
-  financeTabQueryParams,
-  orderMatchesFinanceTab,
-} from "./financeOrderUtils";
+import { useGetOrdersStatsQuery } from "@/store/api";
 
 const OverrideContext = createContext<(count: number | null) => void>(() => {});
 
@@ -54,22 +48,20 @@ function FinanceTabAlertInner({
 }: {
   overrideCount: number | null;
 }) {
-  const { data, isError } = useListOrdersQuery(
-    financeTabQueryParams("pending_finance_approval"),
+  const { data, isError } = useGetOrdersStatsQuery(
+    { counts_only: "true" },
     {
+      skip: overrideCount != null,
       pollingInterval: 30_000,
       refetchOnFocus: true,
       refetchOnReconnect: true,
     },
   );
-  const categoryOptions = useOrderWorkflowCategoryOptions();
 
-  const queryCount = useMemo(() => {
-    return pickOrders(data).filter((order) =>
-      orderMatchesFinanceTab(order, "pending_finance_approval", categoryOptions),
-    ).length;
-  }, [data, categoryOptions]);
-
+  const queryCount = Number(
+    (data as { pending_finance_approval?: { count?: number } } | undefined)
+      ?.pending_finance_approval?.count,
+  ) || 0;
   const count = overrideCount ?? queryCount;
 
   useBrowserTabAlert({

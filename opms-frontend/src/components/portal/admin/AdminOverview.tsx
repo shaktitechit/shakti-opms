@@ -10,16 +10,9 @@ import PartyLeaderboard from "@/components/portal/shared/dashboard/PartyLeaderbo
 import ProductLeaderboard from "@/components/portal/shared/dashboard/ProductLeaderboard";
 import SalesLeaderboard from "@/components/portal/shared/dashboard/SalesLeaderboard";
 import FeaturedMatrixSection from "@/components/portal/shared/dashboard/FeaturedMatrixSection";
-import { computeAdminOrderStats } from "./adminOrderUtils";
 import { formatPeriodCaption } from "@/components/portal/shared/dashboard/PeriodHeadingCaption";
-import { ORDER_WORKFLOW_LIST_QUERY } from "@/components/portal/shared/orderList/orderWorkflowTabs";
-import { useOrderWorkflowCategoryOptions } from "@/components/portal/shared/orderList/useOrderWorkflowCategoryOptions";
 import {
-  useGetDashboardAdminQuery,
   useGetTransportPlanStatsQuery,
-  useListOrdersQuery,
-  useListPartiesQuery,
-  useListUsersQuery,
   useNotifyPushMutation,
   useSubscribePushMutation,
 } from "@/store/api";
@@ -33,9 +26,6 @@ import { publicVapidKey } from "@/lib/env";
 import { toast } from "@/lib/toast";
 import { OverviewFlagsWidget } from "@/components/portal/shared/OverviewFlagsWidget";
 import { useAppSelector } from "@/store/hooks";
-import { pickOrders } from "@/components/portal/shared/pickOrders";
-import { buildPartyNameById } from "@/components/portal/sales/partyDisplay";
-import { buildUserNameById } from "@/components/portal/shared/userDisplay";
 import {
   Bell,
   BellOff,
@@ -44,7 +34,7 @@ import {
   X,
 } from "lucide-react";
 import PeriodFilter from "@/components/portal/shared/dashboard/PeriodFilter";
-import { usePeriodFilter } from "@/components/portal/shared/dashboard/usePeriodFilter";
+import { useDashboardSummary } from "@/components/portal/shared/dashboard/useDashboardSummary";
 import { dashboardPeriodToStatsQuery } from "@/components/portal/shared/dashboard/periodFilterUtils";
 const ADMIN_PENDING_PUSH_INTERVAL_MS = 300_000;
 const ADMIN_PENDING_ALERT_URL = "/admin/orders?tab=pending_admin_approval";
@@ -59,19 +49,24 @@ export default function AdminOverview() {
     typeof user?.name === "string" ? user.name : "System Administrator";
 
   const {
-    isFetching: isKpiFetching,
-    refetch: refetchKpi,
-  } = useGetDashboardAdminQuery();
-
-  const {
-    data: ordersData,
-    isFetching: isOrdersFetching,
-    refetch: refetchOrders,
-  } = useListOrdersQuery(ORDER_WORKFLOW_LIST_QUERY);
-
-  const { data: partiesData } = useListPartiesQuery({});
-  const { data: usersData } = useListUsersQuery({ department: "sales" });
-  const categoryOptions = useOrderWorkflowCategoryOptions();
+    isFetching: isSummaryFetching,
+    refetch: refetchSummary,
+    summary,
+    dataType,
+    setDataType,
+    qtyBasis,
+    availableYears,
+    selectedYears,
+    setSelectedYears,
+    selectedMonths,
+    setSelectedMonths,
+    dateFilter,
+    setDateFilter,
+    customDateFrom,
+    setCustomDateFrom,
+    customDateTo,
+    setCustomDateTo,
+  } = useDashboardSummary();
   const [notifyPush] = useNotifyPushMutation();
   const [subscribePush] = useSubscribePushMutation();
 
@@ -92,26 +87,6 @@ export default function AdminOverview() {
     }
     setNotifPermission(Notification.permission);
   }, []);
-
-  const orders = useMemo(() => pickOrders(ordersData) as any[], [ordersData]);
-
-  const {
-    dataType,
-    setDataType,
-    qtyBasis,
-    availableYears,
-    selectedYears,
-    setSelectedYears,
-    selectedMonths,
-    setSelectedMonths,
-    dateFilter,
-    setDateFilter,
-    customDateFrom,
-    setCustomDateFrom,
-    customDateTo,
-    setCustomDateTo,
-    filteredOrders,
-  } = usePeriodFilter(orders);
 
   const filterCaption = useMemo(() => {
     return formatPeriodCaption(
@@ -141,12 +116,7 @@ export default function AdminOverview() {
   } = useGetTransportPlanStatsQuery(transportPlanStatsQuery);
 
 
-  const orderStats = useMemo(
-    () => computeAdminOrderStats(orders, categoryOptions),
-    [orders, categoryOptions],
-  );
-
-  const pendingAdminCount = orderStats.pending_admin_approval.count;
+  const pendingAdminCount = summary?.queueCounts.pending_admin_approval ?? 0;
   const pendingAdminCountRef = useRef(pendingAdminCount);
   pendingAdminCountRef.current = pendingAdminCount;
   const hasPendingAdmin = pendingAdminCount > 0;
@@ -204,8 +174,8 @@ export default function AdminOverview() {
 
   const sendPendingReminderRef = useRef(sendPendingReminder);
   sendPendingReminderRef.current = sendPendingReminder;
-  const refetchOrdersRef = useRef(refetchOrders);
-  refetchOrdersRef.current = refetchOrders;
+  const refetchSummaryRef = useRef(refetchSummary);
+  refetchSummaryRef.current = refetchSummary;
 
   // Alert immediately when pending exists, then every 5 minutes while overview stays open.
   // Depend only on hasPendingAdmin — including refetchOrders was clearing the timer.
@@ -222,7 +192,7 @@ export default function AdminOverview() {
     const tick = () => {
       if (cancelled) return;
       void sendPendingReminderRef.current();
-      void refetchOrdersRef.current();
+      void refetchSummaryRef.current();
     };
 
     // First alert after a short delay so order stats finish settling.
@@ -332,23 +302,12 @@ export default function AdminOverview() {
     }
   };
 
-  const partyNameById = useMemo(
-    () => buildPartyNameById(partiesData),
-    [partiesData],
-  );
-
-  const userNameById = useMemo(
-    () => buildUserNameById(usersData),
-    [usersData],
-  );
-
   const [isRefreshing, setIsRefreshing] = useState(false);
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
       await Promise.all([
-        refetchKpi().unwrap(),
-        refetchOrders().unwrap(),
+        refetchSummary().unwrap(),
         refetchTransportPlanStats().unwrap(),
       ]);
     } catch (e) {
@@ -359,8 +318,7 @@ export default function AdminOverview() {
   };
 
   const isAnyLoading =
-    isKpiFetching ||
-    isOrdersFetching ||
+    isSummaryFetching ||
     isTransportPlanStatsFetching ||
     isRefreshing;
 
@@ -505,10 +463,9 @@ export default function AdminOverview() {
       </div>
 
       <OverviewWidgets
-        orders={orders}
-        filteredOrders={filteredOrders}
-        isOrdersFetching={isOrdersFetching}
-        categoryOptions={categoryOptions}
+        tabStats={summary?.tabStats}
+        queueCounts={summary?.queueCounts}
+        isOrdersFetching={isSummaryFetching}
         role="admin"
         selectedYears={selectedYears}
         selectedMonths={selectedMonths}
@@ -530,37 +487,35 @@ export default function AdminOverview() {
       />
 
       <MonthlyPerformanceChart
-        orders={orders}
-        isOrdersFetching={isOrdersFetching}
+        monthly={summary?.monthly}
+        isOrdersFetching={isSummaryFetching}
         qtyBasis={qtyBasis}
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <ProductLeaderboard
-          orders={filteredOrders}
-          isOrdersFetching={isOrdersFetching}
+          rows={summary?.leaderboards.products}
+          isOrdersFetching={isSummaryFetching}
           externalFilterCaption={filterCaption}
           qtyBasis={qtyBasis}
         />
         <PartyLeaderboard
-          orders={filteredOrders}
-          isOrdersFetching={isOrdersFetching}
-          partyNameById={partyNameById}
+          rows={summary?.leaderboards.parties}
+          isOrdersFetching={isSummaryFetching}
           externalFilterCaption={filterCaption}
           qtyBasis={qtyBasis}
         />
         <SalesLeaderboard
-          orders={filteredOrders}
-          isOrdersFetching={isOrdersFetching}
-          userNameById={userNameById}
+          rows={summary?.leaderboards.salesUsers}
+          isOrdersFetching={isSummaryFetching}
           externalFilterCaption={filterCaption}
           qtyBasis={qtyBasis}
         />
       </div>
 
       <FeaturedMatrixSection
-        orders={filteredOrders}
-        isOrdersFetching={isOrdersFetching}
+        contributions={summary?.contributions}
+        isOrdersFetching={isSummaryFetching}
         externalFilterCaption={filterCaption}
         qtyBasis={qtyBasis}
       />

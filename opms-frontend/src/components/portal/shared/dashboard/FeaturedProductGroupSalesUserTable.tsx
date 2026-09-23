@@ -18,6 +18,7 @@ import {
   type MatrixMetric,
   type MatrixQtyBasis,
 } from "./featuredMatrixUtils";
+import type { DashboardOrdersSummary } from "@/store/api/slices/dashboardApi";
 import { formatPeriodLabel } from "./periodFilterUtils";
 import {
   buildMatrixCsvPayload,
@@ -44,6 +45,7 @@ interface FeaturedProductGroupSalesUserTableProps {
   forceSalesUserName?: string;
   catalog?: FeaturedMatrixCatalog;
   enabled?: boolean;
+  contributions?: DashboardOrdersSummary["contributions"];
 }
 
 export default function FeaturedProductGroupSalesUserTable({
@@ -58,6 +60,7 @@ export default function FeaturedProductGroupSalesUserTable({
   forceSalesUserName,
   catalog: propCatalog,
   enabled = true,
+  contributions,
 }: FeaturedProductGroupSalesUserTableProps) {
   const [metricState, setMetric] = useState<MatrixMetric>("quantity");
   const metric = forceMetric ?? metricState;
@@ -119,9 +122,15 @@ export default function FeaturedProductGroupSalesUserTable({
       seen.add(id);
       fromList.push({ id, name: nameById[id] || id });
     }
+    for (const cell of contributions ?? []) {
+      const id = cell.salesUserId;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      fromList.push({ id, name: nameById[id] || id });
+    }
 
     return fromList.sort((a, b) => a.name.localeCompare(b.name));
-  }, [usersData, filteredOrders, forceSalesUserId, forceSalesUserName]);
+  }, [usersData, filteredOrders, forceSalesUserId, forceSalesUserName, contributions]);
 
   const groupIds = useMemo(() => featuredGroups.map((g) => g.id), [featuredGroups]);
   const salesIds = useMemo(() => salesUsers.map((u) => u.id), [salesUsers]);
@@ -141,6 +150,23 @@ export default function FeaturedProductGroupSalesUserTable({
         for (const sId of salesIds) pMap.set(sId, 0);
         map.set(p.id, pMap);
       }
+    }
+
+    if (contributions) {
+      for (const cell of contributions) {
+        const salesId = cell.salesUserId;
+        if (!salesId || !salesIdSet.has(salesId)) continue;
+        const productId = cell.productId;
+        if (!productId) continue;
+        const val = metric === "volume" ? cell.volume : cell.quantity;
+        const gId = productToGroupMap.get(productId);
+        if (!gId || !groupIdSet.has(gId)) continue;
+        const pMap = map.get(productId);
+        if (pMap) pMap.set(salesId, (pMap.get(salesId) ?? 0) + val);
+        const gMap = map.get(gId);
+        if (gMap) gMap.set(salesId, (gMap.get(salesId) ?? 0) + val);
+      }
+      return map;
     }
 
     for (const order of filteredOrders) {
@@ -178,6 +204,7 @@ export default function FeaturedProductGroupSalesUserTable({
     productsByGroup,
     metric,
     qtyBasis,
+    contributions,
   ]);
 
   const toggleGroup = (groupId: string) => {

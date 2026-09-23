@@ -9,16 +9,9 @@ import PartyLeaderboard from "@/components/portal/shared/dashboard/PartyLeaderbo
 import ProductLeaderboard from "@/components/portal/shared/dashboard/ProductLeaderboard";
 import SalesLeaderboard from "@/components/portal/shared/dashboard/SalesLeaderboard";
 import FeaturedMatrixSection from "@/components/portal/shared/dashboard/FeaturedMatrixSection";
-import { computeAccountOrderStats } from "./accountOrderUtils";
 import { formatPeriodCaption } from "@/components/portal/shared/dashboard/PeriodHeadingCaption";
-import { ORDER_WORKFLOW_LIST_QUERY } from "@/components/portal/shared/orderList/orderWorkflowTabs";
-import { useOrderWorkflowCategoryOptions } from "@/components/portal/shared/orderList/useOrderWorkflowCategoryOptions";
 import {
-  useGetDashboardAccountQuery,
   useGetTransportPlanStatsQuery,
-  useListOrdersQuery,
-  useListPartiesQuery,
-  useListUsersQuery,
   useNotifyPushMutation,
   useSubscribePushMutation,
 } from "@/store/api";
@@ -32,9 +25,6 @@ import { publicVapidKey } from "@/lib/env";
 import { toast } from "@/lib/toast";
 import { OverviewFlagsWidget } from "@/components/portal/shared/OverviewFlagsWidget";
 import { useAppSelector } from "@/store/hooks";
-import { pickOrders } from "@/components/portal/shared/pickOrders";
-import { buildPartyNameById } from "@/components/portal/sales/partyDisplay";
-import { buildUserNameById } from "@/components/portal/shared/userDisplay";
 import {
   Bell,
   BellOff,
@@ -42,7 +32,7 @@ import {
   X,
 } from "lucide-react";
 import PeriodFilter from "@/components/portal/shared/dashboard/PeriodFilter";
-import { usePeriodFilter } from "@/components/portal/shared/dashboard/usePeriodFilter";
+import { useDashboardSummary } from "@/components/portal/shared/dashboard/useDashboardSummary";
 import { dashboardPeriodToStatsQuery } from "@/components/portal/shared/dashboard/periodFilterUtils";
 const ACCOUNT_PENDING_PUSH_INTERVAL_MS = 300_000;
 const DUE_SHEET_PENDING_ALERT_URL = "/account/orders?tab=due_sheet_pending";
@@ -76,19 +66,25 @@ export default function AccountOverview() {
     typeof user?.name === "string" ? user.name : "Account Specialist";
 
   const {
-    isFetching: isKpiFetching,
-    refetch: refetchKpi,
-  } = useGetDashboardAccountQuery();
+    isFetching: isSummaryFetching,
+    refetch: refetchSummary,
+    summary,
+    dataType,
+    setDataType,
+    qtyBasis,
+    availableYears,
+    selectedYears,
+    setSelectedYears,
+    selectedMonths,
+    setSelectedMonths,
+    dateFilter,
+    setDateFilter,
+    customDateFrom,
+    setCustomDateFrom,
+    customDateTo,
+    setCustomDateTo,
+  } = useDashboardSummary();
 
-  const {
-    data: ordersData,
-    isFetching: isOrdersFetching,
-    refetch: refetchOrders,
-  } = useListOrdersQuery(ORDER_WORKFLOW_LIST_QUERY);
-
-  const { data: partiesData } = useListPartiesQuery({});
-  const { data: usersData } = useListUsersQuery({ department: "sales" });
-  const categoryOptions = useOrderWorkflowCategoryOptions();
   const [notifyPush] = useNotifyPushMutation();
   const [subscribePush] = useSubscribePushMutation();
 
@@ -111,29 +107,6 @@ export default function AccountOverview() {
     }
     setNotifPermission(Notification.permission);
   }, []);
-
-  const orders = useMemo(
-    () => pickOrders(ordersData) as Record<string, unknown>[],
-    [ordersData],
-  );
-
-  const {
-    dataType,
-    setDataType,
-    qtyBasis,
-    availableYears,
-    selectedYears,
-    setSelectedYears,
-    selectedMonths,
-    setSelectedMonths,
-    dateFilter,
-    setDateFilter,
-    customDateFrom,
-    setCustomDateFrom,
-    customDateTo,
-    setCustomDateTo,
-    filteredOrders,
-  } = usePeriodFilter(orders);
 
   const filterCaption = useMemo(() => {
     return formatPeriodCaption(
@@ -162,14 +135,9 @@ export default function AccountOverview() {
     refetch: refetchTransportPlanStats,
   } = useGetTransportPlanStatsQuery(periodStatsQuery);
 
-  const orderStats = useMemo(
-    () => computeAccountOrderStats(orders, categoryOptions),
-    [orders, categoryOptions],
-  );
-
-  const pendingDueSheetCount = orderStats.due_sheet_pending.count;
-  const pendingAccountCount = orderStats.pending_account_approval.count;
-  const pendingOpenDispatchCount = orderStats.open_dispatched.count;
+  const pendingDueSheetCount = summary?.queueCounts.due_sheet_pending ?? 0;
+  const pendingAccountCount = summary?.queueCounts.pending_account_approval ?? 0;
+  const pendingOpenDispatchCount = summary?.queueCounts.open_dispatched ?? 0;
 
   const pendingDueSheetCountRef = useRef(pendingDueSheetCount);
   pendingDueSheetCountRef.current = pendingDueSheetCount;
@@ -329,8 +297,8 @@ export default function AccountOverview() {
   sendAccountPendingReminderRef.current = sendAccountPendingReminder;
   const sendOpenDispatchReminderRef = useRef(sendOpenDispatchReminder);
   sendOpenDispatchReminderRef.current = sendOpenDispatchReminder;
-  const refetchOrdersRef = useRef(refetchOrders);
-  refetchOrdersRef.current = refetchOrders;
+  const refetchSummaryRef = useRef(refetchSummary);
+  refetchSummaryRef.current = refetchSummary;
 
   // Separate 5-minute stream for due sheet pending
   useEffect(() => {
@@ -343,7 +311,7 @@ export default function AccountOverview() {
     const tick = () => {
       if (cancelled) return;
       void sendDueSheetReminderRef.current();
-      void refetchOrdersRef.current();
+      void refetchSummaryRef.current();
     };
 
     const first = window.setTimeout(tick, 1_000);
@@ -368,7 +336,7 @@ export default function AccountOverview() {
     const tick = () => {
       if (cancelled) return;
       void sendAccountPendingReminderRef.current();
-      void refetchOrdersRef.current();
+      void refetchSummaryRef.current();
     };
 
     const first = window.setTimeout(tick, 1_500);
@@ -393,7 +361,7 @@ export default function AccountOverview() {
     const tick = () => {
       if (cancelled) return;
       void sendOpenDispatchReminderRef.current();
-      void refetchOrdersRef.current();
+      void refetchSummaryRef.current();
     };
 
     const first = window.setTimeout(tick, 2_000);
@@ -565,23 +533,12 @@ export default function AccountOverview() {
     }
   };
 
-  const partyNameById = useMemo(
-    () => buildPartyNameById(partiesData),
-    [partiesData],
-  );
-
-  const userNameById = useMemo(
-    () => buildUserNameById(usersData),
-    [usersData],
-  );
-
   const [isRefreshing, setIsRefreshing] = useState(false);
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
       await Promise.all([
-        refetchKpi().unwrap(),
-        refetchOrders().unwrap(),
+        refetchSummary().unwrap(),
         refetchTransportPlanStats().unwrap(),
       ]);
     } catch {
@@ -592,7 +549,7 @@ export default function AccountOverview() {
   };
 
   const isAnyLoading =
-    isKpiFetching || isOrdersFetching || isTransportPlanStatsFetching || isRefreshing;
+    isSummaryFetching || isTransportPlanStatsFetching || isRefreshing;
 
   const showEnableBanner =
     hasAnyPending &&
@@ -726,10 +683,9 @@ export default function AccountOverview() {
       </div>
 
       <OverviewWidgets
-        orders={orders}
-        filteredOrders={filteredOrders}
-        isOrdersFetching={isOrdersFetching}
-        categoryOptions={categoryOptions}
+        tabStats={summary?.tabStats}
+        queueCounts={summary?.queueCounts}
+        isOrdersFetching={isSummaryFetching}
         role="account"
         selectedYears={selectedYears}
         selectedMonths={selectedMonths}
@@ -749,37 +705,35 @@ export default function AccountOverview() {
       />
 
       <MonthlyPerformanceChart
-        orders={orders}
-        isOrdersFetching={isOrdersFetching}
+        monthly={summary?.monthly}
+        isOrdersFetching={isSummaryFetching}
         qtyBasis={qtyBasis}
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <ProductLeaderboard
-          orders={filteredOrders}
-          isOrdersFetching={isOrdersFetching}
+          rows={summary?.leaderboards.products}
+          isOrdersFetching={isSummaryFetching}
           externalFilterCaption={filterCaption}
           qtyBasis={qtyBasis}
         />
         <PartyLeaderboard
-          orders={filteredOrders}
-          isOrdersFetching={isOrdersFetching}
-          partyNameById={partyNameById}
+          rows={summary?.leaderboards.parties}
+          isOrdersFetching={isSummaryFetching}
           externalFilterCaption={filterCaption}
           qtyBasis={qtyBasis}
         />
         <SalesLeaderboard
-          orders={filteredOrders}
-          isOrdersFetching={isOrdersFetching}
-          userNameById={userNameById}
+          rows={summary?.leaderboards.salesUsers}
+          isOrdersFetching={isSummaryFetching}
           externalFilterCaption={filterCaption}
           qtyBasis={qtyBasis}
         />
       </div>
 
       <FeaturedMatrixSection
-        orders={filteredOrders}
-        isOrdersFetching={isOrdersFetching}
+        contributions={summary?.contributions}
+        isOrdersFetching={isSummaryFetching}
         externalFilterCaption={filterCaption}
         qtyBasis={qtyBasis}
       />

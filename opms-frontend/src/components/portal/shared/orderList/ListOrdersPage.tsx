@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FileText,
   LayoutDashboard,
@@ -26,7 +26,6 @@ import {
   resolveOrderCounterparty,
 } from "@/components/portal/sales/partyDisplay";
 import {
-  filterOrdersForSalesUser,
   getOrderTabCategory,
   normalizeSalesTabFromUrl,
   SALES_ORDER_TABS,
@@ -49,7 +48,6 @@ import {
   mutationSuccessCopy,
 } from "@/lib/mutationMessages";
 import { toast } from "@/lib/toast";
-import { useAppSelector } from "@/store/hooks";
 import {
   useDeleteOrderMutation,
   useListOrdersQuery,
@@ -58,10 +56,7 @@ import {
 } from "@/store/api";
 
 import { OrderListBottomTabStrip } from "./OrderListBottomTabStrip";
-import {
-  buildOrderListTabCounts,
-  filterListOrders,
-} from "./filterListOrders";
+import { dateFilterToRange } from "./orderListDateFilter";
 import {
   formatDateShort,
   formatDateTime,
@@ -81,8 +76,8 @@ import type {
 import {
   getOrderWorkflowTabCategory,
   ORDER_PRIORITY_TABS,
+  ORDER_WORKFLOW_LIST_QUERY,
   ORDER_WORKFLOW_TABS,
-  workflowTabQueryParams,
   type OrderWorkflowTabCategory,
 } from "./orderWorkflowTabs";
 import { UnbilledOrdersModal } from "./UnbilledOrdersModal";
@@ -93,9 +88,16 @@ type ListOrdersPageProps = {
   config: ListOrdersPageConfig;
 };
 
+type ListOrdersPagePayload = {
+  data?: unknown[];
+  total?: number;
+  pages?: number;
+  scopeTotal?: number;
+  tabCounts?: Record<string, number>;
+};
+
 export default function ListOrdersPage({ config }: ListOrdersPageProps) {
   const router = useRouter();
-  const authUser = useAppSelector((state) => state.auth.user);
   const {
     portalHome,
     title,
@@ -105,7 +107,6 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
     showDueSheetBadge,
     showFlagBadge,
     showPricing,
-    scopeToSalesUser,
     includeDraftTab,
     headerActions,
     createDraftLabel = "Draft Order",
@@ -163,29 +164,70 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
 
   const [deleteOrder, { isLoading: isDeletingOrder }] = useDeleteOrderMutation();
 
-  // Sales: all portfolio orders (incl. drafts). Others: shared non-draft pool
-  // (same RTK cache as Quick Access / Google Sheet — search is client-side).
-  const queryParams = useMemo(() => {
-    if (includeDraftTab) return { view: "list" };
-    return {
-      ...workflowTabQueryParams(
-        activeTab === "draft" ? "all" : (activeTab as OrderWorkflowTabCategory),
-      ),
+  const [debouncedSearch, setDebouncedSearch] = useState(searchQuery);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(searchQuery), 300);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  // One page from the server. Tab, search, priority, and date are query params.
+  // Sheet / unbilled still load the full pool, and only after those modals open.
+  const listQueryParams = useMemo(() => {
+    const range = dateFilterToRange(dateFilter, customDateFrom, customDateTo);
+    const searching = debouncedSearch.trim().length > 0;
+    const params: Record<string, string> = {
       view: "list",
+      paginate: "true",
+      page: String(currentPage),
+      limit: String(itemsPerPage),
     };
-  }, [activeTab, includeDraftTab]);
+    if (includeDraftTab) params.sales_tabs = "true";
+    else params.exclude_status = "draft";
+    if (searching) params.search = debouncedSearch.trim();
+    else params.tab = activeTab;
+    if (priorityFilter !== "all") params.priority = priorityFilter;
+    if (range.dateFrom) params.dateFrom = range.dateFrom;
+    if (range.dateTo) params.dateTo = range.dateTo;
+    return params;
+  }, [
+    activeTab,
+    currentPage,
+    customDateFrom,
+    customDateTo,
+    dateFilter,
+    debouncedSearch,
+    includeDraftTab,
+    itemsPerPage,
+    priorityFilter,
+  ]);
 
   const { data, isLoading, isFetching, isError, refetch } =
-    useListOrdersQuery(queryParams);
+    useListOrdersQuery(listQueryParams);
+  const hasShownListRef = useRef(false);
+  if (data) hasShownListRef.current = true;
+  const needsBulkOrders = isSheetOpen || isUnbilledOrdersOpen;
+  const bulkListParams = includeDraftTab
+    ? { view: "list" }
+    : ORDER_WORKFLOW_LIST_QUERY;
+  const bulkQ = useListOrdersQuery(bulkListParams, { skip: !needsBulkOrders });
   const partiesQ = useListPartiesQuery({});
   const salesUsersQ = useListUsersQuery({ department: "sales" });
   const categoryOptions = useOrderWorkflowCategoryOptions();
 
-  const orders = useMemo(() => {
-    const picked = pickOrders(data) as OrderListRow[];
-    if (!scopeToSalesUser) return picked;
-    return filterOrdersForSalesUser(picked, authUser) as OrderListRow[];
-  }, [authUser, data, scopeToSalesUser]);
+  const pagePayload =
+    data && typeof data === "object" && !Array.isArray(data)
+      ? (data as ListOrdersPagePayload)
+      : null;
+
+  const orders = useMemo(
+    () => pickOrders(data) as OrderListRow[],
+    [data],
+  );
+
+  const bulkOrders = useMemo(
+    () => pickOrders(bulkQ.data) as OrderListRow[],
+    [bulkQ.data],
+  );
 
   const getActiveTransportInfoForOrder = useCallback((o: Record<string, unknown>) => {
     const at = o.active_transport as
@@ -222,43 +264,10 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
     [salesUsersQ.data],
   );
 
-  /** Same per-tab counts as dashboard Quick Access / Google Sheet. */
-  const tabCounts = useMemo(
-    () => buildOrderListTabCounts(orders, categoryOptions, includeDraftTab),
-    [orders, categoryOptions, includeDraftTab],
-  );
-
-  /** Shared filter pipeline with GoogleSheetOrdersModal (`filterListOrders`). */
-  const filteredOrders = useMemo(
-    () =>
-      filterListOrders<OrderListRow>({
-        orders,
-        activeTab,
-        searchQuery,
-        priorityFilter,
-        dateFilter,
-        customDateFrom,
-        customDateTo,
-        categoryOptions,
-        partyNameById,
-        includeDraftTab,
-      }),
-    [
-      orders,
-      searchQuery,
-      activeTab,
-      categoryOptions,
-      priorityFilter,
-      partyNameById,
-      dateFilter,
-      customDateFrom,
-      customDateTo,
-      includeDraftTab,
-    ],
-  );
-
-  const totalEntries = filteredOrders.length;
-  const totalPages = Math.max(1, Math.ceil(totalEntries / itemsPerPage) || 1);
+  const tabCounts = pagePayload?.tabCounts ?? {};
+  const totalEntries = pagePayload?.total ?? orders.length;
+  const totalPages = Math.max(1, pagePayload?.pages ?? 1);
+  const scopeTotal = pagePayload?.scopeTotal ?? totalEntries;
 
   // Keep current page in range when filters shrink the result set.
   useEffect(() => {
@@ -266,11 +275,6 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
       setCurrentPage(totalPages);
     }
   }, [currentPage, totalPages, setCurrentPage]);
-
-  const paginatedOrders = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return filteredOrders.slice(start, start + itemsPerPage);
-  }, [filteredOrders, currentPage, itemsPerPage]);
 
   const startEntry =
     totalEntries > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0;
@@ -303,7 +307,10 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
-      <PortalBusyOverlay active={isLoading} message="Loading orders…" />
+      <PortalBusyOverlay
+        active={isLoading && !hasShownListRef.current}
+        message="Loading orders…"
+      />
 
       {allowDraftDelete && (
         <ConfirmDeleteDraftModal
@@ -384,13 +391,16 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
             {hasAction("refresh") && (
               <button
                 type="button"
-                onClick={() => refetch()}
-                disabled={isFetching}
+                onClick={() => {
+                  void refetch();
+                  if (needsBulkOrders) void bulkQ.refetch();
+                }}
+                disabled={isFetching || (needsBulkOrders && bulkQ.isFetching)}
                 className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-white/5"
                 title="Reload orders list"
               >
                 <RefreshCw
-                  className={`h-3 w-3 ${isFetching ? "animate-spin" : ""}`}
+                  className={`h-3 w-3 ${isFetching || (needsBulkOrders && bulkQ.isFetching) ? "animate-spin" : ""}`}
                 />
                 Refresh
               </button>
@@ -458,12 +468,12 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
               No orders found
             </h3>
             <p className="mx-auto mt-1.5 max-w-xs text-xs text-slate-500">
-              {orders.length === 0
+              {scopeTotal === 0
                 ? emptyNoOrdersHint ||
                   "No orders exist in the database system."
                 : "No orders match your search and filter parameters."}
             </p>
-            {orders.length === 0 && hasAction("createDraft") && (
+            {scopeTotal === 0 && hasAction("createDraft") && (
               <Link
                 href={`${portalHome}/create-order`}
                 className="mt-4 inline-flex cursor-pointer items-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.98] dark:bg-blue-500 dark:hover:bg-blue-400"
@@ -533,7 +543,7 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-white/5">
-                  {paginatedOrders.map((o) => {
+                  {orders.map((o) => {
                     const id = orderKey(o);
                     const ref =
                       typeof o.order_no === "string"
@@ -672,12 +682,16 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
                           {isPendingTab
                             ? renderPendingApprovalBadge(o)
                             : renderWorkflowStatusBadge(
-                                includeDraftTab
-                                  ? getOrderTabCategory(o, categoryOptions)
-                                  : (getOrderWorkflowTabCategory(
-                                      o,
-                                      categoryOptions,
-                                    ) ?? "open_dispatched"),
+                                ((o as { workflow_tab?: string }).workflow_tab as
+                                  | OrderWorkflowTabCategory
+                                  | "draft"
+                                  | undefined) ||
+                                  (includeDraftTab
+                                    ? getOrderTabCategory(o, categoryOptions)
+                                    : (getOrderWorkflowTabCategory(
+                                        o,
+                                        categoryOptions,
+                                      ) ?? "open_dispatched")),
                               )}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-right">
@@ -772,7 +786,7 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
         <UnbilledOrdersModal
           isOpen={isUnbilledOrdersOpen}
           onClose={() => setIsUnbilledOrdersOpen(false)}
-          orders={orders}
+          orders={bulkOrders}
           categoryOptions={categoryOptions}
           partyNameById={partyNameById}
           portalBasePath={portalHome}
@@ -787,10 +801,10 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
             onClose={() => setIsSheetOpen(false)}
             partyNameById={partyNameById}
             config={config}
-            orders={orders}
+            orders={bulkOrders}
             categoryOptions={categoryOptions}
-            isOrdersFetching={isFetching || isLoading}
-            onRefetchOrders={() => void refetch()}
+            isOrdersFetching={bulkQ.isFetching || bulkQ.isLoading}
+            onRefetchOrders={() => void bulkQ.refetch()}
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
             activeTab={
@@ -814,10 +828,10 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
             onClose={() => setIsSheetOpen(false)}
             partyNameById={partyNameById}
             config={config}
-            orders={orders}
+            orders={bulkOrders}
             categoryOptions={categoryOptions}
-            isOrdersFetching={isFetching || isLoading}
-            onRefetchOrders={() => void refetch()}
+            isOrdersFetching={bulkQ.isFetching || bulkQ.isLoading}
+            onRefetchOrders={() => void bulkQ.refetch()}
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
             activeTab={

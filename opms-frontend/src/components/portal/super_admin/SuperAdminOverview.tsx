@@ -10,21 +10,12 @@ import ProductLeaderboard from "@/components/portal/shared/dashboard/ProductLead
 import SalesLeaderboard from "@/components/portal/shared/dashboard/SalesLeaderboard";
 import FeaturedMatrixSection from "@/components/portal/shared/dashboard/FeaturedMatrixSection";
 import { formatPeriodCaption } from "@/components/portal/shared/dashboard/PeriodHeadingCaption";
-import { ORDER_WORKFLOW_LIST_QUERY } from "@/components/portal/shared/orderList/orderWorkflowTabs";
-import { useOrderWorkflowCategoryOptions } from "@/components/portal/shared/orderList/useOrderWorkflowCategoryOptions";
 import {
-  useGetDashboardSuperQuery,
   useGetTransportPlanStatsQuery,
   useGetCompanyDataQuery,
-  useListOrdersQuery,
-  useListPartiesQuery,
-  useListUsersQuery,
 } from "@/store/api";
 import { OverviewFlagsWidget } from "@/components/portal/shared/OverviewFlagsWidget";
 import { useAppSelector } from "@/store/hooks";
-import { pickOrders } from "@/components/portal/shared/pickOrders";
-import { buildPartyNameById } from "@/components/portal/sales/partyDisplay";
-import { buildUserNameById } from "@/components/portal/shared/userDisplay";
 import {
   Building2,
   FilePlus,
@@ -41,7 +32,7 @@ import {
   LayoutGrid,
 } from "lucide-react";
 import PeriodFilter from "@/components/portal/shared/dashboard/PeriodFilter";
-import { usePeriodFilter } from "@/components/portal/shared/dashboard/usePeriodFilter";
+import { useDashboardSummary } from "@/components/portal/shared/dashboard/useDashboardSummary";
 import { dashboardPeriodToStatsQuery } from "@/components/portal/shared/dashboard/periodFilterUtils";
 import { buildSsoLaunchUrl } from "@/lib/ssoHandoff";
 
@@ -53,29 +44,9 @@ export default function SuperAdminOverview() {
     typeof user?.name === "string" ? user.name : "Super Administrator";
 
   const {
-    isFetching: isKpiFetching,
-    refetch: refetchKpi,
-  } = useGetDashboardSuperQuery();
-
-  const {
-    data: parentCompanyData,
-    isFetching: isParentDataFetching,
-    refetch: refetchParentData,
-  } = useGetCompanyDataQuery();
-
-  const {
-    data: ordersData,
-    isFetching: isOrdersFetching,
-    refetch: refetchOrders,
-  } = useListOrdersQuery(ORDER_WORKFLOW_LIST_QUERY);
-
-  const { data: partiesData, isFetching: isPartiesFetching } = useListPartiesQuery({});
-  const { data: usersData, isFetching: isUsersFetching } = useListUsersQuery({ department: "sales" });
-  const categoryOptions = useOrderWorkflowCategoryOptions();
-
-  const orders = useMemo(() => pickOrders(ordersData) as any[], [ordersData]);
-
-  const {
+    isFetching: isSummaryFetching,
+    refetch: refetchSummary,
+    summary,
     dataType,
     setDataType,
     qtyBasis,
@@ -90,8 +61,12 @@ export default function SuperAdminOverview() {
     setCustomDateFrom,
     customDateTo,
     setCustomDateTo,
-    filteredOrders,
-  } = usePeriodFilter(orders);
+  } = useDashboardSummary();
+
+  const {
+    isFetching: isParentDataFetching,
+    refetch: refetchParentData,
+  } = useGetCompanyDataQuery();
 
   const filterCaption = useMemo(() => {
     return formatPeriodCaption(
@@ -120,23 +95,12 @@ export default function SuperAdminOverview() {
     refetch: refetchTransportPlanStats,
   } = useGetTransportPlanStatsQuery(periodStatsQuery);
 
-  const partyNameById = useMemo(
-    () => buildPartyNameById(partiesData),
-    [partiesData],
-  );
-
-  const userNameById = useMemo(
-    () => buildUserNameById(usersData),
-    [usersData],
-  );
-
   const [isRefreshing, setIsRefreshing] = useState(false);
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
       await Promise.all([
-        refetchKpi().unwrap(),
-        refetchOrders().unwrap(),
+        refetchSummary().unwrap(),
         refetchTransportPlanStats().unwrap(),
         refetchParentData().unwrap(),
       ]);
@@ -148,10 +112,7 @@ export default function SuperAdminOverview() {
   };
 
   const isAnyLoading =
-    isKpiFetching ||
-    isOrdersFetching ||
-    isPartiesFetching ||
-    isUsersFetching ||
+    isSummaryFetching ||
     isTransportPlanStatsFetching ||
     isParentDataFetching;
 
@@ -239,10 +200,9 @@ export default function SuperAdminOverview() {
       </div>
 
       <OverviewWidgets
-        orders={orders}
-        filteredOrders={filteredOrders}
-        isOrdersFetching={isOrdersFetching}
-        categoryOptions={categoryOptions}
+        tabStats={summary?.tabStats}
+        queueCounts={summary?.queueCounts}
+        isOrdersFetching={isSummaryFetching}
         role="super_admin"
         portalHome={PORTAL_HOME}
         selectedYears={selectedYears}
@@ -265,37 +225,35 @@ export default function SuperAdminOverview() {
       />
 
       <MonthlyPerformanceChart
-        orders={orders}
-        isOrdersFetching={isOrdersFetching}
+        monthly={summary?.monthly}
+        isOrdersFetching={isSummaryFetching}
         qtyBasis={qtyBasis}
       />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <ProductLeaderboard
-          orders={filteredOrders}
-          isOrdersFetching={isOrdersFetching}
+          rows={summary?.leaderboards.products}
+          isOrdersFetching={isSummaryFetching}
           externalFilterCaption={filterCaption}
           qtyBasis={qtyBasis}
         />
         <PartyLeaderboard
-          orders={filteredOrders}
-          isOrdersFetching={isOrdersFetching}
-          partyNameById={partyNameById}
+          rows={summary?.leaderboards.parties}
+          isOrdersFetching={isSummaryFetching}
           externalFilterCaption={filterCaption}
           qtyBasis={qtyBasis}
         />
         <SalesLeaderboard
-          orders={filteredOrders}
-          isOrdersFetching={isOrdersFetching}
-          userNameById={userNameById}
+          rows={summary?.leaderboards.salesUsers}
+          isOrdersFetching={isSummaryFetching}
           externalFilterCaption={filterCaption}
           qtyBasis={qtyBasis}
         />
       </div>
 
       <FeaturedMatrixSection
-        orders={filteredOrders}
-        isOrdersFetching={isOrdersFetching}
+        contributions={summary?.contributions}
+        isOrdersFetching={isSummaryFetching}
         externalFilterCaption={filterCaption}
         qtyBasis={qtyBasis}
       />

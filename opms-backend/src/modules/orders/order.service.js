@@ -910,45 +910,18 @@ const LIST_VIEW_SELECT = [
 
 /** Active orders only (no trash filter here). Optional filters: status, exclude_status ($nin), customer, or party ObjectId. */
 async function list(query = {}, user) {
-  const q = await buildBaseQuery(query, user);
+  if (query.paginate === 'true' || query.paginate === true) {
+    const { listOrdersPage } = require('./orderListPage.service');
+    return listOrdersPage(query, user, buildBaseQuery);
+  }
 
-  const paginate = query.paginate === 'true';
-  const page = Math.max(Number(query.page) || 1, 1);
-  const limit = Math.max(Number(query.limit) || 10, 1);
-  const skip = (page - 1) * limit;
+  const q = await buildBaseQuery(query, user);
   const isListView = query.view === 'list' || query.fields === 'list';
 
   const mapListedOrders = async (rows) => {
     const plainRows = rows.map((r) => applyDerivedPriorityToOrder(toPlain(r)));
     return enrichOrdersParallel(plainRows, getModels());
   };
-
-  if (paginate) {
-    let findQuery = getModels().Order.find(q)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
-
-    if (isListView) {
-      findQuery = findQuery
-        .select(LIST_VIEW_SELECT)
-        .populate('party', 'name code sra sra_from_date legal_name trade_name')
-        .populate('assigned_sales_user', 'name username email department');
-    }
-
-    const [total, rows] = await Promise.all([
-      getModels().Order.countDocuments(q),
-      findQuery.lean(),
-    ]);
-
-    return {
-      total,
-      page,
-      limit,
-      pages: Math.ceil(total / limit),
-      data: await mapListedOrders(rows),
-    };
-  }
 
   let findQuery = getModels().Order.find(q).sort({ createdAt: -1 });
   if (isListView) {
@@ -1010,62 +983,8 @@ async function getWorkflowContext() {
 }
 
 async function getWorkflowStats(query = {}, user) {
-  const tabs = [
-    'all',
-    'pending_admin_approval',
-    'due_sheet_pending',
-    'pending_finance_approval',
-    'pending_account_approval',
-    'open_dispatched',
-    'transport_pending',
-    'in_transit',
-    'closed_delivered',
-    'on_hold',
-    'cancelled',
-    'rejected'
-  ];
-
-  const results = {};
-
-  const promises = tabs.map(async (tabName) => {
-    const q_tab = await buildBaseQuery({ ...query, tab: tabName }, user);
-    const aggResult = await getModels().Order.aggregate([
-      { $match: q_tab },
-      {
-        $project: {
-          grand_total: { $ifNull: ['$grand_total', 0] },
-          items_qty: {
-            $sum: {
-              $map: {
-                input: '$order_items',
-                as: 'item',
-                in: {
-                  $cond: [
-                    { $in: ['$status', ['draft', 'submitted', 'cancelled', 'finance_rejected', 'rejected', 'on_hold']] },
-                    { $ifNull: ['$$item.ordered_quantity', { $ifNull: ['$$item.quantity', 0] }] },
-                    { $ifNull: ['$$item.approved_quantity', 0] }
-                  ]
-                }
-              }
-            }
-          }
-        }
-      },
-      {
-        $group: {
-          _id: null,
-          count: { $sum: 1 },
-          quantity: { $sum: '$items_qty' },
-          amount: { $sum: '$grand_total' }
-        }
-      }
-    ]);
-
-    results[tabName] = aggResult[0] || { count: 0, quantity: 0, amount: 0 };
-  });
-
-  await Promise.all(promises);
-  return results;
+  const { workflowTabStats } = require('./orderListPage.service');
+  return workflowTabStats(query, user, buildBaseQuery);
 }
 
 async function getById(id, user) {

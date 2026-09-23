@@ -12,7 +12,7 @@ const attachmentService = require('../attachments/attachment.service');
 const workflowService = require('../workflow/workflow.service');
 const dispatchQueue = require('../../queues/dispatch.queue');
 const { API_PUBLIC_BASE_URL, FILE_DOCUMENT_LINKS_RELATIVE } = require('../../config/fileManagement');
-const { uploadMulterFile, getFileMeta, getViewPresignedUrl } = require('../../services/fileManagement/index');
+const { uploadMulterFile, getFileMeta } = require('../../services/fileManagement/index');
 const { assertOrderEligibleForDispatchPhase } = require('./dispatch.policy');
 const fulfillmentService = require('../orders/orderFulfillment.service');
 const {
@@ -386,51 +386,9 @@ async function consumeReturnQtyForReleaseDispatch(orderId, financeApprovalId, di
   await orderDoc.save();
 }
 
-function resolveFileIdFromDoc(doc) {
-  if (!doc) return null;
-  const entityIdStr = String(doc.entity_id || doc.order || doc._id || '');
-  if (doc.filename && !String(doc.filename).includes('/')) {
-    return String(doc.filename);
-  }
-  if (doc.fileId && !String(doc.fileId).includes('/')) {
-    return String(doc.fileId);
-  }
-  if (doc.key) {
-    const parts = String(doc.key).split('/');
-    const last = parts[parts.length - 1];
-    if (last && last !== entityIdStr && last !== String(doc._id || '')) {
-      return last;
-    }
-  }
-  if (doc.url) {
-    const match = String(doc.url).match(/\/(?:api\/)?files\/([^/?#]+)/);
-    if (match && match[1] && match[1] !== 'view' && match[1] !== 'download') {
-      const candidate = match[1];
-      if (candidate !== entityIdStr && candidate !== String(doc._id || '')) {
-        return candidate;
-      }
-    }
-  }
-  return null;
-}
-
-async function decorateDispatch(row) {
+function decorateDispatch(row) {
   if (!row) return row;
-  const plain = toPlain(row);
-  if (plain.bill_document && typeof plain.bill_document === 'object') {
-    const fileId = resolveFileIdFromDoc(plain.bill_document);
-    if (fileId) {
-      try {
-        const freshUrl = await getViewPresignedUrl(fileId);
-        if (freshUrl) {
-          plain.bill_document.url = freshUrl;
-        }
-      } catch (_err) {
-        // Fall back to stored URL if FM lookup fails
-      }
-    }
-  }
-  return plain;
+  return toPlain(row);
 }
 
 async function list({ order, dispatch_status } = {}) {

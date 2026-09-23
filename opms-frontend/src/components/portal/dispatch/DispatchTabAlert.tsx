@@ -10,11 +10,7 @@ import {
 } from "react";
 
 import { useBrowserTabAlert } from "@/hooks/useBrowserTabAlert";
-import { pickOrders } from "@/components/portal/shared/pickOrders";
-import { computeDispatchOrderStats } from "@/components/portal/dispatch/dispatchOrderUtils";
-import { ORDER_WORKFLOW_LIST_QUERY } from "@/components/portal/shared/orderList/orderWorkflowTabs";
-import { useOrderWorkflowCategoryOptions } from "@/components/portal/shared/orderList/useOrderWorkflowCategoryOptions";
-import { useListOrdersQuery } from "@/store/api";
+import { useGetOrdersStatsQuery } from "@/store/api";
 
 const OverrideContext = createContext<(count: number | null) => void>(() => {});
 
@@ -52,22 +48,20 @@ function DispatchTabAlertInner({
 }: {
   overrideCount: number | null;
 }) {
-  const { data, isError } = useListOrdersQuery(
-    ORDER_WORKFLOW_LIST_QUERY,
+  const { data, isError } = useGetOrdersStatsQuery(
+    { counts_only: "true" },
     {
+      skip: overrideCount != null,
       pollingInterval: 30_000,
       refetchOnFocus: true,
       refetchOnReconnect: true,
     },
   );
-  const categoryOptions = useOrderWorkflowCategoryOptions();
 
-  const queryCount = useMemo(() => {
-    const orders = pickOrders(data);
-    const stats = computeDispatchOrderStats(orders, categoryOptions);
-    return stats.transport_pending.count;
-  }, [data, categoryOptions]);
-
+  const queryCount = Number(
+    (data as { transport_pending?: { count?: number } } | undefined)
+      ?.transport_pending?.count,
+  ) || 0;
   const count = overrideCount ?? queryCount;
 
   useBrowserTabAlert({

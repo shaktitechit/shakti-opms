@@ -6,7 +6,10 @@ import {
   type DashboardDataType,
 } from "./periodFilterUtils";
 import type { QtyBasis } from "./leaderboardUtils";
-import { orderMatchesDateFilter } from "../orderList/orderListDateFilter";
+import {
+  dateFilterToRange,
+  orderMatchesDateFilter,
+} from "../orderList/orderListDateFilter";
 
 function getCurrentPeriodDefaults() {
   const now = new Date();
@@ -16,14 +19,25 @@ function getCurrentPeriodDefaults() {
   };
 }
 
-export function usePeriodFilter<T = unknown>(orders: T[]) {
+function sameNumbers(left: number[], right: number[]) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
+export function usePeriodFilter<T = unknown>(
+  orders: T[] = [],
+  yearSource?: number[],
+) {
   const [dataType, setDataType] = useState<DashboardDataType>("approved");
   const qtyBasis: QtyBasis = dataType === "billed" ? "dispatched" : "approved";
 
-  const availableYears = useMemo(
+  const derivedYears = useMemo(
     () => collectAvailableYears(orders as unknown[], dataType),
     [orders, dataType],
   );
+  const availableYears = yearSource?.length ? yearSource : derivedYears;
   const defaults = useMemo(() => getCurrentPeriodDefaults(), []);
   const [selectedYears, setSelectedYears] = useState<number[]>([defaults.year]);
   const [selectedMonths, setSelectedMonths] = useState<number[]>([defaults.month]);
@@ -35,16 +49,13 @@ export function usePeriodFilter<T = unknown>(orders: T[]) {
   useEffect(() => {
     if (availableYears.length === 0) return;
     setSelectedYears((prev) => {
-      if (prev.length === 0) {
-        return availableYears.includes(defaults.year)
-          ? [defaults.year]
-          : [availableYears[0]];
-      }
-      const next = prev.filter((y) => availableYears.includes(y));
-      if (next.length > 0) return next;
-      return availableYears.includes(defaults.year)
+      const fallback = availableYears.includes(defaults.year)
         ? [defaults.year]
         : [availableYears[0]];
+      if (prev.length === 0) return sameNumbers(prev, fallback) ? prev : fallback;
+      const next = prev.filter((y) => availableYears.includes(y));
+      const resolved = next.length > 0 ? next : fallback;
+      return sameNumbers(prev, resolved) ? prev : resolved;
     });
   }, [availableYears, defaults.year]);
 
@@ -104,4 +115,30 @@ export function usePeriodFilter<T = unknown>(orders: T[]) {
     setCustomDateTo,
     filteredOrders,
   };
+}
+
+export function buildDashboardSummaryParams(input: {
+  dataType: string;
+  dateFilter: string;
+  customDateFrom: string;
+  customDateTo: string;
+  selectedYears: number[];
+  selectedMonths: number[];
+}): Record<string, string> {
+  const params: Record<string, string> = {
+    dataType: input.dataType,
+    dateFilter: input.dateFilter || "all",
+    years: input.selectedYears.join(","),
+    months: input.selectedMonths.join(","),
+  };
+  if (input.dateFilter && input.dateFilter !== "all") {
+    const range = dateFilterToRange(
+      input.dateFilter,
+      input.customDateFrom,
+      input.customDateTo,
+    );
+    if (range.dateFrom) params.dateFrom = range.dateFrom;
+    if (range.dateTo) params.dateTo = range.dateTo;
+  }
+  return params;
 }

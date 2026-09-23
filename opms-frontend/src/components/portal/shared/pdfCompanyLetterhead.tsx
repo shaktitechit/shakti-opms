@@ -6,7 +6,7 @@
 
 import { useMemo, type CSSProperties } from "react";
 import { useGetCompanyInfoQuery, type CompanyInfoRecord } from "@/store/api";
-import { resolvePublicAssetUrl } from "@/lib/env";
+import { companyLetterheadLogoUrl, resolveFileUrl, resolvePublicAssetUrl } from "@/lib/env";
 
 export type PdfCompanyLetterhead = {
   companyName: string;
@@ -20,12 +20,22 @@ export type PdfCompanyLetterhead = {
   footerNote: string;
 };
 
+/** Keep data URLs intact. API files resolve to the API origin; other paths stay on this app. */
+export function resolveLetterheadLogoUrl(raw: string): string {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  if (value.startsWith("data:")) return value;
+  if (value.startsWith("/api/") || value.includes("/api/files/")) return resolveFileUrl(value);
+  if (/^https?:\/\//i.test(value)) return resolveFileUrl(value);
+  return resolvePublicAssetUrl(value);
+}
+
 export function companyInfoToLetterhead(
   company?: CompanyInfoRecord | null,
 ): PdfCompanyLetterhead {
   const companyName = String(company?.trade_name || company?.legal_name || "").trim();
-  const logoRaw = String(company?.logo_url || "").trim();
-  const logoUrl = logoRaw ? resolvePublicAssetUrl(logoRaw) : "";
+  const logoRaw = String(company?.logo_url || "").trim() || companyLetterheadLogoUrl();
+  const logoUrl = resolveLetterheadLogoUrl(logoRaw);
 
   const statePin =
     company?.state && company?.pincode

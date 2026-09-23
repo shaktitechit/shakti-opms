@@ -18,6 +18,7 @@ import {
   type OrderWorkflowCategoryOptions,
   type OrderWorkflowTabCategory,
   type OrderWorkflowTabStat,
+  type OrderWorkflowTabStats,
 } from "@/components/portal/shared/orderList/orderWorkflowTabs";
 import PeriodHeadingCaption from "./PeriodHeadingCaption";
 import ReportDownloadButton from "./ReportDownloadButton";
@@ -27,8 +28,10 @@ import { downloadCsvFile, reportFilename } from "./reportDownloadUtils";
 import type { QtyBasis } from "./leaderboardUtils";
 
 interface OverviewWidgetsProps {
-  orders: any[];
-  filteredOrders: any[];
+  orders?: any[];
+  filteredOrders?: any[];
+  tabStats?: Record<string, OrderWorkflowTabStat>;
+  queueCounts?: Record<string, number>;
   isOrdersFetching: boolean;
   categoryOptions?: OrderWorkflowCategoryOptions;
   role: OrderQuickAccessRole;
@@ -82,8 +85,9 @@ function sumStats(stats: OrderWorkflowTabStat[]): OrderWorkflowTabStat {
 }
 
 export default function OverviewWidgets({
-  orders,
-  filteredOrders,
+  filteredOrders = [],
+  tabStats: tabStatsProp,
+  queueCounts,
   isOrdersFetching,
   categoryOptions,
   role,
@@ -96,8 +100,10 @@ export default function OverviewWidgets({
   qtyBasis = "approved",
 }: OverviewWidgetsProps) {
   const tabStats = useMemo(
-    () => computeOrderWorkflowTabStats(filteredOrders, categoryOptions, qtyBasis),
-    [filteredOrders, categoryOptions, qtyBasis],
+    () =>
+      (tabStatsProp as OrderWorkflowTabStats | undefined) ??
+      computeOrderWorkflowTabStats(filteredOrders, categoryOptions, qtyBasis),
+    [tabStatsProp, filteredOrders, categoryOptions, qtyBasis],
   );
 
   const kpis = useMemo(() => {
@@ -395,7 +401,7 @@ export default function OverviewWidgets({
       </div>
 
       <OrderQuickAccess
-        orders={orders}
+        counts={queueCounts}
         isOrdersFetching={isOrdersFetching}
         categoryOptions={categoryOptions}
         role={role}

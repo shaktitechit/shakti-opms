@@ -6,6 +6,16 @@ import {
 import { FileManagementError } from "./errors.js";
 import { logger } from "../../config/logger.js";
 
+/** After a network failure, skip further calls briefly and log once. */
+const CIRCUIT_MS = 20_000;
+let circuitOpenUntil = 0;
+let circuitLogged = false;
+
+function networkDetail(err) {
+  const cause = err?.cause;
+  return cause?.code || cause?.message || err?.message || "fetch failed";
+}
+
 function createTimeoutSignal(ms) {
   if (typeof AbortSignal !== "undefined" && AbortSignal.timeout) {
     return AbortSignal.timeout(ms);
@@ -42,6 +52,13 @@ export async function fmRequest(path, options = {}) {
   const { timeoutMs: _omit, ...fetchRest } = options;
   const signal = options.signal ?? createTimeoutSignal(timeoutMs);
 
+  if (Date.now() < circuitOpenUntil) {
+    throw new FileManagementError("File management service unreachable", {
+      code: "FM_NETWORK",
+      statusCode: 502,
+    });
+  }
+
   let res;
   try {
     res = await fetch(url, {
@@ -49,18 +66,31 @@ export async function fmRequest(path, options = {}) {
       headers,
       signal,
     });
+    circuitOpenUntil = 0;
+    circuitLogged = false;
   } catch (err) {
     const hint =
       /localhost|127\.0\.0\.1/.test(FILE_MANAGEMENT_API_URL) &&
       process.env.NODE_ENV !== "test"
         ? " From Docker, use a reachable host (e.g. host.docker.internal) for FILE_MANAGEMENT_API_URL."
         : "";
-    logger.warn("File management request failed (network)", {
-      url: url.replace(/\/\/[^@/]+@/, "//***@"),
-      message: err?.message,
-    });
+    const detail = networkDetail(err);
+    circuitOpenUntil = Date.now() + CIRCUIT_MS;
+    if (!circuitLogged) {
+      circuitLogged = true;
+      let host = FILE_MANAGEMENT_API_URL;
+      try {
+        host = new URL(FILE_MANAGEMENT_API_URL).host;
+      } catch {
+        /* keep the raw base */
+      }
+      logger.warn("File management service unreachable", {
+        host,
+        message: detail,
+      });
+    }
     throw new FileManagementError(
-      `File management service unreachable: ${err?.message || err}${hint}`,
+      `File management service unreachable: ${detail}${hint}`,
       { code: "FM_NETWORK", statusCode: 502, cause: err },
     );
   }

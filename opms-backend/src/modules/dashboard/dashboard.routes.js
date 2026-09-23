@@ -13,9 +13,21 @@ const financeDash = require('./finance.dashboard');
 const dispatchDash = require('./dispatch.dashboard');
 const accountDash = require('./account.dashboard');
 const superDash = require('./super.dashboard');
+const ordersSummaryService = require('./ordersSummary.service');
+const { buildBaseQuery } = require('../orders/order.service');
 
 router.use(requireAuth);
 router.use(requireOpmsAccess);
+
+router.get(
+  '/orders-summary',
+  asyncHandler(async (req, res) => {
+    res.json({
+      success: true,
+      data: await ordersSummaryService.ordersSummary(req.query, req.user, buildBaseQuery),
+    });
+  }),
+);
 
 router.get(
   '/admin',

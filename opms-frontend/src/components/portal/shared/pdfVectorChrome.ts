@@ -45,23 +45,87 @@ export type PdfCol = {
   align?: "left" | "right" | "center";
 };
 
-export async function loadPdfLogo(url?: string): Promise<string | null> {
-  if (!url) return null;
-  if (url.startsWith("data:image/")) return url;
-  try {
-    const res = await fetch(url, { mode: "cors" });
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    if (!blob.type.startsWith("image/")) return null;
-    return await new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || "") || null);
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(blob);
-    });
-  } catch {
-    return null;
+function sniffImageMime(declared: string, bytes: Uint8Array): string {
+  const mime = String(declared || "").toLowerCase();
+  if (mime.startsWith("image/") && mime !== "image/svg+xml") return mime;
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50) return "image/png";
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
+  if (bytes.length >= 6 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46) return "image/gif";
+  if (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45
+  ) {
+    return "image/webp";
   }
+  if (mime === "image/svg+xml" || (bytes[0] === 0x3c && bytes[1] === 0x73)) return "image/svg+xml";
+  return "";
+}
+
+function bytesToDataUrl(bytes: Uint8Array, mime: string): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return `data:${mime};base64,${btoa(binary)}`;
+}
+
+/** jsPDF embeds PNG/JPEG reliably. Rasterize webp, gif, and svg logos to PNG. */
+function rasterizeLogoPng(src: string): Promise<string | null> {
+  if (typeof document === "undefined") return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const maxEdge = 640;
+        const nw = img.naturalWidth || 1;
+        const nh = img.naturalHeight || 1;
+        const scale = Math.min(1, maxEdge / Math.max(nw, nh));
+        const w = Math.max(1, Math.round(nw * scale));
+        const h = Math.max(1, Math.round(nh * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        ctx.clearRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/png"));
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    if (!src.startsWith("data:")) img.crossOrigin = "anonymous";
+    img.src = src;
+  });
+}
+
+export async function loadPdfLogo(url?: string): Promise<string | null> {
+  const raw = String(url || "").trim();
+  if (!raw) return null;
+  let dataUrl = raw.startsWith("data:") ? raw : "";
+  if (!dataUrl) {
+    try {
+      const res = await fetch(raw, { mode: "cors" });
+      if (!res.ok) return null;
+      const buf = new Uint8Array(await res.arrayBuffer());
+      const mime = sniffImageMime(res.headers.get("content-type") || "", buf);
+      if (!mime) return null;
+      dataUrl = bytesToDataUrl(buf, mime);
+    } catch {
+      return null;
+    }
+  }
+  const png = await rasterizeLogoPng(dataUrl);
+  if (png) return png;
+  return /^data:image\/(png|jpeg|jpg|webp)/i.test(dataUrl) ? dataUrl : null;
 }
 
 export async function preparePdfChrome(
@@ -121,23 +185,57 @@ export function rowHeightFromLines(
   return pad * 2 + n * lineH;
 }
 
-function logoFormat(data: string): "PNG" | "JPEG" {
-  return data.includes("image/png") ? "PNG" : "JPEG";
+function logoFormat(data: string): "PNG" | "JPEG" | "WEBP" {
+  if (/image\/png/i.test(data)) return "PNG";
+  if (/image\/webp/i.test(data)) return "WEBP";
+  return "JPEG";
+}
+
+function fittedLogoSize(
+  pdf: JsPDF,
+  data: string,
+  maxW: number,
+  maxH: number,
+): { w: number; h: number } {
+  try {
+    const props = pdf.getImageProperties(data);
+    const pw = Number(props?.width) || 0;
+    const ph = Number(props?.height) || 0;
+    if (pw > 0 && ph > 0) {
+      const aspect = pw / ph;
+      let w = maxW;
+      let h = w / aspect;
+      if (h > maxH) {
+        h = maxH;
+        w = h * aspect;
+      }
+      return { w, h };
+    }
+  } catch {
+    /* fall through to the reserved box */
+  }
+  return { w: maxW, h: maxH };
 }
 
 export function drawLetterheadHeader(pdf: JsPDF, opts: PdfChromeOpts): number {
   const compact = Boolean(opts.compact);
   const m = pageMargin(compact);
   const w = pdf.internal.pageSize.getWidth();
-  const logoW = compact ? 18 : 28;
-  const logoH = compact ? 8 : 12;
+  const logoMaxW = compact ? 22 : 34;
+  const logoMaxH = compact ? 10 : 16;
+  let logoW = 0;
+  let logoH = 0;
   let y = m;
 
   if (opts.logo) {
+    const fitted = fittedLogoSize(pdf, opts.logo, logoMaxW, logoMaxH);
+    logoW = fitted.w;
+    logoH = fitted.h;
     try {
       pdf.addImage(opts.logo, logoFormat(opts.logo), m, y, logoW, logoH, undefined, "FAST");
     } catch {
-      /* skip broken logo */
+      logoW = 0;
+      logoH = 0;
     }
   }
 
@@ -152,16 +250,17 @@ export function drawLetterheadHeader(pdf: JsPDF, opts: PdfChromeOpts): number {
   pdf.setFont("helvetica", "normal");
   pdf.setFontSize(compact ? 6 : 6.5);
   pdf.setTextColor(...TEXT);
+  const sideReserve = logoW > 0 ? logoMaxW : 0;
   let metaY = y + (compact ? 6.8 : 8.2);
   if (opts.letterhead.addressLine) {
-    const addrLines = wrapLines(pdf, opts.letterhead.addressLine, w - m * 2 - logoW * 2, 2);
+    const addrLines = wrapLines(pdf, opts.letterhead.addressLine, w - m * 2 - sideReserve * 2, 2);
     for (const line of addrLines) {
       pdf.text(line, w / 2, metaY, { align: "center" });
       metaY += compact ? 2.6 : 3;
     }
   }
   if (opts.letterhead.contactLine) {
-    const contactLines = wrapLines(pdf, opts.letterhead.contactLine, w - m * 2 - logoW * 2, 2);
+    const contactLines = wrapLines(pdf, opts.letterhead.contactLine, w - m * 2 - sideReserve * 2, 2);
     for (const line of contactLines) {
       pdf.text(line, w / 2, metaY, { align: "center" });
       metaY += compact ? 2.5 : 2.8;

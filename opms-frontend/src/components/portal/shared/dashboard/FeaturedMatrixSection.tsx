@@ -7,9 +7,11 @@ import FeaturedProductGroupZoneTable from "./FeaturedProductGroupZoneTable";
 import FeaturedProductGroupFeaturedPartyTable from "./FeaturedProductGroupFeaturedPartyTable";
 import { useFeaturedMatrixCatalog } from "./useFeaturedMatrixCatalog";
 import type { MatrixQtyBasis } from "./featuredMatrixUtils";
+import type { DashboardOrdersSummary } from "@/store/api/slices/dashboardApi";
 
 interface FeaturedMatrixSectionProps {
-  orders: any[];
+  orders?: any[];
+  contributions?: DashboardOrdersSummary["contributions"];
   isOrdersFetching: boolean;
   externalFilterCaption?: string;
   qtyBasis?: MatrixQtyBasis;
@@ -18,7 +20,8 @@ interface FeaturedMatrixSectionProps {
 type MatrixTab = "sales" | "zone" | "party";
 
 export default function FeaturedMatrixSection({
-  orders,
+  orders = [],
+  contributions,
   isOrdersFetching,
   externalFilterCaption,
   qtyBasis = "approved",
@@ -130,6 +133,7 @@ export default function FeaturedMatrixSection({
             qtyBasis={qtyBasis}
             catalog={catalog}
             enabled={isInView}
+            contributions={contributions}
           />
         )}
 
@@ -141,6 +145,7 @@ export default function FeaturedMatrixSection({
             qtyBasis={qtyBasis}
             catalog={catalog}
             enabled={isInView}
+            contributions={contributions}
           />
         )}
 
@@ -152,6 +157,7 @@ export default function FeaturedMatrixSection({
             qtyBasis={qtyBasis}
             catalog={catalog}
             enabled={isInView}
+            contributions={contributions}
           />
         )}
       </div>
