@@ -559,16 +559,43 @@ async function loadWorkflowContext() {
   };
 }
 
-async function indexVisibleOrders(scopeQuery, salesTabs) {
-  const rows = await getModels()
-    .Order.find(scopeQuery)
-    .select(SLIM_SELECT)
-    .sort({ createdAt: -1 })
-    .lean();
+const INDEX_TTL_MS = 20_000;
+const indexCache = new Map();
+const indexInflight = new Map();
 
-  const withApproval = await enrichOrdersWithApprovalPending(rows, getModels());
-  const enriched = await enrichOrdersWithDueSheetStatus(withApproval, getModels());
-  const context = await loadWorkflowContext();
+function stableValue(value) {
+  if (value == null) return value;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'object' && typeof value.toHexString === 'function') return String(value);
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (typeof value === 'object') {
+    const out = {};
+    for (const key of Object.keys(value).sort()) out[key] = stableValue(value[key]);
+    return out;
+  }
+  return value;
+}
+
+async function computeVisibleOrders(scopeQuery, salesTabs) {
+  const models = getModels();
+  const [rows, context] = await Promise.all([
+    models.Order.find(scopeQuery).select(SLIM_SELECT).sort({ createdAt: -1 }).lean(),
+    loadWorkflowContext(),
+  ]);
+
+  const [withApproval, withDueSheet] = await Promise.all([
+    enrichOrdersWithApprovalPending(rows, models),
+    enrichOrdersWithDueSheetStatus(rows, models),
+  ]);
+  const enriched = withApproval.map((row, index) => {
+    const due = withDueSheet[index] || {};
+    const uploaded = Boolean(due.due_sheet_uploaded) || Boolean(row.is_due_sheet_uploaded);
+    return {
+      ...row,
+      due_sheet_uploaded: uploaded,
+      is_due_sheet_uploaded: uploaded,
+    };
+  });
 
   const classified = enriched.map((row) => {
     const withPriority = applyDerivedPriorityToOrder(row);
@@ -591,6 +618,31 @@ async function indexVisibleOrders(scopeQuery, salesTabs) {
   }
 
   return { classified, tabCounts, scopeTotal };
+}
+
+async function indexVisibleOrders(scopeQuery, salesTabs) {
+  const key = `${salesTabs ? 1 : 0}:${JSON.stringify(stableValue(scopeQuery))}`;
+  const now = Date.now();
+  const hit = indexCache.get(key);
+  if (hit && hit.expires > now) return hit.value;
+
+  const pending = indexInflight.get(key);
+  if (pending) return pending;
+
+  const job = computeVisibleOrders(scopeQuery, salesTabs)
+    .then((value) => {
+      indexCache.set(key, { expires: Date.now() + INDEX_TTL_MS, value });
+      if (indexCache.size > 24) {
+        const oldest = indexCache.keys().next().value;
+        indexCache.delete(oldest);
+      }
+      return value;
+    })
+    .finally(() => {
+      indexInflight.delete(key);
+    });
+  indexInflight.set(key, job);
+  return job;
 }
 
 function partyLabel(party, namesById) {

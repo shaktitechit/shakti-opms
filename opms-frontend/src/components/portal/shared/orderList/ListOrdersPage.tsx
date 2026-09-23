@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FileText,
   LayoutDashboard,
@@ -37,7 +37,6 @@ import { deriveOrderWorkflowStatus } from "@/components/portal/shared/orderLifec
 import { OrderDueSheetBadge } from "@/components/portal/shared/OrderDueSheetBadge";
 import { OrderFlagBadge } from "@/components/portal/shared/OrderFlagBadge";
 import { pickOrders } from "@/components/portal/shared/pickOrders";
-import { PortalBusyOverlay } from "@/components/portal/shared/PortalBusyOverlay";
 import {
   buildUserNameById,
   resolveUserDisplay,
@@ -203,8 +202,6 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
 
   const { data, isLoading, isFetching, isError, refetch } =
     useListOrdersQuery(listQueryParams);
-  const hasShownListRef = useRef(false);
-  if (data) hasShownListRef.current = true;
   const needsBulkOrders = isSheetOpen || isUnbilledOrdersOpen;
   const bulkListParams = includeDraftTab
     ? { view: "list" }
@@ -307,10 +304,6 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
-      <PortalBusyOverlay
-        active={isLoading && !hasShownListRef.current}
-        message="Loading orders…"
-      />
 
       {allowDraftDelete && (
         <ConfirmDeleteDraftModal
@@ -446,7 +439,20 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
         compact
       />
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
+        {isFetching && pagePayload ? (
+          <div className="absolute inset-x-0 top-0 z-10 h-0.5 overflow-hidden bg-blue-100 dark:bg-blue-950">
+            <div className="h-full w-1/3 animate-pulse bg-blue-600" />
+          </div>
+        ) : null}
+        {(isLoading || (isFetching && !pagePayload)) && !isError ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 px-4 py-16">
+            <RefreshCw className="h-5 w-5 animate-spin text-blue-600 dark:text-blue-400" />
+            <p className="text-sm font-medium text-slate-600 dark:text-slate-300">
+              Loading orders…
+            </p>
+          </div>
+        ) : null}
         {isError && (
           <div className="px-4 py-16 text-center">
             <span className="text-2xl">⚠️</span>
@@ -459,7 +465,7 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
           </div>
         )}
 
-        {!isLoading && !isError && totalEntries === 0 && (
+        {!isLoading && !isError && !(isFetching && !pagePayload) && totalEntries === 0 && (
           <div className="px-4 py-16 text-center">
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg border border-slate-100 bg-slate-50 text-xl text-slate-400 dark:border-white/5 dark:bg-slate-950">
               📋

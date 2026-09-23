@@ -222,7 +222,93 @@ function rowsFromMap(map) {
   return Array.from(map.values()).sort((a, b) => b.quantity.total - a.quantity.total);
 }
 
+const SUMMARY_TTL_MS = 20_000;
+const summaryCache = new Map();
+const summaryInflight = new Map();
+
+function summaryCacheKey(user, query) {
+  const uid = String(user?._id || user?.id || user?.email || '');
+  const parts = [
+    uid,
+    query.dataType || '',
+    query.dateFilter || '',
+    query.dateFrom || '',
+    query.dateTo || '',
+    query.years || '',
+    query.months || '',
+  ];
+  return parts.join('|');
+}
+
+function idList(ids) {
+  return [...ids].filter((id) => /^[a-fA-F0-9]{24}$/.test(id));
+}
+
+async function attachSummaryRefs(details) {
+  const partyIds = new Set();
+  const userIds = new Set();
+  const productIds = new Set();
+  for (const order of details) {
+    const partyId = refId(order.party);
+    const userId = refId(order.assigned_sales_user);
+    if (partyId) partyIds.add(partyId);
+    if (userId) userIds.add(userId);
+    for (const line of order.order_items || []) {
+      const productId = refId(line.product);
+      if (productId) productIds.add(productId);
+    }
+  }
+
+  const models = getModels();
+  const [parties, users, products] = await Promise.all([
+    partyIds.size
+      ? models.Party.find({ _id: { $in: idList(partyIds) } })
+          .select('party_name contact_person legal_name trade_name name')
+          .lean()
+      : [],
+    userIds.size
+      ? models.User.find({ _id: { $in: idList(userIds) } })
+          .select('name username')
+          .lean()
+      : [],
+    productIds.size
+      ? models.Product.find({ _id: { $in: idList(productIds) } })
+          .select('product_name name product_type')
+          .lean()
+      : [],
+  ]);
+  const partyById = new Map(parties.map((row) => [String(row._id), row]));
+  const userById = new Map(users.map((row) => [String(row._id), row]));
+  const productById = new Map(products.map((row) => [String(row._id), row]));
+
+  return details.map((order) => ({
+    ...order,
+    party: partyById.get(refId(order.party)) || order.party,
+    assigned_sales_user: userById.get(refId(order.assigned_sales_user)) || order.assigned_sales_user,
+    order_items: (order.order_items || []).map((line) => {
+      const product = productById.get(refId(line.product));
+      return product ? { ...line, product } : line;
+    }),
+  }));
+}
+
 async function ordersSummary(query, user, buildBaseQuery) {
+  const cacheKey = summaryCacheKey(user, query);
+  const hit = summaryCache.get(cacheKey);
+  if (hit && hit.expires > Date.now()) return hit.value;
+  const pending = summaryInflight.get(cacheKey);
+  if (pending) return pending;
+
+  const job = computeOrdersSummary(query, user, buildBaseQuery, cacheKey);
+  summaryInflight.set(cacheKey, job);
+  try {
+    return await job;
+  } finally {
+    summaryInflight.delete(cacheKey);
+  }
+}
+
+async function computeOrdersSummary(query, user, buildBaseQuery, cacheKey) {
   const { indexVisibleOrders } = require('../orders/orderListPage.service');
   const dataType = query.dataType === 'billed' ? 'billed' : 'approved';
   const kpiBasis = dataType === 'billed' ? 'dispatched' : 'approved';
@@ -234,15 +320,10 @@ async function ordersSummary(query, user, buildBaseQuery) {
   const { classified, tabCounts } = await indexVisibleOrders(scopeQuery, salesTabs);
 
   const ids = classified.map((item) => item.row._id);
-  const details = ids.length
-    ? await getModels()
-        .Order.find({ _id: { $in: ids } })
-        .select(ITEM_SELECT)
-        .populate('party', 'party_name contact_person legal_name trade_name name')
-        .populate('assigned_sales_user', 'name username')
-        .populate('order_items.product', 'product_name name product_type')
-        .lean()
+  const rawDetails = ids.length
+    ? await getModels().Order.find({ _id: { $in: ids } }).select(ITEM_SELECT).lean()
     : [];
+  const details = await attachSummaryRefs(rawDetails);
   const detailById = new Map(details.map((row) => [String(row._id), row]));
 
   const queueCounts = {};
@@ -380,7 +461,7 @@ async function ordersSummary(query, user, buildBaseQuery) {
     }
   }
 
-  return {
+  const value = {
     availableYears: Array.from(yearSet).sort((a, b) => b - a),
     queueCounts,
     tabStats,
@@ -392,6 +473,12 @@ async function ordersSummary(query, user, buildBaseQuery) {
     },
     contributions: Array.from(contributionMap.values()),
   };
+  summaryCache.set(cacheKey, { expires: Date.now() + SUMMARY_TTL_MS, value });
+  if (summaryCache.size > 40) {
+    const oldest = summaryCache.keys().next().value;
+    summaryCache.delete(oldest);
+  }
+  return value;
 }
 
 module.exports = { ordersSummary };
