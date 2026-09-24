@@ -240,6 +240,7 @@ export function WorkFormModal({
     const list = plansData?.data || [];
     return list.find((p) => !(p as any).deletedAt && !String(p._id || p.id).startsWith("standalone"));
   }, [plansData]);
+  const planCompleted = existingPlan?.status === "completed";
 
   // Fetch custom task templates configured for this executive
   const { data: dbUserSettings } = useGetUserSettingsQuery(effectiveSalesUserId, {
@@ -295,6 +296,7 @@ export function WorkFormModal({
   if (!open) return null;
 
   function handleSave() {
+    if (planCompleted) return;
     const errs: Record<string, string> = {};
     if (!internalPlanDate) {
       errs.planDate = "Plan date is required";
@@ -402,7 +404,9 @@ export function WorkFormModal({
           {internalPlanDate && (
             <div
               className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs transition ${
-                existingPlan
+                planCompleted
+                  ? "border-rose-500/40 bg-rose-50/80 dark:bg-rose-950/20 text-rose-800 dark:text-rose-300"
+                  : existingPlan
                   ? "border-emerald-500/30 bg-emerald-50/70 dark:bg-emerald-950/20 text-emerald-800 dark:text-emerald-300"
                   : "border-border bg-surface-muted/40 text-muted"
               }`}
@@ -412,6 +416,16 @@ export function WorkFormModal({
                   <div className="h-3 w-3 animate-spin rounded-full border-2 border-primary border-t-transparent" />
                   <span>Checking for work plan…</span>
                 </div>
+              ) : planCompleted ? (
+                <>
+                  <Info className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />
+                  <div>
+                    <span className="font-semibold text-rose-900 dark:text-rose-200">
+                      Work plan completed:
+                    </span>{" "}
+                    The work plan for {formatPlanDate(internalPlanDate)} is completed. New tasks cannot be added to this day.
+                  </div>
+                </>
               ) : existingPlan ? (
                 <>
                   <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
@@ -538,7 +552,7 @@ export function WorkFormModal({
           <button
             type="button"
             onClick={handleSave}
-            disabled={isSaving}
+            disabled={isSaving || isCheckingPlan || planCompleted}
             className="rounded-lg bg-primary px-5 py-2 text-xs font-bold text-primary-foreground hover:bg-primary-hover shadow-xs transition cursor-pointer"
           >
             {isSaving ? "Saving…" : mode === "create" ? "Add Task" : "Save Changes"}
