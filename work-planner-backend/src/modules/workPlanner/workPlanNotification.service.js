@@ -379,9 +379,9 @@ async function sendCustomDayEndEmail(planId, executiveUser, dayEndData = {}) {
     const executiveName = executiveUser.name || executiveUser.email.split('@')[0];
     const fromAddress = `${executiveName} <${executiveUser.email}>`;
     const subject = dayEndData.subject?.trim() || `Day End Report — ${executiveName}`;
-    const htmlBody = dayEndData.body_html || '<p>Day End Report submitted.</p>';
-    const ccList = Array.isArray(dayEndData.cc_emails)
-      ? dayEndData.cc_emails.map((e) => String(e).trim()).filter(Boolean)
+    const providedCc = dayEndData.cc_emails !== undefined ? dayEndData.cc_emails : dayEndData.ccEmails;
+    const ccList = Array.isArray(providedCc)
+      ? providedCc.map((e) => String(e).trim()).filter(Boolean)
       : [];
 
     // Resolve attachments if provided
@@ -476,7 +476,7 @@ async function sendCustomWorkPlanCreationEmail(planId, user, creationMailData = 
     }
 
     const rawTo = creationMailData.to_email || creationMailData.toEmail;
-    const rawCc = creationMailData.cc_emails || creationMailData.ccEmails;
+    const rawCc = creationMailData.cc_emails !== undefined ? creationMailData.cc_emails : creationMailData.ccEmails;
     const rawBody = creationMailData.body_html || creationMailData.bodyHtml;
     const rawAtts = creationMailData.attachment_ids || creationMailData.attachmentIds;
 
@@ -492,14 +492,14 @@ async function sendCustomWorkPlanCreationEmail(planId, user, creationMailData = 
       const targetUserObj = plan.sales_user && typeof plan.sales_user === 'object' ? plan.sales_user : null;
       if (targetUserObj && targetUserObj.email && String(targetUserObj._id || targetUserObj.id) !== String(senderUser._id || senderUser.id)) {
         recipient = targetUserObj.email;
-        if (ccList.length === 0) {
+        if (rawCc === undefined && ccList.length === 0) {
           ccList = managerEmails.filter((m) => m.toLowerCase() !== recipient.toLowerCase());
         }
       } else if (plan.is_discussed_with_manager && plan.discussed_manager_id) {
         const discussedManager = managers.find((m) => String(m._id || m.id) === String(plan.discussed_manager_id));
         if (discussedManager && discussedManager.email) {
           recipient = discussedManager.email;
-          if (ccList.length === 0) {
+          if (rawCc === undefined && ccList.length === 0) {
             ccList = managerEmails.filter((m) => m.toLowerCase() !== recipient.toLowerCase());
           }
         }
@@ -507,7 +507,7 @@ async function sendCustomWorkPlanCreationEmail(planId, user, creationMailData = 
 
       if (!recipient && managerEmails.length > 0) {
         recipient = managerEmails[0];
-        if (ccList.length === 0) {
+        if (rawCc === undefined && ccList.length === 0) {
           ccList = managerEmails.slice(1);
         }
       }

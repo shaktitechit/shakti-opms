@@ -534,8 +534,11 @@ async function notifyWorkPlanCreated({ planId, actorUser, creationMailData = {} 
     const recipient = creationMailData.to_email || primaryRecipientEmail;
     if (!recipient) return;
 
-    const mailCc = Array.isArray(creationMailData.cc_emails) && creationMailData.cc_emails.length > 0
+    const providedCreationCc = creationMailData.cc_emails !== undefined
       ? creationMailData.cc_emails
+      : creationMailData.ccEmails;
+    const mailCc = Array.isArray(providedCreationCc)
+      ? providedCreationCc.map((e) => String(e).trim()).filter(Boolean)
       : ccList;
 
     const fromAddress = salesUser?.email ? `${executiveName} <${salesUser.email}>` : `${actorName} <${actorUser.email}>`;
@@ -653,82 +656,7 @@ async function notifyVisitCreated({ visit, planDoc = null, actorUser = null }) {
       }
     }
 
-    // Email Notification
-    if (!primaryRecipientEmail) return;
-
-    const fromAddress = salesUser?.email ? `${executiveName} <${salesUser.email}>` : (actorUser?.email ? `${actorName} <${actorUser.email}>` : null);
-    const startTime = formatTime(visit.planned_start_time);
-    const endTime = formatTime(visit.planned_end_time);
-    const timeStr = startTime !== '—' ? `${startTime}${endTime !== '—' ? ' - ' + endTime : ''}` : 'Not specified';
-
-    const baseUrl = (FRONTEND_URL || process.env.FRONTEND_URL || '').replace(/\/$/, '');
-    const workPlanUrl = baseUrl ? `${baseUrl}/work-plans` : '';
-
-    const subject = `New Visit Scheduled: ${partyName} — ${executiveName} (${planDateStr})`;
-
-    const emailHtml = `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
-        <div style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #ffffff; padding: 20px 24px; border-radius: 8px 8px 0 0;">
-          <h2 style="margin: 0 0 4px 0; font-size: 18px; font-weight: 700; color: #ffffff;">New Client Visit Scheduled</h2>
-          <p style="margin: 0; font-size: 13px; opacity: 0.9;">Visit Date: <strong>${planDateStr}</strong></p>
-        </div>
-        <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
-          <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-              <td style="padding: 8px 0; color: #64748b; width: 140px;"><strong>Client / Party:</strong></td>
-              <td style="padding: 8px 0; color: #0f172a; font-weight: 600;">${escapeHtml(partyName)}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-              <td style="padding: 8px 0; color: #64748b;"><strong>Executive:</strong></td>
-              <td style="padding: 8px 0; color: #0f172a;">${escapeHtml(executiveName)} (${escapeHtml(salesUser?.email || '')})</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-              <td style="padding: 8px 0; color: #64748b;"><strong>Contact Person:</strong></td>
-              <td style="padding: 8px 0; color: #0f172a;">${escapeHtml(visit.contact_person || 'N/A')}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-              <td style="padding: 8px 0; color: #64748b;"><strong>Phone / Email:</strong></td>
-              <td style="padding: 8px 0; color: #0f172a;">${escapeHtml(visit.contact_number || visit.contact_email || 'N/A')}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-              <td style="padding: 8px 0; color: #64748b;"><strong>Planned Time:</strong></td>
-              <td style="padding: 8px 0; color: #0f172a;">${timeStr}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-              <td style="padding: 8px 0; color: #64748b;"><strong>Purpose:</strong></td>
-              <td style="padding: 8px 0; color: #0f172a;">${escapeHtml(visit.purpose || 'General')}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-              <td style="padding: 8px 0; color: #64748b;"><strong>Location / Address:</strong></td>
-              <td style="padding: 8px 0; color: #0f172a;">${escapeHtml(visit.address || 'N/A')}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; color: #64748b;"><strong>Notes / Agenda:</strong></td>
-              <td style="padding: 8px 0; color: #0f172a;">${escapeHtml(visit.notes || 'None')}</td>
-            </tr>
-          </table>
-
-          ${workPlanUrl ? `
-            <div style="margin-top: 20px; text-align: center;">
-              <a href="${workPlanUrl}" style="background-color: #0284c7; color: #ffffff; padding: 9px 18px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 13px; display: inline-block;">
-                View in Work Planner
-              </a>
-            </div>
-          ` : ''}
-        </div>
-      </div>
-    `;
-
-    await emailHelper.sendEmail(
-      primaryRecipientEmail,
-      subject,
-      '',
-      emailHtml,
-      [],
-      ccList,
-      fromAddress
-    );
-    logger.info(`[AutoNotification] Sent Visit Created email to ${primaryRecipientEmail} (CC: ${ccList.join(', ')})`);
+    logger.info(`[AutoNotification] Dispatched in-app notifications for visit created: ${partyName}`);
   } catch (err) {
     logger.error(`[AutoNotification] Failed to dispatch visit created notification: ${err.message}`);
   }
@@ -778,70 +706,7 @@ async function notifyTaskCreated({ task, planDoc = null, actorUser = null }) {
       }
     }
 
-    // Email Notification
-    if (!primaryRecipientEmail) return;
-
-    const fromAddress = salesUser?.email ? `${executiveName} <${salesUser.email}>` : (actorUser?.email ? `${actorName} <${actorUser.email}>` : null);
-    const startTime = formatTime(task.planned_start_time);
-    const endTime = formatTime(task.planned_end_time);
-    const timeStr = startTime !== '—' ? `${startTime}${endTime !== '—' ? ' - ' + endTime : ''}` : 'Not specified';
-
-    const baseUrl = (FRONTEND_URL || process.env.FRONTEND_URL || '').replace(/\/$/, '');
-    const workPlanUrl = baseUrl ? `${baseUrl}/work-plans` : '';
-
-    const subject = `New Task Created: "${task.title}" — ${executiveName} (${planDateStr})`;
-
-    const emailHtml = `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
-        <div style="background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%); color: #ffffff; padding: 20px 24px; border-radius: 8px 8px 0 0;">
-          <h2 style="margin: 0 0 4px 0; font-size: 18px; font-weight: 700; color: #ffffff;">New Work Task Created</h2>
-          <p style="margin: 0; font-size: 13px; opacity: 0.9;">Scheduled Date: <strong>${planDateStr}</strong></p>
-        </div>
-        <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
-          <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-              <td style="padding: 8px 0; color: #64748b; width: 140px;"><strong>Task Title:</strong></td>
-              <td style="padding: 8px 0; color: #0f172a; font-weight: 600;">${escapeHtml(task.title)}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-              <td style="padding: 8px 0; color: #64748b;"><strong>Executive:</strong></td>
-              <td style="padding: 8px 0; color: #0f172a;">${escapeHtml(executiveName)} (${escapeHtml(salesUser?.email || '')})</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-              <td style="padding: 8px 0; color: #64748b;"><strong>Description:</strong></td>
-              <td style="padding: 8px 0; color: #0f172a;">${escapeHtml(task.description || '—')}</td>
-            </tr>
-            <tr style="border-bottom: 1px solid #f1f5f9;">
-              <td style="padding: 8px 0; color: #64748b;"><strong>Planned Time:</strong></td>
-              <td style="padding: 8px 0; color: #0f172a;">${timeStr}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; color: #64748b;"><strong>Initial Status:</strong></td>
-              <td style="padding: 8px 0; color: #0f172a;"><span style="background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 4px; font-weight: 600;">${escapeHtml(task.status || 'created')}</span></td>
-            </tr>
-          </table>
-
-          ${workPlanUrl ? `
-            <div style="margin-top: 20px; text-align: center;">
-              <a href="${workPlanUrl}" style="background-color: #4f46e5; color: #ffffff; padding: 9px 18px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 13px; display: inline-block;">
-                View in Work Planner
-              </a>
-            </div>
-          ` : ''}
-        </div>
-      </div>
-    `;
-
-    await emailHelper.sendEmail(
-      primaryRecipientEmail,
-      subject,
-      '',
-      emailHtml,
-      [],
-      ccList,
-      fromAddress
-    );
-    logger.info(`[AutoNotification] Sent Task Created email to ${primaryRecipientEmail} (CC: ${ccList.join(', ')})`);
+    logger.info(`[AutoNotification] Dispatched in-app notifications for task created: "${task.title}"`);
   } catch (err) {
     logger.error(`[AutoNotification] Failed to dispatch task created notification: ${err.message}`);
   }
@@ -895,8 +760,11 @@ async function notifyDayEndCompleted({ planId, actorUser, dayEndData = null }) {
     const recipient = dayEndData?.to_email || primaryRecipientEmail;
     if (!recipient) return;
 
-    const mailCc = Array.isArray(dayEndData?.cc_emails) && dayEndData.cc_emails.length > 0
+    const providedDayEndCc = dayEndData?.cc_emails !== undefined
       ? dayEndData.cc_emails
+      : dayEndData?.ccEmails;
+    const mailCc = Array.isArray(providedDayEndCc)
+      ? providedDayEndCc.map((e) => String(e).trim()).filter(Boolean)
       : ccList;
 
     const fromAddress = salesUser?.email ? `${executiveName} <${salesUser.email}>` : null;

@@ -407,6 +407,8 @@ async function completePlan(id, user, dayEndData = null) {
       to_email: dayEndData.to_email || '',
       cc_emails: Array.isArray(dayEndData.cc_emails)
         ? dayEndData.cc_emails.map((e) => String(e).trim()).filter(Boolean)
+        : Array.isArray(dayEndData.ccEmails)
+        ? dayEndData.ccEmails.map((e) => String(e).trim()).filter(Boolean)
         : [],
       subject: dayEndData.subject || `Day End Report — ${user.name || user.email}`,
       body_html: dayEndData.body_html || '',

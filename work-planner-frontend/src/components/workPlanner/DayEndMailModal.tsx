@@ -584,6 +584,7 @@ export function DayEndMailModal({
   const userEditedSubjectRef = useRef(false);
   const userEditedBodyRef = useRef(false);
   const userEditedToRef = useRef(false);
+  const userEditedCcRef = useRef(false);
   const appliedDraftKeyRef = useRef<string | null>(null);
 
   // Initialize draft values once fetched or settings loaded
@@ -593,6 +594,7 @@ export function DayEndMailModal({
       userEditedSubjectRef.current = false;
       userEditedBodyRef.current = false;
       userEditedToRef.current = false;
+      userEditedCcRef.current = false;
       setBodyHtml("");
       setSubject("");
       setToEmail("");
@@ -643,31 +645,33 @@ export function DayEndMailModal({
     }
 
     // CC Field: Use plan type CC emails (or global CC if plan type CC is empty) + draft CC
-    const ptsCc = pts?.ccEmails || [];
-    const globalCc = effectiveSettings?.ccEmails || [];
-    const configuredCc = ptsCc.length > 0 ? ptsCc : globalCc;
+    if (!userEditedCcRef.current) {
+      const ptsCc = pts?.ccEmails || [];
+      const globalCc = effectiveSettings?.ccEmails || [];
+      const configuredCc = ptsCc.length > 0 ? ptsCc : globalCc;
 
-    const activeFrom = fromEmail.toLowerCase().trim();
-    const normTo = (chosenTo || toEmail || "").toLowerCase().trim();
-    const combinedCcSet = new Set<string>();
+      const activeFrom = fromEmail.toLowerCase().trim();
+      const normTo = (chosenTo || toEmail || "").toLowerCase().trim();
+      const combinedCcSet = new Set<string>();
 
-    configuredCc.forEach((emailStr: string) => {
-      const norm = String(emailStr).trim().toLowerCase();
-      if (norm && norm !== normTo && norm !== activeFrom) {
-        combinedCcSet.add(norm);
-      }
-    });
-
-    if (draftData?.cc && Array.isArray(draftData.cc)) {
-      draftData.cc.forEach((emailStr: string) => {
+      configuredCc.forEach((emailStr: string) => {
         const norm = String(emailStr).trim().toLowerCase();
         if (norm && norm !== normTo && norm !== activeFrom) {
           combinedCcSet.add(norm);
         }
       });
-    }
 
-    setCcEmails(Array.from(combinedCcSet));
+      if (draftData?.cc && Array.isArray(draftData.cc)) {
+        draftData.cc.forEach((emailStr: string) => {
+          const norm = String(emailStr).trim().toLowerCase();
+          if (norm && norm !== normTo && norm !== activeFrom) {
+            combinedCcSet.add(norm);
+          }
+        });
+      }
+
+      setCcEmails(Array.from(combinedCcSet));
+    }
 
     // Initialize/update Subject and Body from draftData or fallback generator
     const draftKey = draftData ? `${planId}-${draftData.subject || "draft"}-${draftData.body_html ? "body" : ""}` : null;
@@ -689,10 +693,11 @@ export function DayEndMailModal({
         setSubject(defaultSubject);
       }
     }
-  }, [isOpen, draftData, effectiveSettings, plan, availableManagers, fromName, fromEmail, planId, toEmail, subject, bodyHtml]);
+  }, [isOpen, draftData, effectiveSettings, plan, availableManagers, fromName, fromEmail, planId]);
 
   // Handle adding CC tag
   const handleAddCc = (emailToAdd: string) => {
+    userEditedCcRef.current = true;
     const trimmed = emailToAdd.trim().toLowerCase();
     if (!trimmed) return;
     if (!ccEmails.some((e) => e.toLowerCase() === trimmed)) {
@@ -703,6 +708,7 @@ export function DayEndMailModal({
   };
 
   const handleRemoveCc = (indexToRemove: number) => {
+    userEditedCcRef.current = true;
     setCcEmails(ccEmails.filter((_, i) => i !== indexToRemove));
   };
 

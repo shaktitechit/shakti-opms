@@ -271,7 +271,12 @@ export function VisitFormModal({
     }
 
     if (adminRole) {
-      return allUsers.filter((u) => hasWorkPlannerAccess(u, sessionUserId));
+      const list = allUsers.filter((u) => hasWorkPlannerAccess(u, sessionUserId));
+      if (salesUserId && !list.some((u) => String(u._id || u.id || "") === String(salesUserId))) {
+        const found = allUsers.find((u) => String(u._id || u.id || "") === String(salesUserId));
+        if (found) list.push(found);
+      }
+      return list;
     }
 
     const myTeamMembers = (myTeamData?.members || []) as Array<{ _id?: string; id?: string }>;
@@ -281,8 +286,11 @@ export function VisitFormModal({
     if (sessionUserId) {
       teamIdSet.add(String(sessionUserId));
     }
+    if (salesUserId) {
+      teamIdSet.add(String(salesUserId));
+    }
     return allUsers.filter((u) => teamIdSet.has(String(u._id || u.id || "")));
-  }, [allUsers, sessionUser, sessionUserId, adminRole, elevatedRole, myTeamData]);
+  }, [allUsers, sessionUser, sessionUserId, adminRole, elevatedRole, myTeamData, salesUserId]);
 
   // Modal internal editable states
   const [internalPlanDate, setInternalPlanDate] = useState<string>(
@@ -363,7 +371,16 @@ export function VisitFormModal({
   useEffect(() => {
     if (open && (!prevOpenRef.current || initial)) {
       setInternalPlanDate(ymdFromPlanDate(planDate) || new Date().toISOString().slice(0, 10));
-      setInternalSalesUserId(salesUserId || sessionUserId || "");
+      const targetSalesUser =
+        (typeof initial?.sales_user === "object"
+          ? (initial.sales_user as any)?._id || (initial.sales_user as any)?.id
+          : typeof initial?.sales_user === "string"
+          ? initial.sales_user
+          : "") ||
+        salesUserId ||
+        sessionUserId ||
+        "";
+      setInternalSalesUserId(targetSalesUser);
       if (initial) {
         setPartyType(initial.party_type || "existing");
         const pId =

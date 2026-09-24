@@ -2559,6 +2559,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           mode={editingWorkIndex !== null ? "edit" : "create"}
           initial={editingWorkIndex !== null ? (works[editingWorkIndex] as WorkPlanWorkRecord) : null}
           planDate={planDate}
+          salesUserId={salesUserId || sessionUser?._id}
           isSaving={false}
           onClose={() => {
             setWorkModalOpen(false);

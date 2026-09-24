@@ -888,6 +888,11 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
           mode={editingWork ? "edit" : "create"}
           initial={editingWork}
           planDate={plan.plan_date}
+          salesUserId={
+            typeof plan.sales_user === "object"
+              ? plan.sales_user?._id || (plan.sales_user as { id?: string })?.id
+              : plan.sales_user
+          }
           isSaving={actionLoading}
           onClose={() => {
             setWorkModalOpen(false);
