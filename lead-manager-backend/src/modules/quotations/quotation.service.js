@@ -10,6 +10,7 @@ const notificationHelper = require('../../utils/notificationHelper');
 const microsoftGraph = require('../../config/microsoftGraph');
 const { logger } = require('../../utils/logger');
 const { isAdmin, isManager } = require('../../middlewares/leadManagerAuth.middleware');
+const authService = require('../../services/authService');
 
 const TEMPLATE_APPROVAL_REQUEST = 'lead_quotation_approval_request';
 const TEMPLATE_APPROVED = 'lead_quotation_approved';
