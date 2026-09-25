@@ -186,8 +186,9 @@ export async function syncSessionCookie(
   token: string,
   user: AuthUser,
   refreshToken?: string,
+  refreshExpiresAt?: number,
 ): Promise<void> {
-  saveSessionToStorage({ token, refreshToken, user });
+  saveSessionToStorage({ token, refreshToken, refreshExpiresAt, user });
 }
 
 export function clearSessionFromStorage(): void {
