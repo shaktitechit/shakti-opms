@@ -379,6 +379,8 @@ async function processWorkflowJob({ type, payload = {} }) {
       if (!orderId) throw new Error('post_transition requires orderId');
 
       await flagService.recomputeOrderFlagAggregates(orderId);
+      const { scheduleProcessStageRefresh } = require('../orders/processStage.jobs');
+      await scheduleProcessStageRefresh(orderId, 'workflow_post_transition');
       return {
         orderId,
         fromStatus: payload.fromStatus,

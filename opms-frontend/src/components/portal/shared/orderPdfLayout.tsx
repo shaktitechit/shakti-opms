@@ -37,11 +37,6 @@ export const pdfTdStyle: CSSProperties = {
   verticalAlign: "top",
 };
 
-export const pdfThCompactStyle: CSSProperties = {
-  ...pdfThStyle,
-  padding: "5px 3px",
-  fontSize: "8px",
-};
 
 export const pdfTdCompactStyle: CSSProperties = {
   ...pdfTdStyle,

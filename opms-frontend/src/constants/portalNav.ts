@@ -1,3 +1,9 @@
+import {
+  ORDER_MASTER_NAV_CHILDREN_BY_PORTAL,
+  resolveOrderStageLabel,
+  type OrderMasterPortalKey,
+} from "@/components/portal/shared/orderList/orderMasterNav";
+
 /**
  * Role portal navigation — paths are `/portal` plus optional segments (`/sales/my-orders`).
  * `icon` keys map to {@link NAV_ICON_MAP} in `components/shell/NavIcon.tsx`.
@@ -15,10 +21,12 @@ export type PortalKey = (typeof PORTALS)[number];
 
 export type PortalNavChild = {
   label: string;
-  /** Query string appended to the parent href (e.g. "by=workflow"). */
-  query: string;
   /** Matches a key from `NAV_ICON_MAP` in `NavIcon.tsx`. */
   icon: string;
+  /** Extra path after the parent href, e.g. `pending_admin_approval` for `/admin/orders/...`. */
+  segment?: string;
+  /** Optional search, e.g. `view=parties` on master list pages. */
+  query?: string;
 };
 
 export type PortalNavLeaf = {
@@ -38,10 +46,7 @@ export const PORTAL_NAV: Record<PortalKey, readonly PortalNavLeaf[]> = {
       segments: ["orders"],
       label: "Order Master",
       icon: "ClipboardList",
-      children: [
-        { label: "Orders by Workflow", query: "by=workflow", icon: "GanttChart" },
-        { label: "Orders by Priority", query: "by=priority", icon: "Flag" },
-      ],
+      children: ORDER_MASTER_NAV_CHILDREN_BY_PORTAL.admin,
     },
     { segments: ["create-order"], label: "Create Order", icon: "FilePlus" },
 
@@ -75,10 +80,7 @@ export const PORTAL_NAV: Record<PortalKey, readonly PortalNavLeaf[]> = {
       segments: ["orders"],
       label: "Order Master",
       icon: "ClipboardList",
-      children: [
-        { label: "Orders by Workflow", query: "by=workflow", icon: "GanttChart" },
-        { label: "Orders by Priority", query: "by=priority", icon: "Flag" },
-      ],
+      children: ORDER_MASTER_NAV_CHILDREN_BY_PORTAL.sales,
     },
     { segments: ["create-order"], label: "Create Order", icon: "FilePlus" },
 
@@ -89,10 +91,7 @@ export const PORTAL_NAV: Record<PortalKey, readonly PortalNavLeaf[]> = {
       segments: ["orders"],
       label: "Order Master",
       icon: "ClipboardCheck",
-      children: [
-        { label: "Orders by Workflow", query: "by=workflow", icon: "GanttChart" },
-        { label: "Orders by Priority", query: "by=priority", icon: "Flag" },
-      ],
+      children: ORDER_MASTER_NAV_CHILDREN_BY_PORTAL.finance,
     },
     { segments: ["create-order"], label: "Create Order", icon: "FilePlus" },
 
@@ -126,10 +125,7 @@ export const PORTAL_NAV: Record<PortalKey, readonly PortalNavLeaf[]> = {
       segments: ["orders"],
       label: "Order Master",
       icon: "ClipboardCheck",
-      children: [
-        { label: "Orders by Workflow", query: "by=workflow", icon: "GanttChart" },
-        { label: "Orders by Priority", query: "by=priority", icon: "Flag" },
-      ],
+      children: ORDER_MASTER_NAV_CHILDREN_BY_PORTAL.account,
     },
     { segments: ["create-order"], label: "Create Order", icon: "FilePlus" },
     {
@@ -162,10 +158,7 @@ export const PORTAL_NAV: Record<PortalKey, readonly PortalNavLeaf[]> = {
       segments: ["orders"],
       label: "Order Master",
       icon: "Inbox",
-      children: [
-        { label: "Orders by Workflow", query: "by=workflow", icon: "GanttChart" },
-        { label: "Orders by Priority", query: "by=priority", icon: "Flag" },
-      ],
+      children: ORDER_MASTER_NAV_CHILDREN_BY_PORTAL.dispatch,
     },
     { segments: ["transport-agents"], label: "Transport Agents", icon: "Building2" },
     { segments: ["transport-planner"], label: "Transport Planner", icon: "Truck" },
@@ -176,10 +169,7 @@ export const PORTAL_NAV: Record<PortalKey, readonly PortalNavLeaf[]> = {
       segments: ["orders"],
       label: "Order Master",
       icon: "ClipboardList",
-      children: [
-        { label: "Orders by Workflow", query: "by=workflow", icon: "GanttChart" },
-        { label: "Orders by Priority", query: "by=priority", icon: "Flag" },
-      ],
+      children: ORDER_MASTER_NAV_CHILDREN_BY_PORTAL.super_admin,
     },
     { segments: ["create-order"], label: "Create Order", icon: "FilePlus" },
 
@@ -228,6 +218,18 @@ export function resolvePortalPageTitle(
 ): string {
   const pathSegs = rest ?? [];
   const leaves = PORTAL_NAV[portal];
+  if (
+    pathSegs[0] === "orders" &&
+    pathSegs.length >= 2 &&
+    isPortalKey(portal)
+  ) {
+    const queueLabel = resolveOrderStageLabel(
+      portal as OrderMasterPortalKey,
+      pathSegs[1],
+    );
+    if (queueLabel) return queueLabel;
+  }
+
   const hit = leaves.find(
     (l) =>
       l.segments.length === pathSegs.length &&

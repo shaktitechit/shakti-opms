@@ -37,7 +37,7 @@ import PeriodFilter from "@/components/portal/shared/dashboard/PeriodFilter";
 import { useDashboardSummary } from "@/components/portal/shared/dashboard/useDashboardSummary";
 import { dashboardPeriodToStatsQuery } from "@/components/portal/shared/dashboard/periodFilterUtils";
 const ADMIN_PENDING_PUSH_INTERVAL_MS = 300_000;
-const ADMIN_PENDING_ALERT_URL = "/admin/orders?tab=pending_admin_approval";
+const ADMIN_PENDING_ALERT_URL = "/admin/orders/pending_admin_approval";
 
 function notificationsSupported(): boolean {
   return typeof window !== "undefined" && "Notification" in window;

@@ -31,6 +31,8 @@ const DISP_NF = 'Order dispatch not found';
 
 async function enqueuePostDispatchJobs(orderId, userId) {
   const oid = String(orderId);
+  const { scheduleProcessStageRefresh } = require('../orders/processStage.jobs');
+  await scheduleProcessStageRefresh(oid, 'dispatch');
   // Do not enqueue recalculate_fulfillment here — callers already run
   // recalculateOrderDispatchState synchronously; a parallel queue job races
   // Order.__v on order_items/billing_status (VersionError).
@@ -785,12 +787,14 @@ async function restore(id, user) {
  */
 async function processDispatchJob({ type, payload = {} }) {
   const fulfillmentService = require('../orders/orderFulfillment.service');
+  const { scheduleProcessStageRefresh } = require('../orders/processStage.jobs');
 
   switch (type) {
     case 'sync_dispatch_quantities': {
       const orderId = payload.orderId;
       if (!orderId) throw new Error('sync_dispatch_quantities requires orderId');
       await fulfillmentService.syncDispatchDeliveredQuantities(orderId);
+      await scheduleProcessStageRefresh(orderId, 'dispatch_sync_quantities');
       return { orderId, synced: true };
     }
 
@@ -813,6 +817,7 @@ async function processDispatchJob({ type, payload = {} }) {
       const user = actor ? toPlain(actor) : null;
       await fulfillmentService.recalculateFromExecutions(orderId, user);
       await fulfillmentService.syncDispatchDeliveredQuantities(orderId);
+      await scheduleProcessStageRefresh(orderId, 'dispatch_recalculate');
       return { orderId, recalculated: true };
     }
 

@@ -60,7 +60,7 @@ export default function OrderQuickAccess({
           return (
             <Link
               key={tab.id}
-              href={`${basePath}/orders?tab=${tab.id}`}
+              href={`${basePath}/orders/${tab.id}`}
               className="group relative flex flex-col justify-between overflow-hidden rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:border-emerald-500/20 hover:shadow-md dark:border-white/10 dark:bg-slate-900 dark:hover:border-emerald-500/30"
             >
               <div className={`absolute top-0 left-0 h-1 w-full ${meta.accent}`} />

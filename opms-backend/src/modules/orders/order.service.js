@@ -1381,6 +1381,8 @@ async function processOrderJob({ type, payload = {} }) {
         : null;
       const user = actor ? toPlain(actor) : null;
       await fulfillmentService.recalculateFromExecutions(orderId, user);
+      const { scheduleProcessStageRefresh } = require('./processStage.jobs');
+      await scheduleProcessStageRefresh(orderId, 'recalculate_fulfillment');
       return { orderId };
     }
     case 'post_transport_shipment': {

@@ -1152,6 +1152,25 @@ function registerModels() {
         default: "sales",
         index: true,
       },
+      /** Exclusive list queue. Written by classifyOrder after workflow changes. */
+      process_stage: {
+        type: String,
+        enum: [
+          "draft",
+          "pending_admin_approval",
+          "due_sheet_pending",
+          "pending_finance_approval",
+          "pending_account_approval",
+          "open_dispatched",
+          "transport_pending",
+          "in_transit",
+          "closed_delivered",
+          "on_hold",
+          "cancelled",
+          "rejected",
+        ],
+        default: null,
+      },
       current_action: { type: String, default: "drafted", index: true },
       current_revision: { type: Number, default: 1 },
       is_locked: { type: Boolean, default: false },
@@ -1277,6 +1296,7 @@ function registerModels() {
   orderSchema.index({ workflow_stage: 1, lifecycle_status: 1 });
   orderSchema.index({ current_assignee: 1, workflow_stage: 1 });
   orderSchema.index({ status: 1, closed_at: -1 });
+  orderSchema.index({ deletedAt: 1, process_stage: 1, createdAt: -1 });
 
   // Keep priority derived from expected_delivery_date on every save.
   orderSchema.pre('save', function syncPriorityAndWorkflow(next) {
@@ -2390,7 +2410,6 @@ function registerModels() {
 
 /** @typedef {NonNullable<typeof _cached>} MongoModelsRegistry */
 
-/** @returns {MongoModelsRegistry} */
 function getModels() {
   if (!_cached) _cached = registerModels();
   return _cached;

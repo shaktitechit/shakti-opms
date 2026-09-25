@@ -13,6 +13,7 @@ import {
   Trash2,
   TrendingUp,
   Truck,
+  X,
 } from "lucide-react";
 
 import TransportPlanModal from "../orderDetail/modals/TransportPlanModal";
@@ -26,9 +27,7 @@ import {
   resolveOrderCounterparty,
 } from "@/components/portal/sales/partyDisplay";
 import {
-  getOrderTabCategory,
   normalizeSalesTabFromUrl,
-  SALES_ORDER_TABS,
   type SalesOrderTabCategory,
 } from "@/components/portal/sales/orderUtils";
 import { GoogleSheetAnalyticsModal } from "@/components/portal/shared/GoogleSheetAnalyticsModal";
@@ -54,8 +53,11 @@ import {
   useListUsersQuery,
 } from "@/store/api";
 
-import { OrderListBottomTabStrip } from "./OrderListBottomTabStrip";
 import { dateFilterToRange } from "./orderListDateFilter";
+import {
+  orderMasterPortalKeyFromHome,
+  resolveOrderStageLabel,
+} from "./orderMasterNav";
 import {
   formatDateShort,
   formatDateTime,
@@ -72,19 +74,15 @@ import type {
   ListOrdersPageConfig,
   ListOrdersTabId,
 } from "./listOrdersPageConfig";
-import {
-  getOrderWorkflowTabCategory,
-  ORDER_PRIORITY_TABS,
-  ORDER_WORKFLOW_LIST_QUERY,
-  ORDER_WORKFLOW_TABS,
-  type OrderWorkflowTabCategory,
-} from "./orderWorkflowTabs";
+import { type OrderWorkflowTabCategory } from "./orderWorkflowTabs";
 import { UnbilledOrdersModal } from "./UnbilledOrdersModal";
 import { useOrderListUrlState } from "./useOrderListUrlState";
 import { useOrderWorkflowCategoryOptions } from "./useOrderWorkflowCategoryOptions";
 
 type ListOrdersPageProps = {
   config: ListOrdersPageConfig;
+  /** Process queue for this route (`/orders/:stage`). */
+  processStage?: ListOrdersTabId;
 };
 
 type ListOrdersPagePayload = {
@@ -95,7 +93,11 @@ type ListOrdersPagePayload = {
   tabCounts?: Record<string, number>;
 };
 
-export default function ListOrdersPage({ config }: ListOrdersPageProps) {
+export default function ListOrdersPage({
+  config,
+  processStage: processStageProp,
+}: ListOrdersPageProps) {
+  const processStage = processStageProp ?? config.defaultTab;
   const router = useRouter();
   const {
     portalHome,
@@ -123,10 +125,12 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
     [],
   );
 
+  const portalKey = orderMasterPortalKeyFromHome(portalHome);
+  const queueTitle =
+    (portalKey && resolveOrderStageLabel(portalKey, processStage)) ||
+    title;
+
   const {
-    viewBy,
-    activeTab,
-    setActiveTab,
     searchQuery,
     setSearchQuery,
     priorityFilter,
@@ -147,9 +151,8 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
     defaultTab,
     includeDraftTab,
     normalizeTab: includeDraftTab ? normalizeSalesTab : undefined,
+    processStageFromPath: processStage,
   });
-
-  const workflowTabs = includeDraftTab ? SALES_ORDER_TABS : ORDER_WORKFLOW_TABS;
 
   const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [isAnalyticsOpen, setIsAnalyticsOpen] = useState(false);
@@ -169,8 +172,7 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
     return () => window.clearTimeout(timer);
   }, [searchQuery]);
 
-  // One page from the server. Tab, search, priority, and date are query params.
-  // Sheet / unbilled still load the full pool, and only after those modals open.
+  // One page of the open process. Sheet and unbilled load that same stage only.
   const listQueryParams = useMemo(() => {
     const range = dateFilterToRange(dateFilter, customDateFrom, customDateTo);
     const searching = debouncedSearch.trim().length > 0;
@@ -183,13 +185,12 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
     if (includeDraftTab) params.sales_tabs = "true";
     else params.exclude_status = "draft";
     if (searching) params.search = debouncedSearch.trim();
-    else params.tab = activeTab;
+    params.tab = processStage;
     if (priorityFilter !== "all") params.priority = priorityFilter;
     if (range.dateFrom) params.dateFrom = range.dateFrom;
     if (range.dateTo) params.dateTo = range.dateTo;
     return params;
   }, [
-    activeTab,
     currentPage,
     customDateFrom,
     customDateTo,
@@ -198,14 +199,20 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
     includeDraftTab,
     itemsPerPage,
     priorityFilter,
+    processStage,
   ]);
 
   const { data, isLoading, isFetching, isError, refetch } =
     useListOrdersQuery(listQueryParams);
   const needsBulkOrders = isSheetOpen || isUnbilledOrdersOpen;
-  const bulkListParams = includeDraftTab
-    ? { view: "list" }
-    : ORDER_WORKFLOW_LIST_QUERY;
+  const bulkListParams = {
+    view: "list",
+    paginate: "true",
+    all: "true",
+    page: "1",
+    tab: processStage,
+    ...(includeDraftTab ? { sales_tabs: "true" } : { exclude_status: "draft" }),
+  };
   const bulkQ = useListOrdersQuery(bulkListParams, { skip: !needsBulkOrders });
   const partiesQ = useListPartiesQuery({});
   const salesUsersQ = useListUsersQuery({ department: "sales" });
@@ -277,11 +284,16 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
     totalEntries > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0;
   const endEntry = Math.min(currentPage * itemsPerPage, totalEntries);
 
+  const stageForUi = processStage;
   const isPendingTab =
-    activeTab === "pending_admin_approval" ||
-    activeTab === "due_sheet_pending" ||
-    activeTab === "pending_finance_approval" ||
-    activeTab === "pending_account_approval";
+    stageForUi === "pending_admin_approval" ||
+    stageForUi === "due_sheet_pending" ||
+    stageForUi === "pending_finance_approval" ||
+    stageForUi === "pending_account_approval";
+
+  const queueCount =
+    tabCounts[processStage] ??
+    (isFetching ? undefined : totalEntries);
 
   const hasAction = useCallback(
     (action: (typeof headerActions)[number]) => headerActions.includes(action),
@@ -321,13 +333,24 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
         <div className="relative flex flex-wrap items-center justify-between gap-2">
           <div className="min-w-0">
             <h1 className="text-sm font-bold tracking-tight text-slate-900 dark:text-slate-50">
-              {title}
+              {queueTitle}
+              {queueCount != null ? (
+                <span
+                  className={`ml-2 inline-flex rounded-full px-2 py-0.5 text-2xs font-bold ${accents.countBadge} text-white`}
+                >
+                  {queueCount}
+                </span>
+              ) : null}
             </h1>
             {subtitle ? (
               <p className="mt-0.5 max-w-xl text-xs text-slate-600 dark:text-slate-400">
                 {subtitle}
               </p>
-            ) : null}
+            ) : (
+              <p className="mt-0.5 max-w-xl text-xs text-slate-500 dark:text-slate-400">
+                Order Master
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {hasAction("unbilled") && (
@@ -429,6 +452,10 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
       <OrderListSearchDatePanel
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        priorityFilter={priorityFilter}
+        onPriorityFilterChange={setPriorityFilter}
+        showReset={showReset}
+        onResetFilters={handleResetFilters}
         dateFilter={dateFilter}
         onDateFilterChange={handleDateFilterChange}
         customDateFrom={customDateFrom}
@@ -438,6 +465,29 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
         searchFocusClass={accents.searchFocus}
         compact
       />
+
+      {searchQuery.trim() ? (
+        <div className="flex shrink-0 items-center gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs dark:border-white/10 dark:bg-slate-900">
+          <span className="font-medium text-slate-700 dark:text-slate-300">
+            Showing{" "}
+            <span className={`font-bold ${accents.searchResult}`}>
+              {totalEntries}
+            </span>{" "}
+            result{totalEntries !== 1 ? "s" : ""} for{" "}
+            <span className="font-bold italic text-slate-900 dark:text-slate-100">
+              &quot;{searchQuery}&quot;
+            </span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setSearchQuery("")}
+            className="inline-flex cursor-pointer items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-2xs font-semibold text-slate-700 transition hover:bg-slate-200 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10"
+          >
+            <X className="h-3 w-3" />
+            Clear
+          </button>
+        </div>
+      ) : null}
 
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
         {isFetching && pagePayload ? (
@@ -692,12 +742,7 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
                                   | OrderWorkflowTabCategory
                                   | "draft"
                                   | undefined) ||
-                                  (includeDraftTab
-                                    ? getOrderTabCategory(o, categoryOptions)
-                                    : (getOrderWorkflowTabCategory(
-                                        o,
-                                        categoryOptions,
-                                      ) ?? "open_dispatched")),
+                                  (includeDraftTab ? "draft" : "open_dispatched"),
                               )}
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-right">
@@ -738,56 +783,6 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
         )}
       </div>
 
-      {viewBy === "priority" ? (
-        <OrderListBottomTabStrip
-          tabs={ORDER_PRIORITY_TABS}
-          activeTab={priorityFilter}
-          onTabChange={(tabId) => {
-            setPriorityFilter(tabId);
-          }}
-          filteredCount={totalEntries}
-          isFetching={isFetching}
-          searchQuery={searchQuery}
-          onClearSearch={() => setSearchQuery("")}
-          priorityFilter={activeTab}
-          onPriorityFilterChange={(val) => {
-            setActiveTab(val as ListOrdersTabId);
-          }}
-          filterLabel="Workflow"
-          filterOptions={workflowTabs.map((tab) => ({
-            value: tab.id,
-            label: tab.label,
-          }))}
-          showReset={showReset}
-          onReset={handleResetFilters}
-          accentActiveClass={accents.tabActive}
-          searchResultAccentClass={accents.searchResult}
-          countBadgeClass={accents.countBadge}
-          compact
-        />
-      ) : (
-        <OrderListBottomTabStrip
-          tabs={workflowTabs}
-          activeTab={activeTab}
-          onTabChange={(tabId) => {
-            setActiveTab(tabId as ListOrdersTabId);
-          }}
-          filteredCount={totalEntries}
-          tabCounts={tabCounts}
-          isFetching={isFetching}
-          searchQuery={searchQuery}
-          onClearSearch={() => setSearchQuery("")}
-          priorityFilter={priorityFilter}
-          onPriorityFilterChange={setPriorityFilter}
-          showReset={showReset}
-          onReset={handleResetFilters}
-          accentActiveClass={accents.tabActive}
-          searchResultAccentClass={accents.searchResult}
-          countBadgeClass={accents.countBadge}
-          compact
-        />
-      )}
-
       {hasAction("unbilled") && (
         <UnbilledOrdersModal
           isOpen={isUnbilledOrdersOpen}
@@ -813,10 +808,10 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
             onRefetchOrders={() => void bulkQ.refetch()}
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
-            activeTab={
-              (activeTab === "draft" ? "all" : activeTab) as ListOrdersTabId
-            }
-            onActiveTabChange={(tab) => setActiveTab(tab)}
+            activeTab={processStage}
+            onActiveTabChange={(tab) => {
+              router.push(`${portalHome}/orders/${tab}`);
+            }}
             priorityFilter={priorityFilter}
             onPriorityFilterChange={setPriorityFilter}
             dateFilter={dateFilter}
@@ -840,10 +835,10 @@ export default function ListOrdersPage({ config }: ListOrdersPageProps) {
             onRefetchOrders={() => void bulkQ.refetch()}
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
-            activeTab={
-              (activeTab === "draft" ? "all" : activeTab) as ListOrdersTabId
-            }
-            onActiveTabChange={(tab) => setActiveTab(tab)}
+            activeTab={processStage}
+            onActiveTabChange={(tab) => {
+              router.push(`${portalHome}/orders/${tab}`);
+            }}
             priorityFilter={priorityFilter}
             onPriorityFilterChange={setPriorityFilter}
             dateFilter={dateFilter}

@@ -309,7 +309,7 @@ async function ordersSummary(query, user, buildBaseQuery) {
 }
 
 async function computeOrdersSummary(query, user, buildBaseQuery, cacheKey) {
-  const { indexVisibleOrders } = require('../orders/orderListPage.service');
+  const { countProcessStages } = require('../orders/orderListPage.service');
   const dataType = query.dataType === 'billed' ? 'billed' : 'approved';
   const kpiBasis = dataType === 'billed' ? 'dispatched' : 'approved';
   const salesTabs = isSalesUser(user);
@@ -317,14 +317,15 @@ async function computeOrdersSummary(query, user, buildBaseQuery, cacheKey) {
     salesTabs ? {} : { exclude_status: 'draft' },
     user,
   );
-  const { classified, tabCounts } = await indexVisibleOrders(scopeQuery, salesTabs);
+  const { tabCounts } = await countProcessStages(scopeQuery, salesTabs);
 
-  const ids = classified.map((item) => item.row._id);
-  const rawDetails = ids.length
-    ? await getModels().Order.find({ _id: { $in: ids } }).select(ITEM_SELECT).lean()
-    : [];
+  const stageMatch = { ...scopeQuery };
+  if (!salesTabs) stageMatch.process_stage = { $nin: ['draft', null] };
+  const rawDetails = await getModels()
+    .Order.find(stageMatch)
+    .select(`${ITEM_SELECT} process_stage status lifecycle_status workflow_stage current_action dispatch_status delivery_status closed_at`)
+    .lean();
   const details = await attachSummaryRefs(rawDetails);
-  const detailById = new Map(details.map((row) => [String(row._id), row]));
 
   const queueCounts = {};
   for (const id of TAB_IDS) queueCounts[id] = tabCounts[id] || 0;
@@ -340,15 +341,10 @@ async function computeOrdersSummary(query, user, buildBaseQuery, cacheKey) {
   const salesUsers = new Map();
   const contributionMap = new Map();
 
-  for (const item of classified) {
-    const detail = detailById.get(String(item.row._id)) || {};
-    const order = {
-      ...item.row,
-      ...detail,
-      order_items: detail.order_items || [],
-    };
+  for (const order of details) {
+    const tab = order.process_stage || null;
     const status = deriveOrderWorkflowStatus(order);
-    const items = order.order_items;
+    const items = order.order_items || [];
     const periodMatch = inPeriod(order, query, dataType);
 
     const approvedDate = eventDate(order, 'approved');
@@ -359,7 +355,7 @@ async function computeOrdersSummary(query, user, buildBaseQuery, cacheKey) {
       yearSet.add(approvedDate.getFullYear());
     }
 
-    if (periodMatch && item.tab !== 'draft') {
+    if (periodMatch && tab !== 'draft') {
       let quantity = 0;
       let kitQuantity = 0;
       let amount = 0;
@@ -383,7 +379,7 @@ async function computeOrdersSummary(query, user, buildBaseQuery, cacheKey) {
         stat.amount += amount;
       };
       addStat(tabStats.all);
-      if (item.tab && item.tab !== 'all' && tabStats[item.tab]) addStat(tabStats[item.tab]);
+      if (tab && tab !== 'all' && tabStats[tab]) addStat(tabStats[tab]);
     }
 
     for (const basis of ['approved', 'dispatched']) {

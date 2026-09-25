@@ -148,9 +148,6 @@ export function footerReserve(compact?: boolean): number {
   return compact ? 14 : 18;
 }
 
-export function contentTop(compact?: boolean): number {
-  return pageMargin(compact) + headerReserve(compact);
-}
 
 export function contentBottom(pdf: JsPDF, compact?: boolean): number {
   return pdf.internal.pageSize.getHeight() - pageMargin(compact) - footerReserve(compact);

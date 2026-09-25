@@ -57,22 +57,6 @@ export function collectAvailableYears(
   return Array.from(years).sort((a, b) => b - a);
 }
 
-export function filterOrdersByPeriod<T>(
-  orders: T[],
-  selectedYears: number[],
-  selectedMonths: number[],
-  dataType?: DashboardDataType,
-): T[] {
-  if (selectedYears.length === 0 || selectedMonths.length === 0) return [];
-  const yearSet = new Set(selectedYears);
-  const monthSet = new Set(selectedMonths);
-  return orders.filter((o) => {
-    const ym = getOrderYearMonth(o, dataType);
-    if (!ym) return false;
-    return yearSet.has(ym.year) && monthSet.has(ym.month);
-  });
-}
-
 export function formatMultiSelectLabel(
   selected: number[],
   allCount: number,

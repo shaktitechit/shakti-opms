@@ -331,6 +331,8 @@ async function settleReleaseAfterTransportCreated(dispatchId, user, settleBody =
 
 async function enqueuePostTransportJobs(orderId, userId, extras = {}) {
   const oid = String(orderId);
+  const { scheduleProcessStageRefresh } = require('../orders/processStage.jobs');
+  await scheduleProcessStageRefresh(oid, 'transport');
   await orderQueue.enqueue({
     type: 'post_transport_shipment',
     payload: {
@@ -378,6 +380,9 @@ async function processPostTransportShipmentJob(payload = {}) {
     revision_number: orderState.current_revision || orderBefore.current_revision || 1,
     metadata: payload.metadata || undefined,
   });
+
+  const { scheduleProcessStageRefresh } = require('../orders/processStage.jobs');
+  await scheduleProcessStageRefresh(orderId, 'post_transport_shipment');
 
   return {
     orderId,

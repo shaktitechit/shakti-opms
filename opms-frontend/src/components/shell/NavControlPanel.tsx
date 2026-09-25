@@ -6,6 +6,10 @@ import { useRef, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
 import { PORTAL_NAV, isNavLeafActive } from "@/constants/portalNav";
+import {
+  isPortalNavChildActive,
+  portalNavChildHref,
+} from "@/components/portal/shared/orderList/orderMasterNav";
 import { PORTAL_NAV_TOP } from "@/constants/dashboardAccess";
 import { getOpmsAccessRoles } from "@/lib/opmsAuth";
 import { NavIcon } from "./NavIcon";
@@ -161,15 +165,19 @@ export function NavControlPanel({ portal }: NavControlPanelProps) {
                 className="absolute left-0 top-full z-50 mt-1 min-w-[11.5rem] max-w-[14rem] overflow-hidden rounded-xl border border-border bg-card py-1 shadow-2xl backdrop-blur-md"
               >
                 {children.map((child) => {
-                  const [qKey, qVal] = child.query.split("=");
-                  const currentVal =
-                    searchParams.get(qKey) ?? children[0].query.split("=")[1];
-                  const childActive = active && currentVal === qVal;
+                  const childHref = portalNavChildHref(href, child);
+                  const childActive = isPortalNavChildActive(
+                    pathname,
+                    searchParams,
+                    href,
+                    child,
+                    active,
+                  );
                   return (
                     <Link
-                      key={child.query}
+                      key={child.segment ?? child.query ?? child.label}
                       role="menuitem"
-                      href={`${href}?${child.query}`}
+                      href={childHref}
                       onClick={() => setOpenKey(null)}
                       className={[
                         "group flex min-w-0 w-full items-center gap-2 px-3 py-1.5 text-[11px] font-medium transition-colors text-left",

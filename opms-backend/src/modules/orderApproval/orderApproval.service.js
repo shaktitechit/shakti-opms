@@ -231,6 +231,8 @@ const SEND_TO_ACCOUNT_ORDER_STATUSES = new Set([
 
 async function enqueuePostAdminApprovalJobs(orderId, userId) {
   const oid = String(orderId);
+  const { scheduleProcessStageRefresh } = require('../orders/processStage.jobs');
+  await scheduleProcessStageRefresh(oid, 'order_approval');
   await orderQueue.enqueue({ type: 'sync_party_rates', payload: { orderId: oid } });
   await orderQueue.enqueue({
     type: 'recalculate_fulfillment',
@@ -644,7 +646,10 @@ async function list(query = {}) {
     .populate('approval_items.product', 'product_name sku')
     .populate('assigned_finance_user', 'name username email')
     .populate('approved_by', 'name username email')
+    .populate('admin_approved_by', 'name username email')
+    .populate('finance_approved_by', 'name username email')
     .populate('sent_to_finance_by', 'name username email')
+    .populate('sent_to_account_by', 'name username email')
     .populate('finance_amended_by', 'name username email')
     .populate('account_amended_by', 'name username email')
     .populate('admin_amended_by', 'name username email')
@@ -662,7 +667,10 @@ async function get(id) {
     .populate('approval_items.product', 'product_name sku')
     .populate('assigned_finance_user', 'name username email')
     .populate('approved_by', 'name username email')
+    .populate('admin_approved_by', 'name username email')
+    .populate('finance_approved_by', 'name username email')
     .populate('sent_to_finance_by', 'name username email')
+    .populate('sent_to_account_by', 'name username email')
     .populate('finance_amended_by', 'name username email')
     .populate('account_amended_by', 'name username email')
     .populate('admin_amended_by', 'name username email')
@@ -1841,6 +1849,8 @@ async function decideAdmin(id, decision, body, user) {
   const populated = await OrderApproval.findById(doc._id)
     .populate('approval_items.product', 'product_name sku')
     .lean();
+  const { scheduleProcessStageRefresh } = require('../orders/processStage.jobs');
+  await scheduleProcessStageRefresh(doc.order, 'decide_admin');
   return toPlain(populated);
 }
 
@@ -2049,6 +2059,8 @@ async function decideFinance(id, decision, body, user) {
   const populated = await OrderApproval.findById(doc._id)
     .populate('approval_items.product', 'product_name sku')
     .lean();
+  const { scheduleProcessStageRefresh } = require('../orders/processStage.jobs');
+  await scheduleProcessStageRefresh(doc.order, 'decide_finance');
   return toPlain(populated);
 }
 
@@ -2280,6 +2292,8 @@ async function decideAccount(id, decision, body, user, options = {}) {
   const populated = await OrderApproval.findById(doc._id)
     .populate('approval_items.product', 'product_name sku')
     .lean();
+  const { scheduleProcessStageRefresh } = require('../orders/processStage.jobs');
+  await scheduleProcessStageRefresh(doc.order, 'decide_account');
   return toPlain(addDerivedStatus(populated));
 }
 

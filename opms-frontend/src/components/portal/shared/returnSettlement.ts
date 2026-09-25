@@ -11,30 +11,6 @@ export function refId(value: unknown): string {
   return String(value);
 }
 
-function grossAcceptedQty(line: Record<string, unknown>): number {
-  const delivered = Number(line.delivered_quantity || 0);
-  const dispatched = Number(line.dispatched_quantity || 0);
-  const approved = Number(line.approved_quantity || 0);
-  if (delivered > 0) return delivered;
-  if (dispatched > 0) return dispatched;
-  return approved;
-}
-
-export function aggregateReceivedReturnsByProduct(returns: Record<string, unknown>[]) {
-  const map: Record<string, number> = {};
-  for (const ret of returns) {
-    if (!isReturnReceivedAtWarehouse(ret.return_status)) continue;
-    const items = Array.isArray(ret.return_items) ? ret.return_items : [];
-    for (const item of items) {
-      const pid = refId((item as Record<string, unknown>).product);
-      if (!pid) continue;
-      map[pid] =
-        (map[pid] || 0) + Number((item as Record<string, unknown>).returned_quantity || 0);
-    }
-  }
-  return map;
-}
-
 /** Sum returned_quantity from dispatch batch line items keyed by order_item_id. */
 export function aggregateDispatchReturnsByOrderLine(
   dispatches: Record<string, unknown>[],
@@ -120,62 +96,6 @@ export function aggregateReceivedReturnsByOrderLine(
   return byLine;
 }
 
-export type SettlementPreviewLine = {
-  lineId: string;
-  productName: string;
-  grossAcceptedQty: number;
-  returnedQty: number;
-  netQty: number;
-  unitPrice: number;
-  gstPercent: number;
-  discountAmount: number;
-  discountPercent: number;
-  taxable: number;
-  gst: number;
-  lineTotal: number;
-};
-
-export function buildSettlementPreviewLines(
-  orderItems: Record<string, unknown>[],
-  dispatches: Record<string, unknown>[],
-): SettlementPreviewLine[] {
-  const returnedByLine = aggregateDispatchReturnsByOrderLine(dispatches);
-
-  return orderItems.map((line) => {
-    const lineId = String(line._id ?? line.id ?? "");
-    const gross = grossAcceptedQty(line);
-    const returnedQty = returnedByLine[lineId] ?? 0;
-    const cappedReturned = Math.max(0, Math.min(returnedQty, gross));
-    const netQty = Math.max(0, gross - cappedReturned);
-    const unitPrice = Number(line.unit_price || 0);
-    const gstPercent = Number(line.gst_percent || 0);
-    const discountPercent = Number(line.discount_percent || 0);
-
-    const lineGross = netQty * unitPrice;
-    let discountAmount = Number(line.discount_amount || 0);
-    if (discountPercent > 0) {
-      discountAmount = (lineGross * discountPercent) / 100;
-    }
-    const taxable = Math.max(0, lineGross - discountAmount);
-    const gst = (taxable * gstPercent) / 100;
-
-    return {
-      lineId,
-      productName: String(line.product_name || "—"),
-      grossAcceptedQty: gross,
-      returnedQty: cappedReturned,
-      netQty,
-      unitPrice,
-      gstPercent,
-      discountAmount,
-      discountPercent,
-      taxable,
-      gst,
-      lineTotal: taxable + gst,
-    };
-  });
-}
-
 export function hasPendingReturns(returns: Record<string, unknown>[]): boolean {
   return returns.some((r) => isReturnPending(r.return_status));
 }
@@ -202,19 +122,4 @@ export function aggregatePendingReturnsByOrderLine(
 ): Record<string, number> {
   const pending = returns.filter((r) => isReturnPending(r.return_status));
   return aggregateReceivedReturnsByOrderLine(pending, dispatches);
-}
-
-export function filterReturnsReceivedAtWarehouse(
-  returns: Record<string, unknown>[],
-): Record<string, unknown>[] {
-  return returns.filter((r) => isReturnReceivedAtWarehouse(r.return_status));
-}
-
-export function canCloseAccountOrder(detail: Record<string, unknown> | null): boolean {
-  if (!detail) return false;
-  const lifecycle = String(detail.lifecycle_status ?? "").toLowerCase();
-  if (lifecycle === "cancelled" || String(detail.status ?? "").toLowerCase() === "closed" || Boolean(detail.closed_at)) {
-    return false;
-  }
-  return true;
 }

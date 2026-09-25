@@ -15,6 +15,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { resolveOrderCounterparty, pickList } from "@/components/portal/sales/partyDisplay";
+import { SALES_ORDER_TABS } from "@/components/portal/sales/orderUtils";
 import { deriveOrderWorkflowStatus } from "@/components/portal/shared/orderLifecycle";
 import { LargeModalPortal } from "@/components/portal/shared/LargeModalPortal";
 import { pickOrders } from "@/components/portal/shared/pickOrders";
@@ -27,7 +28,7 @@ import {
   useListOrderDeliveriesQuery,
 } from "@/store/api";
 
-import { OrderListBottomTabStrip } from "./OrderListBottomTabStrip";
+import { OrderListSheetProcessFilters } from "./OrderListSheetProcessFilters";
 import {
   buildOrderListTabCounts,
   filterListOrders,
@@ -1389,15 +1390,14 @@ function onEdit(e) {
               </span>
             </div>
           </div>
-          <OrderListBottomTabStrip
-            tabs={ORDER_WORKFLOW_TABS}
-            activeTab={listActiveTab}
-            onTabChange={(tabId) => onActiveTabChange(tabId as ListOrdersTabId)}
-            filteredCount={listFilteredOrders.length}
-            tabCounts={tabCounts}
-            isFetching={isOrdersFetching}
-            searchQuery={searchQuery}
-            onClearSearch={() => onSearchQueryChange("")}
+          <OrderListSheetProcessFilters
+            processTabs={
+              config.includeDraftTab ? SALES_ORDER_TABS : ORDER_WORKFLOW_TABS
+            }
+            activeProcessTab={listActiveTab}
+            onProcessTabChange={(tabId) =>
+              onActiveTabChange(tabId as ListOrdersTabId)
+            }
             priorityFilter={priorityFilter}
             onPriorityFilterChange={onPriorityFilterChange}
             showReset={showReset || hasActiveFilters}
@@ -1405,9 +1405,6 @@ function onEdit(e) {
               handleClearFilters();
               onResetFilters?.();
             }}
-            accentActiveClass={accents.tabActive}
-            searchResultAccentClass={accents.searchResult}
-            countBadgeClass={accents.countBadge}
             compact
           />
         </div>

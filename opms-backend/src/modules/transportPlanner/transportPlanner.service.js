@@ -1150,7 +1150,6 @@ async function listEligibleOrders(query = {}, user) {
   ];
   const excludeObjectIds = [...new Set(excludeDispatchIds)].filter(Boolean);
 
-  const { indexVisibleOrders } = require('../orders/orderListPage.service');
   const scopeQuery = await orderService.buildBaseQuery(
     {
       exclude_status: 'draft',
@@ -1159,46 +1158,49 @@ async function listEligibleOrders(query = {}, user) {
     },
     user,
   );
-  const { classified } = await indexVisibleOrders(scopeQuery, false);
-  const wanted = new Set(ELIGIBLE_ORDER_WORKFLOW_TABS);
-  let matched = classified.filter((item) => wanted.has(item.tab));
-
+  const { ensureProcessStagesForScope } = require('../orders/orderListPage.service');
+  await ensureProcessStagesForScope(scopeQuery, false);
+  const orderFilter = {
+    ...scopeQuery,
+    process_stage: { $in: ELIGIBLE_ORDER_WORKFLOW_TABS },
+  };
   if (query.priority && String(query.priority).toLowerCase() !== 'all') {
-    const priority = String(query.priority).toLowerCase();
-    matched = matched.filter(
-      (item) => String(item.row.priority || '').toLowerCase() === priority,
-    );
+    orderFilter.priority = String(query.priority).toLowerCase();
   }
-
-  const search = String(query.search || '').trim().toLowerCase();
+  const search = String(query.search || '').trim();
   if (search) {
-    matched = matched.filter((item) => {
-      const row = item.row || {};
-      return [row.order_no, row.order_number, row._id]
-        .join(' ')
-        .toLowerCase()
-        .includes(search);
-    });
+    const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    orderFilter.$and = [
+      ...(orderFilter.$and || []),
+      { $or: [{ order_no: regex }, { order_number: regex }] },
+    ];
   }
-
   const fromRaw = query.from || query.dateFrom;
   const toRaw = query.to || query.dateTo;
   const from = fromRaw ? new Date(fromRaw) : null;
   const to = toRaw ? new Date(toRaw) : null;
-  if ((from && !Number.isNaN(from.getTime())) || (to && !Number.isNaN(to.getTime()))) {
-    matched = matched.filter((item) => {
-      const raw = item.row?.order_date || item.row?.createdAt;
-      if (!raw) return false;
-      const d = new Date(raw);
-      if (Number.isNaN(d.getTime())) return false;
-      if (from && !Number.isNaN(from.getTime()) && d < from) return false;
-      if (to && !Number.isNaN(to.getTime()) && d > to) return false;
-      return true;
-    });
+  const hasFrom = from && !Number.isNaN(from.getTime());
+  const hasTo = to && !Number.isNaN(to.getTime());
+  if (hasFrom || hasTo) {
+    const checks = [];
+    if (hasFrom) checks.push({ $gte: ['$$d', from] });
+    if (hasTo) checks.push({ $lte: ['$$d', to] });
+    orderFilter.$and = [
+      ...(orderFilter.$and || []),
+      {
+        $expr: {
+          $let: {
+            vars: { d: { $ifNull: ['$order_date', '$createdAt'] } },
+            in: { $and: checks },
+          },
+        },
+      },
+    ];
   }
 
-  const eligibleIds = matched.map((item) => String(item.row._id));
-  const tabById = new Map(matched.map((item) => [String(item.row._id), item.tab]));
+  const matched = await Order.find(orderFilter).select('_id process_stage').lean();
+  const eligibleIds = matched.map((item) => String(item._id));
+  const tabById = new Map(matched.map((item) => [String(item._id), item.process_stage]));
 
   if (eligibleIds.length === 0) {
     return { total: 0, page: 1, limit: 50, pages: 0, data: [] };

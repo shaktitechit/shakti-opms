@@ -30,7 +30,7 @@ import { useDashboardSummary } from "@/components/portal/shared/dashboard/useDas
 import { dashboardPeriodToStatsQuery } from "@/components/portal/shared/dashboard/periodFilterUtils";
 const TRANSPORT_PENDING_PUSH_INTERVAL_MS = 300_000;
 const TRANSPORT_PENDING_ALERT_URL =
-  "/dispatch/orders?tab=transport_pending";
+  "/dispatch/orders/transport_pending";
 
 function notificationsSupported(): boolean {
   return typeof window !== "undefined" && "Notification" in window;

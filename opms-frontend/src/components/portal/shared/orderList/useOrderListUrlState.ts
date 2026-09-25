@@ -6,8 +6,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ListOrdersTabId } from "./listOrdersPageConfig";
 import { normalizeWorkflowTabFromUrl } from "./orderWorkflowTabs";
 
-export type OrderListViewBy = "workflow" | "priority";
-
 type UseOrderListUrlStateOptions = {
   defaultTab: ListOrdersTabId;
   /** When true, `draft` is a valid URL tab (sales). */
@@ -16,20 +14,18 @@ type UseOrderListUrlStateOptions = {
     value: string | null,
     defaultTab: ListOrdersTabId,
   ) => ListOrdersTabId;
+  /** Process queue from the URL path — `tab` / `by` are not synced to the query string. */
+  processStageFromPath?: ListOrdersTabId;
 };
 
 function buildOrdersQueryString(params: {
-  tab: ListOrdersTabId;
-  viewBy: OrderListViewBy;
   q: string;
+  priority: string;
 }): string {
   const next = new URLSearchParams();
-  if (params.viewBy === "priority") {
-    next.set("by", "priority");
-  }
-  next.set("tab", params.tab);
   const q = params.q.trim();
   if (q) next.set("q", q);
+  if (params.priority !== "all") next.set("priority", params.priority);
   const s = next.toString();
   return s ? `?${s}` : "";
 }
@@ -51,19 +47,15 @@ export function useOrderListUrlState({
   defaultTab,
   includeDraftTab = false,
   normalizeTab,
+  processStageFromPath,
 }: UseOrderListUrlStateOptions) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  const viewBy: OrderListViewBy =
-    searchParams.get("by") === "priority" ? "priority" : "workflow";
   const tabFromUrl = searchParams.get("tab");
   const qFromUrl = searchParams.get("q") ?? "";
-  const byFromUrl = searchParams.get("by");
-
-  const resolvedDefaultTab: ListOrdersTabId =
-    viewBy === "priority" ? "all" : defaultTab;
+  const priorityFromUrl = searchParams.get("priority") ?? "all";
 
   const normalizeTabRef = useRef(normalizeTab);
   normalizeTabRef.current = normalizeTab;
@@ -77,49 +69,45 @@ export function useOrderListUrlState({
     [includeDraftTab],
   );
 
+  const resolvedDefaultTab: ListOrdersTabId = defaultTab;
+
   const [activeTab, setActiveTabState] = useState<ListOrdersTabId>(() =>
-    resolveTab(tabFromUrl, resolvedDefaultTab),
+    processStageFromPath ??
+      resolveTab(tabFromUrl, resolvedDefaultTab),
   );
   const [searchQuery, setSearchQueryState] = useState(qFromUrl);
-  const [priorityFilter, setPriorityFilterState] = useState("all");
+  const [priorityFilter, setPriorityFilterState] = useState(() =>
+    priorityFromUrl === "all" ||
+    priorityFromUrl === "low" ||
+    priorityFromUrl === "normal" ||
+    priorityFromUrl === "high" ||
+    priorityFromUrl === "urgent"
+      ? priorityFromUrl
+      : "all",
+  );
   const [dateFilter, setDateFilter] = useState("all");
   const [customDateFrom, setCustomDateFrom] = useState("");
   const [customDateTo, setCustomDateTo] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
+  const effectiveTab = processStageFromPath ?? activeTab;
+
   const replaceUrl = useCallback(
-    (next: {
-      tab: ListOrdersTabId;
-      viewBy: OrderListViewBy;
-      q: string;
-    }) => {
+    (next: { q: string; priority: string }) => {
       const qs = buildOrdersQueryString(next);
-      if (next.viewBy === "workflow" && byFromUrl === "workflow") {
-        const params = new URLSearchParams(qs.startsWith("?") ? qs.slice(1) : qs);
-        params.set("by", "workflow");
-        const withBy = params.toString();
-        router.replace(withBy ? `${pathname}?${withBy}` : pathname, {
-          scroll: false,
-        });
-        return;
-      }
       router.replace(`${pathname}${qs}`, { scroll: false });
     },
-    [byFromUrl, pathname, router],
+    [pathname, router],
   );
 
-  // Sync tab from URL when the tab query (or default) changes — not on unrelated renders.
   useEffect(() => {
+    if (processStageFromPath) return;
     const nextTab = resolveTab(tabFromUrl, resolvedDefaultTab);
-    setActiveTabState((prev) => {
-      if (prev === nextTab) return prev;
-      return nextTab;
-    });
-  }, [tabFromUrl, resolvedDefaultTab, resolveTab]);
+    setActiveTabState((prev) => (prev === nextTab ? prev : nextTab));
+  }, [processStageFromPath, tabFromUrl, resolvedDefaultTab, resolveTab]);
 
-  // Reset page/priority only when the URL tab (or view default) actually changes.
-  const tabResetKey = `${tabFromUrl ?? ""}|${resolvedDefaultTab}`;
+  const tabResetKey = processStageFromPath ?? `${tabFromUrl ?? ""}|${resolvedDefaultTab}`;
   const prevTabResetKeyRef = useRef(tabResetKey);
   useEffect(() => {
     if (prevTabResetKeyRef.current === tabResetKey) return;
@@ -136,13 +124,27 @@ export function useOrderListUrlState({
     if (qFromUrl) setCurrentPage(1);
   }, [qFromUrl]);
 
+  useEffect(() => {
+    const fromUrl = searchParams.get("priority") ?? "all";
+    if (
+      fromUrl === "all" ||
+      fromUrl === "low" ||
+      fromUrl === "normal" ||
+      fromUrl === "high" ||
+      fromUrl === "urgent"
+    ) {
+      setPriorityFilterState((prev) => (prev === fromUrl ? prev : fromUrl));
+    }
+  }, [searchParams]);
+
   const setActiveTab = useCallback(
     (tab: ListOrdersTabId) => {
+      if (processStageFromPath) return;
       setActiveTabState(tab);
       setCurrentPage(1);
-      replaceUrl({ tab, viewBy, q: searchQuery });
+      replaceUrl({ q: searchQuery, priority: priorityFilter });
     },
-    [replaceUrl, searchQuery, viewBy],
+    [processStageFromPath, priorityFilter, replaceUrl, searchQuery],
   );
 
   const setSearchQuery = useCallback((val: string) => {
@@ -150,10 +152,22 @@ export function useOrderListUrlState({
     setCurrentPage(1);
   }, []);
 
-  const setPriorityFilter = useCallback((val: string) => {
-    setPriorityFilterState(val);
-    setCurrentPage(1);
-  }, []);
+  useEffect(() => {
+    if (searchQuery === qFromUrl) return;
+    const timer = window.setTimeout(() => {
+      replaceUrl({ q: searchQuery, priority: priorityFilter });
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [priorityFilter, qFromUrl, replaceUrl, searchQuery]);
+
+  const setPriorityFilter = useCallback(
+    (val: string) => {
+      setPriorityFilterState(val);
+      setCurrentPage(1);
+      replaceUrl({ q: searchQuery, priority: val });
+    },
+    [replaceUrl, searchQuery],
+  );
 
   const handleDateFilterChange = useCallback((val: string) => {
     setDateFilter(val);
@@ -172,27 +186,35 @@ export function useOrderListUrlState({
 
   const handleResetFilters = useCallback(() => {
     setSearchQueryState("");
-    setActiveTabState(resolvedDefaultTab);
+    if (!processStageFromPath) {
+      setActiveTabState(resolvedDefaultTab);
+    }
     setPriorityFilterState("all");
     setDateFilter("all");
     setCustomDateFrom("");
     setCustomDateTo("");
     setCurrentPage(1);
-    replaceUrl({ tab: resolvedDefaultTab, viewBy, q: "" });
-  }, [replaceUrl, resolvedDefaultTab, viewBy]);
+    replaceUrl({ q: "", priority: "all" });
+  }, [processStageFromPath, replaceUrl, resolvedDefaultTab]);
 
   const showReset = useMemo(
     () =>
       !!searchQuery ||
-      activeTab !== resolvedDefaultTab ||
+      (!processStageFromPath && activeTab !== resolvedDefaultTab) ||
       priorityFilter !== "all" ||
       dateFilter !== "all",
-    [activeTab, dateFilter, priorityFilter, resolvedDefaultTab, searchQuery],
+    [
+      activeTab,
+      dateFilter,
+      priorityFilter,
+      processStageFromPath,
+      resolvedDefaultTab,
+      searchQuery,
+    ],
   );
 
   return {
-    viewBy,
-    activeTab,
+    activeTab: effectiveTab,
     setActiveTab,
     searchQuery,
     setSearchQuery,

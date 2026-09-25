@@ -32,7 +32,7 @@ export type OrderQuickAccessRoleConfig = {
 };
 
 /**
- * Quick Access tiles → `/{path}/orders?tab={id}`.
+ * Quick Access tiles → `/{path}/orders/{id}`.
  * Non-sales portals share ORDER_WORKFLOW_TABS + computeOrderWorkflowTabStats
  * with ListOrdersPage bottom tabs.
  */

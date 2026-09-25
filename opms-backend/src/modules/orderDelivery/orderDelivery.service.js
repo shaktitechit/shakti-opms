@@ -178,6 +178,8 @@ async function assertFullDeliveryMatchesDispatch(body, deliveredLines) {
 
 async function enqueuePostShipmentDeliveryJobs(orderId, userId, extras = {}) {
   const oid = String(orderId);
+  const { scheduleProcessStageRefresh } = require('../orders/processStage.jobs');
+  await scheduleProcessStageRefresh(oid, 'delivery');
   await orderQueue.enqueue({
     type: 'post_shipment_delivery',
     payload: {
@@ -235,6 +237,9 @@ async function processPostShipmentDeliveryJob(payload = {}) {
       event: 'shipment_delivery_logged',
     },
   });
+
+  const { scheduleProcessStageRefresh } = require('../orders/processStage.jobs');
+  await scheduleProcessStageRefresh(orderId, 'post_shipment_delivery');
 
   return {
     orderId,

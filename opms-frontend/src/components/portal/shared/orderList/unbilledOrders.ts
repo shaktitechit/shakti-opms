@@ -107,56 +107,6 @@ export function dispatchSubmittedQuantity(dispatch: unknown): number {
   return total;
 }
 
-/** Build orderId → qty map from OrderDispatch list (submitted / transport_created and billed only). */
-export function buildSubmittedDispatchQtyByOrderId(
-  dispatches: unknown[],
-): Map<string, number> {
-  const map = new Map<string, number>();
-  for (const raw of dispatches) {
-    if (!raw || typeof raw !== "object") continue;
-    const row = raw as Record<string, unknown>;
-    const orderId = refId(row.order);
-    if (!orderId) continue;
-    const qty = dispatchSubmittedQuantity(row);
-    if (qty <= 0) continue;
-    map.set(orderId, (map.get(orderId) ?? 0) + qty);
-  }
-  return map;
-}
-
-/**
- * Build `${orderId}:${orderItemId}` → submitted dispatch qty from created+submitted and billed batches.
- */
-export function buildSubmittedDispatchQtyByOrderLineId(
-  dispatches: unknown[],
-): Map<string, number> {
-  const map = new Map<string, number>();
-  for (const raw of dispatches) {
-    if (!raw || typeof raw !== "object") continue;
-    const row = raw as Record<string, unknown>;
-    const status = String(row.dispatch_status ?? row.status ?? "").toLowerCase();
-    if (!SUBMITTED_DISPATCH_STATUSES.has(status)) continue;
-
-    const orderId = refId(row.order);
-    if (!orderId) continue;
-    const items = Array.isArray(row.dispatch_items)
-      ? row.dispatch_items
-      : Array.isArray(row.items)
-        ? row.items
-        : [];
-    for (const itemRaw of items) {
-      if (!itemRaw || typeof itemRaw !== "object") continue;
-      const item = itemRaw as Record<string, unknown>;
-      const orderItemId = refId(item.order_item_id ?? item.order_item);
-      if (!orderItemId) continue;
-      const qty = num(item.dispatched_quantity ?? item.dispatch_quantity ?? item.allocated_quantity);
-      if (qty <= 0) continue;
-      const key = orderLineKey(orderId, orderItemId);
-      map.set(key, (map.get(key) ?? 0) + qty);
-    }
-  }
-  return map;
-}
 
 export function orderApprovedQuantity(order: unknown): number {
   if (!order || typeof order !== "object") return 0;
@@ -205,58 +155,6 @@ export function orderUnbilledQuantityTotals(
   };
 }
 
-/** Per-line approved vs submitted-dispatch breakdown for an unbilled order. */
-export function listUnbilledOrderLines(
-  order: unknown,
-  options?: UnbilledOrderOptions,
-): UnbilledOrderLine[] {
-  if (!order || typeof order !== "object") return [];
-  const row = order as Record<string, unknown>;
-  const orderId = refId(row._id ?? row.id);
-  const items = Array.isArray(row.order_items) ? row.order_items : [];
-  const accountStatus = resolveAccountApprovalStatus(row);
-  const lines: UnbilledOrderLine[] = [];
-
-  for (const raw of items) {
-    if (!raw || typeof raw !== "object") continue;
-    const line = raw as Record<string, unknown>;
-    const orderItemId = refId(line._id ?? line.id);
-    if (!orderItemId) continue;
-
-    const q = lineApprovalQuantities(line, { accountApprovalStatus: accountStatus });
-    const approved =
-      q.accountCleared > 0
-        ? q.accountCleared
-        : q.financeApproved > 0
-          ? q.financeApproved
-          : q.salesApproved > 0
-            ? q.salesApproved
-            : q.ordered;
-    if (approved <= 0) continue;
-
-    const lineKey = orderLineKey(orderId, orderItemId);
-    const submittedDispatch =
-      options?.submittedDispatchQtyByOrderLineId?.get(lineKey) ?? 0;
-
-    // Remaining unbilled qty is approved - billed dispatch quantity
-    const remaining = Math.max(0, approved - submittedDispatch);
-    if (remaining <= 0) continue;
-
-    const { id: productId, name, sku } = resolveProductLabel(line);
-
-    lines.push({
-      orderItemId,
-      productId,
-      productName: name,
-      sku,
-      approved,
-      submittedDispatch,
-      remaining,
-    });
-  }
-
-  return lines;
-}
 
 /** Map `/api/unbilled-orders` line snapshots → modal line rows. */
 export function listUnbilledLinesFromRecord(
@@ -368,70 +266,6 @@ export function unbilledRecordPartyLabel(
   return partyId || "—";
 }
 
-export function unbilledRecordGrandTotal(record: UnbilledOrderRecord): number {
-  if (record.order && typeof record.order === "object" && Array.isArray(record.unbilled_items)) {
-    const o = record.order as Record<string, any>;
-    const orderItems = Array.isArray(o.order_items) ? o.order_items : [];
-    
-    // Build a map of order item id to order item rate/discount details
-    const orderItemMap = new Map<string, any>();
-    for (const item of orderItems) {
-      if (item && item._id) {
-        orderItemMap.set(String(item._id), item);
-      }
-    }
-    
-    let remainingSubtotal = 0;
-    let remainingGst = 0;
-    
-    for (const item of record.unbilled_items) {
-      const lineId = String(item.order_item_id || item._id || "");
-      const orderItem = orderItemMap.get(lineId);
-      if (!orderItem) continue;
-      
-      const qty = Number(item.remaining_quantity ?? 0);
-      if (qty <= 0) continue;
-      
-      const unitPrice = Number(orderItem.unit_price ?? 0);
-      const discountPercent = Number(orderItem.discount_percent ?? 0);
-      const gstPercent = Number(orderItem.gst_percent ?? 0);
-      
-      const lineGross = qty * unitPrice;
-      let disc = Number(orderItem.discount_amount ?? 0);
-      if (discountPercent > 0) {
-        disc = (lineGross * discountPercent) / 100;
-      } else if (Number(orderItem.approved_quantity ?? 0) > 0) {
-        // Proportional discount based on qty
-        const appQty = Number(orderItem.approved_quantity);
-        disc = (disc * qty) / appQty;
-      }
-      
-      const taxable = Math.max(0, lineGross - disc);
-      const gst = (taxable * gstPercent) / 100;
-      
-      remainingSubtotal += taxable;
-      remainingGst += gst;
-    }
-    
-    const subtotal = Number(o.subtotal ?? 0);
-    const headerDiscount = Number(o.discount_amount ?? 0);
-    const extraCharges = Number(o.extra_charges ?? 0) + Number(o.penalty_amount ?? 0) + Number(o.damage_charge ?? 0);
-    
-    let total = remainingSubtotal + remainingGst;
-    if (subtotal > 0) {
-      const ratio = remainingSubtotal / subtotal;
-      total = total - (headerDiscount * ratio) + (extraCharges * ratio);
-    }
-    
-    return Math.max(0, total);
-  }
-
-  if (record.order && typeof record.order === "object") {
-    const o = record.order as Record<string, unknown>;
-    return Number(o.grand_total ?? o.total ?? 0);
-  }
-  return 0;
-}
 
 /**
  * True when approved qty exceeds submitted/transport_created dispatch qty.
@@ -513,7 +347,3 @@ export function isUnbilledModalRecord(
   );
 }
 
-/** @deprecated Use isUnbilledOrder */
-export const isOpenOrder = isUnbilledOrder;
-/** @deprecated Use filterUnbilledOrders */
-export const filterOpenOrders = filterUnbilledOrders;

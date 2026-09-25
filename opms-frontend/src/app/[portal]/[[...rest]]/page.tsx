@@ -6,9 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   PortalOverview,
   PortalSectionPlaceholder,
-  ListMyOrdersPage,
   ListTransportPlansPage,
-
   TransportPlanFormPage,
   TransportPlanDetailPage,
   TransportPlanCalendarPage,
@@ -16,26 +14,21 @@ import {
   ListProductsPage,
   PartyDetailPage,
   ProductDetailPage,
-  ListAdminOrdersPage,
   AdminCreateOrderPage,
-  ListFinanceOrdersPage,
   FinanceCreateOrderPage,
-  ListAccountOrdersPage,
   AccountCreateOrderPage,
-  ListDispatchOrdersPage,
   ListDriversPage,
   ListVehiclesPage,
   DriverDetailPage,
   VehicleDetailPage,
   ListTransportAgentsPage,
   TransportAgentDetailPage,
-  SuperAdminOrdersPage,
-  ListSuperAdminOrdersPage,
   SuperAdminOrderDetail,
   SuperAdminCreateOrderPage,
   ProfilePage,
 } from "@/components/portal";
 import CreateOrderPage from "@/components/portal/sales/CreateOrderPage";
+import PortalOrdersRoute from "@/components/portal/shared/orderList/PortalOrdersRoute";
 import {
   type PortalKey,
   isPortalKey,
@@ -174,8 +167,8 @@ export default function PortalCatchAllPage() {
   }
 
   // ── ADMIN ────────────────────────────────────────────────────────────────
-  if (portal === "admin" && restArr.length === 1 && restArr[0] === "orders") {
-    return <ListAdminOrdersPage />;
+  if (portal === "admin" && restArr[0] === "orders" && restArr.length <= 2) {
+    return <PortalOrdersRoute portalHome="/admin" stage={restArr[1]} />;
   }
   if (portal === "admin" && restArr.length === 1 && restArr[0] === "create-order") {
     return <AdminCreateOrderPage />;
@@ -215,14 +208,14 @@ export default function PortalCatchAllPage() {
   if (portal === "sales" && restArr.length === 1 && restArr[0] === "create-order") {
     return <CreateOrderPage />;
   }
-  if (portal === "sales" && restArr.length === 1 && restArr[0] === "orders") {
-    return <ListMyOrdersPage />;
+  if (portal === "sales" && restArr[0] === "orders" && restArr.length <= 2) {
+    return <PortalOrdersRoute portalHome="/sales" stage={restArr[1]} />;
   }
 
 
   // ── FINANCE ──────────────────────────────────────────────────────────────
-  if (portal === "finance" && restArr.length === 1 && restArr[0] === "orders") {
-    return <ListFinanceOrdersPage />;
+  if (portal === "finance" && restArr[0] === "orders" && restArr.length <= 2) {
+    return <PortalOrdersRoute portalHome="/finance" stage={restArr[1]} />;
   }
   if (portal === "finance" && restArr.length === 1 && restArr[0] === "create-order") {
     return <FinanceCreateOrderPage />;
@@ -259,8 +252,8 @@ export default function PortalCatchAllPage() {
   }
 
   // ── ACCOUNT ──────────────────────────────────────────────────────────────
-  if (portal === "account" && restArr.length === 1 && restArr[0] === "orders") {
-    return <ListAccountOrdersPage />;
+  if (portal === "account" && restArr[0] === "orders" && restArr.length <= 2) {
+    return <PortalOrdersRoute portalHome="/account" stage={restArr[1]} />;
   }
   if (portal === "account" && restArr.length === 1 && restArr[0] === "create-order") {
     return <AccountCreateOrderPage />;
@@ -296,8 +289,8 @@ export default function PortalCatchAllPage() {
   }
 
   // ── DISPATCH ─────────────────────────────────────────────────────────────
-  if (portal === "dispatch" && restArr.length === 1 && restArr[0] === "orders") {
-    return <ListDispatchOrdersPage />;
+  if (portal === "dispatch" && restArr[0] === "orders" && restArr.length <= 2) {
+    return <PortalOrdersRoute portalHome="/dispatch" stage={restArr[1]} />;
   }
   if (portal === "dispatch" && restArr.length === 1 && restArr[0] === "drivers") {
     return <ListDriversPage />;
@@ -328,8 +321,8 @@ export default function PortalCatchAllPage() {
   }
 
   // ── SUPER ADMIN ──────────────────────────────────────────────────────────
-  if (portal === "super_admin" && restArr.length === 1 && restArr[0] === "orders") {
-    return <ListSuperAdminOrdersPage />;
+  if (portal === "super_admin" && restArr[0] === "orders" && restArr.length <= 2) {
+    return <PortalOrdersRoute portalHome="/super_admin" stage={restArr[1]} />;
   }
   if (portal === "super_admin" && restArr.length === 1 && restArr[0] === "create-order") {
     return <SuperAdminCreateOrderPage />;

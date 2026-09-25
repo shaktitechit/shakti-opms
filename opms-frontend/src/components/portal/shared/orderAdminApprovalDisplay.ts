@@ -114,17 +114,6 @@ export function adminApprovalActionLabel(
   return "Approve Items";
 }
 
-/** Approval id suitable for send-to-finance (approved, not yet sent). */
-export function pickSendableAdminApprovalId(rows: unknown[]): string {
-  for (const row of rows) {
-    if (!row || typeof row !== "object") continue;
-    const record = row as Record<string, unknown>;
-    if (String(record.approval_status) !== "approved") continue;
-    const id = String(record._id ?? record.id ?? "").trim();
-    if (id) return id;
-  }
-  return "";
-}
 
 export function isAdminAmended(approval: Record<string, unknown>): boolean {
   return Boolean(approval.admin_amended);

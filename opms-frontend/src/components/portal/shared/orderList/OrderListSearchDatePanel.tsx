@@ -1,6 +1,7 @@
 "use client";
 
 import { Search, X } from "lucide-react";
+import { PRIORITY_OPTIONS } from "@/components/portal/shared/orderStatusOptions";
 import {
   DATE_FILTER_OPTIONS,
   dateFilterSelectClass,
@@ -16,6 +17,10 @@ type OrderListSearchDatePanelProps = {
   customDateTo: string;
   onCustomDateFromChange: (value: string) => void;
   onCustomDateToChange: (value: string) => void;
+  priorityFilter?: string;
+  onPriorityFilterChange?: (value: string) => void;
+  showReset?: boolean;
+  onResetFilters?: () => void;
   searchFocusClass?: string;
   desktopPlaceholder?: string;
   mobilePlaceholder?: string;
@@ -34,11 +39,45 @@ export function OrderListSearchDatePanel({
   customDateTo,
   onCustomDateFromChange,
   onCustomDateToChange,
+  priorityFilter,
+  onPriorityFilterChange,
+  showReset = false,
+  onResetFilters,
   searchFocusClass = defaultSearchFocus,
-  desktopPlaceholder = "Search universally by order # or party name across all tabs...",
+  desktopPlaceholder = "Search by order # or party name in this queue…",
   mobilePlaceholder = "Search order # or party…",
   compact = false,
 }: OrderListSearchDatePanelProps) {
+  const priorityBlock =
+    onPriorityFilterChange != null ? (
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <span className="whitespace-nowrap text-2xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+          Priority
+        </span>
+        <select
+          value={priorityFilter ?? "all"}
+          onChange={(e) => onPriorityFilterChange(e.target.value)}
+          className={`${dateFilterSelectClass} min-w-[6.5rem] ${compact ? "py-2 text-xs" : "py-2.5 text-sm"}`}
+          aria-label="Priority filter"
+        >
+          <option value="all">All</option>
+          {PRIORITY_OPTIONS.map((p) => (
+            <option key={p.value} value={p.value}>
+              {p.label}
+            </option>
+          ))}
+        </select>
+        {showReset && onResetFilters ? (
+          <button
+            type="button"
+            onClick={onResetFilters}
+            className="cursor-pointer text-xs font-semibold text-rose-500 hover:text-rose-600 dark:text-rose-400"
+          >
+            Reset
+          </button>
+        ) : null}
+      </div>
+    ) : null;
   const panelPadding = compact ? "p-2" : "p-2 sm:p-4";
   const desktopInputPy = compact ? "py-2" : "py-2.5";
   const dateSelectPy = compact ? "py-2 text-xs" : "py-2.5 text-sm";
@@ -82,6 +121,7 @@ export function OrderListSearchDatePanel({
             ))}
           </select>
         </div>
+        {priorityBlock}
         {dateFilter === "custom" && (
           <div className="flex items-center gap-1.5">
             <input
@@ -168,6 +208,7 @@ export function OrderListSearchDatePanel({
               </>
             )}
           </div>
+          {priorityBlock}
         </div>
       </div>
     </div>

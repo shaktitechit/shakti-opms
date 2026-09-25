@@ -389,6 +389,9 @@ async function processPostOrderReturnJob(payload = {}) {
     remarks: remarks || 'Product return logged',
   });
 
+  const { scheduleProcessStageRefresh } = require('../orders/processStage.jobs');
+  await scheduleProcessStageRefresh(orderId, 'post_order_return');
+
   return {
     orderId,
     returnId,

@@ -62,6 +62,7 @@ function getOpmsAccessRole(user) {
     else if (user.role) rawRole = user.role;
     else if (Array.isArray(user.roles) && user.roles.length > 0) rawRole = user.roles[0];
     else if (Array.isArray(user.role_codes) && user.role_codes.length > 0) rawRole = user.role_codes[0];
+    else if (user.department) rawRole = user.department;
   }
 
   if (!rawRole) return null;

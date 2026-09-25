@@ -32,7 +32,7 @@ import {
 import PeriodFilter from "@/components/portal/shared/dashboard/PeriodFilter";
 import { useDashboardSummary } from "@/components/portal/shared/dashboard/useDashboardSummary";
 const FINANCE_PENDING_PUSH_INTERVAL_MS = 300_000;
-const FINANCE_PENDING_ALERT_URL = "/finance/orders?tab=pending_finance_approval";
+const FINANCE_PENDING_ALERT_URL = "/finance/orders/pending_finance_approval";
 
 function notificationsSupported(): boolean {
   return typeof window !== "undefined" && "Notification" in window;

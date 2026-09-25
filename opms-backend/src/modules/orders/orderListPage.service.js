@@ -522,6 +522,216 @@ function emptyTabCounts() {
   return Object.fromEntries(WORKFLOW_TABS.map((id) => [id, 0]));
 }
 
+function escapeRegex(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Workflow context for a specific set of orders, not the whole collections.
+ */
+async function loadWorkflowContextForOrders(orderIds) {
+  const { TransportShipment, OrderDispatch } = getModels();
+  const ids = (orderIds || []).filter(Boolean);
+  if (!ids.length) {
+    const empty = new Set();
+    return {
+      activeTransportOrderIds: empty,
+      transportCreatedOrderIds: empty,
+      dispatchTransportOrderIds: empty,
+      submittedDispatchOrderIds: empty,
+    };
+  }
+  const orderFilter = { deletedAt: null, order: { $in: ids } };
+  const [active, created, dispatchTransport, submitted] = await Promise.all([
+    TransportShipment
+      ? TransportShipment.distinct('order', {
+          ...orderFilter,
+          shipment_status: { $nin: ['returned', 'cancelled', 'delivery_failed', 'delivered'] },
+        })
+      : [],
+    TransportShipment
+      ? TransportShipment.distinct('order', {
+          ...orderFilter,
+          shipment_status: { $nin: ['returned', 'cancelled'] },
+        })
+      : [],
+    OrderDispatch
+      ? OrderDispatch.distinct('order', {
+          ...orderFilter,
+          dispatch_status: 'transport_created',
+        })
+      : [],
+    OrderDispatch
+      ? OrderDispatch.distinct('order', {
+          ...orderFilter,
+          dispatch_status: 'submitted',
+        })
+      : [],
+  ]);
+  const toSet = (rows) => new Set((rows || []).map((id) => String(id)));
+  return {
+    activeTransportOrderIds: toSet(active),
+    transportCreatedOrderIds: toSet(created),
+    dispatchTransportOrderIds: toSet(dispatchTransport),
+    submittedDispatchOrderIds: toSet(submitted),
+  };
+}
+
+/** Classify one order and store process_stage. Does not re-enter save hooks. */
+async function refreshOrderProcessStage(orderId) {
+  if (!orderId) return null;
+  const models = getModels();
+  const row = await models.Order.findById(orderId).select(SLIM_SELECT).lean();
+  if (!row || row.deletedAt) return null;
+
+  const context = await loadWorkflowContextForOrders([row._id]);
+  const [withApproval] = await enrichOrdersWithApprovalPending([row], models);
+  const [withDueSheet] = await enrichOrdersWithDueSheetStatus([withApproval], models);
+  const uploaded =
+    Boolean(withDueSheet.due_sheet_uploaded) || Boolean(withApproval.is_due_sheet_uploaded);
+  const enriched = applyDerivedPriorityToOrder({
+    ...withApproval,
+    ...withDueSheet,
+    due_sheet_uploaded: uploaded,
+    is_due_sheet_uploaded: uploaded,
+  });
+  const stage = classifyOrder(enriched, context, false);
+  await models.Order.updateOne(
+    { _id: row._id },
+    { $set: { process_stage: stage } },
+    { runValidators: false },
+  );
+  return stage;
+}
+
+async function bulkWriteProcessStages(classified) {
+  const ops = [];
+  for (const item of classified) {
+    const id = item.row && item.row._id;
+    if (!id) continue;
+    ops.push({
+      updateOne: {
+        filter: { _id: id },
+        update: { $set: { process_stage: item.tab || null } },
+      },
+    });
+  }
+  if (!ops.length) return { matched: 0, modified: 0 };
+  let matched = 0;
+  let modified = 0;
+  const BATCH = 500;
+  for (let i = 0; i < ops.length; i += BATCH) {
+    const result = await getModels().Order.collection.bulkWrite(ops.slice(i, i + BATCH), {
+      ordered: false,
+    });
+    matched += result.matchedCount ?? result.nMatched ?? 0;
+    modified += result.modifiedCount ?? result.nModified ?? 0;
+  }
+  return { matched, modified };
+}
+
+/** Classify and persist process_stage for orders in scope that are still unstaged. */
+async function ensureProcessStagesForScope(scopeQuery, salesTabs) {
+  const staleFilter = {
+    $and: [
+      scopeQuery,
+      { $or: [{ process_stage: null }, { process_stage: { $exists: false } }] },
+    ],
+  };
+  const staleCount = await getModels().Order.countDocuments(staleFilter);
+  if (!staleCount) return { updated: 0 };
+
+  const { classified } = await computeVisibleOrders(scopeQuery, salesTabs);
+  const result = await bulkWriteProcessStages(classified);
+  return { updated: result.modified };
+}
+
+/** One-time (re-runnable) write of process_stage for existing orders. */
+async function backfillProcessStages() {
+  const { classified } = await computeVisibleOrders({}, false);
+  return bulkWriteProcessStages(classified);
+}
+
+async function partyIdsForSearch(search) {
+  const regex = new RegExp(escapeRegex(search), 'i');
+  const parties = await getModels()
+    .Party.find({
+      $or: [
+        { party_name: regex },
+        { contact_person: regex },
+        { legal_name: regex },
+        { trade_name: regex },
+        { name: regex },
+      ],
+    })
+    .select('_id')
+    .limit(200)
+    .lean();
+  return parties.map((party) => party._id);
+}
+
+function stageListFilter(scopeQuery, query) {
+  const salesTabs = query.sales_tabs === 'true' || query.sales_tabs === true;
+  const filter = { ...scopeQuery };
+  const and = [];
+  const tab = String(query.tab || '').trim();
+  const search = String(query.search || '').trim();
+
+  if (tab && tab.toLowerCase() !== 'all') {
+    filter.process_stage = tab;
+  } else if (!salesTabs) {
+    filter.process_stage = { $nin: ['draft', null] };
+  }
+
+  if (query.priority && String(query.priority).toLowerCase() !== 'all') {
+    filter.priority = String(query.priority).toLowerCase();
+  }
+
+  const from = query.dateFrom ? new Date(query.dateFrom) : null;
+  const to = query.dateTo ? new Date(query.dateTo) : null;
+  const hasFrom = from && !Number.isNaN(from.getTime());
+  const hasTo = to && !Number.isNaN(to.getTime());
+  if (hasFrom || hasTo) {
+    const checks = [];
+    if (hasFrom) checks.push({ $gte: ['$$d', from] });
+    if (hasTo) checks.push({ $lte: ['$$d', to] });
+    and.push({
+      $expr: {
+        $let: {
+          vars: { d: { $ifNull: ['$order_date', '$createdAt'] } },
+          in: { $and: checks },
+        },
+      },
+    });
+  }
+
+  if (and.length) filter.$and = [...(filter.$and || []), ...and];
+  return { filter, salesTabs, search, tab };
+}
+
+async function countProcessStages(scopeQuery, salesTabs) {
+  await ensureProcessStagesForScope(scopeQuery, salesTabs);
+  const match = { ...scopeQuery };
+  if (!salesTabs) {
+    match.process_stage = { $nin: ['draft', null] };
+  }
+  const rows = await getModels().Order.aggregate([
+    { $match: match },
+    { $group: { _id: '$process_stage', count: { $sum: 1 } } },
+  ]);
+  const tabCounts = emptyTabCounts();
+  let scopeTotal = 0;
+  for (const row of rows) {
+    const id = row._id;
+    const count = row.count || 0;
+    if (!id || tabCounts[id] == null) continue;
+    tabCounts[id] = count;
+    scopeTotal += count;
+  }
+  tabCounts.all = scopeTotal;
+  return { tabCounts, scopeTotal };
+}
+
 async function loadWorkflowContext() {
   const { TransportShipment, OrderDispatch } = getModels();
   const [active, created, dispatchTransport, submitted] = await Promise.all([
@@ -779,47 +989,35 @@ async function listOrdersPage(query, user, buildBaseQuery) {
   const scopeInput = {};
   if (query.exclude_status) scopeInput.exclude_status = query.exclude_status;
   const scopeQuery = await buildBaseQuery(scopeInput, user);
-  const { classified, tabCounts, scopeTotal } = await indexVisibleOrders(scopeQuery, salesTabs);
+  await ensureProcessStagesForScope(scopeQuery, salesTabs);
+  const { filter, search } = stageListFilter(scopeQuery, query);
+  const { tabCounts, scopeTotal } = await countProcessStages(scopeQuery, salesTabs);
 
-  let filtered = classified;
-  const search = String(query.search || '').trim().toLowerCase();
   if (search) {
-    const names = await partyNamesForRows(filtered.map((item) => item.row));
-    filtered = filtered.filter((item) => matchesSearch(item.row, search, names));
-  } else if (query.tab && String(query.tab).toLowerCase() !== 'all') {
-    const tab = String(query.tab);
-    filtered = filtered.filter((item) => item.tab === tab);
-  } else if (!salesTabs) {
-    filtered = filtered.filter((item) => deriveOrderWorkflowStatus(item.row) !== 'draft');
-  }
-
-  if (query.priority && String(query.priority).toLowerCase() !== 'all') {
-    const priority = String(query.priority).toLowerCase();
-    filtered = filtered.filter(
-      (item) => String(item.row.priority || '').toLowerCase() === priority,
-    );
-  }
-
-  const from = query.dateFrom ? new Date(query.dateFrom) : null;
-  const to = query.dateTo ? new Date(query.dateTo) : null;
-  if ((from && !Number.isNaN(from.getTime())) || (to && !Number.isNaN(to.getTime()))) {
-    filtered = filtered.filter((item) =>
-      matchesDate(
-        item.row,
-        from && !Number.isNaN(from.getTime()) ? from : null,
-        to && !Number.isNaN(to.getTime()) ? to : null,
-      ),
-    );
+    const partyIds = await partyIdsForSearch(search);
+    const regex = new RegExp(escapeRegex(search), 'i');
+    const searchOr = [{ order_no: regex }, { order_number: regex }];
+    if (partyIds.length) searchOr.push({ party: { $in: partyIds } });
+    filter.$and = [...(filter.$and || []), { $or: searchOr }];
   }
 
   const page = Math.max(Number(query.page) || 1, 1);
-  const limit = Math.min(100, Math.max(Number(query.limit) || 10, 1));
-  const total = filtered.length;
+  const returnAll = query.all === 'true' || query.all === true;
+  const limit = returnAll
+    ? Math.min(5000, Math.max(Number(query.limit) || 5000, 1))
+    : Math.min(100, Math.max(Number(query.limit) || 10, 1));
+  const total = await getModels().Order.countDocuments(filter);
   const pages = Math.max(1, Math.ceil(total / limit) || 1);
-  const slice = filtered.slice((page - 1) * limit, page * limit);
-  const tabById = new Map(slice.map((item) => [String(item.row._id), item.tab]));
+  const ids = await getModels()
+    .Order.find(filter)
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(limit)
+    .select('_id process_stage')
+    .lean();
 
-  const pageDocs = await loadPageDocuments(slice.map((item) => item.row._id));
+  const pageDocs = await loadPageDocuments(ids.map((row) => row._id));
+  const tabById = new Map(ids.map((row) => [String(row._id), row.process_stage]));
   const plain = pageDocs.map((row) => applyDerivedPriorityToOrder(toPlain(row)));
   const enriched = await enrichOrdersParallel(plain, getModels());
   const data = enriched.map((row) => {
@@ -829,7 +1027,7 @@ async function listOrdersPage(query, user, buildBaseQuery) {
     return {
       ...rest,
       ...summary,
-      workflow_tab: tabById.get(String(row._id)) || null,
+      workflow_tab: tabById.get(String(row._id)) || row.process_stage || null,
     };
   });
 
@@ -857,7 +1055,7 @@ async function workflowTabStats(query, user, buildBaseQuery) {
     scopeInput.exclude_status = query.exclude_status || 'draft';
   }
   const scopeQuery = await buildBaseQuery(scopeInput, user);
-  const { classified, tabCounts } = await indexVisibleOrders(scopeQuery, salesTabs);
+  const { tabCounts } = await countProcessStages(scopeQuery, salesTabs);
 
   const stats = {};
   for (const id of WORKFLOW_TABS) {
@@ -866,28 +1064,24 @@ async function workflowTabStats(query, user, buildBaseQuery) {
 
   if (query.counts_only === 'true' || query.counts_only === true) return stats;
 
-  const ids = classified
-    .filter((item) => salesTabs || deriveOrderWorkflowStatus(item.row) !== 'draft')
-    .map((item) => item.row._id);
-  if (!ids.length) return stats;
-
+  const stageMatch = { ...scopeQuery };
+  if (!salesTabs) stageMatch.process_stage = { $nin: ['draft', null] };
   const itemRows = await getModels()
-    .Order.find({ _id: { $in: ids } })
-    .select('order_items status lifecycle_status workflow_stage current_action dispatch_status delivery_status closed_at')
+    .Order.find(stageMatch)
+    .select(
+      'process_stage order_items status lifecycle_status workflow_stage current_action dispatch_status delivery_status closed_at',
+    )
     .lean();
-  const summaryById = new Map(itemRows.map((row) => [String(row._id), summarizeOrder(row)]));
 
-  for (const item of classified) {
-    const summary = summaryById.get(String(item.row._id));
-    if (!summary) continue;
-    if (!salesTabs && deriveOrderWorkflowStatus(item.row) === 'draft') continue;
+  for (const row of itemRows) {
+    const summary = summarizeOrder(row);
     stats.all.quantity += summary.item_quantity;
     stats.all.kitQuantity += summary.kit_quantity;
     stats.all.amount += summary.line_amount;
-    if (item.tab && item.tab !== 'all' && stats[item.tab]) {
-      stats[item.tab].quantity += summary.item_quantity;
-      stats[item.tab].kitQuantity += summary.kit_quantity;
-      stats[item.tab].amount += summary.line_amount;
+    if (row.process_stage && row.process_stage !== 'all' && stats[row.process_stage]) {
+      stats[row.process_stage].quantity += summary.item_quantity;
+      stats[row.process_stage].kitQuantity += summary.kit_quantity;
+      stats[row.process_stage].amount += summary.line_amount;
     }
   }
 
@@ -900,4 +1094,8 @@ module.exports = {
   indexVisibleOrders,
   classifyOrder,
   deriveOrderWorkflowStatus,
+  refreshOrderProcessStage,
+  backfillProcessStages,
+  ensureProcessStagesForScope,
+  countProcessStages,
 };

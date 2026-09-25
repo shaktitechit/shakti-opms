@@ -35,9 +35,9 @@ import PeriodFilter from "@/components/portal/shared/dashboard/PeriodFilter";
 import { useDashboardSummary } from "@/components/portal/shared/dashboard/useDashboardSummary";
 import { dashboardPeriodToStatsQuery } from "@/components/portal/shared/dashboard/periodFilterUtils";
 const ACCOUNT_PENDING_PUSH_INTERVAL_MS = 300_000;
-const DUE_SHEET_PENDING_ALERT_URL = "/account/orders?tab=due_sheet_pending";
-const ACCOUNT_PENDING_ALERT_URL = "/account/orders?tab=pending_account_approval";
-const OPEN_DISPATCH_PENDING_ALERT_URL = "/account/orders?tab=open_dispatched";
+const DUE_SHEET_PENDING_ALERT_URL = "/account/orders/due_sheet_pending";
+const ACCOUNT_PENDING_ALERT_URL = "/account/orders/pending_account_approval";
+const OPEN_DISPATCH_PENDING_ALERT_URL = "/account/orders/open_dispatched";
 
 function notificationsSupported(): boolean {
   return typeof window !== "undefined" && "Notification" in window;

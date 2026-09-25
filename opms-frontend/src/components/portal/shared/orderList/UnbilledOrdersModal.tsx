@@ -1600,6 +1600,3 @@ export function UnbilledOrdersModal({
   );
 }
 
-/** @deprecated Use UnbilledOrdersModal */
-export const OpenOrdersModal = UnbilledOrdersModal;
-export type OpenOrdersModalProps = UnbilledOrdersModalProps;

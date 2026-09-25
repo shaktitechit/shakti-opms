@@ -309,6 +309,26 @@ const orderSchema = new mongoose.Schema(
       index: true,
     },
 
+    /** Exclusive list queue. Written by classifyOrder after workflow changes. */
+    process_stage: {
+      type: String,
+      enum: [
+        "draft",
+        "pending_admin_approval",
+        "due_sheet_pending",
+        "pending_finance_approval",
+        "pending_account_approval",
+        "open_dispatched",
+        "transport_pending",
+        "in_transit",
+        "closed_delivered",
+        "on_hold",
+        "cancelled",
+        "rejected",
+      ],
+      default: null,
+    },
+
     status: {
       type: String,
       enum: ORDER_STATUS,
@@ -570,6 +590,7 @@ orderSchema.index({ customer: 1, order_date: -1 });
 orderSchema.index({ workflow_stage: 1, lifecycle_status: 1 });
 orderSchema.index({ current_assignee: 1, workflow_stage: 1 });
 orderSchema.index({ status: 1, closed_at: -1 });
+orderSchema.index({ deletedAt: 1, process_stage: 1, createdAt: -1 });
 
 orderSchema.pre("save", function (next) {
   const doc = this;

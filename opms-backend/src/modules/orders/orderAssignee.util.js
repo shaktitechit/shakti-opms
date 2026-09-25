@@ -47,14 +47,20 @@ function shouldFilterOrdersBySalesAssignee(user) {
   return isSalesUser(user);
 }
 
+const mongoose = require('mongoose');
+
 /** Sales: own or assigned orders (including drafts). */
 function buildSalesVisibilityOr(userId) {
-  const id = normalizeUserId(userId);
-  if (!id) return null;
+  const idStr = normalizeUserId(userId);
+  if (!idStr) return null;
+  const idObj = mongoose.Types.ObjectId.isValid(idStr)
+    ? new mongoose.Types.ObjectId(idStr)
+    : null;
+  const matchValues = idObj ? [idStr, idObj] : [idStr];
   return {
     $or: [
-      { created_by: id },
-      { [SALES_ASSIGNEE_FIELD]: id },
+      { created_by: { $in: matchValues } },
+      { [SALES_ASSIGNEE_FIELD]: { $in: matchValues } },
     ],
   };
 }

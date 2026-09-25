@@ -26,7 +26,6 @@ import {
 } from "@/components/portal/finance/financeOrderUtils";
 import {
   buildOrderWorkflowCategoryOptions,
-  getOrderWorkflowTabCategory,
   isFulfillmentComplete,
 } from "@/components/portal/shared/orderList/orderWorkflowTabs";
 import { withAdminApprovalQuantities } from "@/components/portal/shared/orderAdminApprovalDisplay";
@@ -1117,13 +1116,7 @@ export default function OrderDetailsPage({
                 <div className="mb-1 flex flex-wrap items-center gap-1.5 text-2xs text-slate-500 dark:text-slate-400">
                   <button
                     type="button"
-                    onClick={() => {
-                      const workflowTab = detail ? getOrderWorkflowTabCategory(detail, categoryOptions) : null;
-                      const targetUrl = workflowTab && workflowTab !== "all"
-                        ? `${config.ordersListPath}?tab=${workflowTab}`
-                        : config.ordersListPath;
-                      router.push(targetUrl);
-                    }}
+                    onClick={() => router.back()}
                     className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 font-medium text-slate-700 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-200 dark:hover:bg-white/20 transition"
                   >
                     <ArrowLeft className="h-3 w-3" />

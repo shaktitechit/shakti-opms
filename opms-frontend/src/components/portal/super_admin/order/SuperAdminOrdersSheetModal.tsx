@@ -69,7 +69,7 @@ import { OrderTransportsForm } from "./OrderTransportsForm";
 import { OrderDeliveriesForm } from "./OrderDeliveriesForm";
 import { OrderReturnsForm } from "./OrderReturnsForm";
 import { SuperAdminCreateOrderForm } from "./SuperAdminCreateOrderForm";
-import { OrderListBottomTabStrip } from "@/components/portal/shared/orderList/OrderListBottomTabStrip";
+import { OrderListSheetProcessFilters } from "@/components/portal/shared/orderList/OrderListSheetProcessFilters";
 import {
   buildOrderListTabCounts,
   filterListOrders,
@@ -1915,22 +1915,16 @@ export function SuperAdminOrdersSheetModal({
             </span>
           </div>
           {!isBin ? (
-            <OrderListBottomTabStrip
-              tabs={ORDER_WORKFLOW_TABS}
-              activeTab={listActiveTab}
-              onTabChange={(tabId) => onActiveTabChange(tabId as ListOrdersTabId)}
-              filteredCount={filteredOrders.length}
-              tabCounts={tabCounts}
-              isFetching={isFetching}
-              searchQuery={searchQuery}
-              onClearSearch={() => onSearchQueryChange("")}
+            <OrderListSheetProcessFilters
+              processTabs={ORDER_WORKFLOW_TABS}
+              activeProcessTab={listActiveTab}
+              onProcessTabChange={(tabId) =>
+                onActiveTabChange(tabId as ListOrdersTabId)
+              }
               priorityFilter={priorityFilter}
               onPriorityFilterChange={onPriorityFilterChange}
               showReset={showReset}
               onReset={() => onResetFilters?.()}
-              accentActiveClass={accents.tabActive}
-              searchResultAccentClass={accents.searchResult}
-              countBadgeClass={accents.countBadge}
               compact
             />
           ) : null}

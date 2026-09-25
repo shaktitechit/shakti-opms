@@ -229,6 +229,8 @@ async function markOrderApprovalDueSheetUploaded(orderId) {
     { order: orderId, deletedAt: null },
     { $set: { is_due_sheet_uploaded: true } },
   );
+  const { scheduleProcessStageRefresh } = require('../orders/processStage.jobs');
+  await scheduleProcessStageRefresh(orderId, 'due_sheet_upload');
 }
 
 async function list({ order, status, is_current } = {}) {
