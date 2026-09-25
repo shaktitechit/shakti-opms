@@ -494,7 +494,7 @@ async function notifyWorkPlanCreated({ planId, actorUser, creationMailData = {} 
     if (!plan) return;
 
     const salesUserId = plan.sales_user;
-    const { salesUser, directManager, allManagers, primaryRecipientEmail, ccList, inAppUserIds } =
+    const { salesUser, inAppUserIds } =
       await resolveStakeholders(salesUserId, plan);
 
     const planDateStr = formatDate(plan.plan_date);
@@ -531,15 +531,20 @@ async function notifyWorkPlanCreated({ planId, actorUser, creationMailData = {} 
       WorkPlanWork.find({ work_plan: planId, deletedAt: null }).sort({ sequence: 1 }).lean(),
     ]);
 
-    const recipient = creationMailData.to_email || primaryRecipientEmail;
-    if (!recipient) return;
+    const explicitTo = creationMailData.to_email || creationMailData.toEmail;
+    const recipient = typeof explicitTo === 'string' ? explicitTo.trim() : '';
+    if (!recipient) {
+      logger.info(`[AutoNotification] In-app work plan notice sent for ${planId}; no mail because the client did not set a recipient`);
+      return;
+    }
 
     const providedCreationCc = creationMailData.cc_emails !== undefined
       ? creationMailData.cc_emails
       : creationMailData.ccEmails;
+    // CC only what the client sent. Do not fill in portal admins or managers.
     const mailCc = Array.isArray(providedCreationCc)
       ? providedCreationCc.map((e) => String(e).trim()).filter(Boolean)
-      : ccList;
+      : [];
 
     const fromAddress = salesUser?.email ? `${executiveName} <${salesUser.email}>` : `${actorName} <${actorUser.email}>`;
     const visitsTableHtml = renderVisitsTable(visits);

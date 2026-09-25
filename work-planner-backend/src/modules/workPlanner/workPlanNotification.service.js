@@ -492,24 +492,15 @@ async function sendCustomWorkPlanCreationEmail(planId, user, creationMailData = 
       const targetUserObj = plan.sales_user && typeof plan.sales_user === 'object' ? plan.sales_user : null;
       if (targetUserObj && targetUserObj.email && String(targetUserObj._id || targetUserObj.id) !== String(senderUser._id || senderUser.id)) {
         recipient = targetUserObj.email;
-        if (rawCc === undefined && ccList.length === 0) {
-          ccList = managerEmails.filter((m) => m.toLowerCase() !== recipient.toLowerCase());
-        }
       } else if (plan.is_discussed_with_manager && plan.discussed_manager_id) {
         const discussedManager = managers.find((m) => String(m._id || m.id) === String(plan.discussed_manager_id));
         if (discussedManager && discussedManager.email) {
           recipient = discussedManager.email;
-          if (rawCc === undefined && ccList.length === 0) {
-            ccList = managerEmails.filter((m) => m.toLowerCase() !== recipient.toLowerCase());
-          }
         }
       }
 
       if (!recipient && managerEmails.length > 0) {
         recipient = managerEmails[0];
-        if (rawCc === undefined && ccList.length === 0) {
-          ccList = managerEmails.slice(1);
-        }
       }
     }
 

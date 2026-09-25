@@ -18,8 +18,6 @@ const {
 } = require('./workPlanNotification.service');
 const {
   notifyWorkPlanCreated,
-  notifyVisitCreated,
-  notifyTaskCreated,
   notifyDayEndCompleted,
 } = require('./workPlannerAutoNotification.service');
 const {
@@ -821,11 +819,7 @@ async function create(body, user) {
 
     await logActivity(user, doc._id, 'created', `Work plan created for ${planDate.toISOString().slice(0, 10)}`);
 
-    // Trigger auto-notifications to stakeholders
-    notifyWorkPlanCreated({ planId: doc._id, actorUser: user, creationMailData: body }).catch((err) => {
-      const { logger } = require('../../utils/logger');
-      logger.error(`[WorkPlanService] Failed to dispatch creation notification for plan ${doc._id}: ${err.message}`);
-    });
+    // Plan mail is sent only from submit(), after visits and tasks have been saved.
 
     return get(doc._id, user);
   } catch (err) {
@@ -966,9 +960,9 @@ async function submit(id, user, body = {}) {
   plan.updated_by = userId(user);
   await plan.save();
 
-  await logActivity(user, plan._id, 'submitted', 'Work plan saved as planned and email dispatched');
+  await logActivity(user, plan._id, 'submitted', 'Work plan saved as planned');
 
-  // Trigger creation auto-notifications (in-app + email)
+  // In-app notice only after visits and tasks are saved. Mail is sent only when the client includes a recipient.
   notifyWorkPlanCreated({ planId: plan._id, actorUser: user, creationMailData: body }).catch((err) => {
     const { logger } = require('../../utils/logger');
     logger.error(`[WorkPlanService] Failed to send creation notification for plan ${id}: ${err.message}`);
@@ -1134,12 +1128,6 @@ async function addStandaloneVisit(body, user) {
     await renumberVisits(existingPlan._id);
     await logActivity(user, existingPlan._id, 'created', `Visit added to work plan for ${planDate.toISOString().slice(0, 10)}`);
 
-    // Auto-notification for visit added
-    notifyVisitCreated({ visit: toPlain(visit), planDoc: existingPlan, actorUser: user }).catch((err) => {
-      const { logger } = require('../../utils/logger');
-      logger.error(`[WorkPlanService] Visit notification error: ${err.message}`);
-    });
-
     return toPlain(visit);
   }
 
@@ -1182,12 +1170,6 @@ async function addStandaloneVisit(body, user) {
   });
 
   await logActivity(user, salesUserId, 'created', `Standalone visit created for ${planDate.toISOString().slice(0, 10)}`);
-
-  // Auto-notification for standalone visit created
-  notifyVisitCreated({ visit: toPlain(visit), planDoc: null, actorUser: user }).catch((err) => {
-    const { logger } = require('../../utils/logger');
-    logger.error(`[WorkPlanService] Standalone visit notification error: ${err.message}`);
-  });
 
   return toPlain(visit);
 }
@@ -1380,12 +1362,6 @@ async function addVisit(planId, body, user) {
 
   await renumberVisits(planId);
   await logActivity(user, planId, 'updated', `Visit added (sequence ${sequence})`);
-
-  // Auto-notification for visit created
-  notifyVisitCreated({ visit: toPlain(visit), planDoc: plan, actorUser: user }).catch((err) => {
-    const { logger } = require('../../utils/logger');
-    logger.error(`[WorkPlanService] Visit notification error: ${err.message}`);
-  });
 
   return getWithVisits(planId);
 }
@@ -2620,12 +2596,6 @@ async function addStandaloneWork(body, user) {
     await renumberWorks(existingPlan._id);
     await logActivity(user, existingPlan._id, 'created', `Task added to work plan for ${planDate.toISOString().slice(0, 10)}`);
 
-    // Auto-notification for task added
-    notifyTaskCreated({ task: toPlain(work), planDoc: existingPlan, actorUser: user }).catch((err) => {
-      const { logger } = require('../../utils/logger');
-      logger.error(`[WorkPlanService] Task notification error: ${err.message}`);
-    });
-
     return toPlain(work);
   }
 
@@ -2660,12 +2630,6 @@ async function addStandaloneWork(body, user) {
   });
 
   await logActivity(user, salesUserId, 'created', `Standalone task created for ${planDate.toISOString().slice(0, 10)}`);
-
-  // Auto-notification for standalone task created
-  notifyTaskCreated({ task: toPlain(work), planDoc: null, actorUser: user }).catch((err) => {
-    const { logger } = require('../../utils/logger');
-    logger.error(`[WorkPlanService] Standalone task notification error: ${err.message}`);
-  });
 
   return toPlain(work);
 }
@@ -2810,12 +2774,6 @@ async function addWork(planId, body, user) {
 
   await renumberWorks(planId);
   await logActivity(user, planId, 'updated', `Work task added (sequence ${sequence})`);
-
-  // Auto-notification for task created
-  notifyTaskCreated({ task: toPlain(createdWork), planDoc: plan, actorUser: user }).catch((err) => {
-    const { logger } = require('../../utils/logger');
-    logger.error(`[WorkPlanService] Task notification error: ${err.message}`);
-  });
 
   return getWithVisits(planId);
 }
