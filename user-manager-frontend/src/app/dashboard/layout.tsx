@@ -4,7 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import type { UserSession } from "@/types/userManager";
-import { readSessionFromStorage, saveSessionToStorage } from "@/utils/authStorage";
+import {
+  readSessionFromStorage,
+  revokeRefreshToken,
+  saveSessionToStorage,
+} from "@/utils/authStorage";
 import { getAuthHeaders } from "@/utils/apiHelpers";
 import { useTheme } from "@/hooks/useTheme";
 import { SuperAdminLogin } from "@/components/SuperAdminLogin";
@@ -93,6 +97,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   };
 
   const handleLogout = () => {
+    void revokeRefreshToken(session?.refreshToken);
     saveSessionToStorage(null);
     setSession(null);
     router.push("/");

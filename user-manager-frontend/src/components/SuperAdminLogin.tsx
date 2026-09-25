@@ -88,6 +88,7 @@ export function SuperAdminLogin({
       }
 
       const token = data?.token || data?.data?.token;
+      const refreshToken = data?.refreshToken || data?.data?.refreshToken;
       const user = data?.user || data?.data?.user;
 
       if (!token || !user) {
@@ -100,7 +101,7 @@ export function SuperAdminLogin({
         );
       }
 
-      const session: UserSession = { token, user };
+      const session: UserSession = { token, refreshToken, user };
       saveSessionToStorage(session);
       onLoginSuccess(session);
     } catch (err: any) {

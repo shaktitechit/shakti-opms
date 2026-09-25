@@ -1,6 +1,6 @@
 import type { AuthUser, UserSession } from "@/types/leadManager";
+import { AUTH_SERVICE_URL } from "@/lib/env";
 import {
-  getDepartment,
   getRoleCodes,
   hasDepartmentRoleAccess,
   readJwtClaims,
@@ -17,18 +17,17 @@ const ALL_SESSION_KEYS = [
   SESSION_STORAGE_KEY,
   ...LEGACY_SESSION_KEYS,
 ];
-const COOKIE_KEY = "shakti_session";
-const MEDICA_COOKIE_KEY = "medica_session";
-const DEPT_COOKIE = "shakti_department";
-const ROLES_COOKIE = "shakti_roles";
-const ALL_COOKIES = [
-  COOKIE_KEY,
-  MEDICA_COOKIE_KEY,
-  DEPT_COOKIE,
-  ROLES_COOKIE,
+const ACCESS_COOKIE = "access_token";
+const REFRESH_COOKIE = "refresh_token";
+const LEGACY_COOKIES = [
+  "shakti_session",
+  "medica_session",
+  "shakti_department",
+  "shakti_roles",
   "medica_opms_roles",
   "medica_department_hint",
 ];
+const ALL_COOKIES = [ACCESS_COOKIE, REFRESH_COOKIE, ...LEGACY_COOKIES];
 
 function getCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
@@ -50,18 +49,15 @@ function deleteCookie(name: string) {
   document.cookie = `${name}=; max-age=0; path=/`;
 }
 
-function writeAccessCookies(user: AuthUser) {
-  const dept = getDepartment(user);
-  const roles = getRoleCodes(user);
-  if (dept) setCookie(DEPT_COOKIE, dept);
-  else deleteCookie(DEPT_COOKIE);
-  if (roles.length) setCookie(ROLES_COOKIE, roles.join(","));
-  else deleteCookie(ROLES_COOKIE);
+function writeSessionCookies(session: UserSession) {
+  setCookie(ACCESS_COOKIE, session.token);
+  if (session.refreshToken) setCookie(REFRESH_COOKIE, session.refreshToken, 7);
+  else deleteCookie(REFRESH_COOKIE);
+  for (const name of LEGACY_COOKIES) deleteCookie(name);
 }
 
-function clearAccessCookies() {
-  deleteCookie(DEPT_COOKIE);
-  deleteCookie(ROLES_COOKIE);
+function hasSessionCookie(): boolean {
+  return Boolean(getCookie(ACCESS_COOKIE) || getCookie(REFRESH_COOKIE));
 }
 
 function parseJwtUser(token: string): AuthUser | null {
@@ -107,11 +103,17 @@ export function readSessionFromStorage(): UserSession | null {
       }
     }
 
+    if (!hasSessionCookie()) {
+      saveSessionToStorage(null);
+      return null;
+    }
+
+    const accessToken = getCookie(ACCESS_COOKIE);
+    const refreshToken = getCookie(REFRESH_COOKIE) || undefined;
     const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
-    if (raw) {
+    if (raw && accessToken) {
       const parsed = JSON.parse(raw) as UserSession;
-      if (parsed?.token && parsed?.user && hasAppAccess(parsed.user)) {
-        // Prefer fresh JWT claims when present
+      if (parsed?.token === accessToken && parsed?.user && hasAppAccess(parsed.user)) {
         const fromJwt = parseJwtUser(parsed.token);
         const user =
           fromJwt && hasAppAccess(fromJwt)
@@ -124,34 +126,15 @@ export function readSessionFromStorage(): UserSession | null {
                     : parsed.user.portals,
               }
             : parsed.user;
-        setCookie(COOKIE_KEY, parsed.token);
-        setCookie(MEDICA_COOKIE_KEY, parsed.token);
-        writeAccessCookies(user);
-        return { token: parsed.token, user };
+        return { token: parsed.token, refreshToken: refreshToken || parsed.refreshToken, user };
       }
     }
 
-    for (const key of LEGACY_SESSION_KEYS) {
-      const legacyRaw = window.localStorage.getItem(key);
-      if (!legacyRaw) continue;
-      const parsed = JSON.parse(legacyRaw);
-      if (parsed?.token && parsed?.user && hasAppAccess(parsed.user)) {
-        const fromJwt = parseJwtUser(parsed.token);
-        const user = (fromJwt && hasAppAccess(fromJwt)
-          ? { ...parsed.user, ...fromJwt }
-          : parsed.user) as AuthUser;
-        const session = { token: parsed.token, user };
-        saveSessionToStorage(session);
-        return session;
-      }
-    }
-
-    const token = getCookie(COOKIE_KEY) || getCookie(MEDICA_COOKIE_KEY);
-    if (token) {
-      const userFromJwt = parseJwtUser(token);
+    if (accessToken) {
+      const userFromJwt = parseJwtUser(accessToken);
       if (userFromJwt && hasAppAccess(userFromJwt)) {
-        const session = { token, user: userFromJwt };
-        saveSessionToStorage(session);
+        const session = { token: accessToken, refreshToken, user: userFromJwt };
+        window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
         return session;
       }
     }
@@ -175,21 +158,34 @@ export function saveSessionToStorage(session: UserSession | null): void {
     for (const cookieName of ALL_COOKIES) {
       deleteCookie(cookieName);
     }
-    clearAccessCookies();
   } else {
     window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
-    if (session.token) {
-      setCookie(COOKIE_KEY, session.token);
-      setCookie(MEDICA_COOKIE_KEY, session.token);
-    }
-    writeAccessCookies(session.user);
+    writeSessionCookies(session);
   }
 }
 
-export async function syncSessionCookie(token: string, user: AuthUser): Promise<void> {
-  saveSessionToStorage({ token, user });
+export async function syncSessionCookie(
+  token: string,
+  user: AuthUser,
+  refreshToken?: string,
+): Promise<void> {
+  saveSessionToStorage({ token, refreshToken, user });
 }
 
 export function clearSessionFromStorage(): void {
   saveSessionToStorage(null);
+}
+
+/** Revoke this device's refresh-token family. Other devices stay signed in. */
+export async function revokeRefreshToken(refreshToken?: string | null): Promise<void> {
+  if (!refreshToken) return;
+  try {
+    await fetch(`${AUTH_SERVICE_URL}/api/auth/logout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+  } catch {
+    /* local session is still cleared by the caller */
+  }
 }

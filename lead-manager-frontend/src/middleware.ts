@@ -31,23 +31,19 @@ async function exchangeHandoff(code: string): Promise<string | null> {
 }
 
 function applySessionCookies(response: NextResponse, token: string) {
-  response.cookies.set("shakti_session", token, {
+  response.cookies.set("access_token", token, {
     path: "/",
     maxAge: COOKIE_MAX_AGE,
     sameSite: "lax",
   });
-  response.cookies.set("medica_session", token, {
-    path: "/",
-    maxAge: COOKIE_MAX_AGE,
-    sameSite: "lax",
-  });
+  for (const name of ["shakti_session", "medica_session", "shakti_department", "shakti_roles"]) {
+    response.cookies.set(name, "", { path: "/", maxAge: 0 });
+  }
 }
 
 export async function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
-  const cookieToken =
-    request.cookies.get("shakti_session")?.value ||
-    request.cookies.get("medica_session")?.value;
+  const cookieToken = request.cookies.get("access_token")?.value;
   const urlToken = searchParams.get("token")?.trim() || "";
   const handoffCode = searchParams.get("handoff")?.trim() || "";
 

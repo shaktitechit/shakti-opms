@@ -6,9 +6,12 @@ const {
   loginIpBlocker,
   loginEmailRateLimiter,
   handoffExchangeRateLimiter,
+  refreshRateLimiter,
 } = require('../../middlewares/loginRateLimit.middleware');
 
 router.post('/login', loginIpBlocker, loginEmailRateLimiter, authController.login);
+router.post('/refresh', refreshRateLimiter, authController.refresh);
+router.post('/logout', authController.logout);
 router.get('/me', requireAuth, authController.me);
 router.post('/change-password', requireAuth, authController.changePassword);
 router.post('/handoff', requireAuth, authController.createHandoff);

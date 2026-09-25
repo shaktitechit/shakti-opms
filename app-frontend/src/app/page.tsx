@@ -109,7 +109,7 @@ export default function LoginPage() {
       }
 
       saveSessionToStorage(session);
-      await syncSessionCookie(session.token, session.user);
+      await syncSessionCookie(session.token, session.user, session.refreshToken);
 
       toast.success(
         `Welcome back, ${session.user.name || session.user.email}`,

@@ -8,9 +8,34 @@ async function login(req, res, next) {
     res.json({
       success: true,
       token: result.token,
+      refreshToken: result.refreshToken,
       user: result.user,
       data: result,
     });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function refresh(req, res, next) {
+  try {
+    const result = await authService.refresh(req.body?.refreshToken || req.body?.refresh_token);
+    res.json({
+      success: true,
+      token: result.token,
+      refreshToken: result.refreshToken,
+      user: result.user,
+      data: result,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function logout(req, res, next) {
+  try {
+    const result = await authService.logout(req.body?.refreshToken || req.body?.refresh_token);
+    res.json({ success: true, ...result });
   } catch (err) {
     next(err);
   }
@@ -61,6 +86,7 @@ async function exchangeHandoff(req, res, next) {
     res.json({
       success: true,
       token: result.token,
+      refreshToken: result.refreshToken,
       user: result.user,
       data: result,
     });
@@ -71,6 +97,8 @@ async function exchangeHandoff(req, res, next) {
 
 module.exports = {
   login,
+  refresh,
+  logout,
   me,
   changePassword,
   createHandoff,

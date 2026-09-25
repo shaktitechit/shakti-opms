@@ -1,19 +1,21 @@
-import {
-  formatOpmsRolesCookie,
-  getOpmsAccessRoles,
-  hasOpmsAccess,
-} from "@/lib/opmsAuth";
+import { hasOpmsAccess } from "@/lib/opmsAuth";
 import { resolveHomeFromUser } from "@/constants/dashboardAccess";
+import { publicApiOrigin } from "@/lib/env";
 
-/** Non-HttpOnly: lets Edge middleware route without JWT in LS. Cleared together with Redux logout. */
-export const SESSION_COOKIE_NAME = "medica_session";
-export const SHAKTI_SESSION_COOKIE_NAME = "shakti_session";
-/** Comma-separated OPMS access_roles for Edge path allowlists. */
-export const OPMS_ROLES_COOKIE_NAME = "medica_opms_roles";
-/** @deprecated Cleared on persist; replaced by {@link OPMS_ROLES_COOKIE_NAME}. */
-export const DEPT_HINT_COOKIE_NAME = "medica_department_hint";
+/** Access JWT. Roles for routing are read from this token. */
+export const ACCESS_COOKIE_NAME = "access_token";
+export const REFRESH_COOKIE_NAME = "refresh_token";
+const LEGACY_COOKIES = [
+  "medica_session",
+  "medica_opms_roles",
+  "medica_department_hint",
+  "shakti_session",
+  "shakti_department",
+  "shakti_roles",
+];
 
-const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 8;
+const ACCESS_MAX_AGE_SECONDS = 60 * 60 * 8;
+const REFRESH_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
 function setCookie(name: string, value: string, maxAge: number): void {
   document.cookie = `${name}=${encodeURIComponent(
@@ -36,39 +38,46 @@ function deleteCookie(name: string): void {
   document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/`;
 }
 
-/** Sync minimal session markers after login/me so middleware can authorize navigations. */
+/** Write access and refresh cookies. Roles stay inside the access JWT. */
 export function persistSessionMarksFromAuth(input: {
   token: string | null | undefined;
+  refreshToken?: string | null;
   user: unknown;
 }): void {
   if (typeof document === "undefined") return;
 
-  // Always drop legacy dept hint.
-  deleteCookie(DEPT_HINT_COOKIE_NAME);
+  for (const name of LEGACY_COOKIES) deleteCookie(name);
 
   if (input.token && hasOpmsAccess(input.user)) {
-    const roles = getOpmsAccessRoles(input.user);
-    setCookie(SESSION_COOKIE_NAME, "1", COOKIE_MAX_AGE_SECONDS);
-    setCookie(
-      OPMS_ROLES_COOKIE_NAME,
-      formatOpmsRolesCookie(roles),
-      COOKIE_MAX_AGE_SECONDS,
-    );
-    setCookie(SHAKTI_SESSION_COOKIE_NAME, input.token, COOKIE_MAX_AGE_SECONDS);
+    setCookie(ACCESS_COOKIE_NAME, input.token, ACCESS_MAX_AGE_SECONDS);
+    if (input.refreshToken) {
+      setCookie(REFRESH_COOKIE_NAME, input.refreshToken, REFRESH_MAX_AGE_SECONDS);
+    }
     return;
   }
 
   clearSessionMarks();
 }
 
+/** Revoke this device's refresh-token family. Other devices stay signed in. */
+export async function revokeRefreshToken(refreshToken?: string | null): Promise<void> {
+  if (!refreshToken) return;
+  try {
+    await fetch(`${publicApiOrigin()}/api/auth/logout`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+  } catch {
+    /* local session is still cleared by the caller */
+  }
+}
+
 export function clearSessionMarks(): void {
   if (typeof document === "undefined") return;
-  deleteCookie(SESSION_COOKIE_NAME);
-  deleteCookie(OPMS_ROLES_COOKIE_NAME);
-  deleteCookie(DEPT_HINT_COOKIE_NAME);
-  deleteCookie(SHAKTI_SESSION_COOKIE_NAME);
-  deleteCookie("shakti_department");
-  deleteCookie("shakti_roles");
+  deleteCookie(ACCESS_COOKIE_NAME);
+  deleteCookie(REFRESH_COOKIE_NAME);
+  for (const name of LEGACY_COOKIES) deleteCookie(name);
 
   if (typeof window !== "undefined") {
     for (const key of ALL_SESSION_KEYS) {

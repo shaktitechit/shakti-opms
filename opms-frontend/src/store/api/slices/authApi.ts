@@ -10,11 +10,12 @@ export type LoginPayload = {
 
 export type LoginResult = {
   token: string;
+  refreshToken?: string;
   user: Record<string, unknown>;
 };
 
 type AuthSnap = {
-  auth: { token: string | null; user: unknown };
+  auth: { token: string | null; refreshToken?: string | null; user: unknown };
 };
 
 /** `/api/auth` */
@@ -31,10 +32,17 @@ export const authApi = medicaApi.injectEndpoints({
       async onQueryStarted(_body, api) {
         try {
           const { data } = await api.queryFulfilled;
-          api.dispatch(setCredentials({ token: data.token, user: data.user }));
+          api.dispatch(
+            setCredentials({
+              token: data.token,
+              refreshToken: data.refreshToken,
+              user: data.user,
+            }),
+          );
           const root = api.getState() as unknown as AuthSnap;
           persistSessionMarksFromAuth({
             token: root?.auth?.token ?? null,
+            refreshToken: root?.auth?.refreshToken ?? null,
             user: root?.auth?.user ?? null,
           });
         } catch {
@@ -55,6 +63,7 @@ export const authApi = medicaApi.injectEndpoints({
           const root = api.getState() as unknown as AuthSnap;
           persistSessionMarksFromAuth({
             token: root?.auth?.token ?? null,
+            refreshToken: root?.auth?.refreshToken ?? null,
             user: root?.auth?.user ?? null,
           });
         } catch {

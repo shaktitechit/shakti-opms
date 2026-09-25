@@ -64,6 +64,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const dispatch = useAppDispatch();
   const token = useAppSelector((s) => s.auth.token);
+  const refreshToken = useAppSelector((s) => s.auth.refreshToken);
   const user = useAppSelector((s) => s.auth.user);
   const from = searchParams.get("from");
 
@@ -91,14 +92,14 @@ function LoginForm() {
       toast.error("No OPMS portal access assigned. Contact an administrator.");
       return;
     }
-    persistSessionMarksFromAuth({ token, user });
+    persistSessionMarksFromAuth({ token, user, refreshToken });
     const dest = loginDestination({ from, user });
     if (typeof window !== "undefined") {
       window.location.href = dest;
     } else {
       router.replace(dest);
     }
-  }, [token, user, from, router, dispatch]);
+  }, [token, refreshToken, user, from, router, dispatch]);
 
   const onSubmit = useCallback(
     async (e: React.FormEvent) => {
@@ -120,7 +121,11 @@ function LoginForm() {
           );
           return;
         }
-        persistSessionMarksFromAuth({ token: data?.token, user: data?.user });
+        persistSessionMarksFromAuth({
+          token: data?.token,
+          refreshToken: data?.refreshToken,
+          user: data?.user,
+        });
         toast.success("Signed in");
         const dest = loginDestination({ from, user: data?.user });
         if (typeof window !== "undefined") {

@@ -3,10 +3,11 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { ApiError } = require('../../utils/ApiError');
 const { assertPasswordStrength } = require('../../utils/passwordPolicy');
-const { JWT_SECRET, JWT_EXPIRES_IN } = require('../../config/env');
+const { JWT_SECRET, JWT_EXPIRES_IN, JWT_REFRESH_EXPIRES_IN } = require('../../config/env');
 const { sanitizeUser } = require('../../utils/sanitize');
 const User = require('../../models/User');
 const AuthHandoff = require('../../models/AuthHandoff');
+const RefreshToken = require('../../models/RefreshToken');
 const {
   loadUserForJwtSub,
   authenticate,
@@ -14,6 +15,49 @@ const {
 } = require('./mongoUserBridge');
 
 const HANDOFF_TTL_MS = 60 * 1000;
+/** Near-simultaneous refreshes of the same token (two tabs) must not revoke the family. */
+const REUSE_GRACE_MS = 30 * 1000;
+
+function hashToken(raw) {
+  return crypto.createHash('sha256').update(String(raw)).digest('hex');
+}
+
+function refreshTtlMs(value) {
+  const match = /^(\d+)\s*([smhd])$/i.exec(String(value || '7d').trim());
+  if (!match) return 7 * 24 * 60 * 60 * 1000;
+  const n = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  const mult = { s: 1000, m: 60 * 1000, h: 60 * 60 * 1000, d: 24 * 60 * 60 * 1000 };
+  return n * mult[unit];
+}
+
+async function issueRefreshToken(userId, familyId) {
+  const refreshToken = crypto.randomBytes(32).toString('hex');
+  const family = familyId || crypto.randomBytes(16).toString('hex');
+  await RefreshToken.create({
+    user_id: userId,
+    family_id: family,
+    token_hash: hashToken(refreshToken),
+    expires_at: new Date(Date.now() + refreshTtlMs(JWT_REFRESH_EXPIRES_IN)),
+  });
+  return refreshToken;
+}
+
+async function revokeFamily(familyId) {
+  if (!familyId) return;
+  await RefreshToken.updateMany(
+    { family_id: familyId, revoked_at: null },
+    { $set: { revoked_at: new Date() } }
+  );
+}
+
+async function revokeAllForUser(userId) {
+  if (!userId) return;
+  await RefreshToken.updateMany(
+    { user_id: userId, revoked_at: null },
+    { $set: { revoked_at: new Date() } }
+  );
+}
 
 function registerToken(user) {
   // Claims are a snapshot for clients; servers re-load the user from Mongo on each request.
@@ -39,7 +83,8 @@ async function login(email, password) {
   if (!user) throw new ApiError(401, 'Invalid credentials');
 
   const token = registerToken(user);
-  return { token, user };
+  const refreshToken = await issueRefreshToken(user._id);
+  return { token, refreshToken, user };
 }
 
 async function me(userId) {
@@ -67,6 +112,7 @@ async function changePassword(userId, currentPassword, newPassword) {
 
   doc.password = await bcrypt.hash(next, 10);
   await doc.save();
+  await revokeAllForUser(doc._id);
   return { success: true };
 }
 
@@ -119,7 +165,51 @@ async function exchangeHandoff(code) {
   if (!user) throw new ApiError(401, 'Unauthorized');
 
   const token = registerToken(user);
-  return { token, user };
+  const refreshToken = await issueRefreshToken(user._id);
+  return { token, refreshToken, user };
+}
+
+/**
+ * Rotate one device family. Other families for the same user stay valid.
+ */
+async function refresh(rawToken) {
+  const raw = String(rawToken || '').trim();
+  if (!raw) throw new ApiError(401, 'Refresh token invalid or expired');
+
+  const now = new Date();
+  const claimed = await RefreshToken.findOneAndUpdate(
+    { token_hash: hashToken(raw), revoked_at: null, expires_at: { $gt: now } },
+    { $set: { revoked_at: now } },
+    { new: false }
+  );
+
+  if (!claimed) {
+    const existing = await RefreshToken.findOne({ token_hash: hashToken(raw) });
+    if (existing?.revoked_at) {
+      const age = Date.now() - new Date(existing.revoked_at).getTime();
+      if (age > REUSE_GRACE_MS) await revokeFamily(existing.family_id);
+    }
+    throw new ApiError(401, 'Refresh token invalid or expired');
+  }
+
+  const user = await loadUserForJwtSub(String(claimed.user_id));
+  if (!user) {
+    await revokeFamily(claimed.family_id);
+    throw new ApiError(401, 'Unauthorized');
+  }
+
+  const token = registerToken(user);
+  const refreshToken = await issueRefreshToken(claimed.user_id, claimed.family_id);
+  return { token, refreshToken, user };
+}
+
+/** Revoke only the presented token's device family. */
+async function logout(rawToken) {
+  const raw = String(rawToken || '').trim();
+  if (!raw) return { success: true };
+  const existing = await RefreshToken.findOne({ token_hash: hashToken(raw) });
+  if (existing) await revokeFamily(existing.family_id);
+  return { success: true };
 }
 
 module.exports = {
@@ -129,4 +219,6 @@ module.exports = {
   registerToken,
   createHandoff,
   exchangeHandoff,
+  refresh,
+  logout,
 };

@@ -5,17 +5,19 @@ import type { AuthUser, UserSession } from "@/types/leadManager";
 type LoginApiResponse = {
   success?: boolean;
   token?: string;
+  refreshToken?: string;
   user?: AuthUser;
-  data?: { token?: string; user?: AuthUser };
+  data?: { token?: string; refreshToken?: string; user?: AuthUser };
 };
 
 function normalizeSession(raw: LoginApiResponse): UserSession {
   const token = raw.token || raw.data?.token || "";
+  const refreshToken = raw.refreshToken || raw.data?.refreshToken;
   const user = raw.user || raw.data?.user;
   if (!token || !user) {
     throw new Error("Invalid login response");
   }
-  return { token, user };
+  return { token, refreshToken, user };
 }
 
 export const authApiSlice = baseApi.injectEndpoints({

@@ -5,9 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
-import { clearSessionMarks } from "@/lib/sessionCookie";
+import { clearSessionMarks, revokeRefreshToken } from "@/lib/sessionCookie";
 import { toast } from "@/lib/toast";
-import { logout, medicaApi, useAppDispatch } from "@/store";
+import { logout, medicaApi, useAppDispatch, useAppSelector } from "@/store";
 
 function pickDisplayName(user: unknown): string {
   if (!user || typeof user !== "object") return "User";
@@ -50,6 +50,7 @@ type UserMenuDropdownProps = {
 export function UserMenuDropdown({ portal, user }: UserMenuDropdownProps) {
   const router = useRouter();
   const dispatch = useAppDispatch();
+  const refreshToken = useAppSelector((s) => s.auth.refreshToken);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const btnId = useId();
@@ -60,13 +61,14 @@ export function UserMenuDropdown({ portal, user }: UserMenuDropdownProps) {
   const initial = pickInitial(user);
 
   const onLogout = useCallback(() => {
+    void revokeRefreshToken(refreshToken);
     dispatch(medicaApi.util.resetApiState());
     dispatch(logout());
     clearSessionMarks();
     setOpen(false);
     toast.success("Signed out");
     router.replace("/login");
-  }, [dispatch, router]);
+  }, [dispatch, refreshToken, router]);
 
   useEffect(() => {
     if (!open) return;

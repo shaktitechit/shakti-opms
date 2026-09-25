@@ -25,24 +25,27 @@ export type AuthUser = {
 
 export interface AuthState extends DomainSliceState {
   token: string | null;
+  refreshToken: string | null;
   user: AuthUser | null;
 }
 
 export const authInitialState: AuthState = {
   ...emptyDomainState(),
   token: null,
+  refreshToken: null,
   user: null,
 };
 
 /** Read persisted auth (client-only; safe empty on SSR / first paint). */
-export function readAuthFromStorage(): Partial<Pick<AuthState, "token" | "user">> {
+export function readAuthFromStorage(): Partial<Pick<AuthState, "token" | "refreshToken" | "user">> {
   if (typeof window === "undefined") return {};
   try {
     const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
     if (!raw) return {};
-    const parsed = JSON.parse(raw) as Partial<Pick<AuthState, "token" | "user">>;
+    const parsed = JSON.parse(raw) as Partial<Pick<AuthState, "token" | "refreshToken" | "user">>;
     return {
       token: typeof parsed.token === "string" ? parsed.token : null,
+      refreshToken: typeof parsed.refreshToken === "string" ? parsed.refreshToken : null,
       user: parsed.user && typeof parsed.user === "object"
         ? (parsed.user as AuthUser)
         : null,
@@ -55,13 +58,17 @@ export function readAuthFromStorage(): Partial<Pick<AuthState, "token" | "user">
 export function writeAuthToStorage(state?: AuthState | null): void {
   if (typeof window === "undefined" || !state) return;
   try {
-    if (!state.token && !state.user) {
+    if (!state.token && !state.user && !state.refreshToken) {
       window.localStorage.removeItem(AUTH_STORAGE_KEY);
       return;
     }
     window.localStorage.setItem(
       AUTH_STORAGE_KEY,
-      JSON.stringify({ token: state.token, user: state.user }),
+      JSON.stringify({
+        token: state.token,
+        refreshToken: state.refreshToken,
+        user: state.user,
+      }),
     );
   } catch {
     /* ignore quota / privacy mode */
@@ -70,10 +77,11 @@ export function writeAuthToStorage(state?: AuthState | null): void {
 
 /** Hydrate slice from `localStorage` (call from `makeStore` preloadedState on client only). */
 export function hydrateAuthState(): AuthState {
-  const { token = null, user = null } = readAuthFromStorage();
+  const { token = null, refreshToken = null, user = null } = readAuthFromStorage();
   return {
     ...authInitialState,
     token,
+    refreshToken,
     user,
     status: token || user ? "succeeded" : "idle",
   };
@@ -85,9 +93,14 @@ export const authSlice = createSlice({
   reducers: {
     setCredentials(
       state,
-      action: PayloadAction<{ token?: string | null; user?: AuthUser | null }>,
+      action: PayloadAction<{
+        token?: string | null;
+        refreshToken?: string | null;
+        user?: AuthUser | null;
+      }>,
     ) {
       if ("token" in action.payload) state.token = action.payload.token ?? null;
+      if ("refreshToken" in action.payload) state.refreshToken = action.payload.refreshToken ?? null;
       if ("user" in action.payload) state.user = action.payload.user ?? null;
       state.error = null;
     },

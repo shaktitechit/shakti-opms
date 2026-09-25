@@ -9,6 +9,7 @@ import { hasOpmsAccess } from "@/lib/opmsAuth";
 import {
   clearSessionMarks,
   persistSessionMarksFromAuth,
+  revokeRefreshToken,
 } from "@/lib/sessionCookie";
 import { usePushSubscription } from "@/lib/usePushSubscription";
 import { logout, medicaApi, useAppDispatch, useAppSelector } from "@/store";
@@ -20,6 +21,7 @@ export function PortalAuthGate({ children }: PortalAuthGateProps) {
   const pathname = usePathname();
   const dispatch = useAppDispatch();
   const token = useAppSelector((s) => s.auth.token);
+  const refreshToken = useAppSelector((s) => s.auth.refreshToken);
   const user = useAppSelector((s) => s.auth.user);
   const [mounted, setMounted] = useState(false);
 
@@ -37,6 +39,7 @@ export function PortalAuthGate({ children }: PortalAuthGateProps) {
       return;
     }
     if (!hasOpmsAccess(user)) {
+      void revokeRefreshToken(refreshToken);
       clearSessionMarks();
       dispatch(medicaApi.util.resetApiState());
       dispatch(logout());
@@ -44,8 +47,8 @@ export function PortalAuthGate({ children }: PortalAuthGateProps) {
       router.replace(`/login${q}`);
       return;
     }
-    persistSessionMarksFromAuth({ token, user });
-  }, [token, user, pathname, router, mounted, dispatch]);
+    persistSessionMarksFromAuth({ token, refreshToken, user });
+  }, [token, refreshToken, user, pathname, router, mounted, dispatch]);
 
   if (!mounted) {
     return null;

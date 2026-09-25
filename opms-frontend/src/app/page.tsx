@@ -14,20 +14,31 @@ import {
 } from "lucide-react";
 
 import { resolveHomeFromRoles } from "@/constants/dashboardAccess";
-import {
-  OPMS_ROLES_COOKIE_NAME,
-  SESSION_COOKIE_NAME,
-} from "@/lib/sessionCookie";
-import { parseOpmsRolesCookie } from "@/lib/opmsAuth";
+import { ACCESS_COOKIE_NAME } from "@/lib/sessionCookie";
+import { getOpmsAccessRoles } from "@/lib/opmsAuth";
+
+function rolesFromAccessToken(token: string): string[] {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return [];
+    const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    const json = Buffer.from(padded, "base64").toString("utf8");
+    const decoded = JSON.parse(json) as { portals?: unknown };
+    return getOpmsAccessRoles({ portals: decoded.portals });
+  } catch {
+    return [];
+  }
+}
 import { MedicaLogo } from "@/components/MedicaLogo";
 import PortalShowcase from "./PortalShowcase";
 
 export default async function Home() {
   const jar = await cookies();
-  const hasSession = jar.get(SESSION_COOKIE_NAME)?.value === "1";
-  const roles = parseOpmsRolesCookie(jar.get(OPMS_ROLES_COOKIE_NAME)?.value);
+  const accessToken = jar.get(ACCESS_COOKIE_NAME)?.value?.trim() || "";
+  const roles = accessToken ? rolesFromAccessToken(accessToken) : [];
 
-  if (hasSession && roles.length > 0) {
+  if (accessToken && roles.length > 0) {
     const home = resolveHomeFromRoles(roles);
     if (home) redirect(home);
   }

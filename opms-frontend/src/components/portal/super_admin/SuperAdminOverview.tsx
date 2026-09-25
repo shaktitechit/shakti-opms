@@ -125,7 +125,7 @@ export default function SuperAdminOverview() {
         token = parsed.token || "";
       }
       if (token) {
-        document.cookie = `shakti_session=${encodeURIComponent(token)}; path=/; SameSite=Lax; Max-Age=${60 * 60 * 8}`;
+        document.cookie = `access_token=${encodeURIComponent(token)}; path=/; SameSite=Lax; Max-Age=${60 * 60 * 8}`;
         localStorage.setItem("shakti.user_manager.session", JSON.stringify({ token, user }));
       }
     } catch {

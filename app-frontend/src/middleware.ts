@@ -45,43 +45,22 @@ function redirectUrl(request: NextRequest, targetPath: string): URL {
   return url;
 }
 
-function applySessionCookies(
-  response: NextResponse,
-  token: string,
-  department: string,
-  roleCodes: string[],
-) {
-  response.cookies.set("shakti_session", token, {
+const LEGACY_COOKIES = ["shakti_session", "medica_session", "shakti_department", "shakti_roles"];
+
+function applySessionCookies(response: NextResponse, token: string) {
+  response.cookies.set("access_token", token, {
     path: "/",
     maxAge: COOKIE_MAX_AGE,
     sameSite: "lax",
   });
-  response.cookies.set("medica_session", token, {
-    path: "/",
-    maxAge: COOKIE_MAX_AGE,
-    sameSite: "lax",
-  });
-  if (department) {
-    response.cookies.set("shakti_department", department, {
-      path: "/",
-      maxAge: COOKIE_MAX_AGE,
-      sameSite: "lax",
-    });
-  }
-  if (roleCodes.length) {
-    response.cookies.set("shakti_roles", roleCodes.join(","), {
-      path: "/",
-      maxAge: COOKIE_MAX_AGE,
-      sameSite: "lax",
-    });
+  for (const name of LEGACY_COOKIES) {
+    response.cookies.set(name, "", { path: "/", maxAge: 0 });
   }
 }
 
 export async function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
-  const cookieToken =
-    request.cookies.get("shakti_session")?.value ||
-    request.cookies.get("medica_session")?.value;
+  const cookieToken = request.cookies.get("access_token")?.value;
   const urlToken = searchParams.get("token")?.trim() || "";
   const handoffCode = searchParams.get("handoff")?.trim() || "";
 
@@ -93,17 +72,8 @@ export async function middleware(request: NextRequest) {
   const effectiveToken = cookieToken || exchangedToken || urlToken;
 
   const claims = effectiveToken ? readJwtClaims(effectiveToken) : null;
-  const department =
-    getDepartment(claims) ||
-    request.cookies.get("shakti_department")?.value ||
-    "";
-  const roleCodes =
-    getRoleCodes(claims).length > 0
-      ? getRoleCodes(claims)
-      : (request.cookies.get("shakti_roles")?.value || "")
-          .split(",")
-          .map((r) => r.trim())
-          .filter(Boolean);
+  const department = getDepartment(claims) || "";
+  const roleCodes = getRoleCodes(claims);
 
   const isAuthRoute = pathname === "/" || pathname === "/login";
   const isProtectedRoute = pathname.startsWith("/dashboard");
@@ -120,13 +90,13 @@ export async function middleware(request: NextRequest) {
     clean.searchParams.delete("token");
     const target = isAuthRoute ? home : `${clean.pathname}${clean.search}`;
     const response = NextResponse.redirect(redirectUrl(request, target));
-    applySessionCookies(response, exchangedToken, department, roleCodes);
+    applySessionCookies(response, exchangedToken);
     return response;
   }
 
   if (isProtectedRoute && urlToken) {
     const response = NextResponse.next();
-    applySessionCookies(response, urlToken, department, roleCodes);
+    applySessionCookies(response, urlToken);
     return response;
   }
 
@@ -163,7 +133,7 @@ export async function middleware(request: NextRequest) {
       }) || (department ? `/dashboard/${department}` : "/dashboard");
     const response = NextResponse.redirect(redirectUrl(request, home));
     if (urlToken && !cookieToken) {
-      applySessionCookies(response, urlToken, department, roleCodes);
+      applySessionCookies(response, urlToken);
     }
     return response;
   }

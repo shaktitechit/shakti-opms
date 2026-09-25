@@ -98,8 +98,12 @@ export default function LoginPage() {
         );
       }
 
-      saveSessionToStorage({ token: res.token, user: res.user });
-      await syncSessionCookie(res.token, res.user);
+      saveSessionToStorage({
+        token: res.token,
+        refreshToken: res.refreshToken,
+        user: res.user,
+      });
+      await syncSessionCookie(res.token, res.user, res.refreshToken);
 
       toast.success(`Welcome back, ${res.user.name || res.user.email}`);
       if (typeof window !== "undefined") {

@@ -390,6 +390,7 @@ export type AuthUser = {
 
 export type UserSession = {
   token: string;
+  refreshToken?: string;
   user: AuthUser;
 };
 

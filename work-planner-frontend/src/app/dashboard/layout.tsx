@@ -4,7 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import type { UserSession } from "@/types/workPlanner";
-import { clearSessionFromStorage, readSessionFromStorage } from "@/utils/authStorage";
+import {
+  clearSessionFromStorage,
+  readSessionFromStorage,
+  revokeRefreshToken,
+} from "@/utils/authStorage";
 import { useTheme } from "@/hooks/useTheme";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { Topbar } from "@/components/shell/Topbar";
@@ -94,8 +98,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [session, fetchCompanyInfo]);
 
   const handleLogout = () => {
+    void revokeRefreshToken(session?.refreshToken);
     clearSessionFromStorage();
-    document.cookie = "shakti_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
     setSession(null);
     router.push("/");
   };

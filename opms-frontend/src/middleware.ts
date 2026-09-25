@@ -7,15 +7,8 @@ import {
   resolveHomeFromRoles,
   rolesAllowPortalPath,
 } from "@/constants/dashboardAccess";
-import {
-  OPMS_ROLES_COOKIE_NAME,
-  SESSION_COOKIE_NAME,
-} from "@/lib/sessionCookie";
-import {
-  formatOpmsRolesCookie,
-  getOpmsAccessRoles,
-  parseOpmsRolesCookie,
-} from "@/lib/opmsAuth";
+import { ACCESS_COOKIE_NAME } from "@/lib/sessionCookie";
+import { getOpmsAccessRoles } from "@/lib/opmsAuth";
 
 /** Aligned with default JWT_EXPIRES_IN=8h */
 const COOKIE_MAX_AGE = 60 * 60 * 8;
@@ -85,24 +78,17 @@ function redirectReq(targetPath: string, req: NextRequest) {
   return NextResponse.redirect(url);
 }
 
-function applySessionCookies(res: NextResponse, roles: string[], token?: string) {
-  if (!roles.length) return;
-  res.cookies.set(SESSION_COOKIE_NAME, "1", {
+const LEGACY_COOKIES = ["medica_session", "medica_opms_roles", "shakti_session", "shakti_department", "shakti_roles"];
+
+function applySessionCookies(res: NextResponse, token?: string) {
+  if (!token) return;
+  res.cookies.set(ACCESS_COOKIE_NAME, token, {
     path: "/",
     maxAge: COOKIE_MAX_AGE,
     sameSite: "lax",
   });
-  res.cookies.set(OPMS_ROLES_COOKIE_NAME, formatOpmsRolesCookie(roles), {
-    path: "/",
-    maxAge: COOKIE_MAX_AGE,
-    sameSite: "lax",
-  });
-  if (token) {
-    res.cookies.set("shakti_session", token, {
-      path: "/",
-      maxAge: COOKIE_MAX_AGE,
-      sameSite: "lax",
-    });
+  for (const name of LEGACY_COOKIES) {
+    res.cookies.set(name, "", { path: "/", maxAge: 0 });
   }
 }
 
@@ -127,7 +113,7 @@ export async function middleware(req: NextRequest) {
           ? resolveHomeFromRoles(roles) ?? "/login"
           : `${clean.pathname}${clean.search}`;
       const res = redirectReq(targetPath, req);
-      applySessionCookies(res, roles, exchangedToken);
+      applySessionCookies(res, exchangedToken);
       return res;
     }
   }
@@ -137,18 +123,12 @@ export async function middleware(req: NextRequest) {
 
   const isLoginRoute = pathname === "/login";
   const isRootRoute = pathname === "/";
-  const hasSession = req.cookies.get(SESSION_COOKIE_NAME)?.value === "1";
+  const accessToken = req.cookies.get(ACCESS_COOKIE_NAME)?.value?.trim() || "";
+  const accessRoles = accessToken ? rolesFromSsoToken(accessToken) : [];
 
-  const rolesFromCookie = parseOpmsRolesCookie(
-    req.cookies.get(OPMS_ROLES_COOKIE_NAME)?.value,
-  );
-
-  const shaktiToken = req.cookies.get("shakti_session")?.value?.trim() || "";
-  const shaktiRoles = (!rolesFromCookie.length && shaktiToken) ? rolesFromSsoToken(shaktiToken) : [];
-
-  const roles = ssoRoles.length ? ssoRoles : (rolesFromCookie.length ? rolesFromCookie : shaktiRoles);
+  const roles = ssoRoles.length ? ssoRoles : accessRoles;
   const hasRoles = roles.length > 0;
-  const sessionOk = (hasSession && hasRoles) || ssoRoles.length > 0 || (Boolean(shaktiToken) && hasRoles);
+  const sessionOk = (Boolean(accessToken) && hasRoles) || ssoRoles.length > 0;
 
   const protectionHit = isProtectedPortalPath(pathname);
 
@@ -169,11 +149,11 @@ export async function middleware(req: NextRequest) {
       pathAllowed(pathOnly)
     ) {
       const res = redirectReq(pathOnly, req);
-      if (ssoRoles.length) applySessionCookies(res, ssoRoles, ssoToken);
+      if (ssoRoles.length) applySessionCookies(res, ssoToken);
       return res;
     }
     const res = redirectReq(homeUrl(), req);
-    if (ssoRoles.length) applySessionCookies(res, ssoRoles, ssoToken);
+    if (ssoRoles.length) applySessionCookies(res, ssoToken);
     return res;
   }
 
@@ -187,11 +167,11 @@ export async function middleware(req: NextRequest) {
   if (protectionHit && sessionOk) {
     if (!pathAllowed(pathname)) {
       const res = redirectReq(homeUrl(), req);
-      if (ssoRoles.length) applySessionCookies(res, ssoRoles, ssoToken);
+      if (ssoRoles.length) applySessionCookies(res, ssoToken);
       return res;
     }
     const res = NextResponse.next();
-    if (ssoRoles.length) applySessionCookies(res, ssoRoles, ssoToken);
+    if (ssoRoles.length) applySessionCookies(res, ssoToken);
     return res;
   }
 

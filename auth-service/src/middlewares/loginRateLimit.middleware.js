@@ -51,8 +51,22 @@ const handoffExchangeRateLimiter = rateLimit({
   },
 });
 
+const refreshRateLimiter = rateLimit({
+  windowMs: WINDOW_MS,
+  max: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  message: {
+    success: false,
+    message: 'Too many refresh attempts. Try again in 15 minutes.',
+  },
+  keyGenerator: (req) => clientIp(req),
+});
+
 module.exports = {
   loginIpBlocker,
   loginEmailRateLimiter,
   handoffExchangeRateLimiter,
+  refreshRateLimiter,
 };

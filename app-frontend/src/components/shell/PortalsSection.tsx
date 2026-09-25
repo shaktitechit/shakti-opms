@@ -53,19 +53,6 @@ function setCookie(name: string, value: string, maxAgeDays = SESSION_COOKIE_MAX_
   document.cookie = `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
 }
 
-function persistOpmsSsoCookies(user: AuthUser) {
-  const portals = Array.isArray(user.portals) ? user.portals : [];
-  const opms = portals.find(
-    (p) => normalizeCode(String(p.portal_code || "")) === "opms",
-  );
-  const roles = Array.isArray(opms?.access_roles)
-    ? opms!.access_roles.map((r) => normalizeCode(String(r))).filter(Boolean)
-    : [];
-  if (!roles.length) return;
-  setCookie("medica_session", "1");
-  setCookie("medica_opms_roles", roles.join(","));
-}
-
 function resolvePortalDetails(
   code: string,
   rawName?: string,
@@ -272,11 +259,7 @@ export function PortalsSection() {
 
     void (async () => {
       try {
-        setCookie("shakti_session", token);
-
-        if (portal.isOpmsWorkspace) {
-          persistOpmsSsoCookies(user);
-        }
+        setCookie("access_token", token);
 
         // localStorage is origin-scoped; only useful for same-origin micro-frontends.
         if (portal.storageKey && !portal.isOpmsWorkspace) {
