@@ -10,8 +10,28 @@ import {
 import { ACCESS_COOKIE_NAME } from "@/lib/sessionCookie";
 import { getOpmsAccessRoles } from "@/lib/opmsAuth";
 
-/** Aligned with default JWT_EXPIRES_IN=8h */
-const COOKIE_MAX_AGE = 60 * 60 * 8;
+type IssuedSession = {
+  token: string;
+  refreshToken?: string;
+  refreshExpiresIn?: number;
+};
+
+function jwtMaxAge(token: string): number {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return 60;
+    const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    const json =
+      typeof atob === "function"
+        ? atob(padded)
+        : Buffer.from(padded, "base64").toString("utf8");
+    const left = Math.floor(Number(JSON.parse(json).exp) - Date.now() / 1000);
+    return left > 0 ? left : 60;
+  } catch {
+    return 60;
+  }
+}
 
 function authServiceBase(): string {
   return (
@@ -21,7 +41,7 @@ function authServiceBase(): string {
   ).replace(/\/+$/, "");
 }
 
-async function exchangeHandoff(code: string): Promise<string | null> {
+async function exchangeHandoff(code: string): Promise<IssuedSession | null> {
   try {
     const res = await fetch(`${authServiceBase()}/api/auth/handoff/exchange`, {
       method: "POST",
@@ -31,9 +51,17 @@ async function exchangeHandoff(code: string): Promise<string | null> {
     if (!res.ok) return null;
     const data = (await res.json()) as {
       token?: string;
-      data?: { token?: string };
+      refreshToken?: string;
+      refreshExpiresIn?: number;
+      data?: { token?: string; refreshToken?: string; refreshExpiresIn?: number };
     };
-    return data.token || data.data?.token || null;
+    const token = data.token || data.data?.token;
+    if (!token) return null;
+    return {
+      token,
+      refreshToken: data.refreshToken || data.data?.refreshToken,
+      refreshExpiresIn: data.refreshExpiresIn || data.data?.refreshExpiresIn,
+    };
   } catch {
     return null;
   }
@@ -80,13 +108,23 @@ function redirectReq(targetPath: string, req: NextRequest) {
 
 const LEGACY_COOKIES = ["medica_session", "medica_opms_roles", "shakti_session", "shakti_department", "shakti_roles"];
 
-function applySessionCookies(res: NextResponse, token?: string) {
-  if (!token) return;
+function applySessionCookies(res: NextResponse, session?: string | IssuedSession) {
+  if (!session) return;
+  const token = typeof session === "string" ? session : session.token;
+  const refreshToken = typeof session === "string" ? undefined : session.refreshToken;
+  const refreshExpiresIn = typeof session === "string" ? undefined : session.refreshExpiresIn;
   res.cookies.set(ACCESS_COOKIE_NAME, token, {
     path: "/",
-    maxAge: COOKIE_MAX_AGE,
+    maxAge: jwtMaxAge(token),
     sameSite: "lax",
   });
+  if (refreshToken) {
+    res.cookies.set("refresh_token", refreshToken, {
+      path: "/",
+      maxAge: refreshExpiresIn && refreshExpiresIn > 0 ? refreshExpiresIn : jwtMaxAge(token),
+      sameSite: "lax",
+    });
+  }
   for (const name of LEGACY_COOKIES) {
     res.cookies.set(name, "", { path: "/", maxAge: 0 });
   }
@@ -99,11 +137,11 @@ export async function middleware(req: NextRequest) {
   if (dashRedirect) return dashRedirect;
 
   const handoffCode = req.nextUrl.searchParams.get("handoff")?.trim() || "";
-  let exchangedToken: string | null = null;
+  let exchanged: IssuedSession | null = null;
   if (handoffCode) {
-    exchangedToken = await exchangeHandoff(handoffCode);
-    if (exchangedToken) {
-      const roles = rolesFromSsoToken(exchangedToken);
+    exchanged = await exchangeHandoff(handoffCode);
+    if (exchanged) {
+      const roles = rolesFromSsoToken(exchanged.token);
       const clean = req.nextUrl.clone();
       clean.searchParams.delete("handoff");
       clean.searchParams.delete("token");
@@ -113,7 +151,7 @@ export async function middleware(req: NextRequest) {
           ? resolveHomeFromRoles(roles) ?? "/login"
           : `${clean.pathname}${clean.search}`;
       const res = redirectReq(targetPath, req);
-      applySessionCookies(res, exchangedToken);
+      applySessionCookies(res, exchanged);
       return res;
     }
   }

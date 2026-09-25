@@ -89,6 +89,7 @@ export function SuperAdminLogin({
 
       const token = data?.token || data?.data?.token;
       const refreshToken = data?.refreshToken || data?.data?.refreshToken;
+      const refreshExpiresIn = data?.refreshExpiresIn || data?.data?.refreshExpiresIn;
       const user = data?.user || data?.data?.user;
 
       if (!token || !user) {
@@ -101,7 +102,12 @@ export function SuperAdminLogin({
         );
       }
 
-      const session: UserSession = { token, refreshToken, user };
+      const session: UserSession = {
+        token,
+        refreshToken,
+        refreshExpiresAt: refreshExpiresIn ? Date.now() + refreshExpiresIn * 1000 : undefined,
+        user,
+      };
       saveSessionToStorage(session);
       onLoginSuccess(session);
     } catch (err: any) {

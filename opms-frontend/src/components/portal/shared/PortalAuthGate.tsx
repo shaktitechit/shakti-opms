@@ -22,6 +22,7 @@ export function PortalAuthGate({ children }: PortalAuthGateProps) {
   const dispatch = useAppDispatch();
   const token = useAppSelector((s) => s.auth.token);
   const refreshToken = useAppSelector((s) => s.auth.refreshToken);
+  const refreshExpiresAt = useAppSelector((s) => s.auth.refreshExpiresAt);
   const user = useAppSelector((s) => s.auth.user);
   const [mounted, setMounted] = useState(false);
 
@@ -47,8 +48,8 @@ export function PortalAuthGate({ children }: PortalAuthGateProps) {
       router.replace(`/login${q}`);
       return;
     }
-    persistSessionMarksFromAuth({ token, refreshToken, user });
-  }, [token, refreshToken, user, pathname, router, mounted, dispatch]);
+    persistSessionMarksFromAuth({ token, refreshToken, refreshExpiresAt, user });
+  }, [token, refreshToken, refreshExpiresAt, user, pathname, router, mounted, dispatch]);
 
   if (!mounted) {
     return null;

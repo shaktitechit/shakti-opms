@@ -23,7 +23,6 @@ import {
   WORK_PLANNER_FRONTEND_URL,
 } from "@/lib/env";
 import { buildSsoLaunchUrl } from "@/lib/ssoHandoff";
-import { SESSION_COOKIE_MAX_AGE_DAYS } from "@/lib/sessionTtl";
 import type { AuthUser } from "@/types/leadManager";
 
 export type PortalDef = {
@@ -45,12 +44,6 @@ function normalizeCode(code: string): string {
     .toLowerCase()
     .trim()
     .replace(/-/g, "_");
-}
-
-function setCookie(name: string, value: string, maxAgeDays = SESSION_COOKIE_MAX_AGE_DAYS) {
-  if (typeof document === "undefined") return;
-  const maxAge = Math.floor(maxAgeDays * 86400);
-  document.cookie = `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
 }
 
 function resolvePortalDetails(
@@ -259,7 +252,20 @@ export function PortalsSection() {
 
     void (async () => {
       try {
-        setCookie("access_token", token);
+        const part = token.split(".")[1];
+        let maxAge = 60 * 60 * 8;
+        try {
+          if (part) {
+            const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
+            const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+            const exp = Number(JSON.parse(atob(padded)).exp);
+            const left = Math.floor(exp - Date.now() / 1000);
+            if (left > 0) maxAge = left;
+          }
+        } catch {
+          /* keep fallback */
+        }
+        document.cookie = `access_token=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
 
         // localStorage is origin-scoped; only useful for same-origin micro-frontends.
         if (portal.storageKey && !portal.isOpmsWorkspace) {

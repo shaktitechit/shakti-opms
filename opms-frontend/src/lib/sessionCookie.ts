@@ -14,8 +14,19 @@ const LEGACY_COOKIES = [
   "shakti_roles",
 ];
 
-const ACCESS_MAX_AGE_SECONDS = 60 * 60 * 8;
-const REFRESH_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
+function jwtMaxAgeSeconds(token: string): number {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return 60;
+    const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    const exp = Number(JSON.parse(atob(padded)).exp);
+    const left = Math.floor(exp - Date.now() / 1000);
+    return left > 0 ? left : 60;
+  } catch {
+    return 60;
+  }
+}
 
 function setCookie(name: string, value: string, maxAge: number): void {
   document.cookie = `${name}=${encodeURIComponent(
@@ -42,16 +53,21 @@ function deleteCookie(name: string): void {
 export function persistSessionMarksFromAuth(input: {
   token: string | null | undefined;
   refreshToken?: string | null;
+  refreshExpiresAt?: number | null;
   user: unknown;
 }): void {
   if (typeof document === "undefined") return;
+  if (!input.token) return;
 
   for (const name of LEGACY_COOKIES) deleteCookie(name);
 
-  if (input.token && hasOpmsAccess(input.user)) {
-    setCookie(ACCESS_COOKIE_NAME, input.token, ACCESS_MAX_AGE_SECONDS);
+  if (hasOpmsAccess(input.user)) {
+    setCookie(ACCESS_COOKIE_NAME, input.token, jwtMaxAgeSeconds(input.token));
     if (input.refreshToken) {
-      setCookie(REFRESH_COOKIE_NAME, input.refreshToken, REFRESH_MAX_AGE_SECONDS);
+      const refreshMax = input.refreshExpiresAt
+        ? Math.floor((input.refreshExpiresAt - Date.now()) / 1000)
+        : jwtMaxAgeSeconds(input.token);
+      setCookie(REFRESH_COOKIE_NAME, input.refreshToken, refreshMax);
     }
     return;
   }

@@ -26,6 +26,7 @@ export type AuthUser = {
 export interface AuthState extends DomainSliceState {
   token: string | null;
   refreshToken: string | null;
+  refreshExpiresAt: number | null;
   user: AuthUser | null;
 }
 
@@ -33,19 +34,25 @@ export const authInitialState: AuthState = {
   ...emptyDomainState(),
   token: null,
   refreshToken: null,
+  refreshExpiresAt: null,
   user: null,
 };
 
 /** Read persisted auth (client-only; safe empty on SSR / first paint). */
-export function readAuthFromStorage(): Partial<Pick<AuthState, "token" | "refreshToken" | "user">> {
+export function readAuthFromStorage(): Partial<
+  Pick<AuthState, "token" | "refreshToken" | "refreshExpiresAt" | "user">
+> {
   if (typeof window === "undefined") return {};
   try {
     const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
     if (!raw) return {};
-    const parsed = JSON.parse(raw) as Partial<Pick<AuthState, "token" | "refreshToken" | "user">>;
+    const parsed = JSON.parse(raw) as Partial<
+      Pick<AuthState, "token" | "refreshToken" | "refreshExpiresAt" | "user">
+    >;
     return {
       token: typeof parsed.token === "string" ? parsed.token : null,
       refreshToken: typeof parsed.refreshToken === "string" ? parsed.refreshToken : null,
+      refreshExpiresAt: typeof parsed.refreshExpiresAt === "number" ? parsed.refreshExpiresAt : null,
       user: parsed.user && typeof parsed.user === "object"
         ? (parsed.user as AuthUser)
         : null,
@@ -58,7 +65,7 @@ export function readAuthFromStorage(): Partial<Pick<AuthState, "token" | "refres
 export function writeAuthToStorage(state?: AuthState | null): void {
   if (typeof window === "undefined" || !state) return;
   try {
-    if (!state.token && !state.user && !state.refreshToken) {
+    if (!state.token && !state.user && !state.refreshToken && !state.refreshExpiresAt) {
       window.localStorage.removeItem(AUTH_STORAGE_KEY);
       return;
     }
@@ -67,6 +74,7 @@ export function writeAuthToStorage(state?: AuthState | null): void {
       JSON.stringify({
         token: state.token,
         refreshToken: state.refreshToken,
+        refreshExpiresAt: state.refreshExpiresAt,
         user: state.user,
       }),
     );
@@ -77,11 +85,13 @@ export function writeAuthToStorage(state?: AuthState | null): void {
 
 /** Hydrate slice from `localStorage` (call from `makeStore` preloadedState on client only). */
 export function hydrateAuthState(): AuthState {
-  const { token = null, refreshToken = null, user = null } = readAuthFromStorage();
+  const { token = null, refreshToken = null, refreshExpiresAt = null, user = null } =
+    readAuthFromStorage();
   return {
     ...authInitialState,
     token,
     refreshToken,
+    refreshExpiresAt,
     user,
     status: token || user ? "succeeded" : "idle",
   };
@@ -96,11 +106,15 @@ export const authSlice = createSlice({
       action: PayloadAction<{
         token?: string | null;
         refreshToken?: string | null;
+        refreshExpiresAt?: number | null;
         user?: AuthUser | null;
       }>,
     ) {
       if ("token" in action.payload) state.token = action.payload.token ?? null;
       if ("refreshToken" in action.payload) state.refreshToken = action.payload.refreshToken ?? null;
+      if ("refreshExpiresAt" in action.payload) {
+        state.refreshExpiresAt = action.payload.refreshExpiresAt ?? null;
+      }
       if ("user" in action.payload) state.user = action.payload.user ?? null;
       state.error = null;
     },

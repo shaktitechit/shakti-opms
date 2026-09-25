@@ -35,10 +35,24 @@ function getCookie(name: string): string | null {
   return match ? decodeURIComponent(match[2]) : null;
 }
 
-function setCookie(name: string, value: string, days = 8 / 24) {
+function jwtMaxAgeSeconds(token: string): number {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return 60;
+    const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
+    const exp = Number(JSON.parse(atob(padded)).exp);
+    const left = Math.floor(exp - Date.now() / 1000);
+    return left > 0 ? left : 60;
+  } catch {
+    return 60;
+  }
+}
+
+function setCookieMaxAge(name: string, value: string, maxAgeSeconds: number) {
   if (typeof document === "undefined") return;
-  const expires = new Date(Date.now() + days * 864e5).toUTCString();
-  document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax`;
+  const maxAge = Math.max(1, Math.floor(maxAgeSeconds));
+  document.cookie = `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; path=/; SameSite=Lax`;
 }
 
 function deleteCookie(name: string) {
@@ -50,9 +64,13 @@ function deleteCookie(name: string) {
 }
 
 function writeSessionCookies(session: UserSession) {
-  setCookie(ACCESS_COOKIE, session.token);
-  if (session.refreshToken) setCookie(REFRESH_COOKIE, session.refreshToken, 7);
-  else deleteCookie(REFRESH_COOKIE);
+  setCookieMaxAge(ACCESS_COOKIE, session.token, jwtMaxAgeSeconds(session.token));
+  if (session.refreshToken) {
+    const refreshMax = session.refreshExpiresAt
+      ? Math.floor((session.refreshExpiresAt - Date.now()) / 1000)
+      : jwtMaxAgeSeconds(session.token);
+    setCookieMaxAge(REFRESH_COOKIE, session.refreshToken, refreshMax);
+  } else deleteCookie(REFRESH_COOKIE);
   for (const name of LEGACY_COOKIES) deleteCookie(name);
 }
 

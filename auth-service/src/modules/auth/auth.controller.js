@@ -9,6 +9,8 @@ async function login(req, res, next) {
       success: true,
       token: result.token,
       refreshToken: result.refreshToken,
+      expiresIn: result.expiresIn,
+      refreshExpiresIn: result.refreshExpiresIn,
       user: result.user,
       data: result,
     });
@@ -24,6 +26,8 @@ async function refresh(req, res, next) {
       success: true,
       token: result.token,
       refreshToken: result.refreshToken,
+      expiresIn: result.expiresIn,
+      refreshExpiresIn: result.refreshExpiresIn,
       user: result.user,
       data: result,
     });
@@ -87,6 +91,8 @@ async function exchangeHandoff(req, res, next) {
       success: true,
       token: result.token,
       refreshToken: result.refreshToken,
+      expiresIn: result.expiresIn,
+      refreshExpiresIn: result.refreshExpiresIn,
       user: result.user,
       data: result,
     });

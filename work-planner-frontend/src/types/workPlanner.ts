@@ -391,6 +391,9 @@ export type AuthUser = {
 export type UserSession = {
   token: string;
   refreshToken?: string;
+  /** Unix ms when the refresh token expires. Cookie lifetime follows this. */
+  refreshExpiresAt?: number;
+  refreshExpiresIn?: number;
   user: AuthUser;
 };
 

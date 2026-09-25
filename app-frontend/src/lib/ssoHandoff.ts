@@ -38,7 +38,13 @@ export async function buildSsoLaunchUrl(
 
 export async function exchangeHandoffCode(
   code: string,
-): Promise<{ token: string; user: unknown } | null> {
+): Promise<{
+  token: string;
+  refreshToken?: string;
+  refreshExpiresIn?: number;
+  refreshExpiresAt?: number;
+  user: unknown;
+} | null> {
   const raw = String(code || "").trim();
   if (!raw) return null;
   const authBase = AUTH_SERVICE_URL.replace(/\/+$/, "");
@@ -51,13 +57,22 @@ export async function exchangeHandoffCode(
     if (!res.ok) return null;
     const data = (await res.json()) as {
       token?: string;
+      refreshToken?: string;
+      refreshExpiresIn?: number;
       user?: unknown;
-      data?: { token?: string; user?: unknown };
+      data?: { token?: string; refreshToken?: string; refreshExpiresIn?: number; user?: unknown };
     };
     const token = data.token || data.data?.token;
     const user = data.user || data.data?.user;
     if (!token) return null;
-    return { token, user };
+    const refreshExpiresIn = data.refreshExpiresIn || data.data?.refreshExpiresIn;
+    return {
+      token,
+      refreshToken: data.refreshToken || data.data?.refreshToken,
+      refreshExpiresIn,
+      refreshExpiresAt: refreshExpiresIn ? Date.now() + refreshExpiresIn * 1000 : undefined,
+      user,
+    };
   } catch {
     return null;
   }

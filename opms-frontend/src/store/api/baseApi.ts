@@ -49,14 +49,23 @@ async function refreshAccessToken(api: {
     const data = (await res.json()) as {
       token?: string;
       refreshToken?: string;
+      refreshExpiresIn?: number;
       user?: AuthUser;
-      data?: { token?: string; refreshToken?: string; user?: AuthUser };
+      data?: { token?: string; refreshToken?: string; refreshExpiresIn?: number; user?: AuthUser };
     };
     const token = data.token || data.data?.token;
     const refreshToken = data.refreshToken || data.data?.refreshToken;
+    const refreshExpiresIn = data.refreshExpiresIn || data.data?.refreshExpiresIn;
     const user = data.user || data.data?.user || session.user;
     if (!token || !refreshToken || !user) return false;
-    api.dispatch(setCredentials({ token, refreshToken, user }));
+    api.dispatch(
+      setCredentials({
+        token,
+        refreshToken,
+        refreshExpiresAt: refreshExpiresIn ? Date.now() + refreshExpiresIn * 1000 : null,
+        user,
+      }),
+    );
     return true;
   } catch {
     return false;

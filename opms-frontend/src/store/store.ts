@@ -28,6 +28,7 @@ const authPersistMiddleware =
     const changed =
       prev?.token !== nextAuth?.token ||
       prev?.refreshToken !== nextAuth?.refreshToken ||
+      prev?.refreshExpiresAt !== nextAuth?.refreshExpiresAt ||
       prev?.user !== nextAuth?.user;
     if (typeof window !== "undefined" && changed && nextAuth) {
       writeAuthToStorage(nextAuth);

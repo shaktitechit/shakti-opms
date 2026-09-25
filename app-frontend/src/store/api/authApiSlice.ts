@@ -6,18 +6,26 @@ type LoginApiResponse = {
   success?: boolean;
   token?: string;
   refreshToken?: string;
+  refreshExpiresIn?: number;
   user?: AuthUser;
-  data?: { token?: string; refreshToken?: string; user?: AuthUser };
+  data?: { token?: string; refreshToken?: string; refreshExpiresIn?: number; user?: AuthUser };
 };
 
 function normalizeSession(raw: LoginApiResponse): UserSession {
   const token = raw.token || raw.data?.token || "";
   const refreshToken = raw.refreshToken || raw.data?.refreshToken;
+  const refreshExpiresIn = raw.refreshExpiresIn || raw.data?.refreshExpiresIn;
   const user = raw.user || raw.data?.user;
   if (!token || !user) {
     throw new Error("Invalid login response");
   }
-  return { token, refreshToken, user };
+  return {
+    token,
+    refreshToken,
+    refreshExpiresIn,
+    refreshExpiresAt: refreshExpiresIn ? Date.now() + refreshExpiresIn * 1000 : undefined,
+    user,
+  };
 }
 
 export const authApiSlice = baseApi.injectEndpoints({

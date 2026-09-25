@@ -48,14 +48,26 @@ async function refreshAccessToken(): Promise<boolean> {
     const data = (await res.json()) as {
       token?: string;
       refreshToken?: string;
+      refreshExpiresIn?: number;
       user?: UserSession["user"];
-      data?: { token?: string; refreshToken?: string; user?: UserSession["user"] };
+      data?: {
+        token?: string;
+        refreshToken?: string;
+        refreshExpiresIn?: number;
+        user?: UserSession["user"];
+      };
     };
     const token = data.token || data.data?.token;
     const refreshToken = data.refreshToken || data.data?.refreshToken;
+    const refreshExpiresIn = data.refreshExpiresIn || data.data?.refreshExpiresIn;
     const user = data.user || data.data?.user || session.user;
     if (!token || !refreshToken || !user) return false;
-    saveSessionToStorage({ token, refreshToken, user });
+    saveSessionToStorage({
+      token,
+      refreshToken,
+      refreshExpiresAt: refreshExpiresIn ? Date.now() + refreshExpiresIn * 1000 : undefined,
+      user,
+    });
     return true;
   } catch {
     return false;

@@ -22,13 +22,17 @@ function hashToken(raw) {
   return crypto.createHash('sha256').update(String(raw)).digest('hex');
 }
 
-function refreshTtlMs(value) {
-  const match = /^(\d+)\s*([smhd])$/i.exec(String(value || '7d').trim());
-  if (!match) return 7 * 24 * 60 * 60 * 1000;
+function durationMs(value, fallbackMs) {
+  const match = /^(\d+)\s*([smhd])$/i.exec(String(value || '').trim());
+  if (!match) return fallbackMs;
   const n = Number(match[1]);
   const unit = match[2].toLowerCase();
   const mult = { s: 1000, m: 60 * 1000, h: 60 * 60 * 1000, d: 24 * 60 * 60 * 1000 };
   return n * mult[unit];
+}
+
+function refreshTtlMs(value) {
+  return durationMs(value, 8 * 60 * 60 * 1000);
 }
 
 async function issueRefreshToken(userId, familyId) {
@@ -41,6 +45,13 @@ async function issueRefreshToken(userId, familyId) {
     expires_at: new Date(Date.now() + refreshTtlMs(JWT_REFRESH_EXPIRES_IN)),
   });
   return refreshToken;
+}
+
+function tokenLifetimes() {
+  return {
+    expiresIn: Math.floor(durationMs(JWT_EXPIRES_IN, 8 * 60 * 60 * 1000) / 1000),
+    refreshExpiresIn: Math.floor(durationMs(JWT_REFRESH_EXPIRES_IN, 8 * 60 * 60 * 1000) / 1000),
+  };
 }
 
 async function revokeFamily(familyId) {
@@ -84,7 +95,7 @@ async function login(email, password) {
 
   const token = registerToken(user);
   const refreshToken = await issueRefreshToken(user._id);
-  return { token, refreshToken, user };
+  return { token, refreshToken, user, ...tokenLifetimes() };
 }
 
 async function me(userId) {
@@ -166,7 +177,7 @@ async function exchangeHandoff(code) {
 
   const token = registerToken(user);
   const refreshToken = await issueRefreshToken(user._id);
-  return { token, refreshToken, user };
+  return { token, refreshToken, user, ...tokenLifetimes() };
 }
 
 /**
@@ -200,7 +211,7 @@ async function refresh(rawToken) {
 
   const token = registerToken(user);
   const refreshToken = await issueRefreshToken(claimed.user_id, claimed.family_id);
-  return { token, refreshToken, user };
+  return { token, refreshToken, user, ...tokenLifetimes() };
 }
 
 /** Revoke only the presented token's device family. */

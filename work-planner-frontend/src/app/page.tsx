@@ -98,12 +98,16 @@ export default function LoginPage() {
         );
       }
 
+      const refreshExpiresAt = res.refreshExpiresIn
+        ? Date.now() + res.refreshExpiresIn * 1000
+        : undefined;
       saveSessionToStorage({
         token: res.token,
         refreshToken: res.refreshToken,
+        refreshExpiresAt,
         user: res.user,
       });
-      await syncSessionCookie(res.token, res.user, res.refreshToken);
+      await syncSessionCookie(res.token, res.user, res.refreshToken, refreshExpiresAt);
 
       toast.success(`Welcome back, ${res.user.name || res.user.email}`);
       if (typeof window !== "undefined") {
