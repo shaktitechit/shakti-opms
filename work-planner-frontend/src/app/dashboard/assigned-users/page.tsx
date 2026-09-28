@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { isWpAdmin, isWpManager, readSessionFromStorage } from "@/utils/authStorage";
+import { isWpAdmin, isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
 
 export default function AssignedUsersRedirectPage() {
   const router = useRouter();
@@ -11,7 +11,7 @@ export default function AssignedUsersRedirectPage() {
     const user = readSessionFromStorage()?.user;
     if (isWpAdmin(user)) {
       router.replace("/dashboard/assigned-teams");
-    } else if (isWpManager(user)) {
+    } else if (isWpElevated(user)) {
       router.replace("/dashboard/my-team");
     } else {
       router.replace("/dashboard");

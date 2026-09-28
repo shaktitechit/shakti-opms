@@ -9,6 +9,18 @@ const DEFAULT_PORTALS = [
     description: 'Order / production management system',
     access_roles: ['super_admin', 'admin', 'sales', 'finance', 'account', 'dispatch'],
   },
+  {
+    name: 'Work Planner Portal',
+    code: 'work_planner',
+    description: 'Field visits and daily work planner management',
+    access_roles: ['super_admin', 'admin', 'manager', 'coordinator', 'executive'],
+  },
+  {
+    name: 'Lead Manager Portal',
+    code: 'lead_manager',
+    description: 'Lead generation and CRM pipeline management',
+    access_roles: ['super_admin', 'admin', 'manager', 'executive'],
+  },
 ];
 
 async function listPortals(query = {}) {

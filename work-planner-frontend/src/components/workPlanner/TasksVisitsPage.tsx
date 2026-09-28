@@ -132,8 +132,10 @@ function hasWorkPlannerAccess(u: ExecutiveUser, sessionUserId?: string): boolean
     const normalized = String(r).toLowerCase().trim();
     return (
       normalized === "executive" ||
+      normalized === "coordinator" ||
       normalized === "manager" ||
       normalized === "admin" ||
+      normalized === "super_admin" ||
       normalized === "sales"
     );
   });

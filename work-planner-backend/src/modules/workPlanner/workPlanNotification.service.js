@@ -29,7 +29,7 @@ async function getWorkPlannerManagers() {
         );
         if (wpPortal && Array.isArray(wpPortal.access_roles)) {
           const hasManagerAccess = wpPortal.access_roles.some((r) =>
-            ['manager'].includes(String(r).toLowerCase())
+            ['coordinator', 'manager', 'admin'].includes(String(r).toLowerCase())
           );
           if (hasManagerAccess) return true;
         }

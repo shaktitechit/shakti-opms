@@ -303,7 +303,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
               {plan.plan_type ? ` • Type: ${plan.plan_type}` : ""}
               {plan.is_discussed_with_manager ? (
                 <span className="inline-flex items-center gap-1 ml-2 text-emerald-600 dark:text-emerald-400 font-semibold">
-                  • <MessageSquare className="h-3 w-3 inline" /> Discussed with Manager
+                  • <MessageSquare className="h-3 w-3 inline" /> Discussed with Manager / Coordinator
                 </span>
               ) : null}
             </p>
@@ -421,7 +421,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
           <div className="flex items-center gap-1.5 mb-2">
             <MessageSquare className="h-4 w-4 text-primary" />
             <h3 className="text-xs font-semibold text-foreground">
-              Manager Discussion
+              Manager / Coordinator Discussion
             </h3>
           </div>
           {plan.is_discussed_with_manager ? (
@@ -429,16 +429,16 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
               <div className="flex items-center gap-1.5">
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                   <CheckCircle2 className="h-3 w-3" />
-                  Discussed with Manager
+                  Discussed with Manager / Coordinator
                 </span>
               </div>
               <div className="text-muted">
-                <span className="font-medium text-foreground">Manager:</span>{" "}
+                <span className="font-medium text-foreground">Discussed with:</span>{" "}
                 {plan.discussed_manager_name ||
                   (typeof plan.discussed_manager_id === "object"
                     ? plan.discussed_manager_id?.name
                     : "") ||
-                  "Manager"}
+                  "Manager / Coordinator"}
               </div>
               <div className="text-muted">
                 <span className="font-medium text-foreground">Method:</span>{" "}
@@ -449,7 +449,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
             </div>
           ) : (
             <p className="text-xs text-muted">
-              This plan was not marked as discussed with a manager.
+              This plan was not marked as discussed with a manager or coordinator.
             </p>
           )}
         </div>

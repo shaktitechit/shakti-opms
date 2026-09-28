@@ -4,7 +4,7 @@
  */
 const mongoose = require('mongoose');
 const { getModels } = require('../../data/mongoRegistry');
-const { isWpAdmin, isWpManager } = require('./workPlanner.constants');
+const { isWpAdmin, isWpManager, isWpCoordinator } = require('./workPlanner.constants');
 
 function userId(user) {
   return user?._id || user?.id;
@@ -26,7 +26,7 @@ function salesUserKey(ref) {
 }
 
 /**
- * @returns {Promise<string[]|null>} null = all users (admin); else explicit id list including self for managers.
+ * @returns {Promise<string[]|null>} null = all users (admin); else explicit id list including self for managers/coordinators.
  */
 async function getVisibleSalesUserIds(user) {
   if (isWpAdmin(user)) return null;
@@ -34,8 +34,35 @@ async function getVisibleSalesUserIds(user) {
   const uid = String(userId(user) || '');
   if (!uid) return [];
 
+  const { WorkPlannerReportingEdge } = getModels();
+
   if (isWpManager(user)) {
-    const { WorkPlannerReportingEdge } = getModels();
+    // 1. Direct reports (coordinators and direct executives)
+    const directEdges = await WorkPlannerReportingEdge.find({
+      manager: asObjectId(uid),
+      is_active: true,
+    })
+      .select('subordinate')
+      .lean();
+    const directIds = directEdges.map((e) => String(e.subordinate)).filter(Boolean);
+
+    // 2. Indirect reports (executives reporting to those coordinators)
+    let indirectIds = [];
+    if (directIds.length > 0) {
+      const indirectEdges = await WorkPlannerReportingEdge.find({
+        manager: { $in: directIds.map(asObjectId).filter(Boolean) },
+        is_active: true,
+      })
+        .select('subordinate')
+        .lean();
+      indirectIds = indirectEdges.map((e) => String(e.subordinate)).filter(Boolean);
+    }
+
+    return [...new Set([uid, ...directIds, ...indirectIds])];
+  }
+
+  if (isWpCoordinator(user)) {
+    // Direct reports (executives reporting to this coordinator)
     const edges = await WorkPlannerReportingEdge.find({
       manager: asObjectId(uid),
       is_active: true,

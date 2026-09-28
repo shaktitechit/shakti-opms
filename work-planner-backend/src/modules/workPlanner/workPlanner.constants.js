@@ -180,7 +180,7 @@ function isWpAdmin(user) {
 
 /**
  * Work Planner manager: portal role `manager` (not admin).
- * Sees self + direct-report executives.
+ * Sees self + direct-report coordinators/executives and their subteams.
  */
 function isWpManager(user) {
   if (!user) return false;
@@ -188,13 +188,24 @@ function isWpManager(user) {
   return getWorkPlannerAccessRoles(user).includes('manager');
 }
 
-/** Admin or manager — elevated actions (approve, edit team plans, etc.). */
+/**
+ * Work Planner coordinator: portal role `coordinator` (not admin, not manager).
+ * Sees self + direct-report executives.
+ */
+function isWpCoordinator(user) {
+  if (!user) return false;
+  if (isWpAdmin(user) || isWpManager(user)) return false;
+  return getWorkPlannerAccessRoles(user).includes('coordinator');
+}
+
+/** Admin, manager, or coordinator — elevated actions (approve, edit team plans, etc.). */
 function isWpElevated(user) {
-  return isWpAdmin(user) || isWpManager(user);
+  return isWpAdmin(user) || isWpManager(user) || isWpCoordinator(user);
 }
 
 function isExecutive(user) {
   if (!user) return false;
+  if (isWpElevated(user)) return false;
   const portalRoles = getWorkPlannerAccessRoles(user);
   if (portalRoles.some((r) => ['executive', 'sales'].includes(r))) return true;
   return globalRoleTokens(user).some((r) => ['executive', 'sales'].includes(r));
@@ -237,6 +248,7 @@ module.exports = {
   isSuperAdminBypass,
   isWpAdmin,
   isWpManager,
+  isWpCoordinator,
   isWpElevated,
   isManager,
   isExecutive,

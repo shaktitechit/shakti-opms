@@ -3008,6 +3008,9 @@ async function getEligibleManagers(user) {
       ) {
         return true;
       }
+      if (['admin', 'manager', 'coordinator', 'super_admin'].includes(String(u.wp_role || '').toLowerCase().trim())) {
+        return true;
+      }
       if (Array.isArray(u.portals)) {
         const wpPortal = u.portals.find(
           (p) =>
@@ -3016,24 +3019,34 @@ async function getEligibleManagers(user) {
               String(p.portal_code || p.code || p.portal || '').toLowerCase()
             )
         );
-        if (wpPortal && Array.isArray(wpPortal.access_roles)) {
-          return wpPortal.access_roles.some((r) =>
-            ['manager', 'admin', 'super_admin'].includes(
-              String(r).toLowerCase().trim()
-            )
+        if (wpPortal) {
+          const roles = (Array.isArray(wpPortal.access_roles)
+            ? wpPortal.access_roles
+            : wpPortal.access_role
+            ? [wpPortal.access_role]
+            : []
+          ).map((r) => String(r).toLowerCase().trim());
+          return roles.some((r) =>
+            ['coordinator', 'manager', 'admin', 'super_admin'].includes(r)
           );
         }
       }
       return false;
     })
     .map((u) => {
-      let wpRole = 'Manager';
+      let wpRole = 'Executive';
       if (
         u.department === 'super_admin' ||
         (Array.isArray(u.role_codes) && u.role_codes.includes('super_admin')) ||
         (Array.isArray(u.roles) && u.roles.includes('super_admin'))
       ) {
         wpRole = 'Admin';
+      } else if (u.wp_role === 'admin' || u.wp_role === 'super_admin') {
+        wpRole = 'Admin';
+      } else if (u.wp_role === 'manager') {
+        wpRole = 'Manager';
+      } else if (u.wp_role === 'coordinator') {
+        wpRole = 'Coordinator';
       } else if (Array.isArray(u.portals)) {
         const wpPortal = u.portals.find(
           (p) =>
@@ -3042,12 +3055,19 @@ async function getEligibleManagers(user) {
               String(p.portal_code || p.code || p.portal || '').toLowerCase()
             )
         );
-        if (wpPortal && Array.isArray(wpPortal.access_roles)) {
-          const roles = wpPortal.access_roles.map((r) =>
-            String(r).toLowerCase().trim()
-          );
+        if (wpPortal) {
+          const roles = (Array.isArray(wpPortal.access_roles)
+            ? wpPortal.access_roles
+            : wpPortal.access_role
+            ? [wpPortal.access_role]
+            : []
+          ).map((r) => String(r).toLowerCase().trim());
           if (roles.includes('admin') || roles.includes('super_admin')) {
             wpRole = 'Admin';
+          } else if (roles.includes('manager')) {
+            wpRole = 'Manager';
+          } else if (roles.includes('coordinator')) {
+            wpRole = 'Coordinator';
           }
         }
       }
@@ -3062,7 +3082,7 @@ async function getEligibleManagers(user) {
             : u.department || '',
         portals: u.portals || [],
         wp_role: wpRole.toLowerCase(),
-        roleBadge: wpRole === 'Admin' ? 'Portal Admin' : 'Portal Manager',
+        roleBadge: wpRole === 'Admin' ? 'Portal Admin' : wpRole === 'Coordinator' ? 'Portal Coordinator' : 'Portal Manager',
       };
     });
 }

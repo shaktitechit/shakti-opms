@@ -28,7 +28,7 @@ import {
   useGetMyTeamQuery,
   useGetEligibleManagersQuery,
 } from "@/store/api/workPlannerApiSlice";
-import { isWpAdmin, isWpManager, readSessionFromStorage } from "@/utils/authStorage";
+import { isWpAdmin, isWpManager, isWpCoordinator, isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
 import { getUserWorkPlannerSettings } from "@/utils/userWorkPlannerSettings";
 import type {
   WorkPlanRecord,
@@ -89,7 +89,7 @@ function getFileIcon(mimeType?: string, fileName?: string) {
   return <File className="h-4 w-4 text-slate-400 shrink-0" />;
 }
 
-function getWorkPlannerUserRole(u: any): "Admin" | "Manager" | null {
+function getWorkPlannerUserRole(u: any): "Admin" | "Manager" | "Coordinator" | null {
   if (!u) return null;
   if (
     u.department === "super_admin" ||
@@ -100,6 +100,7 @@ function getWorkPlannerUserRole(u: any): "Admin" | "Manager" | null {
   }
   if (u.wp_role === "admin" || u.wp_role === "super_admin") return "Admin";
   if (u.wp_role === "manager") return "Manager";
+  if (u.wp_role === "coordinator") return "Coordinator";
 
   if (!Array.isArray(u.portals) || u.portals.length === 0) {
     return null;
@@ -117,6 +118,7 @@ function getWorkPlannerUserRole(u: any): "Admin" | "Manager" | null {
   const normalized = roles.map((r) => String(r).toLowerCase().trim());
   if (normalized.includes("admin") || normalized.includes("super_admin")) return "Admin";
   if (normalized.includes("manager")) return "Manager";
+  if (normalized.includes("coordinator")) return "Coordinator";
   return null;
 }
 
@@ -134,14 +136,14 @@ export function WorkPlanCreateMailModal({
 
   const currentSessionUser = sessionUser || readSessionFromStorage()?.user;
   const adminRole = isWpAdmin(currentSessionUser as any);
-  const isManagerOnly = isWpManager(currentSessionUser as any);
+  const isElevatedNonAdmin = isWpElevated(currentSessionUser as any) && !adminRole;
 
   // Fetch prefilled draft / manager list from backend if available
   const { data: draftData, isLoading: draftLoading } = useGetDayEndDraftQuery(planId || "", {
     skip: !isOpen || !planId,
   });
   const { data: usersData } = useGetUsersQuery(undefined, { skip: !isOpen || !adminRole });
-  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !isOpen || !isManagerOnly });
+  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !isOpen || !isElevatedNonAdmin });
   const { data: eligibleManagersData } = useGetEligibleManagersQuery(undefined, { skip: !isOpen });
 
   const [uploadAttachmentMut] = useUploadWorkPlanAttachmentMutation();
@@ -321,14 +323,15 @@ export function WorkPlanCreateMailModal({
       const role = getWorkPlannerUserRole(u);
       const isPortalAdmin = role === "Admin" || String(u.roleBadge || "").includes("Admin");
       const isPortalManager = role === "Manager" || String(u.roleBadge || "").includes("Manager");
-      if (!isPortalAdmin && !isPortalManager) continue;
+      const isPortalCoordinator = role === "Coordinator" || String(u.roleBadge || "").includes("Coordinator");
+      if (!isPortalAdmin && !isPortalManager && !isPortalCoordinator) continue;
 
       if (!map.has(u.email.toLowerCase())) {
         map.set(u.email.toLowerCase(), {
           _id: id,
           name: u.name,
           email: u.email,
-          roleBadge: u.roleBadge || (isPortalAdmin ? "Portal Admin" : "Portal Manager"),
+          roleBadge: u.roleBadge || (isPortalAdmin ? "Portal Admin" : isPortalCoordinator ? "Portal Coordinator" : "Portal Manager"),
           isReportingManager: false,
         });
       }
@@ -819,7 +822,11 @@ function extractErrorMessage(err: unknown, fallbackMsg: string): string {
                             className={`rounded px-1 py-0.2 text-[9px] font-semibold border ${
                               m.isReportingManager
                                 ? "bg-primary/15 text-primary border-primary/20"
-                                : "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/20"
+                                : m.roleBadge === "Portal Admin"
+                                ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/20"
+                                : m.roleBadge === "Portal Coordinator"
+                                ? "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border-indigo-500/20"
+                                : "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/20"
                             }`}
                           >
                             {m.roleBadge}

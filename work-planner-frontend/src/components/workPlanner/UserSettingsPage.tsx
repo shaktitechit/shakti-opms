@@ -35,7 +35,7 @@ import {
   useUpdateUserSettingsMutation,
   useGetMyTeamQuery,
 } from "@/store/api/workPlannerApiSlice";
-import { isManager, isWpAdmin, isWpManager, readSessionFromStorage } from "@/utils/authStorage";
+import { isManager, isWpAdmin, isWpManager, isWpCoordinator, isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
 import { resolveRoleLabels } from "@/utils/resolveRoleLabels";
 import {
   getUserWorkPlannerSettings,
@@ -71,14 +71,14 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
   const router = useRouter();
   const sessionUser = useMemo(() => readSessionFromStorage()?.user, []);
   const managerAccess = isManager(sessionUser);
-  const isManagerOnly = isWpManager(sessionUser);
   const adminAccess = isWpAdmin(sessionUser);
+  const isElevatedNonAdmin = isWpElevated(sessionUser) && !adminAccess;
   const isSelf = Boolean(sessionUser) && String(sessionUser?._id || (sessionUser as any)?.id || "") === String(userId);
   const canAccess = managerAccess || isSelf;
   const teamDirectoryHref = adminAccess ? "/dashboard/assigned-teams" : "/dashboard/my-team";
 
   const { data: usersData, isLoading: loadingUsers } = useGetUsersQuery(undefined, { skip: !adminAccess });
-  const { data: myTeamData, isLoading: loadingMyTeam } = useGetMyTeamQuery(undefined, { skip: !isManagerOnly });
+  const { data: myTeamData, isLoading: loadingMyTeam } = useGetMyTeamQuery(undefined, { skip: !isElevatedNonAdmin });
 
   const rawUsers = useMemo<any[]>(() => {
     if (adminAccess) return (usersData as any[]) || [];
@@ -116,13 +116,14 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
     return rawUsers.find((u: any) => String(u._id || u.id || "") === String(userId));
   }, [rawUsers, userId]);
 
-  // Available Managers list - strictly users assigned to work_planner portal with manager or admin role
+  // Available Managers list - strictly users assigned to work_planner portal with coordinator, manager or admin role
   const availableManagers = useMemo(() => {
     return rawUsers.filter((u: any) => {
       if (
         u.department === "super_admin" ||
         (Array.isArray(u.role_codes) && u.role_codes.includes("super_admin")) ||
         (Array.isArray(u.roles) && u.roles.includes("super_admin")) ||
+        u.wp_role === "coordinator" ||
         u.wp_role === "manager" ||
         u.wp_role === "admin" ||
         u.wp_role === "super_admin"
@@ -136,7 +137,7 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
         });
         if (wpPortal && Array.isArray(wpPortal.access_roles)) {
           return wpPortal.access_roles.some((r: string) =>
-            ["manager", "admin", "super_admin"].includes(String(r).toLowerCase().trim())
+            ["coordinator", "manager", "admin", "super_admin"].includes(String(r).toLowerCase().trim())
           );
         }
       }

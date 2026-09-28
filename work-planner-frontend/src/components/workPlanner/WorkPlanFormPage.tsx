@@ -45,7 +45,7 @@ import {
   useGetMyTeamQuery,
   useGetEligibleManagersQuery,
 } from "@/store/api/workPlannerApiSlice";
-import { isWpAdmin, isWpManager, isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
+import { isWpAdmin, isWpManager, isWpCoordinator, isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
 import { getUserWorkPlannerSettings, type CustomWorkTaskTemplate } from "@/utils/userWorkPlannerSettings";
 import type { WorkPlanRecord, WorkPlanVisitRecord, WorkPlanWorkRecord } from "@/types/workPlanner";
 import {
@@ -130,11 +130,18 @@ function hasWorkPlannerAccess(u: ExecutiveUser, sessionUserId?: string): boolean
 
   return roles.some((r) => {
     const normalized = String(r).toLowerCase().trim();
-    return normalized === "executive" || normalized === "manager" || normalized === "admin" || normalized === "sales";
+    return (
+      normalized === "executive" ||
+      normalized === "coordinator" ||
+      normalized === "manager" ||
+      normalized === "admin" ||
+      normalized === "super_admin" ||
+      normalized === "sales"
+    );
   });
 }
 
-function getWorkPlannerUserRole(u: ExecutiveUser): "Admin" | "Manager" | null {
+function getWorkPlannerUserRole(u: ExecutiveUser): "Admin" | "Manager" | "Coordinator" | null {
   const uAny = u as any;
   if (
     uAny.department === "super_admin" ||
@@ -145,6 +152,7 @@ function getWorkPlannerUserRole(u: ExecutiveUser): "Admin" | "Manager" | null {
   }
   if (uAny.wp_role === "admin" || uAny.wp_role === "super_admin") return "Admin";
   if (uAny.wp_role === "manager") return "Manager";
+  if (uAny.wp_role === "coordinator") return "Coordinator";
 
   if (!Array.isArray(u.portals) || u.portals.length === 0) {
     return null;
@@ -166,14 +174,16 @@ function getWorkPlannerUserRole(u: ExecutiveUser): "Admin" | "Manager" | null {
   const normalized = roles.map((r) => String(r).toLowerCase().trim());
   if (normalized.includes("admin") || normalized.includes("super_admin")) return "Admin";
   if (normalized.includes("manager")) return "Manager";
+  if (normalized.includes("coordinator")) return "Coordinator";
   return null;
 }
 
 function getWorkPlannerUserPortalRole(
   u: ExecutiveUser | { portals?: any[] } | null | undefined
-): "Admin" | "Manager" | "Executive" | null {
+): "Admin" | "Manager" | "Coordinator" | "Executive" | null {
   if (u && isWpAdmin(u as any)) return "Admin";
   if (u && isWpManager(u as any)) return "Manager";
+  if (u && isWpCoordinator(u as any)) return "Coordinator";
   if (!u) return null;
 
   if (Array.isArray(u.portals) && u.portals.length > 0) {
@@ -192,6 +202,7 @@ function getWorkPlannerUserPortalRole(
       const normalized = roles.map((r) => String(r).toLowerCase().trim());
       if (normalized.includes("admin") || normalized.includes("super_admin")) return "Admin";
       if (normalized.includes("manager")) return "Manager";
+      if (normalized.includes("coordinator")) return "Coordinator";
       return "Executive";
     }
   }
@@ -212,10 +223,10 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   const isCopying = Boolean(copyId) && !isEditing;
   const sessionUser = useMemo(() => readSessionFromStorage()?.user, []);
   const adminRole = useMemo(() => isWpAdmin(sessionUser), [sessionUser]);
-  const isManagerOnly = useMemo(() => isWpManager(sessionUser), [sessionUser]);
+  const isElevatedNonAdmin = useMemo(() => isWpElevated(sessionUser) && !adminRole, [sessionUser, adminRole]);
   const elevatedRole = useMemo(() => isWpElevated(sessionUser), [sessionUser]);
   const managerRole = elevatedRole;
-  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !isManagerOnly });
+  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !isElevatedNonAdmin });
   const prevFetchedKey = useRef<string>("");
   const copiedVisitsRef = useRef<any[]>([]);
   const copiedWorksRef = useRef<any[]>([]);
@@ -434,6 +445,8 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
             ? "Reporting Manager"
             : portalRole === "Admin"
             ? "Portal Admin"
+            : portalRole === "Coordinator"
+            ? "Portal Coordinator"
             : "Portal Manager",
           isSpecificPlanType: isPlanTypeMgr,
         };
@@ -984,8 +997,9 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       const role = getWorkPlannerUserRole(u);
       const isPortalAdmin = role === "Admin" || String(u.roleBadge || "").includes("Admin");
       const isPortalManager = role === "Manager" || String(u.roleBadge || "").includes("Manager");
+      const isPortalCoordinator = role === "Coordinator" || String(u.roleBadge || "").includes("Coordinator");
 
-      if (!isPortalAdmin && !isPortalManager) continue;
+      if (!isPortalAdmin && !isPortalManager && !isPortalCoordinator) continue;
 
       if (!map.has(id)) {
         map.set(id, {
@@ -993,7 +1007,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           name: u.name,
           email: u.email || "",
           department: typeof u.department === "object" ? u.department?.name : (u.department || ""),
-          roleBadge: u.roleBadge || (isPortalAdmin ? "Portal Admin" : "Portal Manager"),
+          roleBadge: u.roleBadge || (isPortalAdmin ? "Portal Admin" : isPortalCoordinator ? "Portal Coordinator" : "Portal Manager"),
           isReportingManager: false,
         });
       }
@@ -1071,7 +1085,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         u.email?.toLowerCase().includes(q) ||
         u.department?.toLowerCase().includes(q)
     );
-  }, [executives, sessionUser, adminRole, isManagerOnly, elevatedRole, myTeamData, execSearch]);
+  }, [executives, sessionUser, adminRole, isElevatedNonAdmin, elevatedRole, myTeamData, execSearch]);
 
   const selectedExecutive = useMemo(() => {
     if (!salesUserId || salesUserId === sessionUser?._id) {
@@ -2042,7 +2056,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                           ) : discussedManagerName ? (
                             <span className="font-semibold text-foreground">{discussedManagerName}</span>
                           ) : (
-                            <span className="text-muted">Search &amp; select manager or admin...</span>
+                            <span className="text-muted">Search &amp; select manager, coordinator, or admin...</span>
                           )}
                         </div>
                         <ChevronDown className="h-4 w-4 text-muted shrink-0 ml-2" />
@@ -2054,7 +2068,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                             <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted" />
                             <input
                               type="text"
-                              placeholder="Search manager or admin by name, email, role..."
+                              placeholder="Search manager, coordinator, or admin by name, email, role..."
                               value={managerSearch}
                               onChange={(e) => setManagerSearch(e.target.value)}
                               className="w-full rounded-lg border border-border bg-surface-muted pl-8 pr-3 py-1.5 text-xs text-foreground outline-none focus:border-primary"
@@ -2064,7 +2078,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                           <div className="max-h-48 overflow-y-auto space-y-1">
                             {eligibleManagers.length === 0 ? (
                               <div className="p-3 text-center text-xs text-muted">
-                                No reporting managers or admins found
+                                No reporting managers, coordinators, or admins found
                               </div>
                             ) : (
                               eligibleManagers.map((u) => {
@@ -2094,6 +2108,8 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                                             ? "bg-primary/15 text-primary"
                                             : u.roleBadge === "Portal Admin"
                                             ? "bg-purple-500/15 text-purple-600 dark:text-purple-400"
+                                            : u.roleBadge === "Portal Coordinator"
+                                            ? "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400"
                                             : "bg-blue-500/15 text-blue-600 dark:text-blue-400"
                                         }`}>
                                           {u.roleBadge}

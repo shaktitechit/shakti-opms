@@ -92,26 +92,26 @@ export function DownloadWorkPlansModal({
 
   // Team tree queries (elevated users only)
   const { data: tree } = useGetTeamTreeQuery(undefined, { skip: !adminRole });
-  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !managerRole });
+  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !elevatedRole || adminRole });
 
   // Build team options for the dropdown
   const teamOptions = useMemo<Array<{ id: string; name: string; memberIds: string[] }>>(() => {
     if (!elevatedRole) return [];
     if (adminRole) {
-      const mgrs = (tree?.managers || []) as Array<{ _id?: string; id?: string; name: string; report_ids?: string[] }>;
+      const mgrs = [...(tree?.managers || []), ...(tree?.coordinators || [])] as Array<{ _id?: string; id?: string; name: string; report_ids?: string[] }>;
       return mgrs.map((m) => {
         const mId = String(m._id || m.id || "");
         const reportIds = (m.report_ids || []).map(String);
         return { id: mId, name: `${m.name}'s Team`, memberIds: [mId, ...reportIds] };
       });
     }
-    if (managerRole && sessionUser?._id) {
+    if (elevatedRole && !adminRole && sessionUser?._id) {
       const myTeamMembers = (myTeamData?.members || []) as Array<{ _id?: string; id?: string }>;
       const memberIds = [String(sessionUser._id), ...myTeamMembers.map((m) => String(m._id || m.id || ""))];
       return [{ id: String(sessionUser._id), name: "My Reporting Team", memberIds }];
     }
     return [];
-  }, [adminRole, managerRole, elevatedRole, tree, myTeamData, sessionUser]);
+  }, [adminRole, elevatedRole, tree, myTeamData, sessionUser]);
 
   // Selected team's member IDs ("all" = no constraint)
   const selectedTeamMemberIds = useMemo<Set<string> | null>(() => {

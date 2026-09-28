@@ -15,7 +15,7 @@ import {
   X,
 } from "lucide-react";
 import type { UserSession } from "@/types/workPlanner";
-import { isWpAdmin, isWpManager, readSessionFromStorage } from "@/utils/authStorage";
+import { isWpAdmin, isWpManager, isWpCoordinator, readSessionFromStorage } from "@/utils/authStorage";
 
 export function Sidebar({
   mobileNavOpen,
@@ -46,6 +46,7 @@ export function Sidebar({
     }
   }, [session]);
 
+  const coordinatorRole = isWpCoordinator(activeUser);
   const managerRole = isWpManager(activeUser);
   const adminRole = isWpAdmin(activeUser);
 
@@ -204,8 +205,8 @@ export function Sidebar({
             {!desktopCollapsed && <span>Expense Claims</span>}
           </Link>
 
-          {/* My Team (Manager) */}
-          {managerRole && (
+          {/* My Team (Manager / Coordinator) */}
+          {(managerRole || coordinatorRole) && (
             <Link
               href="/dashboard/my-team"
               onClick={() => setMobileNavOpen(false)}
@@ -221,7 +222,7 @@ export function Sidebar({
                 <div className="flex items-center justify-between flex-1 min-w-0">
                   <span className="truncate">My Team</span>
                   <span className="ml-1 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-primary/20 text-primary shrink-0">
-                    Manager
+                    {coordinatorRole ? "Coordinator" : "Manager"}
                   </span>
                 </div>
               )}

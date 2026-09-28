@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDown, LogOut, Menu, Moon, Sun, User } from "lucide-react";
 import type { UserSession, ThemeColor } from "@/types/workPlanner";
-import { isWpAdmin, isWpManager } from "@/utils/authStorage";
+import { isWpAdmin, isWpManager, isWpCoordinator } from "@/utils/authStorage";
 import { NotificationBell } from "./NotificationBell";
 
 export function Topbar({
@@ -33,6 +33,7 @@ export function Topbar({
   const user = session?.user;
   const adminRole = isWpAdmin(user);
   const managerRole = isWpManager(user);
+  const coordinatorRole = isWpCoordinator(user);
 
   const getPageHeader = () => {
     if (pathname.startsWith("/dashboard/team-manager")) {
@@ -89,6 +90,8 @@ export function Topbar({
     ? "ADMIN PORTAL"
     : managerRole
     ? "MANAGER PORTAL"
+    : coordinatorRole
+    ? "COORDINATOR PORTAL"
     : "EXECUTIVE PORTAL";
 
   return (

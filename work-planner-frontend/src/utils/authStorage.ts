@@ -134,26 +134,41 @@ export function isWpAdmin(user: AuthUser | null | undefined): boolean {
   return getWpAccessRoles(user).includes("admin");
 }
 
-/** Portal manager only (not admin). Sees My Team. */
+/** Portal manager only (not admin). Sees My Team (coordinators + executives). */
 export function isWpManager(user: AuthUser | null | undefined): boolean {
   if (!user) return false;
   if (isWpAdmin(user)) return false;
   return getWpAccessRoles(user).includes("manager");
 }
 
-/** Admin or manager — elevated portal actions. */
-export function isWpElevated(user: AuthUser | null | undefined): boolean {
-  return isWpAdmin(user) || isWpManager(user);
+/** Portal coordinator only (not admin or manager). Sees assigned executives. */
+export function isWpCoordinator(user: AuthUser | null | undefined): boolean {
+  if (!user) return false;
+  if (isWpAdmin(user) || isWpManager(user)) return false;
+  return getWpAccessRoles(user).includes("coordinator");
 }
 
-/** @deprecated Prefer isWpElevated / isWpAdmin / isWpManager */
+/** Admin, manager, or coordinator — elevated portal actions. */
+export function isWpElevated(user: AuthUser | null | undefined): boolean {
+  return isWpAdmin(user) || isWpManager(user) || isWpCoordinator(user);
+}
+
+/** @deprecated Prefer isWpElevated / isWpAdmin / isWpManager / isWpCoordinator */
 export function isManager(user: AuthUser | null | undefined): boolean {
   return isWpElevated(user);
 }
 
 export function isExecutive(user: AuthUser | null | undefined): boolean {
-  if (!user) return false;
+  if (!user || isWpElevated(user)) return false;
   return getWpAccessRoles(user).some((r) => r === "executive" || r === "sales");
+}
+
+export function roleLabel(user: AuthUser | null | undefined): string {
+  if (isWpAdmin(user)) return "Admin";
+  if (isWpManager(user)) return "Manager";
+  if (isWpCoordinator(user)) return "Coordinator";
+  if (isExecutive(user)) return "Executive";
+  return "User";
 }
 
 export function readSessionFromStorage(): UserSession | null {

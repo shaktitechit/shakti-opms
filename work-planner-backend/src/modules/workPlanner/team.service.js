@@ -9,6 +9,8 @@ const {
   getWorkPlannerAccessRoles,
   isWpAdmin,
   isWpManager,
+  isWpCoordinator,
+  isWpElevated,
   isSuperAdminBypass,
 } = require('./workPlanner.constants');
 const {
@@ -18,7 +20,8 @@ const {
 } = require('./teamVisibility.service');
 
 const ALLOWED_PAIRS = Object.freeze({
-  executive: ['manager'],
+  executive: ['coordinator', 'manager'],
+  coordinator: ['manager', 'admin'],
   manager: ['admin'],
 });
 
@@ -28,6 +31,7 @@ function normalizeRolesFromUserDoc(doc) {
   const roles = getWorkPlannerAccessRoles(doc);
   if (roles.includes('admin')) return ['admin'];
   if (roles.includes('manager')) return ['manager'];
+  if (roles.includes('coordinator')) return ['coordinator'];
   if (roles.some((r) => ['executive', 'sales'].includes(r))) return ['executive'];
   return roles;
 }
@@ -36,6 +40,7 @@ function primaryWpRole(doc) {
   const roles = normalizeRolesFromUserDoc(doc);
   if (roles.includes('admin')) return 'admin';
   if (roles.includes('manager')) return 'manager';
+  if (roles.includes('coordinator')) return 'coordinator';
   if (roles.includes('executive')) return 'executive';
   return null;
 }
@@ -54,7 +59,7 @@ function assertAllowedPair(subRole, mgrRole) {
   if (!allowed || !allowed.includes(mgrRole)) {
     throw new ApiError(
       400,
-      `Invalid reporting: ${subRole} cannot report to ${mgrRole}. Allowed: executive→manager, manager→admin.`,
+      `Invalid reporting: ${subRole} cannot report to ${mgrRole}. Allowed: executive→coordinator/manager, coordinator→manager/admin, manager→admin.`,
     );
   }
 }
@@ -198,12 +203,12 @@ async function removeEdge(subordinateId, actor) {
 }
 
 async function listEdges(actor) {
-  if (!isWpAdmin(actor) && !isWpManager(actor)) {
+  if (!isWpElevated(actor)) {
     throw new ApiError(403, 'Elevated access required');
   }
   const { WorkPlannerReportingEdge } = getModels();
   const filter = { is_active: true };
-  if (isWpManager(actor) && !isWpAdmin(actor)) {
+  if (!isWpAdmin(actor)) {
     filter.manager = asObjectId(userId(actor));
   }
   const rows = await WorkPlannerReportingEdge.find(filter)
@@ -254,8 +259,10 @@ async function getTree(actor) {
 
   const admins = enriched.filter((u) => u.wp_role === 'admin');
   const managers = enriched.filter((u) => u.wp_role === 'manager');
+  const coordinators = enriched.filter((u) => u.wp_role === 'coordinator');
   const executives = enriched.filter((u) => u.wp_role === 'executive');
   const unassignedManagers = managers.filter((m) => !m.reports_to);
+  const unassignedCoordinators = coordinators.filter((c) => !c.reports_to);
   const unassignedExecutives = executives.filter((e) => !e.reports_to);
 
   return {
@@ -263,15 +270,17 @@ async function getTree(actor) {
     edges: edges.map(toPlain),
     admins,
     managers,
+    coordinators,
     executives,
     unassignedManagers,
+    unassignedCoordinators,
     unassignedExecutives,
   };
 }
 
 async function getMyTeam(actor) {
   if (!isWpElevatedSafe(actor)) {
-    throw new ApiError(403, 'Manager or admin access required');
+    throw new ApiError(403, 'Manager, coordinator or admin access required');
   }
 
   const visibleIds = await getVisibleSalesUserIds(actor);
@@ -306,6 +315,7 @@ async function getMyTeam(actor) {
     self_id: String(userId(actor)),
     is_admin: isWpAdmin(actor),
     is_manager: isWpManager(actor),
+    is_coordinator: isWpCoordinator(actor),
     members: members.map((m) => ({
       ...toPlain(m),
       wp_role: primaryWpRole(m),
@@ -316,7 +326,7 @@ async function getMyTeam(actor) {
 }
 
 function isWpElevatedSafe(user) {
-  return isWpAdmin(user) || isWpManager(user);
+  return isWpElevated(user);
 }
 
 async function getMembers(actor) {

@@ -18,7 +18,7 @@ const upload = multer({
   limits: { fileSize: 15 * 1024 * 1024 },
 });
 
-const elevatedRoles = requireWorkPlannerRole('manager', 'admin');
+const elevatedRoles = requireWorkPlannerRole('coordinator', 'manager', 'admin');
 const adminRole = requireWorkPlannerRole('admin');
 
 router.use(requireAuth);

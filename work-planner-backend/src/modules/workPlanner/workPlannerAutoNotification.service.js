@@ -51,6 +51,11 @@ function isWpExecutive(user) {
   return roles.some((r) => ['executive', 'sales'].includes(r));
 }
 
+function isWpCoordinator(user) {
+  const roles = getWorkPlannerPortalRoles(user);
+  return roles.includes('coordinator');
+}
+
 function isWpManager(user) {
   const roles = getWorkPlannerPortalRoles(user);
   return roles.includes('manager');
@@ -74,6 +79,7 @@ async function getActiveUsersByWpRole(roleFilter = 'all') {
       if (roles.length === 0) return false;
       if (roleFilter === 'all') return true;
       if (roleFilter === 'executive') return roles.some((r) => ['executive', 'sales'].includes(r));
+      if (roleFilter === 'coordinator') return roles.includes('coordinator') || roles.includes('manager') || roles.includes('admin');
       if (roleFilter === 'manager') return roles.includes('manager') || roles.includes('admin');
       if (roleFilter === 'admin') return roles.includes('admin');
       return false;
@@ -85,10 +91,10 @@ async function getActiveUsersByWpRole(roleFilter = 'all') {
 }
 
 /**
- * Gets all active managers & admins for work_planner portal.
+ * Gets all active coordinators, managers & admins for work_planner portal.
  */
 async function getWorkPlannerManagers() {
-  return getActiveUsersByWpRole('manager');
+  return getActiveUsersByWpRole('coordinator');
 }
 
 /**
@@ -1153,6 +1159,7 @@ async function sendPendingDayEndEveningReminder(pendingPlansWithUsers, dateStr, 
 module.exports = {
   getWorkPlannerPortalRoles,
   isWpExecutive,
+  isWpCoordinator,
   isWpManager,
   isWpAdmin,
   getActiveUsersByWpRole,

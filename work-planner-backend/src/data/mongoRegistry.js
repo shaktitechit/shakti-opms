@@ -450,12 +450,12 @@ function registerModels() {
         },
         subordinate_role: {
           type: String,
-          enum: ['executive', 'manager'],
+          enum: ['executive', 'coordinator', 'manager'],
           required: true,
         },
         manager_role: {
           type: String,
-          enum: ['manager', 'admin'],
+          enum: ['coordinator', 'manager', 'admin'],
           required: true,
         },
         is_active: { type: Boolean, default: true, index: true },

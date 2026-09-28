@@ -164,6 +164,7 @@ function hasWorkPlannerAccess(u: ExecutiveUser, sessionUserId?: string): boolean
     return (
       normalized === "admin" ||
       normalized === "manager" ||
+      normalized === "coordinator" ||
       normalized === "executive" ||
       normalized === "sales_executive" ||
       normalized === "super_admin"

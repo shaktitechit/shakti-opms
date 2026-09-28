@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import { useGetUsersQuery } from "@/store/api/authApiSlice";
 import { useGetPlansQuery, useGetExpensesQuery, useGetMyTeamQuery } from "@/store/api/workPlannerApiSlice";
-import { isWpAdmin, isWpElevated, isWpManager, hasWorkPlannerPortalAccess, readSessionFromStorage } from "@/utils/authStorage";
+import { isWpAdmin, isWpElevated, isWpManager, isWpCoordinator, hasWorkPlannerPortalAccess, readSessionFromStorage } from "@/utils/authStorage";
 import { resolveRoleLabels } from "@/utils/resolveRoleLabels";
 import type { WorkPlanRecord, WorkPlanExpenseRecord } from "@/types/workPlanner";
 import { formatPlanDate, formatCurrency, salesUserLabel } from "./workPlanUtils";
@@ -48,22 +48,32 @@ export function AssignedUsersPage({ mode = "my-team" }: { mode?: TeamDirectoryMo
   const sessionUser = useMemo(() => readSessionFromStorage()?.user, []);
   const adminAccess = isWpAdmin(sessionUser);
   const managerAccess = isWpManager(sessionUser);
+  const coordinatorAccess = isWpCoordinator(sessionUser);
   const elevatedAccess = isWpElevated(sessionUser);
   const canAccess =
-    mode === "assigned-teams" ? adminAccess : elevatedAccess && (managerAccess || adminAccess);
+    mode === "assigned-teams" ? adminAccess : elevatedAccess;
 
   const pageTitle = mode === "assigned-teams" ? "Assigned Teams" : "My Team";
-  const pageBadge = mode === "assigned-teams" ? "Admin View" : "Manager View";
+  const pageBadge =
+    mode === "assigned-teams"
+      ? "Admin View"
+      : adminAccess
+      ? "Admin View"
+      : managerAccess
+      ? "Manager View"
+      : coordinatorAccess
+      ? "Coordinator View"
+      : "Team View";
   const pageSubtitle =
     mode === "assigned-teams"
       ? "All Work Planner teams, plan activity, and expense claims across the organisation."
       : "Your direct reports and your own Work Planner activity.";
   const kpiLabel = mode === "assigned-teams" ? "Team Members" : "My Team";
-  const accessDeniedTitle = mode === "assigned-teams" ? "Admin Access Required" : "Manager Access Required";
+  const accessDeniedTitle = mode === "assigned-teams" ? "Admin Access Required" : "Elevated Access Required";
   const accessDeniedBody =
     mode === "assigned-teams"
       ? "Assigned Teams is restricted to Work Planner admins."
-      : "My Team is restricted to managers and administrators.";
+      : "My Team is restricted to coordinators, managers, and administrators.";
 
   const [searchQuery, setSearchQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("all");
