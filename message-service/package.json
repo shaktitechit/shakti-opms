@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "send-test": "node scripts/sendTestEmail.js"
   },
   "dependencies": {
     "axios": "^1.7.9",
