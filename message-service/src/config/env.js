@@ -3,11 +3,47 @@
  * @module config/env
  */
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../../../.env.docker') });
-require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
-require('dotenv').config({ path: path.resolve(__dirname, '../../.env.docker') });
-require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
-require('dotenv').config();
+const fs = require('fs');
+
+function loadEnvFile(filePath) {
+  try {
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      const lines = content.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIdx = trimmed.indexOf('=');
+        if (eqIdx > 0) {
+          const key = trimmed.slice(0, eqIdx).trim();
+          let val = trimmed.slice(eqIdx + 1).trim();
+          if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+            val = val.slice(1, -1);
+          }
+          if (process.env[key] === undefined) {
+            process.env[key] = val;
+          }
+        }
+      }
+    }
+  } catch (_e) {}
+}
+
+try {
+  const dotenv = require('dotenv');
+  dotenv.config({ path: path.resolve(__dirname, '../../../.env.docker') });
+  dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
+  dotenv.config({ path: path.resolve(__dirname, '../../.env.docker') });
+  dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+  dotenv.config();
+} catch (_err) {
+  loadEnvFile(path.resolve(__dirname, '../../../.env.docker'));
+  loadEnvFile(path.resolve(__dirname, '../../../.env'));
+  loadEnvFile(path.resolve(__dirname, '../../.env.docker'));
+  loadEnvFile(path.resolve(__dirname, '../../.env'));
+  loadEnvFile(path.resolve(__dirname, '../.env'));
+  loadEnvFile(path.resolve(process.cwd(), '.env'));
+}
 
 function num(v, fallback) {
   const n = Number(v);

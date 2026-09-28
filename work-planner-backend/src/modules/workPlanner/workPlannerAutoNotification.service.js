@@ -560,7 +560,8 @@ async function notifyWorkPlanCreated({ planId, actorUser, creationMailData = {} 
 
     const subject = creationMailData.subject?.trim() || `New Work Plan Created — ${executiveName} (${planDateStr})`;
 
-    const emailHtml = `
+    const customBody = creationMailData.body_html || creationMailData.bodyHtml;
+    const emailHtml = (customBody && customBody.trim()) ? customBody : `
       <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 680px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
         <div style="background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); color: #ffffff; padding: 24px; border-radius: 8px 8px 0 0;">
           <h2 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #ffffff;">New Work Plan Submitted</h2>
@@ -607,16 +608,61 @@ async function notifyWorkPlanCreated({ planId, actorUser, creationMailData = {} 
       </div>
     `;
 
+    let emailAttachments = [];
+    const rawAtts = creationMailData.attachment_ids || creationMailData.attachmentIds || creationMailData.attachments;
+    if (Array.isArray(rawAtts) && rawAtts.length > 0) {
+      const { Attachment } = getModels();
+      const { getViewPresignedUrl } = require('../../services/fileManagement');
+      const attachmentDocs = await Attachment.find({ _id: { $in: rawAtts } }).lean();
+
+      emailAttachments = await Promise.all(
+        attachmentDocs.map(async (att) => {
+          const fileId = att.filename;
+          let freshUrl = att.url;
+          if (fileId && !String(fileId).includes('/')) {
+            try {
+              freshUrl = await getViewPresignedUrl(fileId);
+            } catch (err) {
+              logger.warn(`[AutoNotification] Failed to get fresh presigned URL for attachment ${att._id}: ${err.message}`);
+            }
+          }
+
+          if (freshUrl && freshUrl.startsWith('http')) {
+            try {
+              const fileRes = await axios.get(freshUrl, {
+                responseType: 'arraybuffer',
+                timeout: 20000,
+              });
+              const buffer = Buffer.from(fileRes.data);
+              return {
+                filename: att.original_name || att.filename || 'attachment.pdf',
+                content: buffer.toString('base64'),
+                contentType: att.mime_type || 'application/octet-stream',
+              };
+            } catch (dlErr) {
+              logger.error(`[AutoNotification] Could not download attachment content for ${att._id}: ${dlErr.message}`);
+            }
+          }
+
+          return {
+            filename: att.original_name || att.filename || 'attachment.pdf',
+            path: freshUrl,
+            contentType: att.mime_type || 'application/octet-stream',
+          };
+        })
+      );
+    }
+
     await emailHelper.sendEmail(
       recipient,
       subject,
       '',
       emailHtml,
-      [],
+      emailAttachments,
       mailCc,
       fromAddress
     );
-    logger.info(`[AutoNotification] Sent Work Plan creation email to ${recipient} (CC: ${mailCc.join(', ')})`);
+    logger.info(`[AutoNotification] Sent Work Plan creation email to ${recipient} (CC: ${mailCc.join(', ')}, Attachments: ${emailAttachments.length})`);
   } catch (err) {
     logger.error(`[AutoNotification] Failed to dispatch work plan creation notification: ${err.message}`);
   }
