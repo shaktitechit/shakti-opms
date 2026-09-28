@@ -147,11 +147,22 @@ async function deleteAccount(id) {
   if (!EmailAccount) {
     throw new ApiError(500, 'EmailAccount model is not registered');
   }
-  const account = await EmailAccount.findByIdAndDelete(id);
+  const account = await EmailAccount.findById(id);
   if (!account) {
     throw new ApiError(404, 'Email account not found');
   }
-  return { success: true, message: `Account ${account.email} deleted successfully.` };
+
+  // Revoke token with Google if it is a Google account
+  if (account.provider === 'google' && (account.refreshToken || account.accessToken)) {
+    try {
+      await gmailProvider.revokeToken(account.refreshToken || account.accessToken);
+    } catch (_revokeErr) {
+      logger.warn(`[Email Service] Failed to revoke Google token for ${account.email}`);
+    }
+  }
+
+  await EmailAccount.findByIdAndDelete(id);
+  return { success: true, message: `Account ${account.email} disconnected and deleted successfully.` };
 }
 
 module.exports = {

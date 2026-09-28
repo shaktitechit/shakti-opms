@@ -220,6 +220,24 @@ class GmailProvider {
   }
 
   /**
+   * Revokes an OAuth token with Google.
+   */
+  async revokeToken(token) {
+    const rawToken = token ? decrypt(token) : null;
+    if (!rawToken) return;
+    try {
+      const revokeUrl = `https://oauth2.googleapis.com/revoke?token=${encodeURIComponent(rawToken)}`;
+      await axios.post(revokeUrl, null, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        timeout: 5000,
+      });
+      logger.info('[GmailProvider] Successfully revoked Google token with Google OAuth server');
+    } catch (err) {
+      logger.warn(`[GmailProvider] Could not revoke Google token: ${err.message}`);
+    }
+  }
+
+  /**
    * Refreshes an expired Google access token using the stored refresh token.
    */
   async refreshAccessToken(account) {
