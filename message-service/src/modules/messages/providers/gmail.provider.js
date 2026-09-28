@@ -91,11 +91,18 @@ function parseEmailAddresses(value) {
   return out;
 }
 
+function normalizeRedirectUri(uri) {
+  if (!uri) return '';
+  return String(uri)
+    .trim()
+    .replace(/^https?::+\/*/i, (match) => (match.toLowerCase().startsWith('https') ? 'https://' : 'http://'));
+}
+
 class GmailProvider {
   constructor(config = {}) {
-    this.clientId = config.clientId || googleGmail.clientId;
-    this.clientSecret = config.clientSecret || googleGmail.clientSecret;
-    this.redirectUri = config.redirectUri || googleGmail.redirectUri;
+    this.clientId = (config.clientId || googleGmail.clientId || '').trim();
+    this.clientSecret = (config.clientSecret || googleGmail.clientSecret || '').trim();
+    this.redirectUri = normalizeRedirectUri(config.redirectUri || googleGmail.redirectUri);
   }
 
   isConfigured() {
