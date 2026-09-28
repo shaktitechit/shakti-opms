@@ -55,6 +55,32 @@ async function exchangeHandoff(code: string): Promise<IssuedSession | null> {
   }
 }
 
+async function refreshSession(refreshToken: string): Promise<IssuedSession | null> {
+  try {
+    const res = await fetch(`${authServiceBase()}/api/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      token?: string;
+      refreshToken?: string;
+      refreshExpiresIn?: number;
+      data?: { token?: string; refreshToken?: string; refreshExpiresIn?: number };
+    };
+    const token = data.token || data.data?.token;
+    if (!token) return null;
+    return {
+      token,
+      refreshToken: data.refreshToken || data.data?.refreshToken || refreshToken,
+      refreshExpiresIn: data.refreshExpiresIn || data.data?.refreshExpiresIn,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function applySessionCookies(response: NextResponse, session: string | IssuedSession) {
   const token = typeof session === "string" ? session : session.token;
   const refreshToken = typeof session === "string" ? undefined : session.refreshToken;
@@ -65,9 +91,13 @@ function applySessionCookies(response: NextResponse, session: string | IssuedSes
     sameSite: "lax",
   });
   if (refreshToken) {
+    const refreshMax =
+      refreshExpiresIn && refreshExpiresIn > 0
+        ? refreshExpiresIn
+        : 7 * 24 * 60 * 60; // 7 days default
     response.cookies.set("refresh_token", refreshToken, {
       path: "/",
-      maxAge: refreshExpiresIn && refreshExpiresIn > 0 ? refreshExpiresIn : jwtMaxAge(token),
+      maxAge: Math.max(refreshMax, 60),
       sameSite: "lax",
     });
   }
@@ -78,7 +108,8 @@ function applySessionCookies(response: NextResponse, session: string | IssuedSes
 
 export async function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
-  const cookieToken = request.cookies.get("access_token")?.value;
+  let cookieToken = request.cookies.get("access_token")?.value;
+  const cookieRefreshToken = request.cookies.get("refresh_token")?.value;
   const urlToken = searchParams.get("token")?.trim() || "";
   const handoffCode = searchParams.get("handoff")?.trim() || "";
 
@@ -87,6 +118,14 @@ export async function middleware(request: NextRequest) {
     exchanged = await exchangeHandoff(handoffCode);
   }
   const exchangedToken = exchanged?.token || null;
+
+  let refreshedSession: IssuedSession | null = null;
+  if (!cookieToken && !exchangedToken && !urlToken && cookieRefreshToken) {
+    refreshedSession = await refreshSession(cookieRefreshToken);
+    if (refreshedSession) {
+      cookieToken = refreshedSession.token;
+    }
+  }
 
   const effectiveToken = cookieToken || exchangedToken || urlToken;
 
@@ -108,6 +147,21 @@ export async function middleware(request: NextRequest) {
         )
       : NextResponse.redirect(cleanUrl);
     applySessionCookies(response, exchanged || exchangedToken!);
+    return response;
+  }
+
+  if (refreshedSession) {
+    const response = isAuthRoute
+      ? NextResponse.redirect(
+          (() => {
+            const u = request.nextUrl.clone();
+            u.pathname = "/dashboard";
+            u.search = "";
+            return u;
+          })(),
+        )
+      : NextResponse.next();
+    applySessionCookies(response, refreshedSession);
     return response;
   }
 

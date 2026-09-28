@@ -198,25 +198,29 @@ export function readSessionFromStorage(): UserSession | null {
     }
 
     if (!getCookie(ACCESS_COOKIE) && !getCookie(REFRESH_COOKIE)) {
-      saveSessionToStorage(null);
-      return null;
+      const rawFallback = window.localStorage.getItem(SESSION_STORAGE_KEY);
+      if (!rawFallback) {
+        saveSessionToStorage(null);
+        return null;
+      }
     }
 
     const accessToken = getCookie(ACCESS_COOKIE);
     const refreshToken = getCookie(REFRESH_COOKIE) || undefined;
     const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
-    if (raw && accessToken) {
-      const parsed = JSON.parse(raw) as UserSession;
-      if (
-        parsed?.token === accessToken &&
-        parsed?.user &&
-        hasLeadManagerPortalAccess(parsed.user)
-      ) {
-        return {
-          token: parsed.token,
-          refreshToken: refreshToken || parsed.refreshToken,
-          user: parsed.user,
-        };
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as UserSession;
+        if (parsed?.user && hasLeadManagerPortalAccess(parsed.user)) {
+          return {
+            token: parsed.token || accessToken || "",
+            refreshToken: refreshToken || parsed.refreshToken,
+            refreshExpiresAt: parsed.refreshExpiresAt,
+            user: parsed.user,
+          };
+        }
+      } catch {
+        /* ignore parse error */
       }
     }
 
@@ -250,12 +254,14 @@ export function saveSessionToStorage(session: UserSession | null): void {
     }
   } else {
     window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
-    setCookieMaxAge(ACCESS_COOKIE, session.token, jwtMaxAgeSeconds(session.token));
+    if (session.token) {
+      setCookieMaxAge(ACCESS_COOKIE, session.token, jwtMaxAgeSeconds(session.token));
+    }
     if (session.refreshToken) {
       const refreshMax = session.refreshExpiresAt
         ? Math.floor((session.refreshExpiresAt - Date.now()) / 1000)
-        : jwtMaxAgeSeconds(session.token);
-      setCookieMaxAge(REFRESH_COOKIE, session.refreshToken, refreshMax);
+        : 7 * 24 * 60 * 60; // 7 days default
+      setCookieMaxAge(REFRESH_COOKIE, session.refreshToken, Math.max(refreshMax, 60));
     }
     else deleteCookie(REFRESH_COOKIE);
     for (const name of LEGACY_COOKIES) deleteCookie(name);

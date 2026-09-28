@@ -67,6 +67,32 @@ async function exchangeHandoff(code: string): Promise<IssuedSession | null> {
   }
 }
 
+async function refreshSession(refreshToken: string): Promise<IssuedSession | null> {
+  try {
+    const res = await fetch(`${authServiceBase()}/api/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      token?: string;
+      refreshToken?: string;
+      refreshExpiresIn?: number;
+      data?: { token?: string; refreshToken?: string; refreshExpiresIn?: number };
+    };
+    const token = data.token || data.data?.token;
+    if (!token) return null;
+    return {
+      token,
+      refreshToken: data.refreshToken || data.data?.refreshToken || refreshToken,
+      refreshExpiresIn: data.refreshExpiresIn || data.data?.refreshExpiresIn,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function redirectDashboardLegacy(pathname: string, req: NextRequest) {
   const m = pathname.match(/^\/dashboard\/([^/]+)(\/.*)?$/);
   if (!m || !m[1]) return null;
@@ -119,9 +145,13 @@ function applySessionCookies(res: NextResponse, session?: string | IssuedSession
     sameSite: "lax",
   });
   if (refreshToken) {
+    const refreshMax =
+      refreshExpiresIn && refreshExpiresIn > 0
+        ? refreshExpiresIn
+        : 7 * 24 * 60 * 60; // 7 days default
     res.cookies.set("refresh_token", refreshToken, {
       path: "/",
-      maxAge: refreshExpiresIn && refreshExpiresIn > 0 ? refreshExpiresIn : jwtMaxAge(token),
+      maxAge: Math.max(refreshMax, 60),
       sameSite: "lax",
     });
   }
@@ -161,7 +191,17 @@ export async function middleware(req: NextRequest) {
 
   const isLoginRoute = pathname === "/login";
   const isRootRoute = pathname === "/";
-  const accessToken = req.cookies.get(ACCESS_COOKIE_NAME)?.value?.trim() || "";
+  let accessToken = req.cookies.get(ACCESS_COOKIE_NAME)?.value?.trim() || "";
+  const cookieRefreshToken = req.cookies.get("refresh_token")?.value?.trim() || "";
+
+  let refreshedSession: IssuedSession | null = null;
+  if (!accessToken && !ssoToken && cookieRefreshToken) {
+    refreshedSession = await refreshSession(cookieRefreshToken);
+    if (refreshedSession) {
+      accessToken = refreshedSession.token;
+    }
+  }
+
   const accessRoles = accessToken ? rolesFromSsoToken(accessToken) : [];
 
   const roles = ssoRoles.length ? ssoRoles : accessRoles;
@@ -188,10 +228,12 @@ export async function middleware(req: NextRequest) {
     ) {
       const res = redirectReq(pathOnly, req);
       if (ssoRoles.length) applySessionCookies(res, ssoToken);
+      else if (refreshedSession) applySessionCookies(res, refreshedSession);
       return res;
     }
     const res = redirectReq(homeUrl(), req);
     if (ssoRoles.length) applySessionCookies(res, ssoToken);
+    else if (refreshedSession) applySessionCookies(res, refreshedSession);
     return res;
   }
 
@@ -206,10 +248,18 @@ export async function middleware(req: NextRequest) {
     if (!pathAllowed(pathname)) {
       const res = redirectReq(homeUrl(), req);
       if (ssoRoles.length) applySessionCookies(res, ssoToken);
+      else if (refreshedSession) applySessionCookies(res, refreshedSession);
       return res;
     }
     const res = NextResponse.next();
     if (ssoRoles.length) applySessionCookies(res, ssoToken);
+    else if (refreshedSession) applySessionCookies(res, refreshedSession);
+    return res;
+  }
+
+  if (refreshedSession) {
+    const res = NextResponse.next();
+    applySessionCookies(res, refreshedSession);
     return res;
   }
 

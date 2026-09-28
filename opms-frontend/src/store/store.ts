@@ -8,6 +8,7 @@ import authReducer, {
   hydrateAuthState,
   writeAuthToStorage,
 } from "./slices/authSlice";
+import { persistSessionMarksFromAuth } from "@/lib/sessionCookie";
 
 const rootReducer = combineReducers({
   auth: authReducer,
@@ -16,7 +17,7 @@ const rootReducer = combineReducers({
 
 export type RootState = ReturnType<typeof rootReducer>;
 
-/** Persists `{ token, user }` when the auth subtree changes (`localStorage` on browser). */
+/** Persists `{ token, user }` when the auth subtree changes (`localStorage` and cookies on browser). */
 const authPersistMiddleware =
   (): Middleware<Record<string, never>, RootState> =>
   (api) =>
@@ -32,6 +33,14 @@ const authPersistMiddleware =
       prev?.user !== nextAuth?.user;
     if (typeof window !== "undefined" && changed && nextAuth) {
       writeAuthToStorage(nextAuth);
+      if (nextAuth.token) {
+        persistSessionMarksFromAuth({
+          token: nextAuth.token,
+          refreshToken: nextAuth.refreshToken,
+          refreshExpiresAt: nextAuth.refreshExpiresAt,
+          user: nextAuth.user,
+        });
+      }
     }
     return result;
   };
