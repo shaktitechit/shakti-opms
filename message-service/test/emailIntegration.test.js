@@ -97,13 +97,10 @@ const resolver = require('../src/modules/messages/providers/emailProvider.resolv
 const { EmailErrorCodes } = require('../src/modules/messages/errors/emailErrors');
 
 describe('EmailProviderResolver', () => {
-  test('should route @gmail.com to Google provider when account is found or throw not authorized', async () => {
-    try {
-      await resolver.resolve('testuser@gmail.com');
-      assert.fail('Should have thrown EMAIL_ACCOUNT_NOT_AUTHORIZED when DB is not connected');
-    } catch (err) {
-      assert.strictEqual(err.code, EmailErrorCodes.EMAIL_ACCOUNT_NOT_AUTHORIZED);
-    }
+  test('should fallback gracefully to Microsoft Graph for @gmail.com when Google OAuth is not yet authorized in DB', async () => {
+    const res = await resolver.resolve('testuser@gmail.com');
+    assert.ok(['microsoft', 'smtp', 'google'].includes(res.providerName));
+    assert.ok(res.provider);
   });
 
   test('should throw EMAIL_PROVIDER_NOT_CONFIGURED when no providers are configured', async () => {

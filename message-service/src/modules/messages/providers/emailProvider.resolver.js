@@ -155,19 +155,43 @@ class EmailProviderResolver {
         account = normalizeAccount(rawAccount);
       }
 
-      if (!account) {
-        throw new EmailError(
-          EmailErrorCodes.EMAIL_ACCOUNT_NOT_AUTHORIZED,
-          `Google account ${fromEmail} has not been authorized. Please connect your Google account via OAuth (GET /api/emails/google/auth).`,
-          401
-        );
+      if (account) {
+        return {
+          providerName: 'google',
+          provider: this.gmailProvider,
+          account,
+        };
       }
 
-      return {
-        providerName: 'google',
-        provider: this.gmailProvider,
-        account,
-      };
+      // If no Google account is connected yet in DB, fallback to Microsoft Graph if configured
+      if (this.microsoftProvider.isConfigured()) {
+        logger.warn(
+          `[EmailProviderResolver] Google account ${fromEmail} is not yet connected via OAuth. Falling back to Microsoft Graph mailbox with Reply-To=${fromEmail}.`
+        );
+        return {
+          providerName: 'microsoft',
+          provider: this.microsoftProvider,
+          account: null,
+        };
+      }
+
+      // Fallback to SMTP if configured
+      if (this.smtpProvider.isConfigured()) {
+        logger.warn(
+          `[EmailProviderResolver] Google account ${fromEmail} is not yet connected via OAuth. Falling back to SMTP with Reply-To=${fromEmail}.`
+        );
+        return {
+          providerName: 'smtp',
+          provider: this.smtpProvider,
+          account: null,
+        };
+      }
+
+      throw new EmailError(
+        EmailErrorCodes.EMAIL_ACCOUNT_NOT_AUTHORIZED,
+        `Google account ${fromEmail} has not been authorized. Please connect your Google account via OAuth (GET /api/emails/google/auth).`,
+        401
+      );
     }
 
     // 4. Default: preserve Microsoft Graph behavior if configured

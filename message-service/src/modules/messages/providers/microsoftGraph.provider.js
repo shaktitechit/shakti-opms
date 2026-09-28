@@ -151,11 +151,21 @@ class MicrosoftGraphProvider {
     const bccRecipients = parseEmailAddresses(bcc).filter((e) => !toKeys.has(e.toLowerCase()));
 
     const fromObj = parseFromAddress(from);
-    const senderEmailAddress = fromObj && fromObj.address ? fromObj.address : this.senderEmail;
+    const isExternalSender = fromObj?.address && (
+      fromObj.address.endsWith('@gmail.com') ||
+      fromObj.address.endsWith('@googlemail.com') ||
+      fromObj.address.endsWith('@yahoo.com') ||
+      fromObj.address.endsWith('@outlook.com') ||
+      fromObj.address.endsWith('@hotmail.com')
+    );
 
-    const fromPayload = fromObj
-      ? { emailAddress: { address: fromObj.address, name: fromObj.name } }
-      : { emailAddress: { address: senderEmailAddress } };
+    const senderEmailAddress = !isExternalSender && fromObj && fromObj.address ? fromObj.address : this.senderEmail;
+
+    const fromPayload = isExternalSender
+      ? { emailAddress: { address: this.senderEmail, name: fromObj.name || undefined } }
+      : (fromObj
+        ? { emailAddress: { address: fromObj.address, name: fromObj.name } }
+        : { emailAddress: { address: this.senderEmail } });
 
     let replyToPayload;
     if (replyTo) {
@@ -185,7 +195,7 @@ class MicrosoftGraphProvider {
     };
 
     logger.info(
-      `[MicrosoftGraphProvider] Sending email to ${toRecipients.join(', ')} via Graph API (From: ${senderEmailAddress})${ccRecipients.length ? ` (CC: ${ccRecipients.join(', ')})` : ''}...`
+      `[MicrosoftGraphProvider] Sending email to ${toRecipients.join(', ')} via Graph API (Mailbox: ${senderEmailAddress}, Reply-To: ${fromObj?.address || senderEmailAddress})${ccRecipients.length ? ` (CC: ${ccRecipients.join(', ')})` : ''}...`
     );
 
     const sendMailUrl = `https://graph.microsoft.com/v1.0/users/${senderEmailAddress}/sendMail`;
@@ -214,7 +224,17 @@ class MicrosoftGraphProvider {
           `[MicrosoftGraphProvider] Failed to send email via Graph API using sender ${senderEmailAddress} (${graphErr.message}). Retrying with default Graph mailbox (${this.senderEmail})...`
         );
         const fallbackUrl = `https://graph.microsoft.com/v1.0/users/${this.senderEmail}/sendMail`;
-        const response = await axios.post(fallbackUrl, mailBody, {
+        const fallbackMailBody = {
+          ...mailBody,
+          message: {
+            ...mailBody.message,
+            from: { emailAddress: { address: this.senderEmail, name: fromObj?.name } },
+            replyTo: fromObj?.address
+              ? [{ emailAddress: { address: fromObj.address, name: fromObj.name } }]
+              : mailBody.message.replyTo,
+          },
+        };
+        const response = await axios.post(fallbackUrl, fallbackMailBody, {
           headers: {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
