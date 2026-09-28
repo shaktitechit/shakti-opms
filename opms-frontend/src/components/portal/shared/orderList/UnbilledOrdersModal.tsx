@@ -32,6 +32,7 @@ import {
 import { ModalOverlay } from "@/components/portal/shared/ModalOverlay";
 import {
   lineApprovalQuantities,
+  num,
   resolveAccountApprovalStatus,
 } from "@/components/portal/shared/orderLineQuantities";
 import {
@@ -61,7 +62,10 @@ import { toast } from "@/lib/toast";
 import { mutationRejectedMessage } from "@/lib/mutationMessages";
 import { useAppSelector } from "@/store/hooks";
 import { AddUnbilledOrderModal } from "@/components/portal/shared/orderList/AddUnbilledOrderModal";
+import { pickOrders } from "@/components/portal/shared/pickOrders";
+import { useOrderWorkflowCategoryOptions } from "@/components/portal/shared/orderList/useOrderWorkflowCategoryOptions";
 import {
+  useListOrdersQuery,
   useListUnbilledOrdersQuery,
   usePatchUnbilledOrderMutation,
   type UnbilledOrderRecord,
@@ -125,15 +129,31 @@ function pendingQtyForCategory(
     case "on_hold":
       return q.ordered;
     case "pending_admin_approval":
-      return q.pendingAdmin;
+      return q.pendingAdmin > 0 ? q.pendingAdmin : q.ordered;
     case "due_sheet_pending":
       return q.salesApproved > 0 ? q.salesApproved : q.ordered;
     case "pending_finance_approval":
-      return q.pendingFinance > 0 ? q.pendingFinance : q.salesApproved;
+      return q.pendingFinance > 0
+        ? q.pendingFinance
+        : q.salesApproved > 0
+          ? q.salesApproved
+          : q.ordered;
     case "pending_account_approval":
-      return q.pendingAccount > 0 ? q.pendingAccount : q.financeApproved;
+      return q.pendingAccount > 0
+        ? q.pendingAccount
+        : q.financeApproved > 0
+          ? q.financeApproved
+          : q.salesApproved > 0
+            ? q.salesApproved
+            : q.ordered;
     case "open_dispatched":
-      return q.pendingDispatch;
+      return q.pendingDispatch > 0
+        ? q.pendingDispatch
+        : q.accountCleared > 0
+          ? q.accountCleared
+          : q.financeApproved > 0
+            ? q.financeApproved
+            : q.ordered;
     default:
       return Math.max(0, q.ordered - q.dispatched);
   }
@@ -143,7 +163,11 @@ function listOrderLinesFromRow(
   row: Record<string, unknown>,
   cat: OrderWorkflowTabCategory,
 ): ListOrderLine[] {
-  const items = Array.isArray(row.order_items) ? row.order_items : [];
+  const items = Array.isArray(row.order_items)
+    ? row.order_items
+    : Array.isArray(row.items)
+      ? row.items
+      : [];
   const accountStatus = resolveAccountApprovalStatus(row);
   const lines: ListOrderLine[] = [];
 
@@ -154,16 +178,26 @@ function listOrderLinesFromRow(
     const q = lineApprovalQuantities(line, {
       accountApprovalStatus: accountStatus,
     });
-    if (q.ordered <= 0 && q.pendingAdmin <= 0 && q.pendingDispatch <= 0) {
+    const ordered =
+      q.ordered > 0
+        ? q.ordered
+        : num(
+            line.ordered_quantity ??
+              line.quantity ??
+              line.approved_quantity ??
+              line.dispatched_quantity,
+          );
+    if (ordered <= 0 && q.pendingAdmin <= 0 && q.pendingDispatch <= 0) {
       continue;
     }
     const { name, sku } = listOrderProductLabel(line);
+    const pending = pendingQtyForCategory(cat, q);
     lines.push({
       orderItemId: orderItemId || `${name}-${lines.length}`,
       productName: name,
       sku,
-      ordered: q.ordered,
-      pending: pendingQtyForCategory(cat, q),
+      ordered,
+      pending: pending > 0 ? pending : ordered,
     });
   }
   return lines;
@@ -283,8 +317,8 @@ export function UnbilledOrdersModal({
   onClose,
   partyNameById,
   portalBasePath,
-  orders,
-  categoryOptions,
+  orders: ordersProp,
+  categoryOptions: categoryOptionsProp,
 }: UnbilledOrdersModalProps) {
   const [mainTab, setMainTab] = useState<ModalMainTab>("unbilled");
   const [searchQuery, setSearchQuery] = useState("");
@@ -317,6 +351,29 @@ export function UnbilledOrdersModal({
     { status: "open" },
     { skip: !isOpen },
   );
+
+  const allOrdersQ = useListOrdersQuery(
+    {
+      view: "list",
+      paginate: "true",
+      all: "true",
+      page: "1",
+      tab: "all",
+      exclude_status: "draft",
+    },
+    { skip: !isOpen },
+  );
+
+  const fallbackCategoryOptions = useOrderWorkflowCategoryOptions();
+  const categoryOptions = categoryOptionsProp ?? fallbackCategoryOptions;
+
+  const liveOrders = useMemo(() => {
+    if (allOrdersQ.data) {
+      const picked = pickOrders(allOrdersQ.data);
+      if (picked.length > 0) return picked;
+    }
+    return Array.isArray(ordersProp) ? ordersProp : [];
+  }, [allOrdersQ.data, ordersProp]);
 
   const [patchUnbilledOrder] = usePatchUnbilledOrderMutation();
   const isUnbilledTab = mainTab === "unbilled";
@@ -383,14 +440,14 @@ export function UnbilledOrdersModal({
   /** Live list orders by id — same enrichment ListOrdersPage tabs use. */
   const listOrderById = useMemo(() => {
     const map = new Map<string, Record<string, unknown>>();
-    for (const raw of Array.isArray(orders) ? orders : []) {
+    for (const raw of Array.isArray(liveOrders) ? liveOrders : []) {
       if (!raw || typeof raw !== "object") continue;
       const row = raw as Record<string, unknown>;
       const id = orderRefId(row._id ?? row.id);
       if (id) map.set(id, row);
     }
     return map;
-  }, [orders]);
+  }, [liveOrders]);
 
   const orderViews = useMemo((): UnbilledOrderView[] => {
     const views: UnbilledOrderView[] = [];
@@ -504,7 +561,7 @@ export function UnbilledOrdersModal({
   /** Process Pending — from live list orders only (does not touch UnbilledOrder). */
   const processPendingViews = useMemo((): ListOrderView[] => {
     const views: ListOrderView[] = [];
-    for (const raw of Array.isArray(orders) ? orders : []) {
+    for (const raw of Array.isArray(liveOrders) ? liveOrders : []) {
       if (!raw || typeof raw !== "object") continue;
       const row = raw as Record<string, unknown>;
       const cat = getOrderWorkflowTabCategory(row, categoryOptions);
@@ -513,12 +570,12 @@ export function UnbilledOrdersModal({
     }
     views.sort((a, b) => a.orderNo.localeCompare(b.orderNo));
     return views;
-  }, [orders, categoryOptions, buildListOrderView]);
+  }, [liveOrders, categoryOptions, buildListOrderView]);
 
   /** On Hold — from live list orders only (does not touch UnbilledOrder). */
   const onHoldViews = useMemo((): ListOrderView[] => {
     const views: ListOrderView[] = [];
-    for (const raw of Array.isArray(orders) ? orders : []) {
+    for (const raw of Array.isArray(liveOrders) ? liveOrders : []) {
       if (!raw || typeof raw !== "object") continue;
       const row = raw as Record<string, unknown>;
       const cat = getOrderWorkflowTabCategory(row, categoryOptions);
@@ -527,7 +584,7 @@ export function UnbilledOrdersModal({
     }
     views.sort((a, b) => a.orderNo.localeCompare(b.orderNo));
     return views;
-  }, [orders, categoryOptions, buildListOrderView]);
+  }, [liveOrders, categoryOptions, buildListOrderView]);
 
   const listTabViews = isOnHoldTab ? onHoldViews : processPendingViews;
 
@@ -634,8 +691,9 @@ export function UnbilledOrdersModal({
   }, [listTabViews, searchQuery, filterStatus, filterParty]);
 
   const handleRefresh = useCallback(() => {
-    if (isUnbilledTab) void unbilledQ.refetch();
-  }, [isUnbilledTab, unbilledQ]);
+    void unbilledQ.refetch();
+    void allOrdersQ.refetch();
+  }, [unbilledQ, allOrdersQ]);
 
   const openCreateOrder = useCallback((view: UnbilledOrderView) => {
     if (!view.unbilledId) {
@@ -701,7 +759,7 @@ export function UnbilledOrdersModal({
     const existingOrderIds = new Set(
       records.map((r) => unbilledRecordOrderId(r)).filter(Boolean),
     );
-    for (const raw of Array.isArray(orders) ? orders : []) {
+    for (const raw of Array.isArray(liveOrders) ? liveOrders : []) {
       if (!raw || typeof raw !== "object") continue;
       const row = raw as Record<string, unknown>;
       const id = orderRefId(row._id ?? row.id);
@@ -730,7 +788,7 @@ export function UnbilledOrdersModal({
       list.push({ id, orderNo, party });
     }
     return list.sort((a, b) => a.orderNo.localeCompare(b.orderNo));
-  }, [orders, records, partyNameById]);
+  }, [liveOrders, records, partyNameById]);
 
 
 
@@ -869,16 +927,17 @@ export function UnbilledOrdersModal({
 
   if (!isOpen) return null;
 
+  const ordersBusy = allOrdersQ.isLoading || allOrdersQ.isFetching;
   const busy = isUnbilledTab
     ? unbilledQ.isLoading || unbilledQ.isFetching
-    : false;
-  const isError = isUnbilledTab ? unbilledQ.isError : false;
+    : ordersBusy;
+  const isError = isUnbilledTab ? unbilledQ.isError : allOrdersQ.isError;
   const activeCount = isUnbilledTab
     ? filtered.length
     : filteredListTabViews.length;
   const unbilledBusy = unbilledQ.isLoading || unbilledQ.isFetching;
   const canDownload =
-    !unbilledBusy && !isDownloadingPdf && totalPdfOrders > 0;
+    !unbilledBusy && !ordersBusy && !isDownloadingPdf && totalPdfOrders > 0;
   const lineCount = filtered.reduce((sum, view) => sum + view.lines.length, 0);
   const listTabLineCount = filteredListTabViews.reduce(
     (sum, view) => sum + view.lines.length,
@@ -939,28 +998,26 @@ export function UnbilledOrdersModal({
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             {isUnbilledTab ? (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setIsAddUnbilledOpen(true)}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-600 bg-cyan-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-cyan-700 dark:border-cyan-500 dark:bg-cyan-600 dark:hover:bg-cyan-500"
-                  title="Add an unbilled order manually by selecting an order"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add Unbilled Order
-                </button>
-                <button
-                  type="button"
-                  onClick={handleRefresh}
-                  disabled={busy}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-white/5"
-                  title="Reload unbilled list"
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`} />
-                  Refresh
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={() => setIsAddUnbilledOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-cyan-600 bg-cyan-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-cyan-700 dark:border-cyan-500 dark:bg-cyan-600 dark:hover:bg-cyan-500"
+                title="Add an unbilled order manually by selecting an order"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add Unbilled Order
+              </button>
             ) : null}
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-white/10 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-white/5"
+              title="Reload list"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${busy ? "animate-spin" : ""}`} />
+              Refresh
+            </button>
             <button
               type="button"
               onClick={() => void handleDownloadPdf()}
@@ -1573,8 +1630,11 @@ export function UnbilledOrdersModal({
       <AddUnbilledOrderModal
         isOpen={isAddUnbilledOpen}
         onClose={() => setIsAddUnbilledOpen(false)}
-        onSuccess={() => void unbilledQ.refetch()}
-        orders={orders}
+        onSuccess={() => {
+          void unbilledQ.refetch();
+          void allOrdersQ.refetch();
+        }}
+        orders={liveOrders}
         existingUnbilledOrderIds={existingUnbilledOrderIds}
         partyNameById={partyNameById}
         mode="create"
@@ -1583,8 +1643,11 @@ export function UnbilledOrdersModal({
       <AddUnbilledOrderModal
         isOpen={Boolean(editRecord)}
         onClose={closeEditModal}
-        onSuccess={() => void unbilledQ.refetch()}
-        orders={orders}
+        onSuccess={() => {
+          void unbilledQ.refetch();
+          void allOrdersQ.refetch();
+        }}
+        orders={liveOrders}
         existingUnbilledOrderIds={existingUnbilledOrderIds}
         partyNameById={partyNameById}
         mode="edit"

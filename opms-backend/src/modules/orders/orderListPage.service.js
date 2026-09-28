@@ -975,6 +975,7 @@ async function loadPageDocuments(ids) {
     .select(PAGE_SELECT)
     .populate('party', 'name code sra sra_from_date legal_name trade_name party_name')
     .populate('assigned_sales_user', 'name username email department')
+    .populate('order_items.product', 'name product_name sku')
     .lean();
   const byId = new Map(rows.map((row) => [String(row._id), row]));
   return ids.map((id) => byId.get(String(id))).filter(Boolean);
@@ -1022,10 +1023,8 @@ async function listOrdersPage(query, user, buildBaseQuery) {
   const enriched = await enrichOrdersParallel(plain, getModels());
   const data = enriched.map((row) => {
     const summary = summarizeOrder(row);
-    const rest = { ...row };
-    delete rest.order_items;
     return {
-      ...rest,
+      ...row,
       ...summary,
       workflow_tab: tabById.get(String(row._id)) || row.process_stage || null,
     };
