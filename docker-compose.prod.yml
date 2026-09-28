@@ -79,8 +79,8 @@ services:
       context: ./message-service
       dockerfile: Dockerfile
     restart: unless-stopped
-    expose:
-      - "${MESSAGE_SERVICE_PORT:-7011}"
+    ports:
+      - "${MESSAGE_SERVICE_PORT:-7011}:${MESSAGE_SERVICE_PORT:-7011}"
     env_file: *env_file
     environment:
       NODE_ENV: production

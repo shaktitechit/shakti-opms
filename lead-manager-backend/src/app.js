@@ -28,7 +28,7 @@ const { auditContextMiddleware } = require('./middlewares/auditContext.middlewar
 app.use(auditContextMiddleware);
 app.use(authMiddleware);
 
-app.get('/health', (req, res) => {
+app.get(['/health', '/api/health'], (req, res) => {
   res.json({ status: 'ok', service: 'lead-manager-backend', timestamp: new Date().toISOString() });
 });
 

@@ -52,7 +52,7 @@ app.use(express.json({
 app.use(auditContextMiddleware);
 app.use(authMiddleware);
 
-app.get('/health', (_req, res) => res.json({ ok: true }));
+app.get(['/health', '/api/health'], (_req, res) => res.json({ ok: true }));
 
 // Serve API Documentation
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));

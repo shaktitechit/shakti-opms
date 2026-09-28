@@ -166,9 +166,8 @@ services:
       dockerfile: Dockerfile
       pull: false
     restart: unless-stopped
-    # Internal only — reach via Compose network / nginx, not host publish
-    expose:
-      - "${MESSAGE_SERVICE_PORT:-7011}"
+    ports:
+      - "${MESSAGE_SERVICE_PORT:-7011}:${MESSAGE_SERVICE_PORT:-7011}"
     env_file: *env_file
     extra_hosts: *extra_hosts
     environment:
@@ -193,9 +192,8 @@ services:
       dockerfile: Dockerfile
       pull: false
     restart: unless-stopped
-    # Internal only — reach via Compose network / nginx, not host publish
-    expose:
-      - "${NOTIFICATION_SERVICE_PORT:-7012}"
+    ports:
+      - "${NOTIFICATION_SERVICE_PORT:-7012}:${NOTIFICATION_SERVICE_PORT:-7012}"
     env_file: *env_file
     extra_hosts: *extra_hosts
     environment:

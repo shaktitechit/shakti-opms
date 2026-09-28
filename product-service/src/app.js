@@ -21,7 +21,7 @@ app.use(express.urlencoded({ limit: JSON_BODY_LIMIT || '50mb', extended: true })
 
 app.use(authMiddleware);
 
-app.get('/health', (req, res) => {
+app.get(['/health', '/api/health'], (req, res) => {
   res.json({ status: 'ok', service: 'product-service', timestamp: new Date().toISOString() });
 });
 
