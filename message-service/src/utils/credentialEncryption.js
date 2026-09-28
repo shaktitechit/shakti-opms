@@ -3,30 +3,40 @@
  * @module utils/credentialEncryption
  */
 const crypto = require('crypto');
-const { JWT_SECRET } = require('../config/env');
+const env = require('../config/env');
 
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
 const AUTH_TAG_LENGTH = 16;
+const PREFIX = 'enc:';
 
 /**
  * Derives a consistent 32-byte encryption key from environment secrets.
  */
 function getEncryptionKey() {
-  const secret = process.env.EMAIL_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY || JWT_SECRET || 'default-insecure-opms-encryption-key-32chars';
+  const secret =
+    env.EMAIL_ENCRYPTION_KEY ||
+    process.env.EMAIL_ENCRYPTION_KEY ||
+    process.env.ENCRYPTION_KEY ||
+    env.JWT_SECRET ||
+    'default-insecure-opms-encryption-key-32chars';
   return crypto.createHash('sha256').update(String(secret)).digest();
 }
 
 /**
- * Encrypts a plaintext string.
+ * Encrypts a plaintext string. Idempotent: will not double-encrypt.
  * @param {string} text - The plaintext to encrypt.
- * @returns {string|null} Base64-encoded encrypted payload (iv + authTag + ciphertext) or null.
+ * @returns {string|null} Prefixed encrypted string (`enc:...`) or original if empty.
  */
 function encrypt(text) {
   if (text === undefined || text === null || text === '') {
     return text;
   }
   const strText = String(text);
+  if (strText.startsWith(PREFIX)) {
+    return strText;
+  }
+
   const iv = crypto.randomBytes(IV_LENGTH);
   const key = getEncryptionKey();
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
@@ -37,23 +47,25 @@ function encrypt(text) {
 
   // Combine iv (16 bytes) + authTag (16 bytes) + encrypted content
   const combined = Buffer.concat([iv, authTag, encrypted]);
-  return combined.toString('base64');
+  return `${PREFIX}${combined.toString('base64')}`;
 }
 
 /**
- * Decrypts an encrypted base64 payload.
- * @param {string} encryptedBase64 - The base64 encrypted payload.
- * @returns {string|null} The decrypted plaintext string or original value if not encrypted.
+ * Decrypts an encrypted payload. Idempotent: returns plaintext directly if unencrypted.
+ * @param {string} encryptedVal - The encrypted string.
+ * @returns {string|null} The decrypted plaintext string.
  */
-function decrypt(encryptedBase64) {
-  if (!encryptedBase64 || typeof encryptedBase64 !== 'string') {
-    return encryptedBase64;
+function decrypt(encryptedVal) {
+  if (!encryptedVal || typeof encryptedVal !== 'string') {
+    return encryptedVal;
   }
 
+  const raw = encryptedVal.startsWith(PREFIX) ? encryptedVal.slice(PREFIX.length) : encryptedVal;
+
   try {
-    const combined = Buffer.from(encryptedBase64, 'base64');
+    const combined = Buffer.from(raw, 'base64');
     if (combined.length < IV_LENGTH + AUTH_TAG_LENGTH) {
-      return encryptedBase64;
+      return encryptedVal;
     }
 
     const iv = combined.subarray(0, IV_LENGTH);
@@ -68,8 +80,8 @@ function decrypt(encryptedBase64) {
     decrypted += decipher.final('utf8');
     return decrypted;
   } catch (_err) {
-    // If decryption fails (e.g. unencrypted legacy string), return as is
-    return encryptedBase64;
+    // If decryption fails, return original string safely
+    return encryptedVal;
   }
 }
 

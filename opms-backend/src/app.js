@@ -110,6 +110,7 @@ app.use('/api/drivers', driverRoutes);
 app.use('/api/transport-agents', transportAgentRoutes);
 app.use('/api/messages', proxyToMessageService);
 app.use('/api/emails', proxyToMessageService);
+app.use('/api/email', proxyToMessageService);
 app.use('/api/auto-emails', proxyToMessageService);
 app.use('/api/communication', proxyToMessageService);
 app.use('/api/reminders', reminderRoutes);

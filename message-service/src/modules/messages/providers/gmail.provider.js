@@ -8,6 +8,7 @@ const googleGmail = require('../../../config/googleGmail');
 const { logger } = require('../../../config/logger');
 const { EmailError, EmailErrorCodes } = require('../errors/emailErrors');
 const { getModels } = require('../../../data/mongoRegistry');
+const { decrypt, encrypt } = require('../../../utils/credentialEncryption');
 
 /**
  * Extracts clean base64 string from string, data URI, or Buffer.
@@ -159,24 +160,39 @@ class GmailProvider {
 
       const { access_token, refresh_token, expires_in, id_token, token_type } = response.data;
 
-      // Fetch user email via token info or userinfo endpoint
+      // Extract user email via id_token payload (offline & reliable) or userinfo endpoint
       let userEmail = null;
-      try {
-        const userInfoRes = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
-          headers: { Authorization: `Bearer ${access_token}` },
-          timeout: 5000,
-        });
-        userEmail = userInfoRes.data.email;
-      } catch (_userErr) {
-        // Fallback: try tokeninfo
+      if (id_token) {
         try {
-          const tokenInfoRes = await axios.get(
-            `https://oauth2.googleapis.com/tokeninfo?access_token=${access_token}`,
-            { timeout: 5000 }
-          );
-          userEmail = tokenInfoRes.data.email;
-        } catch (_tokenInfoErr) {
-          logger.warn('[GmailProvider] Could not fetch email from userinfo/tokeninfo');
+          const parts = id_token.split('.');
+          if (parts.length === 3) {
+            const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+            if (payload && payload.email) {
+              userEmail = payload.email;
+            }
+          }
+        } catch (_jwtErr) {
+          // ignore
+        }
+      }
+
+      if (!userEmail) {
+        try {
+          const userInfoRes = await axios.get('https://www.googleapis.com/oauth2/v2/userinfo', {
+            headers: { Authorization: `Bearer ${access_token}` },
+            timeout: 5000,
+          });
+          userEmail = userInfoRes.data.email;
+        } catch (_userErr) {
+          try {
+            const tokenInfoRes = await axios.get(
+              `https://oauth2.googleapis.com/tokeninfo?access_token=${access_token}`,
+              { timeout: 5000 }
+            );
+            userEmail = tokenInfoRes.data.email;
+          } catch (_tokenInfoErr) {
+            logger.warn('[GmailProvider] Could not fetch email from userinfo/tokeninfo');
+          }
         }
       }
 
@@ -207,10 +223,11 @@ class GmailProvider {
    * Refreshes an expired Google access token using the stored refresh token.
    */
   async refreshAccessToken(account) {
-    if (!account || !account.refreshToken) {
+    const rawRefreshToken = account ? decrypt(account.refreshToken) : null;
+    if (!account || !rawRefreshToken) {
       throw new EmailError(
         EmailErrorCodes.EMAIL_ACCOUNT_NOT_AUTHORIZED,
-        `No refresh token available for Google account: ${account?.email || 'unknown'}`,
+        `No refresh token available for Google account: ${account?.email || 'unknown'}. Please re-authorize Google account.`,
         401
       );
     }
@@ -220,7 +237,7 @@ class GmailProvider {
       const params = new URLSearchParams({
         client_id: this.clientId,
         client_secret: this.clientSecret,
-        refresh_token: account.refreshToken,
+        refresh_token: rawRefreshToken,
         grant_type: 'refresh_token',
       });
 
@@ -234,7 +251,7 @@ class GmailProvider {
 
       // Update in MongoDB
       const { EmailAccount } = getModels();
-      if (account._id) {
+      if (account._id && EmailAccount) {
         await EmailAccount.findByIdAndUpdate(account._id, {
           accessToken: access_token,
           accessTokenExpiresAt: expiresAt,
@@ -256,7 +273,7 @@ class GmailProvider {
         (errMsg.includes('invalid_grant') || errMsg.includes('revoked'))
       ) {
         const { EmailAccount } = getModels();
-        if (account._id) {
+        if (account._id && EmailAccount) {
           await EmailAccount.findByIdAndUpdate(account._id, {
             status: 'revoked',
           });
@@ -288,9 +305,11 @@ class GmailProvider {
       );
     }
 
+    const plainAccessToken = decrypt(account.accessToken);
+
     const bufferMs = 5 * 60 * 1000; // 5 minutes before expiry
     const isExpired =
-      !account.accessToken ||
+      !plainAccessToken ||
       !account.accessTokenExpiresAt ||
       new Date(account.accessTokenExpiresAt).getTime() - Date.now() < bufferMs;
 
@@ -298,7 +317,7 @@ class GmailProvider {
       return this.refreshAccessToken(account);
     }
 
-    return account.accessToken;
+    return plainAccessToken;
   }
 
   /**

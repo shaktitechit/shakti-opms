@@ -10,6 +10,7 @@ const SmtpProvider = require('./smtp.provider');
 const { getModels } = require('../../../data/mongoRegistry');
 const { EmailError, EmailErrorCodes } = require('../errors/emailErrors');
 const { logger } = require('../../../config/logger');
+const { decrypt } = require('../../../utils/credentialEncryption');
 const mongoose = require('mongoose');
 
 /**
@@ -26,6 +27,18 @@ function parseEmailAddressOnly(val) {
     return str.split(/\s+/).pop().replace(/[<>]/g, '').trim().toLowerCase();
   }
   return '';
+}
+
+/**
+ * Normalizes account object and ensures accessToken & refreshToken are decrypted.
+ */
+function normalizeAccount(account) {
+  if (!account) return null;
+  return {
+    ...account,
+    accessToken: decrypt(account.accessToken),
+    refreshToken: decrypt(account.refreshToken),
+  };
 }
 
 class EmailProviderResolver {
@@ -51,7 +64,8 @@ class EmailProviderResolver {
     // 1. Check database for configured sender account
     if (EmailAccount && fromEmail && isDbConnected) {
       try {
-        account = await EmailAccount.findOne({ email: fromEmail }).lean({ getters: true });
+        const rawAccount = await EmailAccount.findOne({ email: fromEmail }).lean({ getters: true });
+        account = normalizeAccount(rawAccount);
       } catch (err) {
         logger.warn(`[EmailProviderResolver] DB lookup failed for ${fromEmail}: ${err.message}`);
       }
@@ -60,8 +74,11 @@ class EmailProviderResolver {
     // If explicit provider was requested
     if (preferredProvider) {
       if (preferredProvider === 'google') {
-        if (!account && fromEmail && isDbConnected && EmailAccount) {
-          account = await EmailAccount.findOne({ provider: 'google', status: 'active' }).lean({ getters: true });
+        if (!account && isDbConnected && EmailAccount) {
+          const rawAccount = fromEmail
+            ? await EmailAccount.findOne({ email: fromEmail, provider: 'google' }).lean({ getters: true })
+            : await EmailAccount.findOne({ provider: 'google', status: 'active' }).lean({ getters: true });
+          account = normalizeAccount(rawAccount);
         }
         if (!account) {
           throw new EmailError(
@@ -134,13 +151,14 @@ class EmailProviderResolver {
     if (isGmailDomain) {
       // Look for any active Google account in DB if exact match wasn't found
       if (!account && EmailAccount && isDbConnected) {
-        account = await EmailAccount.findOne({ provider: 'google', status: 'active' }).lean({ getters: true });
+        const rawAccount = await EmailAccount.findOne({ provider: 'google', status: 'active' }).lean({ getters: true });
+        account = normalizeAccount(rawAccount);
       }
 
       if (!account) {
         throw new EmailError(
           EmailErrorCodes.EMAIL_ACCOUNT_NOT_AUTHORIZED,
-          `Google account ${fromEmail} has not been authorized. Please connect your Google account via OAuth.`,
+          `Google account ${fromEmail} has not been authorized. Please connect your Google account via OAuth (GET /api/emails/google/auth).`,
           401
         );
       }
@@ -172,12 +190,12 @@ class EmailProviderResolver {
 
     // 6. If Google is configured and an active account exists
     if (EmailAccount && isDbConnected) {
-      const anyGoogleAccount = await EmailAccount.findOne({ provider: 'google', status: 'active' }).lean({ getters: true });
-      if (anyGoogleAccount) {
+      const rawAccount = await EmailAccount.findOne({ provider: 'google', status: 'active' }).lean({ getters: true });
+      if (rawAccount) {
         return {
           providerName: 'google',
           provider: this.gmailProvider,
-          account: anyGoogleAccount,
+          account: normalizeAccount(rawAccount),
         };
       }
     }
