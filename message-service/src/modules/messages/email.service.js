@@ -100,6 +100,18 @@ async function handleGoogleCallback(code) {
     throw new ApiError(400, 'Unable to determine email address for authorized Google account');
   }
 
+  const grantedScopes = tokenData.scope || '';
+  const hasSendScope =
+    grantedScopes.includes('gmail.send') ||
+    grantedScopes.includes('mail.google.com') ||
+    grantedScopes.includes('gmail.compose');
+
+  if (grantedScopes && !hasSendScope) {
+    logger.warn(
+      `[Email Service] Account ${tokenData.email} was connected but granted scopes (${grantedScopes}) do not include 'gmail.send'. Please ensure the user checks the 'Send email on your behalf' permission on the consent screen.`
+    );
+  }
+
   const updateFields = {
     email: tokenData.email.toLowerCase().trim(),
     provider: 'google',
@@ -107,10 +119,12 @@ async function handleGoogleCallback(code) {
     accessToken: tokenData.accessToken,
     refreshToken: tokenData.refreshToken,
     accessTokenExpiresAt: tokenData.expiresAt,
-    status: 'active',
+    status: hasSendScope || !grantedScopes ? 'active' : 'error',
     metadata: {
       connectedAt: new Date(),
       scopes: require('../../config/googleGmail').scopes,
+      grantedScopes: grantedScopes || undefined,
+      hasSendScope,
     },
   };
 
@@ -125,7 +139,7 @@ async function handleGoogleCallback(code) {
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
 
-  logger.info(`[Email Service] Successfully connected Google account: ${account.email}`);
+  logger.info(`[Email Service] Successfully connected Google account: ${account.email} (sendScope=${hasSendScope})`);
   return account.toSafeObject();
 }
 

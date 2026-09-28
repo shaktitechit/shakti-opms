@@ -165,7 +165,7 @@ class GmailProvider {
         timeout: 10000,
       });
 
-      const { access_token, refresh_token, expires_in, id_token, token_type } = response.data;
+      const { access_token, refresh_token, expires_in, id_token, token_type, scope } = response.data;
 
       // Extract user email via id_token payload (offline & reliable) or userinfo endpoint
       let userEmail = null;
@@ -210,8 +210,10 @@ class GmailProvider {
         accessToken: access_token,
         refreshToken: refresh_token,
         expiresAt,
+        scope,
         raw: {
           token_type,
+          scope,
           id_token: id_token ? '[REDACTED]' : undefined,
         },
       };

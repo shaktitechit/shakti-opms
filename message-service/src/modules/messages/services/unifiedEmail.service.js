@@ -89,6 +89,48 @@ class UnifiedEmailService {
         data: result.data || result,
       };
     } catch (err) {
+      // If Google failed due to insufficient scopes or auth, and no explicit provider was forced, fallback to Microsoft Graph
+      const isAuthOrScopeError =
+        err.message?.includes('insufficient authentication scopes') ||
+        err.message?.includes('invalid_grant') ||
+        err.statusCode === 401 ||
+        err.statusCode === 403;
+
+      if (providerName === 'google' && !requestedProvider && isAuthOrScopeError && resolver.microsoftProvider.isConfigured()) {
+        logger.warn(
+          `[UnifiedEmailService] Google delivery failed for ${from || 'sender'} (${err.message}). Falling back to Microsoft Graph.`
+        );
+        try {
+          const fallbackResult = await resolver.microsoftProvider.send({
+            from,
+            to: toRecipients,
+            cc,
+            bcc,
+            replyTo,
+            subject,
+            html,
+            text,
+            attachments,
+            account: null,
+          });
+          const durationMs = Date.now() - startTime;
+          logger.info(
+            `[UnifiedEmailService] Email sent successfully via Microsoft Graph fallback in ${durationMs}ms`
+          );
+          return {
+            success: true,
+            provider: 'microsoft',
+            fallbackFrom: 'google',
+            messageId: fallbackResult.messageId || null,
+            from: from || fallbackResult.from || null,
+            durationMs,
+            data: fallbackResult.data || fallbackResult,
+          };
+        } catch (fallbackErr) {
+          logger.error(`[UnifiedEmailService] Fallback to Microsoft Graph also failed: ${fallbackErr.message}`);
+        }
+      }
+
       const durationMs = Date.now() - startTime;
       const errorCode = err.code || EmailErrorCodes.EMAIL_SEND_FAILED;
 
