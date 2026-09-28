@@ -1,19 +1,26 @@
 /**
- * @fileoverview Email Service: service methods specific to Email messages.
+ * @fileoverview Email Service: service methods for email messaging, OAuth, and email accounts.
  * @module modules/messages/email.service
  */
 const messageService = require('./message.service');
 const { getModels } = require('../../data/mongoRegistry');
 const { toPlain } = require('../../utils/mongoJson');
+const GmailProvider = require('./providers/gmail.provider');
+const { ApiError } = require('../../utils/ApiError');
+const { logger } = require('../../config/logger');
+
+const gmailProvider = new GmailProvider();
 
 /**
  * Creates and queues a new outbound email.
  */
 async function sendEmailMessage(data) {
-  const { recipient, from, subject, body, templateName, templateParams, orderId, attachments, cc } = data;
+  const { recipient, to, from, subject, body, templateName, templateParams, orderId, attachments, cc, bcc } = data;
+
+  const targetRecipient = recipient || to;
 
   const messageData = {
-    recipient,
+    recipient: targetRecipient,
     from: from || (templateParams && templateParams.from) || undefined,
     channel: 'email',
     subject: subject || 'Notification',
@@ -23,6 +30,7 @@ async function sendEmailMessage(data) {
     order: orderId || undefined,
     attachments: attachments || (templateParams && templateParams.attachments) || undefined,
     cc: cc || (templateParams && templateParams.cc) || undefined,
+    bcc: bcc || (templateParams && templateParams.bcc) || undefined,
   };
 
   return messageService.createAndQueueMessage(messageData);
@@ -71,8 +79,87 @@ async function getEmailById(id) {
   return row ? toPlain(row) : null;
 }
 
+/**
+ * Generates the Google OAuth authorization URL.
+ */
+function getGoogleAuthUrl(state = '') {
+  return gmailProvider.getAuthorizationUrl(state);
+}
+
+/**
+ * Handles Google OAuth callback: exchanges code, saves/updates account in DB.
+ */
+async function handleGoogleCallback(code) {
+  const { EmailAccount } = getModels();
+  if (!EmailAccount) {
+    throw new ApiError(500, 'EmailAccount model is not registered');
+  }
+
+  const tokenData = await gmailProvider.exchangeAuthCode(code);
+  if (!tokenData.email) {
+    throw new ApiError(400, 'Unable to determine email address for authorized Google account');
+  }
+
+  const updateFields = {
+    email: tokenData.email.toLowerCase().trim(),
+    provider: 'google',
+    authType: 'google_oauth',
+    accessToken: tokenData.accessToken,
+    refreshToken: tokenData.refreshToken,
+    accessTokenExpiresAt: tokenData.expiresAt,
+    status: 'active',
+    metadata: {
+      connectedAt: new Date(),
+      scopes: require('../../config/googleGmail').scopes,
+    },
+  };
+
+  // Preserve existing refresh token if Google didn't return a new one on re-auth
+  if (!tokenData.refreshToken) {
+    delete updateFields.refreshToken;
+  }
+
+  const account = await EmailAccount.findOneAndUpdate(
+    { email: updateFields.email },
+    { $set: updateFields },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  logger.info(`[Email Service] Successfully connected Google account: ${account.email}`);
+  return account.toSafeObject();
+}
+
+/**
+ * Lists configured email accounts without exposing credentials.
+ */
+async function listAccounts() {
+  const { EmailAccount } = getModels();
+  if (!EmailAccount) return [];
+  const accounts = await EmailAccount.find({}).sort({ createdAt: -1 });
+  return accounts.map((acc) => acc.toSafeObject());
+}
+
+/**
+ * Deactivates or removes an email account by ID.
+ */
+async function deleteAccount(id) {
+  const { EmailAccount } = getModels();
+  if (!EmailAccount) {
+    throw new ApiError(500, 'EmailAccount model is not registered');
+  }
+  const account = await EmailAccount.findByIdAndDelete(id);
+  if (!account) {
+    throw new ApiError(404, 'Email account not found');
+  }
+  return { success: true, message: `Account ${account.email} deleted successfully.` };
+}
+
 module.exports = {
   sendEmailMessage,
   listEmails,
   getEmailById,
+  getGoogleAuthUrl,
+  handleGoogleCallback,
+  listAccounts,
+  deleteAccount,
 };

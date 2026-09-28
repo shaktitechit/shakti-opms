@@ -45,6 +45,17 @@ module.exports = {
   MICROSOFT_GRAPH_CLIENT_SECRET: process.env.MICROSOFT_GRAPH_CLIENT_SECRET || '',
   MICROSOFT_GRAPH_SENDER_EMAIL: process.env.MICROSOFT_GRAPH_SENDER_EMAIL || '',
 
+  /** Google Gmail API Configuration */
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
+  GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET || '',
+  GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI || '',
+  GOOGLE_GMAIL_SCOPES:
+    process.env.GOOGLE_GMAIL_SCOPES ||
+    'https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/userinfo.email',
+
+  /** Credential Encryption */
+  EMAIL_ENCRYPTION_KEY: process.env.EMAIL_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY || '',
+
   /** WhatsApp Cloud API Configuration */
   WHATSAPP_ACCESS_TOKEN: process.env.WHATSAPP_ACCESS_TOKEN || '',
   WHATSAPP_PHONE_NUMBER_ID: process.env.WHATSAPP_PHONE_NUMBER_ID || '',

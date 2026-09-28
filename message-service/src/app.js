@@ -33,6 +33,7 @@ app.get('/health', (req, res) => {
 
 app.use('/api/messages', messageRoutes);
 app.use('/api/emails', emailRoutes);
+app.use('/api/email', emailRoutes);
 app.use('/api/auto-emails', autoEmailRoutes);
 app.use('/api/communication', communicationRoutes);
 

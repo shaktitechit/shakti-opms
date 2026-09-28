@@ -7,10 +7,15 @@ const router = Router();
 const { requireAuth } = require('../../middlewares/auth.middleware');
 const controller = require('./email.controller');
 
-router.use(requireAuth);
+// Google OAuth endpoints (Callback must be accessible from OAuth redirect)
+router.get('/google/auth', controller.getGoogleAuth);
+router.get('/google/callback', controller.googleCallback);
 
-router.post('/', controller.sendEmail);
-router.get('/', controller.listEmails);
-router.get('/:id', controller.getEmailById);
+// Protected routes
+router.post('/', requireAuth, controller.sendEmail);
+router.get('/', requireAuth, controller.listEmails);
+router.get('/accounts', requireAuth, controller.listAccounts);
+router.delete('/accounts/:id', requireAuth, controller.deleteAccount);
+router.get('/:id', requireAuth, controller.getEmailById);
 
 module.exports = router;
