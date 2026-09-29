@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const AUTH_SERVICE = process.env.AUTH_SERVICE_URL || "http://auth-service:7003";
+const AUTH_SERVICE =
+  process.env.AUTH_SERVICE_URL ||
+  process.env.NEXT_PUBLIC_AUTH_SERVICE_URL ||
+  "http://auth-service:7003";
 
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get("authorization");
