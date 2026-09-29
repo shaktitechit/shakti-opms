@@ -36,6 +36,8 @@ export type VisitFormModalProps = {
   planDate?: string | null;
   /** Assigned executive on the parent work plan — used to scope Existing Leads search & assignment. */
   salesUserId?: string | null;
+  /** ID of the plan owner — used to determine if current user is the senior */
+  planOwnerId?: string | null;
   isSaving: boolean;
   onClose: () => void;
   onSubmit: (body: Record<string, unknown>) => void | Promise<void>;
@@ -212,6 +214,7 @@ export function VisitFormModal({
   initial,
   planDate,
   salesUserId,
+  planOwnerId = null,
   isSaving,
   onClose,
   onSubmit,
@@ -221,6 +224,8 @@ export function VisitFormModal({
   const adminRole = isWpAdmin(sessionUser);
   const managerRole = isWpManager(sessionUser);
   const elevatedRole = isWpElevated(sessionUser);
+  // Senior Remark visible only when current user is NOT the plan owner
+  const isSeniorViewing = elevatedRole && (!planOwnerId || String(sessionUserId) !== String(planOwnerId));
 
   // Queries for allowed executives
   const { data: usersData } = useGetUsersQuery(undefined, { skip: !open || !adminRole });
@@ -327,6 +332,7 @@ export function VisitFormModal({
   const [address, setAddress] = useState("");
   const [purpose, setPurpose] = useState("");
   const [notes, setNotes] = useState("");
+  const [managerRemarks, setManagerRemarks] = useState("");
   const [plannedStartTime, setPlannedStartTime] = useState("");
   const [plannedEndTime, setPlannedEndTime] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -400,6 +406,7 @@ export function VisitFormModal({
         setAddress(initial.address || "");
         setPurpose(initial.purpose || "");
         setNotes(initial.notes || "");
+        setManagerRemarks(initial.manager_remarks || "");
         setPlannedStartTime(timeFromIso(initial.planned_start_time));
         setPlannedEndTime(timeFromIso(initial.planned_end_time));
       } else {
@@ -413,6 +420,7 @@ export function VisitFormModal({
         setAddress("");
         setPurpose("");
         setNotes("");
+        setManagerRemarks("");
         setPlannedStartTime("");
         setPlannedEndTime("");
       }
@@ -524,6 +532,7 @@ export function VisitFormModal({
       address: address.trim() || undefined,
       purpose: purpose.trim() || undefined,
       notes: notes.trim() || undefined,
+      manager_remarks: managerRemarks.trim() || undefined,
       planned_start_time: combinePlanDateAndTime(internalPlanDate, plannedStartTime),
       planned_end_time: combinePlanDateAndTime(internalPlanDate, plannedEndTime),
     });
@@ -990,6 +999,22 @@ export function VisitFormModal({
               className={inputClass}
             />
           </div>
+
+          {isSeniorViewing && (
+            <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-3 space-y-1.5">
+              <label className="text-xs font-semibold text-purple-700 dark:text-purple-300">
+                Senior Remark (Optional)
+              </label>
+              <textarea
+                rows={2}
+                value={managerRemarks}
+                onChange={(e) => setManagerRemarks(e.target.value)}
+                placeholder="Add senior guidance or instructions for this visit..."
+                disabled={isSaving}
+                className="w-full rounded-lg border border-purple-500/30 bg-card p-2.5 text-xs text-foreground placeholder:text-muted focus:outline-hidden focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3 bg-surface-muted/30">

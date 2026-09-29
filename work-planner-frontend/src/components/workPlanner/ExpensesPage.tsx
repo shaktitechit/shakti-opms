@@ -2,16 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Download, RefreshCw, Search, FileSpreadsheet, Eye, Paperclip } from "lucide-react";
+import { Download, RefreshCw, Search, FileSpreadsheet, Eye, Paperclip, Users } from "lucide-react";
 import { toast } from "sonner";
 import {
   useGetExpensesQuery,
   useApproveExpenseMutation,
   useRejectExpenseMutation,
+  useGetTeamTreeQuery,
+  useGetMyTeamQuery,
 } from "@/store/api/workPlannerApiSlice";
-import { isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
+import { isWpAdmin, isWpElevated, isWpManager, readSessionFromStorage } from "@/utils/authStorage";
 import { resolvePublicAssetUrl, withFileAccessToken } from "@/lib/env";
-import type { WorkPlanExpenseRecord } from "@/types/workPlanner";
+import type { WorkPlanExpenseRecord, WorkPlanExpenseAttachment } from "@/types/workPlanner";
 import { DownloadExpensesModal } from "./DownloadExpensesModal";
 import { DownloadWorkPlansModal } from "./DownloadWorkPlansModal";
 import { RejectExpenseModal } from "./RejectExpenseModal";
@@ -30,6 +32,7 @@ export function ExpensesPage() {
   const searchParams = useSearchParams();
   const sessionUser = readSessionFromStorage()?.user;
   const sessionToken = readSessionFromStorage()?.token;
+  const adminRole = isWpAdmin(sessionUser);
   const elevatedRole = isWpElevated(sessionUser);
   const { previewDoc, previewBlobUrl, previewLoading, openPreview, closePreview, downloadFile } =
     useFilePreview(sessionToken);
@@ -41,6 +44,7 @@ export function ExpensesPage() {
   const [ownershipScope, setOwnershipScope] = useState<OwnershipScope>(
     elevatedRole ? initialScope : "mine"
   );
+  const [selectedExecutive, setSelectedExecutive] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -52,6 +56,36 @@ export function ExpensesPage() {
   const [approveExpenseMut] = useApproveExpenseMutation();
   const [rejectExpenseMut] = useRejectExpenseMutation();
 
+  // Team hierarchy data
+  const { data: tree } = useGetTeamTreeQuery(undefined, { skip: !adminRole });
+  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !elevatedRole || adminRole });
+
+  const executiveOptions = useMemo<Array<{ id: string; name: string; email?: string }>>(() => {
+    if (!elevatedRole) return [];
+    if (adminRole && tree) {
+      const all: Array<{ _id?: string; id?: string; name: string; email?: string }> = [
+        ...(tree.executives || []),
+        ...(tree.managers || []),
+        ...(tree.coordinators || []),
+      ];
+      const seen = new Set<string>();
+      return all
+        .filter((u) => {
+          const id = String(u._id || u.id || "");
+          if (!id || seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        })
+        .map((u) => ({ id: String(u._id || u.id), name: u.name, email: u.email }));
+    }
+    if (myTeamData?.members) {
+      return (myTeamData.members as Array<{ _id?: string; id?: string; name: string; email?: string }>).map(
+        (m) => ({ id: String(m._id || m.id), name: m.name, email: m.email })
+      );
+    }
+    return [];
+  }, [adminRole, elevatedRole, tree, myTeamData]);
+
   const queryParams = useMemo(() => {
     const q: Record<string, string | number | undefined> = {
       page: currentPage,
@@ -62,9 +96,12 @@ export function ExpensesPage() {
     if (dateTo) q.to = dateTo;
     if (elevatedRole) {
       q.scope = ownershipScope;
+      if (ownershipScope === "team" && selectedExecutive !== "all") {
+        q.sales_user = selectedExecutive;
+      }
     }
     return q;
-  }, [currentPage, statusFilter, dateFrom, dateTo, elevatedRole, ownershipScope]);
+  }, [currentPage, statusFilter, dateFrom, dateTo, elevatedRole, ownershipScope, selectedExecutive]);
 
   const { data: expensesRes, isLoading: loading, refetch: loadExpenses } = useGetExpensesQuery(queryParams);
 
@@ -211,6 +248,27 @@ export function ExpensesPage() {
           />
         </div>
 
+        {elevatedRole && ownershipScope === "team" && executiveOptions.length > 0 && (
+          <div className="flex items-center gap-1.5">
+            <Users className="h-3.5 w-3.5 text-muted shrink-0" />
+            <select
+              value={selectedExecutive}
+              onChange={(e) => {
+                setSelectedExecutive(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
+            >
+              <option value="all">All Team Members</option>
+              {executiveOptions.map((exec) => (
+                <option key={exec.id} value={exec.id}>
+                  {exec.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div className="flex items-center gap-1.5">
           <input
             type="date"
@@ -276,6 +334,7 @@ export function ExpensesPage() {
                         (exp.work_plan as { _id?: string; id?: string })?.id) ||
                     "";
                   const categoryName = EXPENSE_CATEGORY_LABELS[exp.category] || exp.category;
+                  const isBike = exp.category === "Travel" && exp.sub_category === "Private Bike";
 
                   return (
                     <tr key={expId} className="hover:bg-surface-muted/50 transition">
@@ -286,53 +345,74 @@ export function ExpensesPage() {
                         {salesUserLabel(exp.sales_user)}
                       </td>
                       <td className="px-4 py-3 font-medium text-foreground">
-                        {categoryName}
+                        <div>{categoryName}</div>
+                        {exp.sub_category ? (
+                          <div className="text-[11px] text-muted font-normal">
+                            {exp.sub_category}
+                            {isBike && exp.start_reading != null && exp.closing_reading != null ? (
+                              <span className="block text-primary font-medium text-[10px]">
+                                {exp.start_reading} → {exp.closing_reading} KM (
+                                {Math.max(0, exp.closing_reading - exp.start_reading)} KM @ ₹3.5/km)
+                              </span>
+                            ) : null}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-4 py-3 text-muted max-w-xs font-sans">
                         <div className="truncate">{exp.description || "—"}</div>
-                        {exp.receipt_attachment ? (
-                          <div className="mt-1 flex items-center gap-1.5">
-                            {(() => {
-                              const att = exp.receipt_attachment;
-                              const url = typeof att === "object" ? att.url : undefined;
-                              const docName =
-                                typeof att === "object"
-                                  ? att.original_name || att.file_name || "Receipt"
-                                  : "Receipt";
-                              const mimeType = typeof att === "object" ? att.mime_type || "" : "";
-                              const baseUrl = url ? resolvePublicAssetUrl(url) : "#";
-                              const fullUrl = withFileAccessToken(baseUrl, sessionToken);
-                              return (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      openPreview({
-                                        name: docName,
-                                        url: fullUrl,
-                                        mime: mimeType,
-                                      })
-                                    }
-                                    className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary/20 transition"
-                                    title="Preview receipt document"
-                                  >
-                                    <Eye className="h-3 w-3" />
-                                    {docName}
-                                  </button>
-                                  <a
-                                    href={fullUrl}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="text-muted hover:text-foreground transition p-0.5"
-                                    title="Open in new tab"
-                                  >
-                                    <Paperclip className="h-3 w-3" />
-                                  </a>
-                                </>
-                              );
-                            })()}
-                          </div>
-                        ) : null}
+                        {(() => {
+                          const attList: (WorkPlanExpenseAttachment | string)[] = [];
+                          if (Array.isArray(exp.attachments) && exp.attachments.length > 0) {
+                            attList.push(...exp.attachments);
+                          } else if (exp.receipt_attachment) {
+                            attList.push(exp.receipt_attachment);
+                          }
+
+                          if (attList.length === 0) return null;
+
+                          return (
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              {attList.map((att, attIdx) => {
+                                const url = typeof att === "object" ? att.url : undefined;
+                                const docName =
+                                  typeof att === "object"
+                                    ? att.original_name || att.file_name || `Receipt #${attIdx + 1}`
+                                    : `Receipt #${attIdx + 1}`;
+                                const mimeType = typeof att === "object" ? att.mime_type || "" : "";
+                                const baseUrl = url ? resolvePublicAssetUrl(url) : "#";
+                                const fullUrl = withFileAccessToken(baseUrl, sessionToken);
+                                return (
+                                  <div key={attIdx} className="inline-flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        openPreview({
+                                          name: docName,
+                                          url: fullUrl,
+                                          mime: mimeType,
+                                        })
+                                      }
+                                      className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary/20 transition"
+                                      title="Preview document"
+                                    >
+                                      <Eye className="h-3 w-3" />
+                                      {docName}
+                                    </button>
+                                    <a
+                                      href={fullUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-muted hover:text-foreground transition p-0.5"
+                                      title="Open in new tab"
+                                    >
+                                      <Paperclip className="h-3 w-3" />
+                                    </a>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3 font-bold text-foreground whitespace-nowrap">
                         {formatCurrency(exp.amount)}

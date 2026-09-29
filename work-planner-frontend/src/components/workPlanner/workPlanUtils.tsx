@@ -1,6 +1,37 @@
 import React from "react";
 import type { WorkPlanStatus, WorkPlanVisitStatus } from "@/types/workPlanner";
 
+export function formatLocalityCity(addressStr?: string): string {
+  if (!addressStr || typeof addressStr !== "string") return "";
+  const clean = addressStr.trim();
+  if (!clean) return "";
+
+  const parts = clean.split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    const filtered = parts.filter((p) => !/^\d{5,6}$/.test(p) && p.toLowerCase() !== "india");
+    if (filtered.length >= 2) {
+      return `${filtered[0]}, ${filtered[1]}`;
+    }
+    return filtered[0] || clean;
+  }
+  return clean;
+}
+
+export function getVisitLocationDisplay(
+  address?: string | null,
+  lat?: number | null,
+  lng?: number | null
+): string {
+  if (address && typeof address === "string" && address.trim()) {
+    const formatted = formatLocalityCity(address);
+    if (formatted) return formatted;
+  }
+  if (typeof lat === "number" && typeof lng === "number" && !isNaN(lat) && !isNaN(lng)) {
+    return `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`;
+  }
+  return "Location Recorded";
+}
+
 export const WORK_PLAN_STATUS_TABS = [
   { id: "all", label: "All" },
   { id: "planned", label: "Planned" },
@@ -339,6 +370,7 @@ export function renderVisitStatusBadge(status: string | undefined) {
     pending: "Pending",
     in_progress: "In Progress",
     checked_in: "Checked In",
+    checked_out: "Checked Out",
     completed: "Completed",
     cancelled: "Cancelled",
     skipped: "Skipped",
@@ -348,7 +380,8 @@ export function renderVisitStatusBadge(status: string | undefined) {
     created: "bg-sky-500/10 text-sky-600 dark:text-sky-400 ring-sky-500/20",
     pending: "bg-slate-500/10 text-slate-600 dark:text-slate-400 ring-slate-500/20",
     in_progress: "bg-amber-500/10 text-amber-600 dark:text-amber-400 ring-amber-500/20",
-    checked_in: "bg-amber-500/10 text-amber-500 ring-amber-500/20",
+    checked_in: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 ring-indigo-500/20",
+    checked_out: "bg-sky-500/10 text-sky-600 dark:text-sky-400 ring-sky-500/20",
     completed: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 ring-emerald-500/20",
     cancelled: "bg-rose-500/10 text-rose-500 ring-rose-500/20",
     skipped: "bg-surface-muted text-muted ring-border",

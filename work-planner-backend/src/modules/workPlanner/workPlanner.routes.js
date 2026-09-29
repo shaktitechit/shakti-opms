@@ -64,15 +64,17 @@ router.post('/:id/submit', controller.submit);
 router.post('/:id/approve', elevatedRoles, controller.approve);
 router.post('/:id/reject', elevatedRoles, controller.reject);
 router.post('/:id/complete', controller.complete);
-
+router.post('/:id/authority-remarks', elevatedRoles, controller.addWorkPlanAuthorityRemark);
 
 router.post('/:id/visits', controller.addVisit);
 router.patch('/:id/visits/:visitId', controller.updateVisit);
 router.delete('/:id/visits/:visitId', controller.removeVisit);
+router.post('/:id/visits/:visitId/authority-remarks', elevatedRoles, controller.addVisitAuthorityRemark);
 
 router.post('/:id/works', controller.addWork);
 router.patch('/:id/works/:workId', controller.updateWork);
 router.delete('/:id/works/:workId', controller.removeWork);
+router.post('/:id/works/:workId/authority-remarks', elevatedRoles, controller.addWorkAuthorityRemark);
 
 router.post('/:id/visits/:visitId/check-in', controller.checkIn);
 router.post('/:id/visits/:visitId/check-out', controller.checkOut);

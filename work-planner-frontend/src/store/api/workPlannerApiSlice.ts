@@ -221,17 +221,19 @@ export const workPlannerApiSlice = baseApi.injectEndpoints({
       }),
       invalidatesTags: (_result, _error, { planId }) => [{ type: "WorkPlan", id: planId }, "WorkPlannerStats"],
     }),
-    checkIn: builder.mutation<WorkPlanRecord, { planId: string; visitId: string }>({
-      query: ({ planId, visitId }) => ({
+    checkIn: builder.mutation<WorkPlanRecord, { planId: string; visitId: string; body?: unknown }>({
+      query: ({ planId, visitId, body }) => ({
         url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/${planId}/visits/${visitId}/check-in`,
         method: "POST",
+        body,
       }),
       invalidatesTags: (_result, _error, { planId }) => [{ type: "WorkPlan", id: planId }, "WorkPlannerStats"],
     }),
-    checkOut: builder.mutation<WorkPlanRecord, { planId: string; visitId: string }>({
-      query: ({ planId, visitId }) => ({
+    checkOut: builder.mutation<WorkPlanRecord, { planId: string; visitId: string; body?: unknown }>({
+      query: ({ planId, visitId, body }) => ({
         url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/${planId}/visits/${visitId}/check-out`,
         method: "POST",
+        body,
       }),
       invalidatesTags: (_result, _error, { planId }) => [{ type: "WorkPlan", id: planId }, "WorkPlannerStats"],
     }),
@@ -478,6 +480,30 @@ export const workPlannerApiSlice = baseApi.injectEndpoints({
         { type: "WorkPlan" as const, id: `USER_SETTINGS_${subordinateId}` },
       ],
     }),
+    addWorkPlanAuthorityRemark: builder.mutation<WorkPlanRecord, { planId: string; body: { manager_remarks: string } }>({
+      query: ({ planId, body }) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/${planId}/authority-remarks`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: (_result, _error, { planId }) => [{ type: "WorkPlan", id: planId }, "WorkPlannerStats"],
+    }),
+    addVisitAuthorityRemark: builder.mutation<WorkPlanRecord, { planId: string; visitId: string; body: { manager_remarks: string } }>({
+      query: ({ planId, visitId, body }) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/${planId}/visits/${visitId}/authority-remarks`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: (_result, _error, { planId }) => [{ type: "WorkPlan", id: planId }, "WorkPlannerStats"],
+    }),
+    addWorkAuthorityRemark: builder.mutation<WorkPlanRecord, { planId: string; workId: string; body: { manager_remarks: string } }>({
+      query: ({ planId, workId, body }) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/${planId}/works/${workId}/authority-remarks`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: (_result, _error, { planId }) => [{ type: "WorkPlan", id: planId }, "WorkPlannerStats"],
+    }),
   }),
 });
 
@@ -533,4 +559,7 @@ export const {
   useGetEligibleManagersQuery,
   useUpsertTeamEdgeMutation,
   useRemoveTeamEdgeMutation,
+  useAddWorkPlanAuthorityRemarkMutation,
+  useAddVisitAuthorityRemarkMutation,
+  useAddWorkAuthorityRemarkMutation,
 } = workPlannerApiSlice;

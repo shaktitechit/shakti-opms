@@ -43,6 +43,16 @@ const workPlanSchema = new mongoose.Schema(
     approved_by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     approved_at: Date,
     rejection_reason: { type: String, trim: true },
+    manager_remarks: { type: String, trim: true },
+    authority_remarks: [
+      {
+        remark: { type: String, required: true, trim: true },
+        user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        user_name: { type: String, trim: true },
+        role: { type: String, trim: true },
+        created_at: { type: Date, default: Date.now },
+      },
+    ],
     day_end: {
       completed_at: Date,
       from_email: { type: String, trim: true },

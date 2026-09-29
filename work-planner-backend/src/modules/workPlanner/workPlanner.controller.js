@@ -157,14 +157,14 @@ exports.removeWork = asyncHandler(async (req, res) => {
 exports.checkIn = asyncHandler(async (req, res) => {
   res.json({
     success: true,
-    data: await service.checkIn(req.params.id, req.params.visitId, req.user),
+    data: await service.checkIn(req.params.id, req.params.visitId, req.body || {}, req.user),
   });
 });
 
 exports.checkOut = asyncHandler(async (req, res) => {
   res.json({
     success: true,
-    data: await service.checkOut(req.params.id, req.params.visitId, req.user),
+    data: await service.checkOut(req.params.id, req.params.visitId, req.body || {}, req.user),
   });
 });
 
@@ -321,4 +321,25 @@ exports.getUserSettings = asyncHandler(async (req, res) => {
 
 exports.updateUserSettings = asyncHandler(async (req, res) => {
   res.json({ success: true, data: await service.updateUserSettings(req.params.userId, req.body || {}, req.user) });
+});
+
+exports.addWorkPlanAuthorityRemark = asyncHandler(async (req, res) => {
+  res.json({
+    success: true,
+    data: await service.addWorkPlanAuthorityRemark(req.params.id, req.body || {}, req.user),
+  });
+});
+
+exports.addVisitAuthorityRemark = asyncHandler(async (req, res) => {
+  res.json({
+    success: true,
+    data: await service.addVisitAuthorityRemark(req.params.id, req.params.visitId, req.body || {}, req.user),
+  });
+});
+
+exports.addWorkAuthorityRemark = asyncHandler(async (req, res) => {
+  res.json({
+    success: true,
+    data: await service.addWorkAuthorityRemark(req.params.id, req.params.workId, req.body || {}, req.user),
+  });
 });

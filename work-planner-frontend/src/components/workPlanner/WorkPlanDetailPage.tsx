@@ -24,6 +24,9 @@ import {
   Trash2,
   MessageSquare,
   Mail,
+  ShieldCheck,
+  CalendarClock,
+  Camera,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -41,6 +44,7 @@ import {
   useAddWorkMutation,
   useUpdateWorkMutation,
   useCompleteVisitMutation,
+  useAddWorkPlanAuthorityRemarkMutation,
 } from "@/store/api/workPlannerApiSlice";
 import { isWpAdmin, isWpManager, isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
 import type {
@@ -53,6 +57,8 @@ import {
   canAddExpenseForPlanDate,
   expenseAddWindowHint,
   formatDiscussionMethod,
+  formatLocalityCity,
+  getVisitLocationDisplay,
   formatPlanDate,
   formatTime,
   formatAuditUser,
@@ -105,6 +111,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   const adminRole = isWpAdmin(sessionUser);
   const managerRole = isWpManager(sessionUser);
   const elevatedRole = isWpElevated(sessionUser);
+  const currentUserId = String(sessionUser?._id || (sessionUser as any)?.id || "");
 
   function isManagerOrAdminCreatedItem(item?: Record<string, any>): boolean {
     if (!item) return false;
@@ -126,6 +133,9 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   const [addWorkMut] = useAddWorkMutation();
   const [updateWorkMut] = useUpdateWorkMutation();
   const [completeVisitMut] = useCompleteVisitMutation();
+  const [checkInMut] = useCheckInMutation();
+  const [checkOutMut] = useCheckOutMutation();
+  const [addPlanAuthorityRemarkMut] = useAddWorkPlanAuthorityRemarkMutation();
 
   // Modals state
   const [visitModalOpen, setVisitModalOpen] = useState(false);
@@ -140,6 +150,8 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   } | null>(null);
 
   const [rejectPlanModalOpen, setRejectPlanModalOpen] = useState(false);
+  const [planRemarksModalOpen, setPlanRemarksModalOpen] = useState(false);
+  const [planRemarkInput, setPlanRemarkInput] = useState("");
   const [dayEndMailModalOpen, setDayEndMailModalOpen] = useState(false);
   const [dayEndViewModalOpen, setDayEndViewModalOpen] = useState(false);
   const [copyModalOpen, setCopyModalOpen] = useState(false);
@@ -464,6 +476,64 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
             </p>
           </div>
         ) : null}
+
+        {/* Plan Senior Remarks Card — visible to the plan owner's senior only */}
+        {(() => {
+          const planOwnerId = plan.sales_user
+            ? typeof plan.sales_user === "object"
+              ? String((plan.sales_user as any)._id || (plan.sales_user as any).id || "")
+              : String(plan.sales_user)
+            : "";
+          const isSeniorViewing = elevatedRole && currentUserId !== planOwnerId;
+          return isSeniorViewing ? (
+          <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-4 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-purple-700 dark:text-purple-300">
+                <ShieldCheck className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                <span>Senior Remarks</span>
+              </div>
+              {elevatedRole && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPlanRemarkInput(plan.manager_remarks || "");
+                    setPlanRemarksModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1 rounded bg-purple-500/10 px-2 py-0.5 text-[11px] font-semibold text-purple-700 dark:text-purple-300 hover:bg-purple-500/20 transition cursor-pointer"
+                >
+                  <Edit3 className="h-3 w-3" />
+                  {plan.manager_remarks ? "Update Senior Remark" : "Add Senior Remark"}
+                </button>
+              )}
+            </div>
+            {plan.manager_remarks ? (
+              <RichTextDisplay content={plan.manager_remarks} className="text-xs text-foreground" />
+            ) : (
+              <p className="text-xs text-muted italic">No senior remarks recorded yet.</p>
+            )}
+            {plan.authority_remarks && plan.authority_remarks.length > 0 && (
+              <div className="pt-2 border-t border-purple-500/10 space-y-1">
+                <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider">
+                  Senior Remarks History ({plan.authority_remarks.length})
+                </span>
+                <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                  {plan.authority_remarks.map((item, idx) => (
+                    <div key={idx} className="rounded bg-card/70 p-2 text-[11px] border border-border/50">
+                      <div className="flex items-center justify-between text-[10px] text-muted mb-0.5">
+                        <span className="font-semibold text-foreground">
+                          {item.user_name || "Senior Authority"} ({item.role || "Senior Authority"})
+                        </span>
+                        <span>{item.created_at ? new Date(item.created_at).toLocaleString() : ""}</span>
+                      </div>
+                      <RichTextDisplay content={item.remark} className="text-xs text-foreground" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          ) : null;
+        })()}
       </div>
 
       {/* Section 1: Field Visits */}
@@ -559,10 +629,107 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                       </div>
                     ) : null}
 
+                    {v.actual_check_in ? (
+                      <div className="flex items-center gap-3 text-xs text-muted">
+                        <span className="font-semibold text-foreground">Check-in:</span>
+                        <span>{new Date(v.actual_check_in).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                        {v.actual_check_out && (
+                          <>
+                            <span className="font-semibold text-foreground">Check-out:</span>
+                            <span>{new Date(v.actual_check_out).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                          </>
+                        )}
+                      </div>
+                    ) : null}
+
+                    {(v.check_in_selfie_url || v.check_out_selfie_url || v.outcome_selfie_url) ? (
+                      <div className="space-y-2 pt-1">
+                        <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                          <Camera className="h-3.5 w-3.5 text-primary" />
+                          Verified Client Selfies
+                        </span>
+                        <div className="flex flex-wrap items-center gap-3">
+                          {v.check_in_selfie_url ? (
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-semibold text-muted">Check-In Selfie</span>
+                              <div className="relative group w-44 h-40 rounded-xl overflow-hidden border border-border shadow-xs bg-black">
+                                <img
+                                  src={v.check_in_selfie_url}
+                                  alt="Check In Selfie"
+                                  className="w-full h-full object-cover group-hover:scale-105 transition duration-200 cursor-pointer"
+                                  onClick={() => window.open(v.check_in_selfie_url, "_blank")}
+                                />
+                                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/75 to-transparent p-2 text-[10px] text-white flex flex-col gap-0.5">
+                                  <div className="flex items-center gap-1 text-amber-300 font-bold">
+                                    <Clock className="h-3 w-3 shrink-0" />
+                                    <span>{v.actual_check_in ? new Date(v.actual_check_in).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Timestamp"}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-sky-300 font-semibold truncate">
+                                    <MapPin className="h-3 w-3 shrink-0" />
+                                    <span className="truncate">{getVisitLocationDisplay(v.check_in_address || v.check_out_address || v.address, v.check_in_lat ?? v.check_out_lat, v.check_in_lng ?? v.check_out_lng)}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
+                          {(v.check_out_selfie_url || (v.outcome_selfie_url && v.outcome_selfie_url !== v.check_in_selfie_url)) ? (
+                            <div className="space-y-1">
+                              <span className="text-[10px] font-semibold text-muted">Check-Out Selfie</span>
+                              <div className="relative group w-44 h-40 rounded-xl overflow-hidden border border-border shadow-xs bg-black">
+                                <img
+                                  src={v.check_out_selfie_url || v.outcome_selfie_url}
+                                  alt="Check Out Selfie"
+                                  className="w-full h-full object-cover group-hover:scale-105 transition duration-200 cursor-pointer"
+                                  onClick={() => window.open(v.check_out_selfie_url || v.outcome_selfie_url, "_blank")}
+                                />
+                                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/75 to-transparent p-2 text-[10px] text-white flex flex-col gap-0.5">
+                                  <div className="flex items-center gap-1 text-amber-300 font-bold">
+                                    <Clock className="h-3 w-3 shrink-0" />
+                                    <span>{v.actual_check_out ? new Date(v.actual_check_out).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Timestamp"}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-sky-300 font-semibold truncate">
+                                    <MapPin className="h-3 w-3 shrink-0" />
+                                    <span className="truncate">{getVisitLocationDisplay(v.check_out_address || v.check_in_address || v.address, v.check_out_lat ?? v.check_in_lat, v.check_out_lng ?? v.check_in_lng)}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
+
                     {v.outcome ? (
                       <div className="rounded-lg bg-emerald-500/10 p-2 text-xs text-emerald-600 dark:text-emerald-400">
                         <span className="font-semibold block mb-1">Outcome:</span>
                         <RichTextDisplay content={v.outcome} />
+                      </div>
+                    ) : null}
+
+                    {(() => {
+                      const planOwnerId = plan.sales_user
+                        ? typeof plan.sales_user === "object"
+                          ? String((plan.sales_user as any)._id || (plan.sales_user as any).id || "")
+                          : String(plan.sales_user)
+                        : "";
+                      const isSeniorViewing = elevatedRole && currentUserId !== planOwnerId;
+                      return isSeniorViewing && v.manager_remarks ? (
+                      <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-2 text-xs text-purple-700 dark:text-purple-300">
+                        <div className="flex items-center gap-1 font-bold mb-1">
+                          <ShieldCheck className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
+                          <span>Senior Remark:</span>
+                        </div>
+                        <RichTextDisplay content={v.manager_remarks} />
+                      </div>
+                      ) : null;
+                    })()}
+
+                    {v.rescheduled_date ? (
+                      <div className="rounded-lg bg-indigo-500/10 border border-indigo-500/20 p-2 text-xs text-indigo-700 dark:text-indigo-300">
+                        <div className="flex items-center gap-1 font-bold">
+                          <CalendarClock className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                          <span>Rescheduled to: {formatPlanDate(v.rescheduled_date)}</span>
+                        </div>
                       </div>
                     ) : null}
 
@@ -578,9 +745,18 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                     )}
 
                     {/* Visit actions */}
-                    {showStructureActions && (
+                    {(elevatedRole || showStructureActions) && (
                       <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border">
-                        {v.status === "completed" ? (
+                        {elevatedRole ? (
+                          <button
+                            type="button"
+                            onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20 px-3 py-1.5 text-xs font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition cursor-pointer"
+                          >
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            <span>Status &amp; Senior Remarks</span>
+                          </button>
+                        ) : v.status === "completed" ? (
                           <button
                             type="button"
                             disabled={!canCompleteAction}
@@ -588,34 +764,67 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                             className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition disabled:opacity-50 cursor-pointer"
                           >
                             <Edit3 className="h-3.5 w-3.5" />
-                            <span>Edit Remarks &amp; Outcome</span>
+                            <span>Edit Outcome</span>
                           </button>
-                        ) : (
-                          <>
+                        ) : v.status === "checked_in" ? (
+                          <div className="flex items-center gap-2">
                             <button
                               type="button"
                               disabled={!canCompleteAction}
                               onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/20 transition disabled:opacity-50 cursor-pointer"
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 text-white px-3 py-1.5 text-xs font-bold shadow-xs hover:bg-sky-700 transition disabled:opacity-50 cursor-pointer"
                             >
-                              <MessageSquare className="h-3.5 w-3.5" />
-                              <span>Remarks &amp; Status</span>
+                              <UserCheck className="h-3.5 w-3.5" />
+                              <span>Check Out</span>
                             </button>
+                            <button
+                              type="button"
+                              disabled={!canCompleteAction}
+                              onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 text-white px-3 py-1.5 text-xs font-bold shadow-xs hover:bg-emerald-700 transition disabled:opacity-50 cursor-pointer"
+                            >
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              <span>Complete Outcome</span>
+                            </button>
+                          </div>
+                        ) : v.status === "checked_out" ? (
+                          <button
+                            type="button"
+                            disabled={!canCompleteAction}
+                            onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 text-white px-3 py-1.5 text-xs font-bold shadow-xs hover:bg-emerald-700 transition disabled:opacity-50 cursor-pointer"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            <span>Complete Outcome</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={!canCompleteAction}
+                            onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-xs font-bold shadow-xs hover:opacity-90 transition disabled:opacity-50 cursor-pointer"
+                          >
+                            <UserCheck className="h-3.5 w-3.5" />
+                            <span>Check In</span>
+                          </button>
+                        )}
 
                             <div className="flex items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingVisit(v);
-                                  setVisitModalOpen(true);
-                                }}
-                                className="rounded p-1 text-muted hover:bg-card hover:text-foreground transition cursor-pointer"
-                                title="Edit visit"
-                              >
-                                <Edit3 className="h-3.5 w-3.5" />
-                              </button>
+                              {showStructureActions && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingVisit(v);
+                                    setVisitModalOpen(true);
+                                  }}
+                                  className="rounded p-1 text-muted hover:bg-card hover:text-foreground transition cursor-pointer"
+                                  title="Edit visit"
+                                >
+                                  <Edit3 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
 
-                              {elevatedRole || !isManagerOrAdminCreatedItem(v) ? (
+                              {showStructureActions && (elevatedRole || !isManagerOrAdminCreatedItem(v)) ? (
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveVisit(vId, v)}
@@ -624,19 +833,8 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  disabled
-                                  className="rounded p-1 text-muted/30 cursor-not-allowed opacity-50"
-                                  title="Created by Portal Admin / Manager — cannot be removed by Executive"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              )}
+                              ) : null}
                             </div>
-                          </>
-                        )}
                       </div>
                     )}
                   </div>
@@ -712,12 +910,12 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                       </div>
 
                       {/* Work Task actions */}
-                      {showStructureActions && (
+                      {(elevatedRole || showStructureActions) && (
                         <div className="flex items-center gap-2">
-                          {w.status === "completed" ? (
+                          {w.status === "completed" && !elevatedRole ? (
                             <button
                               type="button"
-                              disabled={!canCompleteAction}
+                              disabled={!canCompleteAction && !elevatedRole}
                               onClick={() => setStatusRemarksTarget({ type: "task", item: w })}
                               className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition disabled:opacity-50 cursor-pointer"
                             >
@@ -728,25 +926,35 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                             <>
                               <button
                                 type="button"
-                                disabled={!canCompleteAction}
+                                disabled={!canCompleteAction && !elevatedRole}
                                 onClick={() => setStatusRemarksTarget({ type: "task", item: w })}
-                                className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-3 py-1 text-xs font-bold text-primary hover:bg-primary/20 transition disabled:opacity-50 cursor-pointer"
+                                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-bold transition disabled:opacity-50 cursor-pointer ${
+                                  elevatedRole
+                                    ? "bg-purple-500/10 border-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20"
+                                    : "bg-primary/10 border-primary/20 text-primary hover:bg-primary/20"
+                                }`}
                               >
-                                <MessageSquare className="h-3.5 w-3.5" />
-                                <span>Remarks &amp; Status</span>
+                                {elevatedRole ? (
+                                  <ShieldCheck className="h-3.5 w-3.5" />
+                                ) : (
+                                  <MessageSquare className="h-3.5 w-3.5" />
+                                )}
+                                <span>{elevatedRole ? "Status & Remarks" : "Remarks & Status"}</span>
                               </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingWork(w);
-                                  setWorkModalOpen(true);
-                                }}
-                                className="rounded p-1 text-muted hover:bg-card hover:text-foreground transition cursor-pointer"
-                                title="Edit task"
-                              >
-                                <Edit3 className="h-3.5 w-3.5" />
-                              </button>
-                              {canRemoveWork ? (
+                              {showStructureActions && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingWork(w);
+                                    setWorkModalOpen(true);
+                                  }}
+                                  className="rounded p-1 text-muted hover:bg-card hover:text-foreground transition cursor-pointer"
+                                  title="Edit task"
+                                >
+                                  <Edit3 className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+                              {showStructureActions && canRemoveWork ? (
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveWork(wId, w)}
@@ -755,20 +963,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  disabled
-                                  className="rounded p-1 text-muted/30 cursor-not-allowed opacity-50"
-                                  title={
-                                    isDefaultTask
-                                      ? "Default task — cannot be removed"
-                                      : "Created by Portal Admin / Manager — cannot be removed by Executive"
-                                  }
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              )}
+                              ) : null}
                             </>
                           )}
                         </div>
@@ -793,6 +988,33 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                       <div className="text-xs text-emerald-600 dark:text-emerald-400 font-medium pl-7">
                         <span className="font-semibold">Outcome: </span>
                         <RichTextDisplay content={w.completion_remarks || w.outcome} className="inline-block" />
+                      </div>
+                    ) : null}
+
+                    {(() => {
+                      const planOwnerId = plan.sales_user
+                        ? typeof plan.sales_user === "object"
+                          ? String((plan.sales_user as any)._id || (plan.sales_user as any).id || "")
+                          : String(plan.sales_user)
+                        : "";
+                      const isSeniorViewing = elevatedRole && currentUserId !== planOwnerId;
+                      return isSeniorViewing && w.manager_remarks ? (
+                      <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-2 text-xs text-purple-700 dark:text-purple-300 ml-7">
+                        <div className="flex items-center gap-1 font-bold mb-1">
+                          <ShieldCheck className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
+                          <span>Senior Remark:</span>
+                        </div>
+                        <RichTextDisplay content={w.manager_remarks} />
+                      </div>
+                      ) : null;
+                    })()}
+
+                    {w.rescheduled_date ? (
+                      <div className="rounded-lg bg-indigo-500/10 border border-indigo-500/20 p-2 text-xs text-indigo-700 dark:text-indigo-300 ml-7">
+                        <div className="flex items-center gap-1 font-bold">
+                          <CalendarClock className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
+                          <span>Rescheduled to: {formatPlanDate(w.rescheduled_date)}</span>
+                        </div>
                       </div>
                     ) : null}
 
@@ -854,6 +1076,11 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
               ? plan.sales_user?._id || (plan.sales_user as { id?: string })?.id
               : plan.sales_user
           }
+          planOwnerId={
+            typeof plan.sales_user === "object"
+              ? String((plan.sales_user as any)?._id || (plan.sales_user as any)?.id || "")
+              : String(plan.sales_user || "")
+          }
           isSaving={actionLoading}
           onClose={() => {
             setVisitModalOpen(false);
@@ -892,6 +1119,11 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
             typeof plan.sales_user === "object"
               ? plan.sales_user?._id || (plan.sales_user as { id?: string })?.id
               : plan.sales_user
+          }
+          planOwnerId={
+            typeof plan.sales_user === "object"
+              ? String((plan.sales_user as any)?._id || (plan.sales_user as any)?.id || "")
+              : String(plan.sales_user || "")
           }
           isSaving={actionLoading}
           onClose={() => {
@@ -940,6 +1172,14 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
               ? (statusRemarksTarget.item as WorkPlanVisitRecord).outcome
               : (statusRemarksTarget.item as WorkPlanWorkRecord).completion_remarks || (statusRemarksTarget.item as WorkPlanWorkRecord).outcome
           }
+          initialManagerRemarks={statusRemarksTarget.item.manager_remarks}
+          initialRescheduledDate={statusRemarksTarget.item.rescheduled_date}
+          authorityRemarksHistory={statusRemarksTarget.item.authority_remarks}
+          planOwnerId={
+            typeof plan.sales_user === "object"
+              ? String((plan.sales_user as any)?._id || (plan.sales_user as any)?.id || "")
+              : String(plan.sales_user || "")
+          }
           initialVisitAnswers={
             statusRemarksTarget.type === "visit"
               ? {
@@ -952,54 +1192,96 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                 }
               : undefined
           }
+          visitRecord={
+            statusRemarksTarget.type === "visit"
+              ? (statusRemarksTarget.item as WorkPlanVisitRecord)
+              : undefined
+          }
           isSaving={actionLoading}
           onClose={() => setStatusRemarksTarget(null)}
-          onConfirm={async ({ status, remarks, visitAnswers }) => {
+          onConfirm={async ({ status, remarks, managerRemarks, rescheduledDate, visitAnswers, selfieUrl, lat, lng }) => {
             setActionLoading(true);
             try {
               if (statusRemarksTarget.type === "visit") {
                 const v = statusRemarksTarget.item as WorkPlanVisitRecord;
                 const vId = v._id || v.id || "";
-                if (status === "completed") {
+                const body: Record<string, any> = {
+                  status,
+                  manager_remarks: managerRemarks !== undefined ? managerRemarks : undefined,
+                  rescheduled_date: status === "rescheduled" ? rescheduledDate : undefined,
+                  selfie_url: selfieUrl || undefined,
+                  lat: lat || undefined,
+                  lng: lng || undefined,
+                };
+                if (status === "checked_in") {
+                  body.in_progress_remarks = remarks;
+                  await checkInMut({
+                    planId,
+                    visitId: vId,
+                    body,
+                  }).unwrap();
+                } else if (status === "completed") {
+                  body.outcome = remarks;
+                  if (visitAnswers) {
+                    Object.assign(body, visitAnswers);
+                  }
                   await completeVisitMut({
                     planId,
                     visitId: vId,
-                    body: { outcome: remarks, ...(visitAnswers || {}) },
+                    body,
                   }).unwrap();
                 } else if (status === "pending") {
+                  body.pending_remarks = remarks;
                   await updateVisitMut({
                     planId,
                     visitId: vId,
-                    body: { status: "pending", pending_remarks: remarks },
+                    body,
                   }).unwrap();
-                } else if (status === "in_progress") {
+                } else {
+                  body.remarks = remarks;
                   await updateVisitMut({
                     planId,
                     visitId: vId,
-                    body: { status: "in_progress", in_progress_remarks: remarks },
+                    body,
                   }).unwrap();
                 }
                 toast.success(`Visit status updated to ${status.replace("_", " ")}`);
               } else {
                 const w = statusRemarksTarget.item as WorkPlanWorkRecord;
                 const wId = w._id || w.id || "";
+                const body: Record<string, any> = {
+                  status,
+                  manager_remarks: managerRemarks !== undefined ? managerRemarks : undefined,
+                  rescheduled_date: status === "rescheduled" ? rescheduledDate : undefined,
+                };
                 if (status === "completed") {
+                  body.completion_remarks = remarks;
+                  body.outcome = remarks;
                   await updateWorkMut({
                     planId,
                     workId: wId,
-                    body: { status: "completed", completion_remarks: remarks, outcome: remarks },
+                    body,
                   }).unwrap();
                 } else if (status === "pending") {
+                  body.pending_remarks = remarks;
                   await updateWorkMut({
                     planId,
                     workId: wId,
-                    body: { status: "pending", pending_remarks: remarks },
+                    body,
                   }).unwrap();
                 } else if (status === "in_progress") {
+                  body.in_progress_remarks = remarks;
                   await updateWorkMut({
                     planId,
                     workId: wId,
-                    body: { status: "in_progress", in_progress_remarks: remarks },
+                    body,
+                  }).unwrap();
+                } else {
+                  body.remarks = remarks;
+                  await updateWorkMut({
+                    planId,
+                    workId: wId,
+                    body,
                   }).unwrap();
                 }
                 toast.success(`Task status updated to ${status.replace("_", " ")}`);
@@ -1013,6 +1295,68 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
             }
           }}
         />
+      )}
+
+      {/* Plan-level Supervisory Remarks Modal */}
+      {planRemarksModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-2">
+              <div className="rounded-lg bg-purple-500/10 p-2 text-purple-600 dark:text-purple-400">
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-foreground">Plan Senior Remark</h3>
+                <p className="text-xs text-muted">Provide senior review guidance or directives for this entire plan</p>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-foreground">Remark / Instructions</label>
+              <textarea
+                value={planRemarkInput}
+                onChange={(e) => setPlanRemarkInput(e.target.value)}
+                placeholder="Enter senior review instructions or comments..."
+                rows={4}
+                className="w-full rounded-xl border border-border bg-surface-muted p-3 text-xs text-foreground placeholder:text-muted focus:outline-hidden focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={() => setPlanRemarksModalOpen(false)}
+                className="rounded-lg border border-border bg-card px-4 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={actionLoading}
+                onClick={async () => {
+                  setActionLoading(true);
+                  try {
+                    await addPlanAuthorityRemarkMut({
+                      planId,
+                      body: { manager_remarks: planRemarkInput },
+                    }).unwrap();
+                    toast.success("Senior remark recorded");
+                    setPlanRemarksModalOpen(false);
+                  } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : "Failed to record remark";
+                    toast.error(msg);
+                  } finally {
+                    setActionLoading(false);
+                  }
+                }}
+                className="rounded-lg bg-purple-600 px-4 py-2 text-xs font-semibold text-white hover:bg-purple-700 transition disabled:opacity-50 cursor-pointer"
+              >
+                {actionLoading ? "Saving..." : "Save Senior Remark"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <DayEndMailModal

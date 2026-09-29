@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { WorkPlanRecord } from "@/types/workPlanner";
-import { formatPlanDate, salesUserLabel, formatTime } from "./workPlanUtils";
+import { formatPlanDate, salesUserLabel, formatTime, stripHtml } from "./workPlanUtils";
 import { downloadExcelReport } from "./exportExcelReport";
 import { downloadPdfReport } from "./exportPdfReport";
 import { usePdfCompanyLetterhead } from "./pdfCompanyLetterhead";
@@ -164,6 +164,8 @@ export function DownloadTasksVisitsReportModal({
         { key: "descriptionOrNotes", label: "Purpose / Description" },
         { key: "plannedTime", label: "Planned Schedule" },
         { key: "status", label: "Status" },
+        { key: "outcomeOrRemarks", label: "Outcome / Remarks" },
+        { key: "managerRemarks", label: "Supervisory / Manager Remarks" },
       ];
 
       const rows = filteredItems.map((item) => ({
@@ -178,6 +180,14 @@ export function DownloadTasksVisitsReportModal({
         descriptionOrNotes: item.descriptionOrNotes,
         plannedTime: item.plannedTime,
         status: String(item.status).toUpperCase().replace(/_/g, " "),
+        outcomeOrRemarks: stripHtml(
+          item.raw?.outcome ||
+            item.raw?.completion_remarks ||
+            item.raw?.pending_remarks ||
+            item.raw?.in_progress_remarks ||
+            "—"
+        ),
+        managerRemarks: stripHtml(item.raw?.manager_remarks || "—"),
       }));
 
       const filename = `Tasks_Visits_Report_${new Date().toISOString().slice(0, 10)}.xlsx`;
@@ -210,6 +220,7 @@ export function DownloadTasksVisitsReportModal({
         { key: "contactPerson", label: "Contact Person" },
         { key: "plannedTime", label: "Schedule" },
         { key: "status", label: "Status" },
+        { key: "managerRemarks", label: "Manager Remark" },
       ];
 
       const rows = filteredItems.map((item) => ({
@@ -220,6 +231,7 @@ export function DownloadTasksVisitsReportModal({
         contactPerson: item.contactPerson,
         plannedTime: item.plannedTime,
         status: String(item.status).toUpperCase().replace(/_/g, " "),
+        managerRemarks: stripHtml(item.raw?.manager_remarks || "—"),
       }));
 
       const filename = `Tasks_Visits_Report_${new Date().toISOString().slice(0, 10)}.pdf`;

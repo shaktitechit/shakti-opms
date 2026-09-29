@@ -1068,22 +1068,26 @@ export function TasksVisitsPage() {
                         </div>
 
                         <div className="flex items-center gap-1.5">
-                          {item.planStatus !== "completed" && !isPlanDate3DaysExpired(item.planDate) && (
+                          {(elevatedRole || (item.planStatus !== "completed" && !isPlanDate3DaysExpired(item.planDate))) && (
                             <button
                               type="button"
                               onClick={() => setStatusRemarksTarget(item)}
                               className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold transition cursor-pointer ${
-                                item.status === "completed"
+                                elevatedRole
+                                  ? "bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20"
+                                  : item.status === "completed"
                                   ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
                                   : "bg-sky-500/10 border border-sky-500/20 text-sky-600 dark:text-sky-400 hover:bg-sky-500/20"
                               }`}
                             >
-                              {item.status === "completed" ? (
+                              {elevatedRole ? (
+                                <ShieldCheck className="h-3 w-3" />
+                              ) : item.status === "completed" ? (
                                 <Edit3 className="h-3 w-3" />
                               ) : (
                                 <MessageSquare className="h-3 w-3" />
                               )}
-                              <span>{item.status === "completed" ? "Edit Remarks" : "Remarks"}</span>
+                              <span>{elevatedRole ? "Status & Remarks" : item.status === "completed" ? "Edit Remarks" : "Remarks"}</span>
                             </button>
                           )}
                           <Link
@@ -1345,22 +1349,26 @@ export function TasksVisitsPage() {
                         </div>
 
                         <div className="flex items-center gap-1.5">
-                          {item.planStatus !== "completed" && !isPlanDate3DaysExpired(item.planDate) && (
+                          {(elevatedRole || (item.planStatus !== "completed" && !isPlanDate3DaysExpired(item.planDate))) && (
                             <button
                               type="button"
                               onClick={() => setStatusRemarksTarget(item)}
                               className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold transition cursor-pointer ${
-                                item.status === "completed"
+                                elevatedRole
+                                  ? "bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20"
+                                  : item.status === "completed"
                                   ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
                                   : "bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
                               }`}
                             >
-                              {item.status === "completed" ? (
+                              {elevatedRole ? (
+                                <ShieldCheck className="h-3 w-3" />
+                              ) : item.status === "completed" ? (
                                 <Edit3 className="h-3 w-3" />
                               ) : (
                                 <MessageSquare className="h-3 w-3" />
                               )}
-                              <span>{item.status === "completed" ? "Edit Remarks" : "Remarks"}</span>
+                              <span>{elevatedRole ? "Status & Remarks" : item.status === "completed" ? "Edit Remarks" : "Remarks"}</span>
                             </button>
                           )}
                           <Link
@@ -1619,7 +1627,17 @@ export function TasksVisitsPage() {
                           {/* Direct Row Actions (Disabled when completed or > 3 days expired) */}
                           <td className="px-4 py-3 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1.5">
-                              {item.planStatus === "completed" ? (
+                              {elevatedRole ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setStatusRemarksTarget(item)}
+                                  className="inline-flex items-center gap-1 rounded bg-purple-500/10 border border-purple-500/20 px-2.5 py-1 text-[11px] font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition cursor-pointer"
+                                  title="Update status & supervisory remarks"
+                                >
+                                  <ShieldCheck className="h-3 w-3" />
+                                  <span>Status &amp; Remarks</span>
+                                </button>
+                              ) : item.planStatus === "completed" ? (
                                 <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                                   Completed
                                 </span>
@@ -1709,6 +1727,9 @@ export function TasksVisitsPage() {
           currentStatus={statusRemarksTarget.status || "created"}
           initialPendingRemarks={(statusRemarksTarget.raw as any).pending_remarks}
           initialInProgressRemarks={(statusRemarksTarget.raw as any).in_progress_remarks}
+          initialManagerRemarks={(statusRemarksTarget.raw as any).manager_remarks}
+          initialRescheduledDate={(statusRemarksTarget.raw as any).rescheduled_date}
+          authorityRemarksHistory={(statusRemarksTarget.raw as any).authority_remarks}
           initialOutcome={
             statusRemarksTarget.itemType === "visit"
               ? (statusRemarksTarget.raw as WorkPlanVisitRecord).outcome
@@ -1732,9 +1753,14 @@ export function TasksVisitsPage() {
                 }
               : undefined
           }
+          visitRecord={
+            statusRemarksTarget.itemType === "visit"
+              ? (statusRemarksTarget.raw as WorkPlanVisitRecord)
+              : undefined
+          }
           isSaving={actionSaving}
           onClose={() => setStatusRemarksTarget(null)}
-          onConfirm={async ({ status, remarks, visitAnswers }) => {
+          onConfirm={async ({ status, remarks, managerRemarks, rescheduledDate, visitAnswers }) => {
             setActionSaving(true);
             try {
               const planId = statusRemarksTarget.planId;
@@ -1744,19 +1770,30 @@ export function TasksVisitsPage() {
                   await completeVisitMut({
                     planId,
                     visitId: itemId,
-                    body: { outcome: remarks, ...(visitAnswers || {}) },
+                    body: { outcome: remarks, manager_remarks: managerRemarks, ...(visitAnswers || {}) },
                   }).unwrap();
                 } else if (status === "pending") {
                   await updateVisitMut({
                     planId,
                     visitId: itemId,
-                    body: { status: "pending", pending_remarks: remarks },
+                    body: { status: "pending", pending_remarks: remarks, manager_remarks: managerRemarks },
                   }).unwrap();
                 } else if (status === "in_progress") {
                   await updateVisitMut({
                     planId,
                     visitId: itemId,
-                    body: { status: "in_progress", in_progress_remarks: remarks },
+                    body: { status: "in_progress", in_progress_remarks: remarks, manager_remarks: managerRemarks },
+                  }).unwrap();
+                } else {
+                  await updateVisitMut({
+                    planId,
+                    visitId: itemId,
+                    body: {
+                      status,
+                      notes: remarks,
+                      manager_remarks: managerRemarks,
+                      rescheduled_date: status === "rescheduled" ? rescheduledDate : undefined,
+                    },
                   }).unwrap();
                 }
                 toast.success(`Visit status updated to ${status.replace("_", " ")}`);
@@ -1765,19 +1802,30 @@ export function TasksVisitsPage() {
                   await updateWorkMut({
                     planId,
                     workId: itemId,
-                    body: { status: "completed", completion_remarks: remarks, outcome: remarks },
+                    body: { status: "completed", completion_remarks: remarks, outcome: remarks, manager_remarks: managerRemarks },
                   }).unwrap();
                 } else if (status === "pending") {
                   await updateWorkMut({
                     planId,
                     workId: itemId,
-                    body: { status: "pending", pending_remarks: remarks },
+                    body: { status: "pending", pending_remarks: remarks, manager_remarks: managerRemarks },
                   }).unwrap();
                 } else if (status === "in_progress") {
                   await updateWorkMut({
                     planId,
                     workId: itemId,
-                    body: { status: "in_progress", in_progress_remarks: remarks },
+                    body: { status: "in_progress", in_progress_remarks: remarks, manager_remarks: managerRemarks },
+                  }).unwrap();
+                } else {
+                  await updateWorkMut({
+                    planId,
+                    workId: itemId,
+                    body: {
+                      status,
+                      description: remarks,
+                      manager_remarks: managerRemarks,
+                      rescheduled_date: status === "rescheduled" ? rescheduledDate : undefined,
+                    },
                   }).unwrap();
                 }
                 toast.success(`Task status updated to ${status.replace("_", " ")}`);

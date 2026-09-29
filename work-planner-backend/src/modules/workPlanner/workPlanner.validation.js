@@ -252,11 +252,19 @@ function assertExpenseCreate(body) {
       throw new ApiError(400, 'Invalid bill_date format');
     }
   }
-  if (amount > 500 && !body.receipt_attachment) {
-    throw new ApiError(400, 'Document upload is required for expenses greater than ₹500');
+  const hasAttachments =
+    Boolean(body.receipt_attachment) ||
+    (Array.isArray(body.attachments) && body.attachments.length > 0);
+  if (amount > 200 && !hasAttachments) {
+    throw new ApiError(400, 'Document upload is required for expenses greater than ₹200');
   }
   if (body.receipt_attachment) {
     assertObjectId(body.receipt_attachment, 'receipt_attachment');
+  }
+  if (Array.isArray(body.attachments)) {
+    for (const attId of body.attachments) {
+      if (attId) assertObjectId(attId, 'attachments');
+    }
   }
   if (body.start_reading_image) {
     assertObjectId(body.start_reading_image, 'start_reading_image');
@@ -336,6 +344,11 @@ function assertExpenseUpdate(body) {
     body.receipt_attachment !== ''
   ) {
     assertObjectId(body.receipt_attachment, 'receipt_attachment');
+  }
+  if (Array.isArray(body.attachments)) {
+    for (const attId of body.attachments) {
+      if (attId) assertObjectId(attId, 'attachments');
+    }
   }
   if (
     body.start_reading_image !== undefined &&
@@ -418,7 +431,10 @@ function assertWorkUpdate(body) {
   }
   if (body.status === 'completed') {
     const remarks =
-      typeof body.completion_remarks === 'string' ? body.completion_remarks.trim() : '';
+      (typeof body.completion_remarks === 'string' && body.completion_remarks.trim()) ||
+      (typeof body.outcome === 'string' && body.outcome.trim()) ||
+      (typeof body.manager_remarks === 'string' && body.manager_remarks.trim()) ||
+      '';
     if (!remarks) {
       throw new ApiError(400, 'completion remarks are required to complete a work task');
     }

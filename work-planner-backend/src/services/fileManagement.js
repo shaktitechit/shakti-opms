@@ -30,30 +30,53 @@ async function getFileMeta(fileId) {
  * @returns {Promise<string>}
  */
 async function getViewPresignedUrl(fileId) {
-  const { data } = await axios.get(`${FILE_MANAGEMENT_API_URL}/files/${fileId}/view-url`, {
-    headers: fmHeaders(),
-    timeout: 10000,
-  });
-  const url = data?.url || data?.viewUrl;
-  if (!url) throw new Error('File management API did not return a view URL');
-  return url;
+  if (!fileId) throw new Error('No fileId provided');
+  const candidates = [fileId];
+  if (typeof fileId === 'string' && fileId.includes('.')) {
+    candidates.push(fileId.split('.')[0]);
+  }
+
+  for (const cid of candidates) {
+    try {
+      const { data } = await axios.get(`${FILE_MANAGEMENT_API_URL}/files/${cid}/view-url`, {
+        headers: fmHeaders(),
+        timeout: 8000,
+      });
+      const url = data?.url || data?.viewUrl;
+      if (url) return url;
+    } catch (_err) {}
+  }
+
+  throw new Error(`File management API did not return a view URL for ${fileId}`);
 }
 
-/**
- * Prefer stored FM fileId (filename); fall back to /api/files/:id/ from legacy URLs.
- * @param {object|null} item
- * @returns {string|null}
- */
+function resolveFileIdCandidateList(item) {
+  if (!item) return [];
+  const list = [];
+  if (typeof item === 'string') {
+    const resMatch = item.match(/\/resource\/[^/]+\/([a-f0-9]{24})\//i);
+    if (resMatch?.[1]) list.push(resMatch[1]);
+
+    const origMatch = item.match(/\/original\/([^/?#]+)/i);
+    if (origMatch?.[1]) list.push(origMatch[1]);
+
+    const fileMatch = item.match(/\/(?:api\/)?files\/([^/?#]+)/i);
+    if (fileMatch?.[1]) list.push(fileMatch[1]);
+
+    const uuidMatch = item.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.[a-z0-9]+)/i);
+    if (uuidMatch?.[1]) list.push(uuidMatch[1]);
+  } else if (typeof item === 'object') {
+    if (item._id) list.push(String(item._id));
+    if (item.filename && !String(item.filename).includes('/')) list.push(String(item.filename));
+    if (item.storage_path) list.push(...resolveFileIdCandidateList(String(item.storage_path)));
+    if (item.url) list.push(...resolveFileIdCandidateList(String(item.url)));
+  }
+  return [...new Set(list)].filter(Boolean);
+}
+
 function resolveFileId(item) {
-  if (!item) return null;
-  if (item.filename && !String(item.filename).includes('/')) {
-    return String(item.filename);
-  }
-  if (item.url) {
-    const match = String(item.url).match(/\/(?:api\/)?files\/([^/]+)/);
-    if (match?.[1]) return match[1];
-  }
-  return null;
+  const candidates = resolveFileIdCandidateList(item);
+  return candidates[0] || null;
 }
 
 /**
@@ -64,15 +87,87 @@ function resolveFileId(item) {
 async function withFreshViewUrl(item) {
   if (!item) return item;
   const obj = item.toObject ? item.toObject() : { ...item };
-  const fileId = resolveFileId(obj);
-  if (!fileId) return obj;
+  const candidates = resolveFileIdCandidateList(obj);
+  if (candidates.length === 0) return obj;
 
-  try {
-    obj.url = await getViewPresignedUrl(fileId);
-  } catch {
-    // Keep stored url if file-manager lookup fails
+  for (const cid of candidates) {
+    try {
+      obj.url = await getViewPresignedUrl(cid);
+      return obj;
+    } catch (_e) {}
   }
   return obj;
+}
+
+async function refreshUrlString(urlStr) {
+  if (!urlStr || typeof urlStr !== 'string') return urlStr;
+  const candidates = resolveFileIdCandidateList(urlStr);
+  if (candidates.length === 0) return urlStr;
+
+  for (const cid of candidates) {
+    try {
+      const fresh = await getViewPresignedUrl(cid);
+      if (fresh) return fresh;
+    } catch (_e) {}
+  }
+  return urlStr;
+}
+
+/**
+ * Refresh signed view URLs for visit selfie images.
+ * @param {object} visit
+ * @returns {Promise<object>}
+ */
+async function withFreshVisitSelfieUrls(visit) {
+  if (!visit) return visit;
+  const out = { ...visit };
+  if (out.check_in_selfie_url) {
+    out.check_in_selfie_url = await refreshUrlString(out.check_in_selfie_url);
+  }
+  if (out.check_out_selfie_url) {
+    out.check_out_selfie_url = await refreshUrlString(out.check_out_selfie_url);
+  }
+  if (out.outcome_selfie_url) {
+    out.outcome_selfie_url = await refreshUrlString(out.outcome_selfie_url);
+  }
+
+  if (!out.check_out_selfie_url && out.outcome_selfie_url) {
+    out.check_out_selfie_url = out.outcome_selfie_url;
+  }
+  if (!out.outcome_selfie_url && out.check_out_selfie_url) {
+    out.outcome_selfie_url = out.check_out_selfie_url;
+  }
+
+  if (!out.check_in_address && typeof out.check_in_lat === 'number' && typeof out.check_in_lng === 'number') {
+    out.check_in_address = `Lat: ${out.check_in_lat.toFixed(4)}, Lng: ${out.check_in_lng.toFixed(4)}`;
+  }
+  if (!out.check_out_address && typeof out.check_out_lat === 'number' && typeof out.check_out_lng === 'number') {
+    out.check_out_address = `Lat: ${out.check_out_lat.toFixed(4)}, Lng: ${out.check_out_lng.toFixed(4)}`;
+  }
+
+  if (!out.check_out_address && out.check_in_address) {
+    out.check_out_address = out.check_in_address;
+    if (out.check_out_lat === undefined || out.check_out_lat === null) {
+      out.check_out_lat = out.check_in_lat;
+      out.check_out_lng = out.check_in_lng;
+    }
+  }
+  if (!out.check_in_address && out.check_out_address) {
+    out.check_in_address = out.check_out_address;
+    if (out.check_in_lat === undefined || out.check_in_lat === null) {
+      out.check_in_lat = out.check_out_lat;
+      out.check_in_lng = out.check_out_lng;
+    }
+  }
+
+  if (!out.check_in_address && out.address) {
+    out.check_in_address = out.address;
+  }
+  if (!out.check_out_address && out.address) {
+    out.check_out_address = out.address;
+  }
+
+  return out;
 }
 
 /**
@@ -91,6 +186,16 @@ async function withFreshExpenseAttachmentUrls(expense) {
       }
     }),
   );
+  if (Array.isArray(out.attachments) && out.attachments.length > 0) {
+    out.attachments = await Promise.all(
+      out.attachments.map(async (att) => {
+        if (att && typeof att === 'object') {
+          return withFreshViewUrl(att);
+        }
+        return att;
+      }),
+    );
+  }
   return out;
 }
 
@@ -207,5 +312,6 @@ module.exports = {
   getViewPresignedUrl,
   resolveFileId,
   withFreshViewUrl,
+  withFreshVisitSelfieUrls,
   withFreshExpenseAttachmentUrls,
 };

@@ -10,6 +10,7 @@ const WORK_PLAN_VISIT_STATUSES = [
   "pending",
   "in_progress",
   "checked_in",
+  "checked_out",
   "completed",
   "cancelled",
   "skipped",
@@ -73,6 +74,16 @@ const workPlanVisitSchema = new mongoose.Schema(
     },
     pending_remarks: { type: String, trim: true },
     in_progress_remarks: { type: String, trim: true },
+    manager_remarks: { type: String, trim: true },
+    authority_remarks: [
+      {
+        remark: { type: String, required: true, trim: true },
+        user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        user_name: { type: String, trim: true },
+        role: { type: String, trim: true },
+        created_at: { type: Date, default: Date.now },
+      },
+    ],
     created_by: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -95,6 +106,7 @@ const workPlanVisitSchema = new mongoose.Schema(
     new_product_introduced: { type: Boolean },
     order_received: { type: Boolean },
     next_followup_date: Date,
+    rescheduled_date: Date,
     deletedAt: { type: Date, default: null, index: true },
   },
   { timestamps: true }

@@ -17,6 +17,7 @@ const VISIT_STATUSES = Object.freeze([
   'pending',
   'in_progress',
   'checked_in',
+  'checked_out',
   'completed',
   'cancelled',
   'skipped',
@@ -29,6 +30,8 @@ const WORK_STATUSES = Object.freeze([
   'in_progress',
   'completed',
   'cancelled',
+  'skipped',
+  'rescheduled',
 ]);
 
 const TERMINAL_VISIT_STATUSES = Object.freeze(['completed', 'cancelled', 'skipped']);
@@ -86,7 +89,7 @@ function endOfDay(dateInput) {
 const EXPENSE_ADD_WINDOW_DAYS = 3;
 
 /** Sales / Executive must attach image/PDF receipt when amount is greater than this. */
-const EXPENSE_RECEIPT_REQUIRED_ABOVE = 499;
+const EXPENSE_RECEIPT_REQUIRED_ABOVE = 200;
 
 function isExpenseAddWindowOpen(planDate, now = new Date()) {
   if (!planDate) return false;

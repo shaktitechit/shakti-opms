@@ -21,6 +21,8 @@ export type WorkFormModalProps = {
   planDate?: string | null;
   /** Assigned executive on the parent work plan — used to scope assignment. */
   salesUserId?: string | null;
+  /** ID of the plan owner — used to determine if current user is the senior */
+  planOwnerId?: string | null;
   isSaving: boolean;
   onClose: () => void;
   onSubmit: (body: Record<string, unknown>) => void | Promise<void>;
@@ -138,6 +140,7 @@ export function WorkFormModal({
   initial,
   planDate,
   salesUserId,
+  planOwnerId = null,
   isSaving,
   onClose,
   onSubmit,
@@ -147,6 +150,8 @@ export function WorkFormModal({
   const adminRole = isWpAdmin(sessionUser);
   const managerRole = isWpManager(sessionUser);
   const elevatedRole = isWpElevated(sessionUser);
+  // Senior Remark visible only when current user is NOT the plan owner
+  const isSeniorViewing = elevatedRole && (!planOwnerId || String(sessionUserId) !== String(planOwnerId));
 
   // Queries for allowed executives
   const { data: usersData } = useGetUsersQuery(undefined, { skip: !open || !adminRole });
@@ -259,6 +264,7 @@ export function WorkFormModal({
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [managerRemarks, setManagerRemarks] = useState("");
   const [plannedStartTime, setPlannedStartTime] = useState("");
   const [plannedEndTime, setPlannedEndTime] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -281,11 +287,13 @@ export function WorkFormModal({
       if (initial) {
         setTitle(initial.title || "");
         setDescription(initial.description || "");
+        setManagerRemarks(initial.manager_remarks || "");
         setPlannedStartTime(timeFromIso(initial.planned_start_time));
         setPlannedEndTime(timeFromIso(initial.planned_end_time));
       } else {
         setTitle("");
         setDescription("");
+        setManagerRemarks("");
         setPlannedStartTime("");
         setPlannedEndTime("");
       }
@@ -315,6 +323,7 @@ export function WorkFormModal({
       salesUserId: internalSalesUserId || sessionUserId,
       title: title.trim(),
       description: description.trim() || undefined,
+      manager_remarks: managerRemarks.trim() || undefined,
       planned_start_time: combinePlanDateAndTime(internalPlanDate, plannedStartTime),
       planned_end_time: combinePlanDateAndTime(internalPlanDate, plannedEndTime),
     });
@@ -539,6 +548,22 @@ export function WorkFormModal({
               />
             </div>
           </div>
+
+          {isSeniorViewing && (
+            <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-3 space-y-1.5">
+              <label className="text-xs font-semibold text-purple-700 dark:text-purple-300">
+                Senior Remark (Optional)
+              </label>
+              <textarea
+                rows={2}
+                value={managerRemarks}
+                onChange={(e) => setManagerRemarks(e.target.value)}
+                placeholder="Add senior guidance or instructions for this task..."
+                disabled={isSaving}
+                className="w-full rounded-lg border border-purple-500/30 bg-card p-2.5 text-xs text-foreground placeholder:text-muted focus:outline-hidden focus:ring-2 focus:ring-purple-500"
+              />
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3 bg-surface-muted/30">

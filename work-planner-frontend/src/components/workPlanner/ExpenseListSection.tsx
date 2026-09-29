@@ -16,7 +16,7 @@ import {
   useRejectAllExpensesMutation,
 } from "@/store/api/workPlannerApiSlice";
 import { isManager as isManagerUtil, readSessionFromStorage } from "@/utils/authStorage";
-import type { WorkPlanExpenseRecord, WorkPlanRecord } from "@/types/workPlanner";
+import type { WorkPlanExpenseRecord, WorkPlanRecord, WorkPlanExpenseAttachment } from "@/types/workPlanner";
 import { ExpenseFormModal, type ExpenseFormPayload } from "./ExpenseFormModal";
 import { RejectExpenseModal } from "./RejectExpenseModal";
 import { FilePreviewModal, useFilePreview } from "./FilePreviewModal";
@@ -346,10 +346,15 @@ export function ExpenseListSection({
                     </td>
                     <td className="px-4 py-3 font-semibold">{exp.category}</td>
                     <td className="px-4 py-3 text-muted">
-                      {exp.sub_category || "—"}
+                      <div className="font-medium text-foreground">{exp.sub_category || "—"}</div>
                       {exp.category === "Travel" && exp.sub_category === "Private Bike" ? (
-                        <div className="text-[10px] text-muted">
+                        <div className="mt-0.5 text-[10px] text-primary font-medium">
                           {exp.start_reading ?? "—"} → {exp.closing_reading ?? "—"} KM
+                          {exp.start_reading != null && exp.closing_reading != null ? (
+                            <span className="ml-1 text-muted">
+                              ({Math.max(0, exp.closing_reading - exp.start_reading)} KM @ ₹3.5/km)
+                            </span>
+                          ) : null}
                         </div>
                       ) : null}
                     </td>
@@ -362,49 +367,59 @@ export function ExpenseListSection({
                       {exp.bill_number ? (
                         <div className="text-[10px] text-muted">Bill: {exp.bill_number}</div>
                       ) : null}
-                      {exp.receipt_attachment ? (
-                        <div className="mt-1 flex items-center gap-1.5">
-                          {(() => {
-                            const att = exp.receipt_attachment;
-                            const url = typeof att === "object" ? att.url : undefined;
-                            const docName =
-                              typeof att === "object"
-                                ? att.original_name || att.file_name || "Receipt"
-                                : "Receipt";
-                            const mimeType = typeof att === "object" ? att.mime_type || "" : "";
-                            const baseUrl = url ? resolvePublicAssetUrl(url) : "#";
-                            const fullUrl = withFileAccessToken(baseUrl, sessionToken);
-                            return (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    openPreview({
-                                      name: docName,
-                                      url: fullUrl,
-                                      mime: mimeType,
-                                    })
-                                  }
-                                  className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary/20 transition"
-                                  title="Preview document"
-                                >
-                                  <Eye className="h-3 w-3" />
-                                  {docName}
-                                </button>
-                                <a
-                                  href={fullUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-muted hover:text-foreground transition p-0.5"
-                                  title="Open in new tab"
-                                >
-                                  <Paperclip className="h-3 w-3" />
-                                </a>
-                              </>
-                            );
-                          })()}
-                        </div>
-                      ) : null}
+                      {(() => {
+                        const attList: (WorkPlanExpenseAttachment | string)[] = [];
+                        if (Array.isArray(exp.attachments) && exp.attachments.length > 0) {
+                          attList.push(...exp.attachments);
+                        } else if (exp.receipt_attachment) {
+                          attList.push(exp.receipt_attachment);
+                        }
+
+                        if (attList.length === 0) return null;
+
+                        return (
+                          <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                            {attList.map((att, attIdx) => {
+                              const url = typeof att === "object" ? att.url : undefined;
+                              const docName =
+                                typeof att === "object"
+                                  ? att.original_name || att.file_name || `Receipt #${attIdx + 1}`
+                                  : `Receipt #${attIdx + 1}`;
+                              const mimeType = typeof att === "object" ? att.mime_type || "" : "";
+                              const baseUrl = url ? resolvePublicAssetUrl(url) : "#";
+                              const fullUrl = withFileAccessToken(baseUrl, sessionToken);
+                              return (
+                                <div key={attIdx} className="inline-flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openPreview({
+                                        name: docName,
+                                        url: fullUrl,
+                                        mime: mimeType,
+                                      })
+                                    }
+                                    className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary/20 transition"
+                                    title="Preview document"
+                                  >
+                                    <Eye className="h-3 w-3" />
+                                    {docName}
+                                  </button>
+                                  <a
+                                    href={fullUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-muted hover:text-foreground transition p-0.5"
+                                    title="Open in new tab"
+                                  >
+                                    <Paperclip className="h-3 w-3" />
+                                  </a>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3">
                       {statusBadge(exp.status)}

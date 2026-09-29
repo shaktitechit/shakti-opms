@@ -142,6 +142,16 @@ function registerModels() {
         approved_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         approved_at: Date,
         rejection_reason: { type: String, trim: true },
+        manager_remarks: { type: String, trim: true },
+        authority_remarks: [
+          {
+            remark: { type: String, required: true, trim: true },
+            user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            user_name: { type: String, trim: true },
+            role: { type: String, trim: true },
+            created_at: { type: Date, default: Date.now },
+          },
+        ],
         day_end: {
           completed_at: Date,
           from_email: { type: String, trim: true },
@@ -174,6 +184,7 @@ function registerModels() {
     'pending',
     'in_progress',
     'checked_in',
+    'checked_out',
     'completed',
     'cancelled',
     'skipped',
@@ -237,6 +248,16 @@ function registerModels() {
         },
         pending_remarks: { type: String, trim: true },
         in_progress_remarks: { type: String, trim: true },
+        manager_remarks: { type: String, trim: true },
+        authority_remarks: [
+          {
+            remark: { type: String, required: true, trim: true },
+            user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            user_name: { type: String, trim: true },
+            role: { type: String, trim: true },
+            created_at: { type: Date, default: Date.now },
+          },
+        ],
         created_by: {
           type: mongoose.Schema.Types.ObjectId,
           ref: 'User',
@@ -251,6 +272,15 @@ function registerModels() {
         updated_by_role: { type: String, trim: true },
         actual_check_in: Date,
         actual_check_out: Date,
+        check_in_selfie_url: { type: String, trim: true },
+        check_out_selfie_url: { type: String, trim: true },
+        outcome_selfie_url: { type: String, trim: true },
+        check_in_lat: { type: Number },
+        check_in_lng: { type: Number },
+        check_in_address: { type: String, trim: true },
+        check_out_lat: { type: Number },
+        check_out_lng: { type: Number },
+        check_out_address: { type: String, trim: true },
         outcome: { type: String, trim: true },
         meeting_with_doctor: { type: Boolean },
         meeting_with_purchase: { type: Boolean },
@@ -259,6 +289,7 @@ function registerModels() {
         new_product_introduced: { type: Boolean },
         order_received: { type: Boolean },
         next_followup_date: Date,
+        rescheduled_date: Date,
         deletedAt: { type: Date, default: null, index: true },
       },
       { timestamps: true }
@@ -303,13 +334,24 @@ function registerModels() {
         planned_end_time: Date,
         status: {
           type: String,
-          enum: ['created', 'pending', 'in_progress', 'completed', 'cancelled'],
+          enum: ['created', 'pending', 'in_progress', 'completed', 'cancelled', 'skipped', 'rescheduled'],
           default: 'created',
           index: true,
         },
         completion_remarks: { type: String, trim: true },
         pending_remarks: { type: String, trim: true },
         in_progress_remarks: { type: String, trim: true },
+        manager_remarks: { type: String, trim: true },
+        rescheduled_date: Date,
+        authority_remarks: [
+          {
+            remark: { type: String, required: true, trim: true },
+            user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+            user_name: { type: String, trim: true },
+            role: { type: String, trim: true },
+            created_at: { type: Date, default: Date.now },
+          },
+        ],
         created_by: {
           type: mongoose.Schema.Types.ObjectId,
           ref: 'User',
@@ -395,8 +437,16 @@ function registerModels() {
           ref: 'Attachment',
           default: null,
         },
+        attachments: [
+          {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Attachment',
+          },
+        ],
         start_reading: { type: Number, min: 0 },
         closing_reading: { type: Number, min: 0 },
+        total_km: { type: Number, min: 0 },
+        rate_per_km: { type: Number, default: 3.5 },
         start_reading_image: {
           type: mongoose.Schema.Types.ObjectId,
           ref: 'Attachment',

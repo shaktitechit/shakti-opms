@@ -15,13 +15,19 @@ import {
   Table,
   SlidersHorizontal,
   RotateCcw,
+  Users,
 } from "lucide-react";
-import { useLazyGetExpensesQuery } from "@/store/api/workPlannerApiSlice";
+import {
+  useLazyGetExpensesQuery,
+  useGetTeamTreeQuery,
+  useGetMyTeamQuery,
+} from "@/store/api/workPlannerApiSlice";
 import {
   WORK_PLAN_EXPENSE_CATEGORIES,
   WORK_PLAN_EXPENSE_PAYMENT_MODES,
   WORK_PLAN_TRAVEL_SUB_CATEGORIES,
   type WorkPlanExpenseRecord,
+  type WorkPlanExpenseAttachment,
 } from "@/types/workPlanner";
 import {
   formatPlanDate,
@@ -33,7 +39,7 @@ import { calculateDateRange, type DateFilterPreset, toYmdString } from "./Dashbo
 import { usePdfCompanyLetterhead } from "./pdfCompanyLetterhead";
 import { downloadPdfReport } from "./exportPdfReport";
 import { downloadExcelReport } from "./exportExcelReport";
-import { readSessionFromStorage } from "@/utils/authStorage";
+import { isWpAdmin, isWpElevated, isWpManager, readSessionFromStorage } from "@/utils/authStorage";
 
 export type DownloadExpensesModalProps = {
   open: boolean;
@@ -57,6 +63,10 @@ export function DownloadExpensesModal({
   onClose,
 }: DownloadExpensesModalProps) {
   const letterhead = usePdfCompanyLetterhead();
+  const sessionUser = useMemo(() => readSessionFromStorage()?.user, []);
+  const adminRole = isWpAdmin(sessionUser);
+  const elevatedRole = isWpElevated(sessionUser);
+
   const [downloading, setDownloading] = useState(false);
   const [downloadingExcel, setDownloadingExcel] = useState(false);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
@@ -74,8 +84,75 @@ export function DownloadExpensesModal({
   const [subCategoryFilter, setSubCategoryFilter] = useState("all");
   const [paymentModeFilter, setPaymentModeFilter] = useState("all");
   const [vendorLocationFilter, setVendorLocationFilter] = useState("");
-  const [executiveFilter, setExecutiveFilter] = useState("");
+  const [teamFilter, setTeamFilter] = useState("all");
+  const [executiveFilter, setExecutiveFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Hierarchy Queries
+  const { data: tree } = useGetTeamTreeQuery(undefined, { skip: !adminRole });
+  const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !elevatedRole || adminRole });
+
+  // Build team options
+  const teamOptions = useMemo<Array<{ id: string; name: string; memberIds: string[] }>>(() => {
+    if (!elevatedRole) return [];
+    if (adminRole && tree) {
+      const mgrs = [...(tree?.managers || []), ...(tree?.coordinators || [])] as Array<{
+        _id?: string;
+        id?: string;
+        name: string;
+        report_ids?: string[];
+      }>;
+      return mgrs.map((m) => {
+        const mId = String(m._id || m.id || "");
+        const reportIds = (m.report_ids || []).map(String);
+        return { id: mId, name: `${m.name}'s Team`, memberIds: [mId, ...reportIds] };
+      });
+    }
+    if (elevatedRole && !adminRole && sessionUser?._id) {
+      const myTeamMembers = (myTeamData?.members || []) as Array<{ _id?: string; id?: string }>;
+      const memberIds = [
+        String(sessionUser._id),
+        ...myTeamMembers.map((m) => String(m._id || m.id || "")),
+      ];
+      return [{ id: String(sessionUser._id), name: "My Reporting Team", memberIds }];
+    }
+    return [];
+  }, [adminRole, elevatedRole, tree, myTeamData, sessionUser]);
+
+  // Executive dropdown list from hierarchy
+  const executiveOptions = useMemo<Array<{ id: string; name: string }>>(() => {
+    if (!elevatedRole) return [];
+    if (adminRole && tree) {
+      const all: Array<{ _id?: string; id?: string; name: string }> = [
+        ...(tree.executives || []),
+        ...(tree.managers || []),
+        ...(tree.coordinators || []),
+      ];
+      const seen = new Set<string>();
+      return all
+        .filter((u) => {
+          const id = String(u._id || u.id || "");
+          if (!id || seen.has(id)) return false;
+          seen.add(id);
+          return true;
+        })
+        .map((u) => ({ id: String(u._id || u.id), name: u.name }));
+    }
+    if (myTeamData?.members) {
+      return (myTeamData.members as Array<{ _id?: string; id?: string; name: string }>).map((m) => ({
+        id: String(m._id || m.id),
+        name: m.name,
+      }));
+    }
+    return [];
+  }, [adminRole, elevatedRole, tree, myTeamData]);
+
+  // Selected team's member IDs ("all" = no constraint)
+  const selectedTeamMemberIds = useMemo<Set<string> | null>(() => {
+    if (teamFilter === "all") return null;
+    const found = teamOptions.find((t) => t.id === teamFilter);
+    return found ? new Set(found.memberIds) : null;
+  }, [teamFilter, teamOptions]);
 
   const [fetchExpenses] = useLazyGetExpensesQuery();
 
@@ -93,6 +170,9 @@ export function DownloadExpensesModal({
       }
       if (statusFilter !== "all") params.status = statusFilter;
       if (categoryFilter !== "all") params.category = categoryFilter;
+      if (elevatedRole) {
+        params.scope = "team";
+      }
 
       const res = await fetchExpenses(params).unwrap();
       setItems(res.data || []);
@@ -122,13 +202,44 @@ export function DownloadExpensesModal({
     setSubCategoryFilter("all");
     setPaymentModeFilter("all");
     setVendorLocationFilter("");
-    setExecutiveFilter("");
+    setTeamFilter("all");
+    setExecutiveFilter("all");
     setSearchQuery("");
   };
 
   // Client-side Filtered Items
   const filteredItems = useMemo(() => {
     return items.filter((e) => {
+      // Hierarchy Team filter
+      if (selectedTeamMemberIds) {
+        const uid =
+          typeof e.sales_user === "object"
+            ? String((e.sales_user as any)?._id || (e.sales_user as any)?.id || "")
+            : typeof e.work_plan === "object" && (e.work_plan as any)?.sales_user
+            ? String(
+                typeof (e.work_plan as any).sales_user === "object"
+                  ? (e.work_plan as any).sales_user._id || (e.work_plan as any).sales_user.id
+                  : (e.work_plan as any).sales_user
+              )
+            : String(e.sales_user || "");
+        if (uid && !selectedTeamMemberIds.has(uid)) return false;
+      }
+
+      // Specific Executive filter
+      if (executiveFilter !== "all") {
+        const uid =
+          typeof e.sales_user === "object"
+            ? String((e.sales_user as any)?._id || (e.sales_user as any)?.id || "")
+            : typeof e.work_plan === "object" && (e.work_plan as any)?.sales_user
+            ? String(
+                typeof (e.work_plan as any).sales_user === "object"
+                  ? (e.work_plan as any).sales_user._id || (e.work_plan as any).sales_user.id
+                  : (e.work_plan as any).sales_user
+              )
+            : String(e.sales_user || "");
+        if (uid !== executiveFilter) return false;
+      }
+
       // Sub-category filter
       if (subCategoryFilter !== "all" && e.sub_category !== subCategoryFilter) return false;
 
@@ -143,23 +254,15 @@ export function DownloadExpensesModal({
         return false;
       }
 
-      // Sales Executive filter
-      const user =
-        typeof e.work_plan === "object"
-          ? salesUserLabel(e.work_plan.sales_user)
-          : typeof e.sales_user === "object"
-          ? salesUserLabel(e.sales_user)
-          : "";
-      if (
-        executiveFilter.trim() &&
-        !user.toLowerCase().includes(executiveFilter.trim().toLowerCase())
-      ) {
-        return false;
-      }
-
       // Keyword Search
       const q = searchQuery.trim().toLowerCase();
       if (q) {
+        const user =
+          typeof e.work_plan === "object"
+            ? salesUserLabel(e.work_plan.sales_user)
+            : typeof e.sales_user === "object"
+            ? salesUserLabel(e.sales_user)
+            : "";
         const cat = (e.category || "").toLowerCase();
         const sub = (e.sub_category || "").toLowerCase();
         const vendor = (e.vendor_name || "").toLowerCase();
@@ -185,10 +288,11 @@ export function DownloadExpensesModal({
     });
   }, [
     items,
+    selectedTeamMemberIds,
+    executiveFilter,
     subCategoryFilter,
     paymentModeFilter,
     vendorLocationFilter,
-    executiveFilter,
     searchQuery,
   ]);
 
@@ -244,7 +348,9 @@ export function DownloadExpensesModal({
         "Bill Date",
         "Start Odometer (KM)",
         "Closing Odometer (KM)",
-        "Total Odometer Distance (KM)",
+        "Total Distance (KM)",
+        "Rate (₹/KM)",
+        "Attachments Count",
         "Status",
         "Description / Purpose",
       ];
@@ -256,12 +362,23 @@ export function DownloadExpensesModal({
             ? salesUserLabel(e.sales_user)
             : "—";
 
+        const isBike = e.category === "Travel" && e.sub_category === "Private Bike";
         const startKm = e.start_reading != null ? e.start_reading : "—";
         const closeKm = e.closing_reading != null ? e.closing_reading : "—";
         const totalKm =
           e.start_reading != null && e.closing_reading != null
             ? Math.max(0, e.closing_reading - e.start_reading)
+            : e.total_km != null
+            ? e.total_km
             : "—";
+        const ratePerKm = isBike ? "₹3.50/KM" : "—";
+
+        let attCount = 0;
+        if (Array.isArray(e.attachments) && e.attachments.length > 0) {
+          attCount = e.attachments.length;
+        } else if (e.receipt_attachment) {
+          attCount = 1;
+        }
 
         return [
           idx + 1,
@@ -277,6 +394,8 @@ export function DownloadExpensesModal({
           startKm,
           closeKm,
           totalKm,
+          ratePerKm,
+          attCount,
           e.status,
           `"${(e.description || "").replace(/"/g, '""')}"`,
         ];
@@ -316,19 +435,20 @@ export function DownloadExpensesModal({
         { key: "bill_number", label: "Bill / Invoice #" },
         { key: "bill_date", label: "Bill Date" },
         { key: "visit_party", label: "Linked Visit / Party" },
-        { key: "odometer", label: "Odometer Readings" },
+        { key: "start_reading", label: "Start Odometer (KM)" },
+        { key: "closing_reading", label: "Closing Odometer (KM)" },
+        { key: "total_km", label: "Total Distance (KM)" },
+        { key: "rate_per_km", label: "Rate (₹/KM)" },
+        { key: "attachments_count", label: "Attachments" },
         { key: "status", label: "Status" },
         { key: "description", label: "Description / Purpose" },
       ];
 
       const rows = filteredItems.map((r, i) => {
-        const odo =
-          r.start_reading != null || r.closing_reading != null
-            ? `${r.start_reading ?? "—"} -> ${r.closing_reading ?? "—"}`
-            : "—";
+        const isBike = r.category === "Travel" && r.sub_category === "Private Bike";
         const visitParty = r.work_plan_visit
           ? typeof r.work_plan_visit === "object"
-            ? r.work_plan_visit.party_name || (r.work_plan_visit.party as any)?.party_name || "Visit"
+            ? (r.work_plan_visit as any).party_name || (r.work_plan_visit as any).party?.party_name || "Visit"
             : "Visit"
           : "—";
 
@@ -338,6 +458,20 @@ export function DownloadExpensesModal({
             : typeof r.sales_user === "object"
             ? salesUserLabel(r.sales_user)
             : "—";
+
+        const totalKm =
+          r.start_reading != null && r.closing_reading != null
+            ? Math.max(0, r.closing_reading - r.start_reading)
+            : r.total_km != null
+            ? r.total_km
+            : "—";
+
+        let attCount = 0;
+        if (Array.isArray(r.attachments) && r.attachments.length > 0) {
+          attCount = r.attachments.length;
+        } else if (r.receipt_attachment) {
+          attCount = 1;
+        }
 
         return {
           rowNum: i + 1,
@@ -351,7 +485,11 @@ export function DownloadExpensesModal({
           bill_number: r.bill_number || "—",
           bill_date: formatPlanDate(r.bill_date),
           visit_party: visitParty,
-          odometer: odo,
+          start_reading: r.start_reading != null ? r.start_reading : "—",
+          closing_reading: r.closing_reading != null ? r.closing_reading : "—",
+          total_km: totalKm,
+          rate_per_km: isBike ? "₹3.50/KM" : "—",
+          attachments_count: attCount > 0 ? `${attCount} file(s)` : "None",
           status: (r.status || "draft").toUpperCase(),
           description: r.description || "—",
         };
@@ -382,10 +520,18 @@ export function DownloadExpensesModal({
             ? salesUserLabel(e.sales_user)
             : "—";
 
+        const isBike = e.category === "Travel" && e.sub_category === "Private Bike";
         const totalKm =
           e.start_reading != null && e.closing_reading != null
-            ? `${Math.max(0, e.closing_reading - e.start_reading)} KM`
+            ? `${Math.max(0, e.closing_reading - e.start_reading)} KM${isBike ? " @ ₹3.5" : ""}`
             : "—";
+
+        let attCount = 0;
+        if (Array.isArray(e.attachments) && e.attachments.length > 0) {
+          attCount = e.attachments.length;
+        } else if (e.receipt_attachment) {
+          attCount = 1;
+        }
 
         return {
           rowNum: idx + 1,
@@ -397,6 +543,7 @@ export function DownloadExpensesModal({
           paymentMode: (e.payment_mode || "cash").toUpperCase(),
           vendor: e.vendor_name || "—",
           distance: totalKm,
+          attachments: attCount > 0 ? `${attCount} doc(s)` : "—",
           status: (e.status || "").toUpperCase(),
           description: e.description || "—",
         };
@@ -412,8 +559,9 @@ export function DownloadExpensesModal({
         { label: "Category", value: categoryFilter === "all" ? "All Categories" : categoryFilter.toUpperCase() },
         { label: "Sub Category", value: subCategoryFilter === "all" ? "All Sub Categories" : subCategoryFilter },
         { label: "Payment Mode", value: paymentModeFilter === "all" ? "All Payment Modes" : paymentModeFilter.toUpperCase() },
+        { label: "Team Filter", value: teamFilter === "all" ? "All Teams" : "Selected Team" },
+        { label: "Executive", value: executiveFilter === "all" ? "All Representatives" : executiveFilter },
         { label: "Vendor / Location", value: vendorLocationFilter.trim() || "All Vendors" },
-        { label: "Executive", value: executiveFilter.trim() || "All Representatives" },
         { label: "Search Query", value: searchQuery.trim() || "None" },
       ];
 
@@ -421,7 +569,7 @@ export function DownloadExpensesModal({
         letterhead,
         filename: `expenses_report_${new Date().toISOString().slice(0, 10)}.pdf`,
         title: "Work Planner Expenses Master Report",
-        subtitle: `Expenses & Claims Summary Sheet`,
+        subtitle: `Expenses & Claims Summary Sheet (Rate: ₹3.50/KM for Bike)`,
         downloadedBy,
         timestamp,
         filterPanel: activeFilterPanel,
@@ -434,15 +582,16 @@ export function DownloadExpensesModal({
         columns: [
           { key: "rowNum", label: "#", width: 0.5, align: "left" },
           { key: "date", label: "Date", width: 1.1, align: "left" },
-          { key: "executive", label: "Executive", width: 1.6, align: "left" },
-          { key: "category", label: "Category", width: 1.2, align: "left" },
+          { key: "executive", label: "Executive", width: 1.5, align: "left" },
+          { key: "category", label: "Category", width: 1.1, align: "left" },
           { key: "subCategory", label: "Sub Category", width: 1.2, align: "left" },
           { key: "amount", label: "Amount", width: 1.2, align: "right" },
           { key: "paymentMode", label: "Pay Mode", width: 1.0, align: "center" },
-          { key: "vendor", label: "Vendor", width: 1.4, align: "left" },
-          { key: "distance", label: "Distance", width: 1.0, align: "right" },
-          { key: "status", label: "Status", width: 1.1, align: "center" },
-          { key: "description", label: "Description / Purpose", width: 2.0, align: "left" },
+          { key: "vendor", label: "Vendor", width: 1.3, align: "left" },
+          { key: "distance", label: "Distance", width: 1.2, align: "right" },
+          { key: "attachments", label: "Docs", width: 0.9, align: "center" },
+          { key: "status", label: "Status", width: 1.0, align: "center" },
+          { key: "description", label: "Description / Purpose", width: 1.8, align: "left" },
         ],
         rows,
       });
@@ -594,7 +743,48 @@ export function DownloadExpensesModal({
                 </select>
               </div>
 
-              {/* 2. Category Filter */}
+              {/* 2. Hierarchy Team Filter (Elevated) */}
+              {elevatedRole && teamOptions.length > 0 && (
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-muted">Reporting Team</label>
+                  <select
+                    value={teamFilter}
+                    onChange={(e) => {
+                      setTeamFilter(e.target.value);
+                      setExecutiveFilter("all");
+                    }}
+                    className="w-full rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-teal-500"
+                  >
+                    <option value="all">All Visible Teams</option>
+                    {teamOptions.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* 3. Executive / Representative Filter */}
+              {elevatedRole && executiveOptions.length > 0 && (
+                <div className="space-y-1">
+                  <label className="text-[11px] font-semibold text-muted">Sales Executive</label>
+                  <select
+                    value={executiveFilter}
+                    onChange={(e) => setExecutiveFilter(e.target.value)}
+                    className="w-full rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-teal-500"
+                  >
+                    <option value="all">All Representatives</option>
+                    {executiveOptions.map((exec) => (
+                      <option key={exec.id} value={exec.id}>
+                        {exec.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* 4. Category Filter */}
               <div className="space-y-1">
                 <label className="text-[11px] font-semibold text-muted">Category</label>
                 <select
@@ -611,7 +801,7 @@ export function DownloadExpensesModal({
                 </select>
               </div>
 
-              {/* 3. Sub-Category / Travel Mode */}
+              {/* 5. Sub-Category / Travel Mode */}
               <div className="space-y-1">
                 <label className="text-[11px] font-semibold text-muted">Sub-Category</label>
                 <select
@@ -628,7 +818,7 @@ export function DownloadExpensesModal({
                 </select>
               </div>
 
-              {/* 4. Payment Mode */}
+              {/* 6. Payment Mode */}
               <div className="space-y-1">
                 <label className="text-[11px] font-semibold text-muted">Payment Mode</label>
                 <select
@@ -645,7 +835,7 @@ export function DownloadExpensesModal({
                 </select>
               </div>
 
-              {/* 5. Vendor / Location */}
+              {/* 7. Vendor / Location */}
               <div className="space-y-1">
                 <label className="text-[11px] font-semibold text-muted">Vendor / Hotel Name</label>
                 <input
@@ -657,7 +847,7 @@ export function DownloadExpensesModal({
                 />
               </div>
 
-              {/* 6. Expense Status */}
+              {/* 8. Expense Status */}
               <div className="space-y-1">
                 <label className="text-[11px] font-semibold text-muted">Status</label>
                 <select
@@ -674,7 +864,7 @@ export function DownloadExpensesModal({
               </div>
             </div>
 
-            {/* Custom Dates & Executive Search Row */}
+            {/* Custom Dates & Keyword Search Row */}
             <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
               {datePreset === "custom" && (
                 <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-muted px-3 py-1.5 text-xs">
@@ -763,16 +953,20 @@ export function DownloadExpensesModal({
                     <span className="text-[9px] text-muted/70 block">H</span>
                     Bill No
                   </th>
-                  <th className="border-r border-border px-3 py-2 w-32 font-mono">
+                  <th className="border-r border-border px-3 py-2 w-36 font-mono">
                     <span className="text-[9px] text-muted/70 block">I</span>
-                    Odometer (KM)
+                    Odometer / Rate
                   </th>
-                  <th className="border-r border-border px-3 py-2 w-36">
+                  <th className="border-r border-border px-3 py-2 w-24 text-center">
                     <span className="text-[9px] text-muted/70 block">J</span>
+                    Docs
+                  </th>
+                  <th className="border-r border-border px-3 py-2 w-32">
+                    <span className="text-[9px] text-muted/70 block">K</span>
                     Status
                   </th>
                   <th className="px-3 py-2 min-w-[200px]">
-                    <span className="text-[9px] text-muted/70 block">K</span>
+                    <span className="text-[9px] text-muted/70 block">L</span>
                     Description / Purpose
                   </th>
                 </tr>
@@ -786,12 +980,20 @@ export function DownloadExpensesModal({
                       ? salesUserLabel(e.sales_user)
                       : "—";
 
+                  const isBike = e.category === "Travel" && e.sub_category === "Private Bike";
                   const startKm = e.start_reading != null ? e.start_reading : null;
                   const closeKm = e.closing_reading != null ? e.closing_reading : null;
                   const odoText =
                     startKm != null && closeKm != null
-                      ? `${startKm.toLocaleString()} → ${closeKm.toLocaleString()} (${(closeKm - startKm).toLocaleString()} KM)`
+                      ? `${startKm.toLocaleString()} → ${closeKm.toLocaleString()} (${(closeKm - startKm).toLocaleString()} KM${isBike ? " @ ₹3.5" : ""})`
                       : "—";
+
+                  let attCount = 0;
+                  if (Array.isArray(e.attachments) && e.attachments.length > 0) {
+                    attCount = e.attachments.length;
+                  } else if (e.receipt_attachment) {
+                    attCount = 1;
+                  }
 
                   return (
                     <tr
@@ -829,6 +1031,15 @@ export function DownloadExpensesModal({
                       </td>
                       <td className="border-r border-border/60 px-3 py-2 text-muted font-mono text-[11px] whitespace-nowrap">
                         {odoText}
+                      </td>
+                      <td className="border-r border-border/60 px-3 py-2 text-center text-muted whitespace-nowrap">
+                        {attCount > 0 ? (
+                          <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                            {attCount} doc{attCount > 1 ? "s" : ""}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="border-r border-border/60 px-3 py-2 whitespace-nowrap">
                         {renderExpenseStatusBadge(e.status)}

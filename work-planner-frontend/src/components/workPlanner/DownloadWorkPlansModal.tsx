@@ -25,9 +25,10 @@ import {
   FolderOpen,
   CornerDownRight,
   MessageSquare,
+  CalendarClock,
 } from "lucide-react";
 import { useLazyGetPlansQuery, useGetMyTeamQuery, useGetTeamTreeQuery } from "@/store/api/workPlannerApiSlice";
-import type { WorkPlanRecord, WorkPlanVisitRecord, WorkPlanWorkRecord } from "@/types/workPlanner";
+import type { WorkPlanRecord, WorkPlanVisitRecord, WorkPlanWorkRecord, AuthorityRemarkItem } from "@/types/workPlanner";
 import {
   formatDiscussionMethod,
   formatPlanDate,
@@ -45,6 +46,65 @@ import { downloadPdfReport } from "./exportPdfReport";
 import { downloadExcelReport } from "./exportExcelReport";
 import { readSessionFromStorage, isWpAdmin, isWpManager, isWpElevated } from "@/utils/authStorage";
 import { Network } from "lucide-react";
+
+function formatSupervisoryRemarks(
+  managerRemarks?: string,
+  authorityRemarks?: AuthorityRemarkItem[]
+): string {
+  const parts: string[] = [];
+  if (managerRemarks && managerRemarks.trim()) {
+    parts.push(`Senior: ${stripHtml(managerRemarks.trim())}`);
+  }
+  if (authorityRemarks && authorityRemarks.length > 0) {
+    authorityRemarks.forEach((ar) => {
+      const roleStr = ar.role ? `[${ar.role.toUpperCase()}] ` : "";
+      const userStr = ar.user_name || "Senior";
+      const remText = stripHtml(ar.remark || "").trim();
+      if (remText) {
+        parts.push(`${roleStr}${userStr}: ${remText}`);
+      }
+    });
+  }
+  return parts.join(" | ");
+}
+
+function renderSupervisoryRemarksCell(
+  managerRemarks?: string,
+  authorityRemarks?: AuthorityRemarkItem[]
+) {
+  const hasManager = Boolean(managerRemarks && managerRemarks.trim());
+  const hasAuth = Boolean(authorityRemarks && authorityRemarks.length > 0);
+
+  if (!hasManager && !hasAuth) {
+    return <span className="text-muted/60">—</span>;
+  }
+
+  return (
+    <div className="space-y-1 max-w-[280px]">
+      {hasManager && (
+        <div className="flex items-start gap-1 rounded bg-indigo-500/10 px-1.5 py-0.5 text-[10px] text-indigo-700 dark:text-indigo-300 font-medium">
+          <ShieldCheck className="h-3 w-3 shrink-0 text-indigo-600 dark:text-indigo-400 mt-0.5" />
+          <span className="truncate">
+            <strong>Senior:</strong> {stripHtml(managerRemarks!)}
+          </span>
+        </div>
+      )}
+      {hasAuth &&
+        authorityRemarks!.map((ar, idx) => (
+          <div
+            key={ar._id || `auth-${idx}`}
+            className="flex items-start gap-1 rounded bg-purple-500/10 px-1.5 py-0.5 text-[10px] text-purple-700 dark:text-purple-300 font-medium"
+          >
+            <ShieldCheck className="h-3 w-3 shrink-0 text-purple-600 dark:text-purple-400 mt-0.5" />
+            <span className="truncate">
+              <strong>[{ar.role ? ar.role.toUpperCase() : "SENIOR"} {ar.user_name || ""}]:</strong>{" "}
+              {stripHtml(ar.remark || "")}
+            </span>
+          </div>
+        ))}
+    </div>
+  );
+}
 
 export type DownloadWorkPlansModalProps = {
   open: boolean;
@@ -282,6 +342,11 @@ export function DownloadWorkPlansModal({
             if (v.order_received) checklist.push("Order Received: Yes");
             const checklistNotes = checklist.length > 0 ? checklist.join(" | ") : "—";
 
+            const managerRemarks = v.manager_remarks || "";
+            const authorityRemarks = v.authority_remarks || [];
+            const rescheduledDate = v.rescheduled_date || "";
+            const supervisoryRemarks = formatSupervisoryRemarks(managerRemarks, authorityRemarks);
+
             return {
               id: v._id || v.id || `v-${planId}-${vIdx}`,
               sequence: v.sequence ?? vIdx + 1,
@@ -294,6 +359,10 @@ export function DownloadWorkPlansModal({
               outcome: v.outcome || "—",
               checklistNotes,
               purpose: v.purpose || "Field Visit",
+              managerRemarks,
+              authorityRemarks,
+              rescheduledDate,
+              supervisoryRemarks,
             };
           })
           .filter((v) => {
@@ -321,6 +390,11 @@ export function DownloadWorkPlansModal({
             const endTime = w.planned_end_time ? formatTime(w.planned_end_time) : "";
             const plannedTime = startTime || endTime ? `${startTime} - ${endTime}` : "Not set";
 
+            const managerRemarks = w.manager_remarks || "";
+            const authorityRemarks = w.authority_remarks || [];
+            const rescheduledDate = w.rescheduled_date || "";
+            const supervisoryRemarks = formatSupervisoryRemarks(managerRemarks, authorityRemarks);
+
             return {
               id: w._id || w.id || `w-${planId}-${wIdx}`,
               sequence: w.sequence ?? wIdx + 1,
@@ -329,6 +403,10 @@ export function DownloadWorkPlansModal({
               plannedTime,
               status: w.status || "created",
               remarks: w.completion_remarks || w.outcome || "—",
+              managerRemarks,
+              authorityRemarks,
+              rescheduledDate,
+              supervisoryRemarks,
             };
           })
           .filter((w) => {
@@ -368,6 +446,10 @@ export function DownloadWorkPlansModal({
           return null;
         }
 
+        const planManagerRemarks = plan.manager_remarks || "";
+        const planAuthorityRemarks = plan.authority_remarks || [];
+        const planSupervisoryRemarks = formatSupervisoryRemarks(planManagerRemarks, planAuthorityRemarks);
+
         // Global Search Filter matching Plan, Visit or Task fields
         const q = searchQuery.trim().toLowerCase();
         let matchesSearch = true;
@@ -394,7 +476,8 @@ export function DownloadWorkPlansModal({
             dtStr.includes(q) ||
             typeStr.includes(q) ||
             discMgr.includes(q) ||
-            discMethod.includes(q);
+            discMethod.includes(q) ||
+            planSupervisoryRemarks.toLowerCase().includes(q);
 
           const visitMatch = visits.some(
             (v) =>
@@ -402,14 +485,18 @@ export function DownloadWorkPlansModal({
               v.contactInfo.toLowerCase().includes(q) ||
               v.address.toLowerCase().includes(q) ||
               v.outcome.toLowerCase().includes(q) ||
-              v.checklistNotes.toLowerCase().includes(q)
+              v.checklistNotes.toLowerCase().includes(q) ||
+              v.supervisoryRemarks.toLowerCase().includes(q) ||
+              v.rescheduledDate.toLowerCase().includes(q)
           );
 
           const taskMatch = tasks.some(
             (w) =>
               w.title.toLowerCase().includes(q) ||
               w.description.toLowerCase().includes(q) ||
-              w.remarks.toLowerCase().includes(q)
+              w.remarks.toLowerCase().includes(q) ||
+              w.supervisoryRemarks.toLowerCase().includes(q) ||
+              w.rescheduledDate.toLowerCase().includes(q)
           );
 
           matchesSearch = planMatch || visitMatch || taskMatch;
@@ -425,6 +512,9 @@ export function DownloadWorkPlansModal({
           planStatus,
           planLocation,
           planRemarks,
+          managerRemarks: planManagerRemarks,
+          authorityRemarks: planAuthorityRemarks,
+          supervisoryRemarks: planSupervisoryRemarks,
           isDiscussedWithManager: Boolean(plan.is_discussed_with_manager),
           discussedManagerName:
             plan.discussed_manager_name ||
@@ -515,9 +605,11 @@ export function DownloadWorkPlansModal({
         "Contact / Description",
         "Location / City",
         "Planned Time",
+        "Rescheduled Date",
         "Actual Check-In/Out",
         "Status",
         "Outcome / Completion Remarks",
+        "Senior Remarks",
         "Doctor/Purchase Meeting Checklist",
       ];
 
@@ -542,8 +634,10 @@ export function DownloadWorkPlansModal({
           `"${(p.planLocation || "").replace(/"/g, '""')}"`,
           "Full Day",
           "—",
+          "—",
           p.planStatus,
           `"${(p.planRemarks || "").replace(/"/g, '""')}"`,
+          `"${(p.supervisoryRemarks || "—").replace(/"/g, '""')}"`,
           "N/A",
         ]);
 
@@ -562,9 +656,11 @@ export function DownloadWorkPlansModal({
             `"${v.contactInfo.replace(/"/g, '""')}"`,
             `"${v.address.replace(/"/g, '""')}"`,
             `"${v.plannedTime.replace(/"/g, '""')}"`,
+            `"${(v.rescheduledDate || "—").replace(/"/g, '""')}"`,
             `"${v.actualTime.replace(/"/g, '""')}"`,
             v.status,
             `"${v.outcome.replace(/"/g, '""')}"`,
+            `"${(v.supervisoryRemarks || "—").replace(/"/g, '""')}"`,
             `"${v.checklistNotes.replace(/"/g, '""')}"`,
           ]);
         });
@@ -584,9 +680,11 @@ export function DownloadWorkPlansModal({
             `"${w.description.replace(/"/g, '""')}"`,
             `"${(p.planLocation || "Office / Remote").replace(/"/g, '""')}"`,
             `"${w.plannedTime.replace(/"/g, '""')}"`,
+            `"${(w.rescheduledDate || "—").replace(/"/g, '""')}"`,
             w.status === "completed" ? "Completed" : "—",
             w.status,
             `"${w.remarks.replace(/"/g, '""')}"`,
+            `"${(w.supervisoryRemarks || "—").replace(/"/g, '""')}"`,
             "N/A",
           ]);
         });
@@ -634,8 +732,10 @@ export function DownloadWorkPlansModal({
           activity: p.planType === "Visits" ? `Visits Plan (${p.visits.length} Visits)` : `Tasks Plan (${p.tasks.length} Tasks)`,
           details: [stripHtml(p.planRemarks), discSummary].filter(Boolean).join(" | ") || "—",
           plannedTime: "Full Day",
+          rescheduledDate: "—",
           status: p.planStatus.toUpperCase(),
           remarks: [stripHtml(p.planRemarks), discSummary].filter(Boolean).join(" | ") || "—",
+          supervisoryRemarks: p.supervisoryRemarks || "—",
         });
 
         // 2. Field Visits Rows
@@ -650,8 +750,10 @@ export function DownloadWorkPlansModal({
             activity: `Field Visit: ${v.partyName}`,
             details: `${v.contactInfo ? v.contactInfo + " | " : ""}${v.address}`,
             plannedTime: v.plannedTime || "—",
+            rescheduledDate: v.rescheduledDate || "—",
             status: v.status.toUpperCase(),
             remarks: `${outcomeText ? "Outcome: " + outcomeText : ""}${notesText ? " Notes: " + notesText : ""}` || "—",
+            supervisoryRemarks: v.supervisoryRemarks || "—",
           });
         });
 
@@ -665,8 +767,10 @@ export function DownloadWorkPlansModal({
             activity: `Work Task: ${w.title}`,
             details: stripHtml(w.description) || "—",
             plannedTime: w.plannedTime || "—",
+            rescheduledDate: w.rescheduledDate || "—",
             status: w.status.toUpperCase(),
             remarks: stripHtml(w.remarks) || "—",
+            supervisoryRemarks: w.supervisoryRemarks || "—",
           });
         });
       });
@@ -683,8 +787,10 @@ export function DownloadWorkPlansModal({
           { key: "activity", label: "Activity / Purpose / Title" },
           { key: "details", label: "Contact / Address / Details" },
           { key: "plannedTime", label: "Schedule / Time" },
+          { key: "rescheduledDate", label: "Rescheduled Date" },
           { key: "status", label: "Status" },
           { key: "remarks", label: "Remarks / Outcome" },
+          { key: "supervisoryRemarks", label: "Senior Remarks" },
         ],
         rows,
       });
@@ -720,12 +826,16 @@ export function DownloadWorkPlansModal({
           plannedTime: "Full Day",
           status: p.planStatus.toUpperCase(),
           remarks: [p.planRemarks, discSummary].filter(Boolean).join(" | ") || "—",
+          supervisoryRemarks: p.supervisoryRemarks || "—",
         });
 
         // 2. Field Visits Rows
         p.visits.forEach((v, vIdx) => {
           const outcomeText = v.outcome ? stripHtml(v.outcome) : "";
           const notesText = v.checklistNotes ? stripHtml(v.checklistNotes) : "";
+          const timeDisplay = v.rescheduledDate
+            ? `${v.plannedTime || "—"} (Resch: ${v.rescheduledDate})`
+            : (v.plannedTime || "—");
           rows.push({
             _rowType: "FIELD VISIT",
             hierarchyId: `${planIndex}.${vIdx + 1}`,
@@ -734,14 +844,18 @@ export function DownloadWorkPlansModal({
             executive: execName,
             activity: `Field Visit: ${v.partyName}`,
             details: `${v.contactInfo ? v.contactInfo + " | " : ""}${v.address}`,
-            plannedTime: v.plannedTime || "—",
+            plannedTime: timeDisplay,
             status: v.status.toUpperCase(),
             remarks: `${outcomeText ? "Outcome: " + outcomeText : ""}${notesText ? " Notes: " + notesText : ""}` || "—",
+            supervisoryRemarks: v.supervisoryRemarks || "—",
           });
         });
 
         // 3. Work Tasks Rows
         p.tasks.forEach((w, wIdx) => {
+          const timeDisplay = w.rescheduledDate
+            ? `${w.plannedTime || "—"} (Resch: ${w.rescheduledDate})`
+            : (w.plannedTime || "—");
           rows.push({
             _rowType: "WORK TASK",
             hierarchyId: `${planIndex}.${p.visits.length + wIdx + 1}`,
@@ -750,9 +864,10 @@ export function DownloadWorkPlansModal({
             executive: execName,
             activity: `Work Task: ${w.title}`,
             details: stripHtml(w.description) || "—",
-            plannedTime: w.plannedTime || "—",
+            plannedTime: timeDisplay,
             status: w.status.toUpperCase(),
             remarks: stripHtml(w.remarks) || "—",
+            supervisoryRemarks: w.supervisoryRemarks || "—",
           });
         });
       });
@@ -788,15 +903,16 @@ export function DownloadWorkPlansModal({
           { label: "Work Tasks", value: String(summaryMetrics.totalTasks) },
         ],
         columns: [
-          { key: "hierarchyId", label: "#", width: 0.6, align: "left" },
-          { key: "rowType", label: "Type", width: 1.1, align: "left" },
-          { key: "date", label: "Date", width: 1.0, align: "left" },
-          { key: "executive", label: "Sales Executive", width: 1.5, align: "left" },
-          { key: "activity", label: "Activity / Title / Party", width: 2.2, align: "left" },
-          { key: "details", label: "Details / Address", width: 2.0, align: "left" },
-          { key: "plannedTime", label: "Planned", width: 0.9, align: "center" },
-          { key: "status", label: "Status", width: 1.0, align: "center" },
-          { key: "remarks", label: "Remarks / Outcome", width: 1.7, align: "left" },
+          { key: "hierarchyId", label: "#", width: 0.5, align: "left" },
+          { key: "rowType", label: "Type", width: 0.9, align: "left" },
+          { key: "date", label: "Date", width: 0.9, align: "left" },
+          { key: "executive", label: "Sales Executive", width: 1.3, align: "left" },
+          { key: "activity", label: "Activity / Title / Party", width: 1.8, align: "left" },
+          { key: "details", label: "Details / Address", width: 1.6, align: "left" },
+          { key: "plannedTime", label: "Schedule / Time", width: 1.1, align: "center" },
+          { key: "status", label: "Status", width: 0.9, align: "center" },
+          { key: "remarks", label: "Remarks / Outcome", width: 1.4, align: "left" },
+          { key: "supervisoryRemarks", label: "Senior Remarks", width: 1.7, align: "left" },
         ],
         rows,
       });
@@ -1201,20 +1317,24 @@ export function DownloadWorkPlansModal({
                     <span className="text-[9px] text-muted/70 block">F</span>
                     Location / City
                   </th>
-                  <th className="border-r border-border px-3 py-2 w-36">
+                  <th className="border-r border-border px-3 py-2 w-40">
                     <span className="text-[9px] text-muted/70 block">G</span>
-                    Time / Check-in
+                    Time / Schedule
                   </th>
-                  <th className="border-r border-border px-3 py-2 w-36">
+                  <th className="border-r border-border px-3 py-2 w-32">
                     <span className="text-[9px] text-muted/70 block">H</span>
                     Status
                   </th>
-                  <th className="border-r border-border px-3 py-2 min-w-[200px]">
+                  <th className="border-r border-border px-3 py-2 min-w-[180px]">
                     <span className="text-[9px] text-muted/70 block">I</span>
                     Outcome / Remarks
                   </th>
-                  <th className="px-3 py-2 min-w-[180px]">
+                  <th className="border-r border-border px-3 py-2 min-w-[220px]">
                     <span className="text-[9px] text-muted/70 block">J</span>
+                    Manager &amp; Authority Remarks
+                  </th>
+                  <th className="px-3 py-2 min-w-[160px]">
+                    <span className="text-[9px] text-muted/70 block">K</span>
                     Meeting Checklist
                   </th>
                 </tr>
@@ -1305,7 +1425,12 @@ export function DownloadWorkPlansModal({
                             {p.planRemarks || "—"}
                           </td>
 
-                          {/* 10. Checklist */}
+                          {/* 10. Manager & Senior Authority Remarks */}
+                          <td className="border-r border-border px-3 py-2.5">
+                            {renderSupervisoryRemarksCell(p.managerRemarks, p.authorityRemarks)}
+                          </td>
+
+                          {/* 11. Checklist */}
                           <td className="px-3 py-2.5 text-muted text-[11px]">
                             {totalItems > 0
                               ? `${p.visits.length} visits, ${p.tasks.length} tasks`
@@ -1360,11 +1485,17 @@ export function DownloadWorkPlansModal({
                                   {v.address}
                                 </td>
 
-                                {/* 7. Planned & Actual Time */}
+                                {/* 7. Planned & Actual Time + Rescheduled Date */}
                                 <td className="border-r border-border/60 px-3 py-2 text-muted font-mono text-[10px]">
                                   <div>{v.plannedTime}</div>
+                                  {v.rescheduledDate && (
+                                    <div className="mt-1 inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                                      <CalendarClock className="h-3 w-3 shrink-0" />
+                                      Rescheduled: {v.rescheduledDate}
+                                    </div>
+                                  )}
                                   {v.actualTime !== "—" && (
-                                    <div className="text-emerald-600 dark:text-emerald-400 font-semibold">{v.actualTime}</div>
+                                    <div className="text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">{v.actualTime}</div>
                                   )}
                                 </td>
 
@@ -1378,7 +1509,12 @@ export function DownloadWorkPlansModal({
                                   {v.outcome}
                                 </td>
 
-                                {/* 10. Doctor/Purchase Checklist Notes */}
+                                {/* 10. Manager & Senior Authority Remarks */}
+                                <td className="border-r border-border/60 px-3 py-2">
+                                  {renderSupervisoryRemarksCell(v.managerRemarks, v.authorityRemarks)}
+                                </td>
+
+                                {/* 11. Doctor/Purchase Checklist Notes */}
                                 <td className="px-3 py-2 text-muted truncate max-w-[200px] text-[10px]">
                                   {v.checklistNotes}
                                 </td>
@@ -1429,9 +1565,15 @@ export function DownloadWorkPlansModal({
                                   {p.planLocation || "Office / Remote"}
                                 </td>
 
-                                {/* 7. Time */}
+                                {/* 7. Time + Rescheduled Date */}
                                 <td className="border-r border-border/60 px-3 py-2 text-muted font-mono text-[10px]">
-                                  {w.plannedTime}
+                                  <div>{w.plannedTime}</div>
+                                  {w.rescheduledDate && (
+                                    <div className="mt-1 inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                                      <CalendarClock className="h-3 w-3 shrink-0" />
+                                      Rescheduled: {w.rescheduledDate}
+                                    </div>
+                                  )}
                                 </td>
 
                                 {/* 8. Task Status */}
@@ -1452,7 +1594,12 @@ export function DownloadWorkPlansModal({
                                   {w.remarks}
                                 </td>
 
-                                {/* 10. Checklist */}
+                                {/* 10. Manager & Senior Authority Remarks */}
+                                <td className="border-r border-border/60 px-3 py-2">
+                                  {renderSupervisoryRemarksCell(w.managerRemarks, w.authorityRemarks)}
+                                </td>
+
+                                {/* 11. Checklist */}
                                 <td className="px-3 py-2 text-muted text-[10px]">
                                   N/A
                                 </td>
@@ -1485,6 +1632,7 @@ export function DownloadWorkPlansModal({
                           <td className="border-r border-border/60 px-3 py-2 text-muted font-mono text-[10px]">Full Day</td>
                           <td className="border-r border-border/60 px-3 py-2 whitespace-nowrap">{renderPlanStatusBadge(p.planStatus)}</td>
                           <td className="border-r border-border/60 px-3 py-2 text-foreground font-medium">{p.planRemarks || "—"}</td>
+                          <td className="border-r border-border/60 px-3 py-2">{renderSupervisoryRemarksCell(p.managerRemarks, p.authorityRemarks)}</td>
                           <td className="px-3 py-2 text-muted text-[10px]">N/A</td>
                         </tr>
                       );
@@ -1505,10 +1653,17 @@ export function DownloadWorkPlansModal({
                           <td className="border-r border-border/60 px-3 py-2 text-muted max-w-[180px] truncate">{v.address}</td>
                           <td className="border-r border-border/60 px-3 py-2 text-muted font-mono text-[10px]">
                             <div>{v.plannedTime}</div>
-                            {v.actualTime !== "—" && <div className="text-emerald-600 dark:text-emerald-400 font-semibold">{v.actualTime}</div>}
+                            {v.rescheduledDate && (
+                              <div className="mt-1 inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                                <CalendarClock className="h-3 w-3 shrink-0" />
+                                Rescheduled: {v.rescheduledDate}
+                              </div>
+                            )}
+                            {v.actualTime !== "—" && <div className="text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">{v.actualTime}</div>}
                           </td>
                           <td className="border-r border-border/60 px-3 py-2 whitespace-nowrap">{renderVisitStatusBadge(v.status)}</td>
                           <td className="border-r border-border/60 px-3 py-2 font-medium text-foreground max-w-[250px] truncate">{v.outcome}</td>
+                          <td className="border-r border-border/60 px-3 py-2">{renderSupervisoryRemarksCell(v.managerRemarks, v.authorityRemarks)}</td>
                           <td className="px-3 py-2 text-muted max-w-[200px] truncate text-[10px]">{v.checklistNotes}</td>
                         </tr>
                       );
@@ -1527,13 +1682,22 @@ export function DownloadWorkPlansModal({
                           <td className="border-r border-border/60 px-3 py-2 font-bold text-foreground max-w-[200px] truncate">{w.title}</td>
                           <td className="border-r border-border/60 px-3 py-2 text-muted max-w-[200px] truncate">{w.description}</td>
                           <td className="border-r border-border/60 px-3 py-2 text-muted max-w-[180px] truncate">{p.planLocation || "Office / Remote"}</td>
-                          <td className="border-r border-border/60 px-3 py-2 text-muted font-mono text-[10px]">{w.plannedTime}</td>
+                          <td className="border-r border-border/60 px-3 py-2 text-muted font-mono text-[10px]">
+                            <div>{w.plannedTime}</div>
+                            {w.rescheduledDate && (
+                              <div className="mt-1 inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                                <CalendarClock className="h-3 w-3 shrink-0" />
+                                Rescheduled: {w.rescheduledDate}
+                              </div>
+                            )}
+                          </td>
                           <td className="border-r border-border/60 px-3 py-2 whitespace-nowrap">
                             <span className={`rounded px-2 py-0.5 text-[10px] font-bold uppercase ${w.status === "completed" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : "bg-amber-500/10 text-amber-600 dark:text-amber-400"}`}>
                               {w.status}
                             </span>
                           </td>
                           <td className="border-r border-border/60 px-3 py-2 font-medium text-foreground max-w-[250px] truncate">{w.remarks}</td>
+                          <td className="border-r border-border/60 px-3 py-2">{renderSupervisoryRemarksCell(w.managerRemarks, w.authorityRemarks)}</td>
                           <td className="px-3 py-2 text-muted text-[10px]">N/A</td>
                         </tr>
                       );

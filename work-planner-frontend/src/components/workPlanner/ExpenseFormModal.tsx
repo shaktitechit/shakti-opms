@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { X, Paperclip, FileText, Upload, Trash2 } from "lucide-react";
+import { X, Paperclip, FileText, Upload, Trash2, Bike, Calculator } from "lucide-react";
 import {
   WORK_PLAN_EXPENSE_CATEGORIES,
   WORK_PLAN_EXPENSE_PAYMENT_MODES,
@@ -33,6 +33,7 @@ export type ExpenseFormPayload = {
   start_reading?: number | null;
   closing_reading?: number | null;
   receipt_attachment?: string | null;
+  attachments?: string[] | null;
 };
 
 export type ExpenseFormModalProps = {
@@ -78,8 +79,8 @@ export function ExpenseFormModal({
   const [visitId, setVisitId] = useState("");
   const [startReading, setStartReading] = useState("");
   const [closingReading, setClosingReading] = useState("");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [existingAttachment, setExistingAttachment] = useState<WorkPlanExpenseAttachment | string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [existingAttachments, setExistingAttachments] = useState<(WorkPlanExpenseAttachment | string)[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -102,7 +103,15 @@ export function ExpenseFormModal({
         );
         setStartReading(initial.start_reading != null ? String(initial.start_reading) : "");
         setClosingReading(initial.closing_reading != null ? String(initial.closing_reading) : "");
-        setExistingAttachment(initial.receipt_attachment || null);
+        
+        // Extract existing attachments (support array and single receipt_attachment)
+        const atts: (WorkPlanExpenseAttachment | string)[] = [];
+        if (Array.isArray(initial.attachments) && initial.attachments.length > 0) {
+          atts.push(...initial.attachments);
+        } else if (initial.receipt_attachment) {
+          atts.push(initial.receipt_attachment);
+        }
+        setExistingAttachments(atts);
       } else {
         setExpenseDate(ymd(defaultDate) || ymd(new Date()));
         setCategory("Travel");
@@ -116,18 +125,56 @@ export function ExpenseFormModal({
         setVisitId(defaultVisitId || "");
         setStartReading("");
         setClosingReading("");
-        setExistingAttachment(null);
+        setExistingAttachments([]);
       }
-      setSelectedFile(null);
+      setSelectedFiles([]);
       setErrors({});
     }
   }, [open, initial, defaultVisitId, defaultDate]);
 
+  const isPrivateBike = category === "Travel" && subCategory === "Private Bike";
+
+  // Reactive calculation for Private Bike (3.5 rupees per km)
+  const startNum = parseFloat(startReading);
+  const closingNum = parseFloat(closingReading);
+  const hasValidReadings =
+    !isNaN(startNum) &&
+    !isNaN(closingNum) &&
+    closingNum >= startNum &&
+    startNum >= 0;
+  const calculatedKm = hasValidReadings ? Math.round((closingNum - startNum) * 100) / 100 : 0;
+  const calculatedBikeAmount = hasValidReadings ? Math.round(calculatedKm * 3.5 * 100) / 100 : 0;
+
+  // Auto calculate amount when readings change for Private Bike
+  const handleStartReadingChange = (val: string) => {
+    setStartReading(val);
+    if (isPrivateBike) {
+      const s = parseFloat(val);
+      const c = parseFloat(closingReading);
+      if (!isNaN(s) && !isNaN(c) && c >= s && s >= 0) {
+        const km = Math.round((c - s) * 100) / 100;
+        setAmount(String(Math.round(km * 3.5 * 100) / 100));
+      }
+    }
+  };
+
+  const handleClosingReadingChange = (val: string) => {
+    setClosingReading(val);
+    if (isPrivateBike) {
+      const s = parseFloat(startReading);
+      const c = parseFloat(val);
+      if (!isNaN(s) && !isNaN(c) && c >= s && s >= 0) {
+        const km = Math.round((c - s) * 100) / 100;
+        setAmount(String(Math.round(km * 3.5 * 100) / 100));
+      }
+    }
+  };
+
   if (!open) return null;
 
-  const isPrivateBike = category === "Travel" && subCategory === "Private Bike";
   const numAmt = Number(amount) || 0;
-  const isDocumentRequired = numAmt > 500;
+  const isDocumentRequired = numAmt > 200;
+  const totalAttachmentsCount = selectedFiles.length + existingAttachments.length;
   const minExpenseDate = defaultDate ? ymd(defaultDate) : undefined;
   const maxExpenseDate = defaultDate
     ? (() => {
@@ -164,9 +211,9 @@ export function ExpenseFormModal({
       }
     }
 
-    const hasAttachment = Boolean(selectedFile || existingAttachment);
+    const hasAttachment = totalAttachmentsCount > 0;
     if (isDocumentRequired && !hasAttachment) {
-      errs.receiptAttachment = "Document upload is required for expenses greater than ₹500";
+      errs.receiptAttachment = "Document / receipt upload is required for expenses greater than ₹200";
     }
 
     if (Object.keys(errs).length > 0) {
@@ -174,23 +221,33 @@ export function ExpenseFormModal({
       return;
     }
 
-    let attachmentId: string | null = null;
-    if (typeof existingAttachment === "string") {
-      attachmentId = existingAttachment;
-    } else if (existingAttachment && typeof existingAttachment === "object") {
-      attachmentId = existingAttachment._id || null;
-    }
-
     setIsUploading(true);
     try {
-      if (selectedFile) {
-        const formData = new FormData();
-        formData.append("file", selectedFile);
-        const uploaded = await uploadExpenseReceipt(formData).unwrap();
-        if (uploaded && (uploaded._id || uploaded.id)) {
-          attachmentId = uploaded._id || uploaded.id;
+      const allAttachmentIds: string[] = [];
+
+      // Add existing attachment IDs
+      for (const att of existingAttachments) {
+        if (typeof att === "string") {
+          allAttachmentIds.push(att);
+        } else if (att && typeof att === "object") {
+          const id = (att as any)._id || (att as any).id || "";
+          if (id) allAttachmentIds.push(id);
         }
       }
+
+      // Upload newly selected files
+      if (selectedFiles.length > 0) {
+        for (const file of selectedFiles) {
+          const formData = new FormData();
+          formData.append("file", file);
+          const uploaded = await uploadExpenseReceipt(formData).unwrap();
+          if (uploaded && (uploaded._id || uploaded.id)) {
+            allAttachmentIds.push(uploaded._id || uploaded.id);
+          }
+        }
+      }
+
+      const primaryReceiptId = allAttachmentIds.length > 0 ? allAttachmentIds[0] : null;
 
       await onConfirm({
         expense_date: expenseDate,
@@ -205,7 +262,8 @@ export function ExpenseFormModal({
         work_plan_visit: visitId || null,
         start_reading: isPrivateBike ? Number(startReading) : null,
         closing_reading: isPrivateBike ? Number(closingReading) : null,
-        receipt_attachment: attachmentId,
+        receipt_attachment: primaryReceiptId,
+        attachments: allAttachmentIds,
       });
     } catch (err: any) {
       const msg = err?.data?.message || err?.message || "Failed to upload document";
@@ -219,7 +277,7 @@ export function ExpenseFormModal({
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[1px]"
       role="presentation"
-      onClick={() => !isSaving && onClose()}
+      onClick={() => !isSaving && !isUploading && onClose()}
     >
       <div
         role="dialog"
@@ -239,7 +297,7 @@ export function ExpenseFormModal({
           <button
             type="button"
             onClick={onClose}
-            disabled={isSaving}
+            disabled={isSaving || isUploading}
             className="rounded-lg p-1 text-muted hover:bg-surface-muted hover:text-foreground"
           >
             <X className="h-5 w-5" />
@@ -258,7 +316,7 @@ export function ExpenseFormModal({
                 min={minExpenseDate}
                 max={maxExpenseDate}
                 onChange={(e) => setExpenseDate(e.target.value)}
-                disabled={isSaving}
+                disabled={isSaving || isUploading}
                 className={inputClass}
               />
               {minExpenseDate && maxExpenseDate ? (
@@ -277,7 +335,7 @@ export function ExpenseFormModal({
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value as WorkPlanExpenseCategory)}
-                disabled={isSaving}
+                disabled={isSaving || isUploading}
                 className={inputClass}
               >
                 {WORK_PLAN_EXPENSE_CATEGORIES.map((cat) => (
@@ -297,7 +355,7 @@ export function ExpenseFormModal({
                 onChange={(e) =>
                   setSubCategory(e.target.value as WorkPlanExpenseTravelSubCategory)
                 }
-                disabled={isSaving}
+                disabled={isSaving || isUploading}
                 className={inputClass}
               >
                 {WORK_PLAN_TRAVEL_SUB_CATEGORIES.map((sub) => (
@@ -310,37 +368,69 @@ export function ExpenseFormModal({
           ) : null}
 
           {isPrivateBike ? (
-            <div className="grid grid-cols-2 gap-3 rounded-lg border border-border bg-primary-muted/40 p-3">
-              <div>
-                <label className={labelClass}>Start Odometer Reading (KM) *</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={startReading}
-                  onChange={(e) => setStartReading(e.target.value)}
-                  disabled={isSaving}
-                  placeholder="e.g. 12450"
-                  className={inputClass}
-                />
-                {errors.startReading ? (
-                  <p className="mt-1 text-xs text-rose-500">{errors.startReading}</p>
-                ) : null}
+            <div className="rounded-lg border border-primary/20 bg-primary/5 p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-primary">
+                  <Bike className="h-4 w-4" />
+                  Private Bike Mileage Calculator
+                </div>
+                <span className="rounded bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
+                  ₹3.50 / KM
+                </span>
               </div>
-              <div>
-                <label className={labelClass}>Closing Odometer Reading (KM) *</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={closingReading}
-                  onChange={(e) => setClosingReading(e.target.value)}
-                  disabled={isSaving}
-                  placeholder="e.g. 12510"
-                  className={inputClass}
-                />
-                {errors.closingReading ? (
-                  <p className="mt-1 text-xs text-rose-500">{errors.closingReading}</p>
-                ) : null}
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClass}>Start Odometer (KM) *</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={startReading}
+                    onChange={(e) => handleStartReadingChange(e.target.value)}
+                    disabled={isSaving || isUploading}
+                    placeholder="e.g. 12450"
+                    className={inputClass}
+                  />
+                  {errors.startReading ? (
+                    <p className="mt-1 text-xs text-rose-500">{errors.startReading}</p>
+                  ) : null}
+                </div>
+                <div>
+                  <label className={labelClass}>Closing Odometer (KM) *</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={closingReading}
+                    onChange={(e) => handleClosingReadingChange(e.target.value)}
+                    disabled={isSaving || isUploading}
+                    placeholder="e.g. 12510"
+                    className={inputClass}
+                  />
+                  {errors.closingReading ? (
+                    <p className="mt-1 text-xs text-rose-500">{errors.closingReading}</p>
+                  ) : null}
+                </div>
               </div>
+
+              {hasValidReadings ? (
+                <div className="flex items-center justify-between rounded-md bg-card p-2 text-xs border border-primary/20">
+                  <div className="flex items-center gap-1.5 text-muted">
+                    <Calculator className="h-3.5 w-3.5 text-primary" />
+                    <span>
+                      Distance: <strong className="text-foreground">{calculatedKm} KM</strong> × ₹3.5/km
+                    </span>
+                  </div>
+                  <div className="font-bold text-primary text-sm">
+                    = ₹{calculatedBikeAmount.toFixed(2)}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-[11px] text-muted italic">
+                  Enter start & closing readings to automatically compute distance and amount at ₹3.5/km.
+                </p>
+              )}
             </div>
           ) : null}
 
@@ -355,7 +445,7 @@ export function ExpenseFormModal({
                 step="0.01"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                disabled={isSaving}
+                disabled={isSaving || isUploading}
                 placeholder="0.00"
                 className={inputClass}
               />
@@ -370,7 +460,7 @@ export function ExpenseFormModal({
               <select
                 value={paymentMode}
                 onChange={(e) => setPaymentMode(e.target.value as WorkPlanExpensePaymentMode)}
-                disabled={isSaving}
+                disabled={isSaving || isUploading}
                 className={inputClass}
               >
                 {WORK_PLAN_EXPENSE_PAYMENT_MODES.map((modeOption) => (
@@ -388,7 +478,7 @@ export function ExpenseFormModal({
               <select
                 value={visitId}
                 onChange={(e) => setVisitId(e.target.value)}
-                disabled={isSaving}
+                disabled={isSaving || isUploading}
                 className={inputClass}
               >
                 <option value="">-- General Plan Expense --</option>
@@ -408,7 +498,7 @@ export function ExpenseFormModal({
                 type="text"
                 value={vendorName}
                 onChange={(e) => setVendorName(e.target.value)}
-                disabled={isSaving}
+                disabled={isSaving || isUploading}
                 placeholder="Hotel / Fuel Station"
                 className={inputClass}
               />
@@ -419,7 +509,7 @@ export function ExpenseFormModal({
                 type="text"
                 value={billNumber}
                 onChange={(e) => setBillNumber(e.target.value)}
-                disabled={isSaving}
+                disabled={isSaving || isUploading}
                 placeholder="INV-10293"
                 className={inputClass}
               />
@@ -430,7 +520,7 @@ export function ExpenseFormModal({
                 type="date"
                 value={billDate}
                 onChange={(e) => setBillDate(e.target.value)}
-                disabled={isSaving}
+                disabled={isSaving || isUploading}
                 className={inputClass}
               />
             </div>
@@ -448,77 +538,120 @@ export function ExpenseFormModal({
             />
           </div>
 
+          {/* Multiple Attachments Upload Support */}
           <div>
-            <label className={labelClass}>
-              Receipt / Document Attachment{" "}
-              {isDocumentRequired ? (
-                <span className="text-rose-500 font-semibold">* (Required for &gt; ₹500)</span>
-              ) : (
-                <span className="text-muted text-[11px]">(Optional for ≤ ₹500)</span>
-              )}
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-medium text-muted">
+                Receipts / Attachments{" "}
+                {isDocumentRequired ? (
+                  <span className="text-rose-500 font-semibold">* (Required for &gt; ₹200)</span>
+                ) : (
+                  <span className="text-muted text-[11px]">(Optional for ≤ ₹200)</span>
+                )}
+              </label>
+              {totalAttachmentsCount > 0 ? (
+                <span className="text-[11px] font-semibold text-primary">
+                  {totalAttachmentsCount} {totalAttachmentsCount === 1 ? "file" : "files"} attached
+                </span>
+              ) : null}
+            </div>
 
-            {selectedFile || existingAttachment ? (
-              <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface-muted px-3 py-2 text-xs">
-                <div className="flex items-center gap-2 overflow-hidden text-foreground">
-                  <FileText className="h-4 w-4 shrink-0 text-primary" />
-                  <span className="truncate font-medium">
-                    {selectedFile
-                      ? selectedFile.name
-                      : typeof existingAttachment === "object" && existingAttachment?.original_name
-                      ? existingAttachment.original_name
-                      : typeof existingAttachment === "object" && existingAttachment?.file_name
-                      ? existingAttachment.file_name
-                      : "Document Attached"}
-                  </span>
-                  {selectedFile ? (
-                    <span className="text-[10px] text-muted">
-                      ({(selectedFile.size / 1024).toFixed(1)} KB)
-                    </span>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  disabled={isSaving || isUploading}
-                  onClick={() => {
-                    setSelectedFile(null);
-                    setExistingAttachment(null);
-                  }}
-                  className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition"
-                  title="Remove document"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+            {/* List of existing & selected attachments */}
+            {totalAttachmentsCount > 0 ? (
+              <div className="space-y-1.5 mb-2.5">
+                {existingAttachments.map((att, idx) => {
+                  const docName =
+                    typeof att === "object"
+                      ? att.original_name || att.file_name || `Existing Document #${idx + 1}`
+                      : `Attachment #${idx + 1}`;
+                  return (
+                    <div
+                      key={`existing-${idx}`}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface-muted px-3 py-1.5 text-xs"
+                    >
+                      <div className="flex items-center gap-2 overflow-hidden text-foreground">
+                        <FileText className="h-4 w-4 shrink-0 text-primary" />
+                        <span className="truncate font-medium">{docName}</span>
+                        <span className="rounded bg-primary/10 px-1.5 py-0.2 text-[10px] font-semibold text-primary">
+                          Saved
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={isSaving || isUploading}
+                        onClick={() => {
+                          setExistingAttachments((prev) => prev.filter((_, i) => i !== idx));
+                        }}
+                        className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition"
+                        title="Remove document"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  );
+                })}
+
+                {selectedFiles.map((file, idx) => (
+                  <div
+                    key={`new-${idx}`}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-border bg-surface-muted px-3 py-1.5 text-xs"
+                  >
+                    <div className="flex items-center gap-2 overflow-hidden text-foreground">
+                      <FileText className="h-4 w-4 shrink-0 text-emerald-500" />
+                      <span className="truncate font-medium">{file.name}</span>
+                      <span className="text-[10px] text-muted">
+                        ({(file.size / 1024).toFixed(1)} KB)
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={isSaving || isUploading}
+                      onClick={() => {
+                        setSelectedFiles((prev) => prev.filter((_, i) => i !== idx));
+                      }}
+                      className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition"
+                      title="Remove file"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
               </div>
-            ) : (
-              <div className="relative">
-                <input
-                  type="file"
-                  id="expense-doc-upload"
-                  accept="image/*,application/pdf,.doc,.docx"
-                  disabled={isSaving || isUploading}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0] ?? null;
-                    setSelectedFile(f);
-                    if (f && errors.receiptAttachment) {
+            ) : null}
+
+            {/* Upload Button */}
+            <div className="relative">
+              <input
+                type="file"
+                id="expense-doc-upload"
+                multiple
+                accept="image/*,application/pdf,.doc,.docx"
+                disabled={isSaving || isUploading}
+                onChange={(e) => {
+                  const files = e.target.files ? Array.from(e.target.files) : [];
+                  if (files.length > 0) {
+                    setSelectedFiles((prev) => [...prev, ...files]);
+                    if (errors.receiptAttachment) {
                       setErrors((prev) => {
                         const next = { ...prev };
                         delete next.receiptAttachment;
                         return next;
                       });
                     }
-                  }}
-                  className="hidden"
-                />
-                <label
-                  htmlFor="expense-doc-upload"
-                  className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-surface-muted/60 px-4 py-2.5 text-xs font-medium text-foreground hover:bg-surface-muted transition"
-                >
-                  <Upload className="h-4 w-4 text-primary" />
-                  Choose Receipt / Document (PDF, Image)
-                </label>
-              </div>
-            )}
+                  }
+                  // Reset input value so same files can be re-selected if removed
+                  e.target.value = "";
+                }}
+                className="hidden"
+              />
+              <label
+                htmlFor="expense-doc-upload"
+                className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-surface-muted/60 px-4 py-2.5 text-xs font-medium text-foreground hover:bg-surface-muted transition"
+              >
+                <Upload className="h-4 w-4 text-primary" />
+                {totalAttachmentsCount > 0 ? "+ Add More Receipts / Files" : "Choose Receipts / Documents (Images, PDF - Multiple Allowed)"}
+              </label>
+            </div>
 
             {errors.receiptAttachment ? (
               <p className="mt-1 text-xs font-medium text-rose-500">{errors.receiptAttachment}</p>
@@ -541,7 +674,7 @@ export function ExpenseFormModal({
             onClick={handleSave}
             className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-50 transition"
           >
-            {isUploading ? "Uploading Document…" : isSaving ? "Saving…" : editing ? "Save Changes" : "Submit Claim"}
+            {isUploading ? "Uploading Documents…" : isSaving ? "Saving…" : editing ? "Save Changes" : "Submit Claim"}
           </button>
         </div>
       </div>
@@ -550,3 +683,4 @@ export function ExpenseFormModal({
 }
 
 export default ExpenseFormModal;
+

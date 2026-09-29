@@ -61,8 +61,16 @@ const workPlanExpenseSchema = new mongoose.Schema(
       ref: "Attachment",
       default: null,
     },
+    attachments: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Attachment",
+      },
+    ],
     start_reading: { type: Number, min: 0 },
     closing_reading: { type: Number, min: 0 },
+    total_km: { type: Number, min: 0 },
+    rate_per_km: { type: Number, default: 3.5 },
     start_reading_image: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Attachment",

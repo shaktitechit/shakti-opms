@@ -43,12 +43,39 @@ function userId(user) {
 }
 
 function getUserRole(user) {
-  if (!user) return 'Executive';
-  if (user.role) return String(user.role);
-  if (user.user_role) return String(user.user_role);
-  if (Array.isArray(user.roles) && user.roles.length > 0) return String(user.roles[0]);
-  if (Array.isArray(user.role_codes) && user.role_codes.length > 0) return String(user.role_codes[0]);
-  return 'Executive';
+  if (!user) return 'Senior Authority';
+  const rawRole = user.role || user.user_role || (Array.isArray(user.roles) ? user.roles[0] : null) || (Array.isArray(user.role_codes) ? user.role_codes[0] : null);
+  if (!rawRole) return 'Senior Authority';
+  const r = String(rawRole).toLowerCase();
+  if (r.includes('admin')) return 'Portal Admin';
+  if (r.includes('coord')) return 'Coordinator';
+  if (r.includes('manager') || r.includes('mgmt') || r.includes('lead')) return 'Senior Manager';
+  return 'Senior Authority';
+}
+
+function applyAuthorityRemarks(doc, body, user) {
+  if (!doc || !body) return;
+  const remarkText =
+    (typeof body.manager_remarks === 'string' && body.manager_remarks.trim()) ||
+    (typeof body.authority_remark === 'string' && body.authority_remark.trim()) ||
+    (typeof body.authority_remarks === 'string' && body.authority_remarks.trim());
+
+  if (remarkText) {
+    doc.manager_remarks = remarkText;
+    if (!Array.isArray(doc.authority_remarks)) {
+      doc.authority_remarks = [];
+    }
+    const uid = userId(user);
+    const uName = user?.name || user?.email || 'Senior Authority';
+    const uRole = getUserRole(user);
+    doc.authority_remarks.push({
+      remark: remarkText,
+      user: uid,
+      user_name: uName,
+      role: uRole,
+      created_at: new Date(),
+    });
+  }
 }
 
 /** Aggregate $match needs ObjectId; req.user ids are strings (see toReqUser). */
@@ -293,7 +320,19 @@ async function loadVisits(planId) {
     .populate('updated_by', 'name email')
     .sort({ sequence: 1 })
     .lean();
-  return rows.map(toPlain);
+  const { withFreshVisitSelfieUrls } = require('../../services/fileManagement');
+  return Promise.all(
+    rows.map(async (v) => {
+      const plain = toPlain(v);
+      if (!plain.check_in_address && typeof plain.check_in_lat === 'number' && typeof plain.check_in_lng === 'number') {
+        plain.check_in_address = `Lat: ${plain.check_in_lat.toFixed(4)}, Lng: ${plain.check_in_lng.toFixed(4)}`;
+      }
+      if (!plain.check_out_address && typeof plain.check_out_lat === 'number' && typeof plain.check_out_lng === 'number') {
+        plain.check_out_address = `Lat: ${plain.check_out_lat.toFixed(4)}, Lng: ${plain.check_out_lng.toFixed(4)}`;
+      }
+      return withFreshVisitSelfieUrls(plain);
+    })
+  );
 }
 
 async function loadExpenses(planId) {
@@ -304,6 +343,7 @@ async function loadExpenses(planId) {
   const { withFreshExpenseAttachmentUrls } = require('../../services/fileManagement');
   const rows = await WorkPlanExpense.find({ work_plan: planId, deletedAt: null })
     .populate('receipt_attachment')
+    .populate('attachments')
     .populate('start_reading_image')
     .populate('end_reading_image')
     .populate('approved_by', 'name email')
@@ -870,8 +910,14 @@ async function update(id, body, user) {
         ? body.discussion_method.trim()
         : body.discussion_method;
   }
+  if (body.status !== undefined && isWpElevated(user)) {
+    plan.status = body.status;
+  }
+
+  applyAuthorityRemarks(plan, body, user);
+
   // Rejected plans return to draft when edited
-  if (plan.status === 'rejected') {
+  if (plan.status === 'rejected' && body.status === undefined) {
     plan.status = 'draft';
     plan.rejection_reason = undefined;
     plan.approved_by = undefined;
@@ -1228,6 +1274,9 @@ async function updateStandaloneVisit(visitId, body, user) {
   }
   if (body.purpose !== undefined) visit.purpose = body.purpose?.trim() || undefined;
   if (body.notes !== undefined) visit.notes = body.notes?.trim() || undefined;
+  if (body.status !== undefined) visit.status = body.status;
+  if (body.pending_remarks !== undefined) visit.pending_remarks = body.pending_remarks?.trim() || undefined;
+  if (body.in_progress_remarks !== undefined) visit.in_progress_remarks = body.in_progress_remarks?.trim() || undefined;
   if (body.outcome !== undefined) visit.outcome = body.outcome?.trim() || undefined;
   if (body.meeting_with_doctor !== undefined) visit.meeting_with_doctor = Boolean(body.meeting_with_doctor);
   if (body.meeting_with_purchase !== undefined) visit.meeting_with_purchase = Boolean(body.meeting_with_purchase);
@@ -1236,11 +1285,55 @@ async function updateStandaloneVisit(visitId, body, user) {
   if (body.new_product_introduced !== undefined) visit.new_product_introduced = Boolean(body.new_product_introduced);
   if (body.order_received !== undefined) visit.order_received = Boolean(body.order_received);
 
+  if (body.check_in_selfie_url !== undefined) visit.check_in_selfie_url = body.check_in_selfie_url;
+  if (body.check_out_selfie_url !== undefined) visit.check_out_selfie_url = body.check_out_selfie_url;
+  if (body.outcome_selfie_url !== undefined) visit.outcome_selfie_url = body.outcome_selfie_url;
+
+  if (body.check_in_lat !== undefined) visit.check_in_lat = body.check_in_lat;
+  if (body.check_in_lng !== undefined) visit.check_in_lng = body.check_in_lng;
+  if (body.check_in_address !== undefined) visit.check_in_address = body.check_in_address;
+
+  if (body.check_out_lat !== undefined) visit.check_out_lat = body.check_out_lat;
+  if (body.check_out_lng !== undefined) visit.check_out_lng = body.check_out_lng;
+  if (body.check_out_address !== undefined) visit.check_out_address = body.check_out_address;
+
+  const rescheduleDateStr = body.rescheduled_date || body.rescheduledDate;
+  if (rescheduleDateStr !== undefined) {
+    visit.rescheduled_date = rescheduleDateStr ? toValidDate(rescheduleDateStr, rescheduleDateStr) : undefined;
+  }
+
+  applyAuthorityRemarks(visit, body, user);
+
   visit.updated_by = userId(user);
   visit.updated_by_role = getUserRole(user);
 
   await visit.save();
-  return toPlain(visit);
+
+  if (body.status === 'rescheduled' && rescheduleDateStr && body.auto_schedule !== false) {
+    try {
+      await addStandaloneVisit({
+        sales_user: visit.sales_user,
+        plan_date: rescheduleDateStr,
+        party_type: visit.party_type,
+        party: visit.party,
+        party_name: visit.party_name,
+        contact_person: visit.contact_person,
+        contact_number: visit.contact_number,
+        contact_email: visit.contact_email,
+        contacts: visit.contacts,
+        address: visit.address,
+        purpose: visit.purpose,
+        notes: body.remarks || body.pending_remarks || visit.notes,
+        manager_remarks: body.manager_remarks || visit.manager_remarks,
+        status: 'created',
+      }, user);
+    } catch (err) {
+      console.error('Failed to auto-schedule standalone visit to target date:', err);
+    }
+  }
+
+  const { withFreshVisitSelfieUrls } = require('../../services/fileManagement');
+  return withFreshVisitSelfieUrls(toPlain(visit));
 }
 
 async function removeStandaloneVisit(visitId, user) {
@@ -1381,7 +1474,7 @@ async function updateVisit(planId, visitId, body, user) {
   if (!visit) throw new ApiError(404, 'Visit not found');
 
   const admin = isAdminDept(user);
-  if (!admin && !['created', 'pending', 'in_progress', 'rescheduled', 'checked_in', 'completed'].includes(visit.status)) {
+  if (!admin && !isWpElevated(user) && !['created', 'pending', 'in_progress', 'rescheduled', 'checked_in', 'completed', 'skipped', 'cancelled'].includes(visit.status)) {
     throw new ApiError(400, `Cannot edit a visit in status "${visit.status}"`);
   }
 
@@ -1416,6 +1509,7 @@ async function updateVisit(planId, visitId, body, user) {
     visit.contact_email = body.contact_email?.trim()?.toLowerCase() || undefined;
   }
   if (body.contacts !== undefined) visit.contacts = body.contacts;
+  if (body.address !== undefined) visit.address = body.address?.trim() || undefined;
   if (body.sequence !== undefined) visit.sequence = Number(body.sequence);
   if (body.planned_start_time !== undefined) {
     visit.planned_start_time = toValidDate(body.planned_start_time, plan.plan_date);
@@ -1436,10 +1530,52 @@ async function updateVisit(planId, visitId, body, user) {
   if (body.new_product_introduced !== undefined) visit.new_product_introduced = Boolean(body.new_product_introduced);
   if (body.order_received !== undefined) visit.order_received = Boolean(body.order_received);
 
+  if (body.check_in_selfie_url !== undefined) visit.check_in_selfie_url = body.check_in_selfie_url;
+  if (body.check_out_selfie_url !== undefined) visit.check_out_selfie_url = body.check_out_selfie_url;
+  if (body.outcome_selfie_url !== undefined) visit.outcome_selfie_url = body.outcome_selfie_url;
+
+  if (body.check_in_lat !== undefined) visit.check_in_lat = body.check_in_lat;
+  if (body.check_in_lng !== undefined) visit.check_in_lng = body.check_in_lng;
+  if (body.check_in_address !== undefined) visit.check_in_address = body.check_in_address;
+
+  if (body.check_out_lat !== undefined) visit.check_out_lat = body.check_out_lat;
+  if (body.check_out_lng !== undefined) visit.check_out_lng = body.check_out_lng;
+  if (body.check_out_address !== undefined) visit.check_out_address = body.check_out_address;
+
+  const rescheduleDateStr = body.rescheduled_date || body.rescheduledDate;
+  if (rescheduleDateStr !== undefined) {
+    visit.rescheduled_date = rescheduleDateStr ? toValidDate(rescheduleDateStr, rescheduleDateStr) : undefined;
+  }
+
+  applyAuthorityRemarks(visit, body, user);
+
   visit.updated_by = userId(user);
   visit.updated_by_role = getUserRole(user);
 
   await visit.save();
+
+  if (body.status === 'rescheduled' && rescheduleDateStr && body.auto_schedule !== false) {
+    try {
+      await addStandaloneVisit({
+        sales_user: visit.sales_user || plan.sales_user,
+        plan_date: rescheduleDateStr,
+        party_type: visit.party_type,
+        party: visit.party,
+        party_name: visit.party_name,
+        contact_person: visit.contact_person,
+        contact_number: visit.contact_number,
+        contact_email: visit.contact_email,
+        contacts: visit.contacts,
+        address: visit.address,
+        purpose: visit.purpose,
+        notes: body.remarks || body.pending_remarks || visit.notes,
+        manager_remarks: body.manager_remarks || visit.manager_remarks,
+        status: 'created',
+      }, user);
+    } catch (err) {
+      console.error('Failed to auto-schedule visit to target date:', err);
+    }
+  }
 
   if (plan.status === 'rejected') {
     plan.status = 'draft';
@@ -1495,11 +1631,44 @@ async function removeVisit(planId, visitId, user) {
   return getWithVisits(planId);
 }
 
-async function checkIn(planId, visitId, user) {
+async function reverseGeocodeAddress(lat, lng) {
+  if (typeof lat !== 'number' || typeof lng !== 'number') return null;
+  try {
+    const axios = require('axios');
+    const response = await axios.get(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`,
+      {
+        headers: { 'User-Agent': 'OPMS-WorkPlanner-Backend/1.0' },
+        timeout: 4000,
+      }
+    );
+    if (response.data && response.data.display_name) {
+      return response.data.display_name;
+    }
+  } catch (_err) {}
+  return null;
+}
+
+async function checkIn(planId, visitId, body = {}, user) {
+  const selfieUrl = body.selfie_url || body.check_in_selfie_url || null;
+  const lat = typeof body.lat === 'number' ? body.lat : (body.check_in_lat || null);
+  const lng = typeof body.lng === 'number' ? body.lng : (body.check_in_lng || null);
+  let address = body.address || body.check_in_address || null;
+  if (!address && lat !== null && lng !== null) {
+    address = await reverseGeocodeAddress(lat, lng);
+    if (!address && typeof lat === 'number' && typeof lng === 'number') {
+      address = `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`;
+    }
+  }
+
   if (String(planId).startsWith('standalone_') || planId === 'standalone') {
     const visit = await updateStandaloneVisit(visitId, {
       status: 'checked_in',
       actual_check_in: new Date(),
+      ...(selfieUrl ? { check_in_selfie_url: selfieUrl } : {}),
+      ...(lat !== null ? { check_in_lat: lat } : {}),
+      ...(lng !== null ? { check_in_lng: lng } : {}),
+      ...(address ? { check_in_address: address } : {}),
     }, user);
     await logActivity(user, visit.sales_user || userId(user), 'status_changed', `Checked in to visit ${visit.sequence}`);
     return visit;
@@ -1524,22 +1693,42 @@ async function checkIn(planId, visitId, user) {
 
   const visit = await WorkPlanVisit.findOne({ _id: visitId, work_plan: planId, deletedAt: null });
   if (!visit) throw new ApiError(404, 'Visit not found');
-  if (!['pending', 'rescheduled'].includes(visit.status)) {
+  if (!['created', 'pending', 'rescheduled'].includes(visit.status)) {
     throw new ApiError(400, `Cannot check in a visit in status "${visit.status}"`);
   }
 
   visit.status = 'checked_in';
   visit.actual_check_in = new Date();
+  if (selfieUrl) visit.check_in_selfie_url = selfieUrl;
+  if (lat !== null) visit.check_in_lat = lat;
+  if (lng !== null) visit.check_in_lng = lng;
+  if (address) visit.check_in_address = address;
   await visit.save();
 
   await logActivity(user, planId, 'status_changed', `Checked in to visit ${visit.sequence}`);
   return getWithVisits(planId);
 }
 
-async function checkOut(planId, visitId, user) {
+async function checkOut(planId, visitId, body = {}, user) {
+  const selfieUrl = body.selfie_url || body.check_out_selfie_url || null;
+  const lat = typeof body.lat === 'number' ? body.lat : (body.check_out_lat || null);
+  const lng = typeof body.lng === 'number' ? body.lng : (body.check_out_lng || null);
+  let address = body.address || body.check_out_address || null;
+  if (!address && lat !== null && lng !== null) {
+    address = await reverseGeocodeAddress(lat, lng);
+    if (!address && typeof lat === 'number' && typeof lng === 'number') {
+      address = `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`;
+    }
+  }
+
   if (String(planId).startsWith('standalone_') || planId === 'standalone') {
     const visit = await updateStandaloneVisit(visitId, {
+      status: 'checked_out',
       actual_check_out: new Date(),
+      ...(selfieUrl ? { check_out_selfie_url: selfieUrl } : {}),
+      ...(lat !== null ? { check_out_lat: lat } : {}),
+      ...(lng !== null ? { check_out_lng: lng } : {}),
+      ...(address ? { check_out_address: address } : {}),
     }, user);
     await logActivity(user, visit.sales_user || userId(user), 'status_changed', `Checked out from visit ${visit.sequence}`);
     return visit;
@@ -1568,7 +1757,12 @@ async function checkOut(planId, visitId, user) {
     throw new ApiError(400, 'Visit must be checked in before check out');
   }
 
+  visit.status = 'checked_out';
   visit.actual_check_out = new Date();
+  if (selfieUrl) visit.check_out_selfie_url = selfieUrl;
+  if (lat !== null) visit.check_out_lat = lat;
+  if (lng !== null) visit.check_out_lng = lng;
+  if (address) visit.check_out_address = address;
   await visit.save();
 
   await logActivity(user, planId, 'status_changed', `Checked out from visit ${visit.sequence}`);
@@ -1576,6 +1770,17 @@ async function checkOut(planId, visitId, user) {
 }
 
 async function completeVisit(planId, visitId, body, user) {
+  const selfieUrl = body?.selfie_url || body?.outcome_selfie_url || body?.check_out_selfie_url || null;
+  const lat = typeof body?.check_out_lat === 'number' ? body.check_out_lat : (typeof body?.lat === 'number' ? body.lat : null);
+  const lng = typeof body?.check_out_lng === 'number' ? body.check_out_lng : (typeof body?.lng === 'number' ? body.lng : null);
+  let address = body?.check_out_address || body?.address || null;
+  if (!address && lat !== null && lng !== null) {
+    address = await reverseGeocodeAddress(lat, lng);
+    if (!address && typeof lat === 'number' && typeof lng === 'number') {
+      address = `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`;
+    }
+  }
+
   if (String(planId).startsWith('standalone_') || planId === 'standalone') {
     const outcomeText = typeof body?.outcome === 'string' ? body.outcome.trim() : (body?.outcome ? String(body.outcome).trim() : '');
     if (!outcomeText) {
@@ -1590,6 +1795,10 @@ async function completeVisit(planId, visitId, body, user) {
       meeting_with_engineer: Boolean(body?.meeting_with_engineer),
       new_product_introduced: Boolean(body?.new_product_introduced),
       order_received: Boolean(body?.order_received),
+      ...(selfieUrl ? { outcome_selfie_url: selfieUrl, check_out_selfie_url: selfieUrl } : {}),
+      ...(lat !== null ? { check_out_lat: lat } : {}),
+      ...(lng !== null ? { check_out_lng: lng } : {}),
+      ...(address ? { check_out_address: address } : {}),
     }, user);
     await logActivity(user, visit.sales_user || userId(user), 'status_changed', `Visit ${visit.sequence} completed`);
     return visit;
@@ -1600,7 +1809,7 @@ async function completeVisit(planId, visitId, body, user) {
   if (!plan) throw new ApiError(404, 'Work plan not found');
   await assertCanView(plan, user);
 
-  if (!isAdminDept(user) && !isExpenseAddWindowOpen(plan.plan_date)) {
+  if (!isAdminDept(user) && !isWpElevated(user) && !isExpenseAddWindowOpen(plan.plan_date)) {
     throw new ApiError(
       400,
       'Visits can only be completed within the 3-day window from the work plan date',
@@ -1609,7 +1818,7 @@ async function completeVisit(planId, visitId, body, user) {
 
   const visit = await WorkPlanVisit.findOne({ _id: visitId, work_plan: planId, deletedAt: null });
   if (!visit) throw new ApiError(404, 'Visit not found');
-  if (!['created', 'pending', 'in_progress', 'checked_in', 'rescheduled', 'completed'].includes(visit.status)) {
+  if (!isAdminDept(user) && !isWpElevated(user) && !['created', 'pending', 'in_progress', 'checked_in', 'rescheduled', 'completed', 'skipped', 'cancelled'].includes(visit.status)) {
     throw new ApiError(400, `Cannot complete a visit in status "${visit.status}"`);
   }
 
@@ -1626,8 +1835,21 @@ async function completeVisit(planId, visitId, body, user) {
   visit.meeting_with_engineer = Boolean(body.meeting_with_engineer);
   visit.new_product_introduced = Boolean(body.new_product_introduced);
   visit.order_received = Boolean(body.order_received);
+  if (selfieUrl) {
+    visit.outcome_selfie_url = selfieUrl;
+    visit.check_out_selfie_url = selfieUrl;
+  }
+  if (lat !== null) visit.check_out_lat = lat;
+  if (lng !== null) visit.check_out_lng = lng;
+  if (address) visit.check_out_address = address;
   if (!visit.actual_check_out) visit.actual_check_out = new Date();
   if (!visit.actual_check_in) visit.actual_check_in = visit.actual_check_out;
+
+  applyAuthorityRemarks(visit, body, user);
+
+  visit.updated_by = userId(user);
+  visit.updated_by_role = getUserRole(user);
+
   await visit.save();
 
   await logActivity(user, planId, 'status_changed', `Visit ${visit.sequence} completed`);
@@ -1992,6 +2214,18 @@ function applyExpenseFields(expense, body, { isCreate = false } = {}) {
         ? null
         : body.receipt_attachment;
   }
+  if (body.attachments !== undefined) {
+    if (Array.isArray(body.attachments)) {
+      expense.attachments = body.attachments.filter(Boolean);
+      if (expense.attachments.length > 0 && !expense.receipt_attachment) {
+        expense.receipt_attachment = expense.attachments[0];
+      }
+    } else if (body.attachments === null) {
+      expense.attachments = [];
+    }
+  } else if (expense.receipt_attachment && (!expense.attachments || expense.attachments.length === 0)) {
+    expense.attachments = [expense.receipt_attachment];
+  }
 
   const isPrivateBike =
     expense.category === 'Travel' && expense.sub_category === 'Private Bike';
@@ -2002,6 +2236,14 @@ function applyExpenseFields(expense, body, { isCreate = false } = {}) {
     }
     if (isCreate || body.closing_reading !== undefined) {
       expense.closing_reading = Number(body.closing_reading);
+    }
+    const start = Number(expense.start_reading);
+    const closing = Number(expense.closing_reading);
+    if (Number.isFinite(start) && Number.isFinite(closing) && closing >= start) {
+      expense.total_km = Math.round((closing - start) * 100) / 100;
+      expense.rate_per_km = 3.5;
+      // Auto-calculate amount at 3.5 rupees per km
+      expense.amount = Math.round(expense.total_km * 3.5 * 100) / 100;
     }
     if (body.start_reading_image !== undefined) {
       expense.start_reading_image =
@@ -2022,6 +2264,8 @@ function applyExpenseFields(expense, body, { isCreate = false } = {}) {
   ) {
     expense.start_reading = undefined;
     expense.closing_reading = undefined;
+    expense.total_km = undefined;
+    expense.rate_per_km = undefined;
     expense.start_reading_image = null;
     expense.end_reading_image = null;
   }
@@ -2092,6 +2336,7 @@ async function listAllExpenses(query = {}, user) {
         populate: { path: 'party', select: 'party_name' },
       })
       .populate('receipt_attachment')
+      .populate('attachments')
       .populate('start_reading_image')
       .populate('end_reading_image')
       .populate('approved_by', 'name email')
@@ -2130,7 +2375,12 @@ async function listExpenses(planId, user) {
 }
 
 function assertSalesExpenseReceipt(expense, user) {
-  return;
+  const hasAttachment =
+    Boolean(expense.receipt_attachment) ||
+    (Array.isArray(expense.attachments) && expense.attachments.length > 0);
+  if (isExpenseReceiptRequired(expense.amount) && !hasAttachment) {
+    throw new ApiError(400, 'Attachments/receipt is required for expenses exceeding ₹200');
+  }
 }
 
 async function addExpense(planId, body, user) {
@@ -2660,6 +2910,8 @@ async function updateStandaloneWork(workId, body, user) {
   }
   if (body.completion_remarks !== undefined) {
     work.completion_remarks = body.completion_remarks?.trim() || undefined;
+  } else if (body.outcome !== undefined) {
+    work.completion_remarks = body.outcome?.trim() || undefined;
   }
   if (body.pending_remarks !== undefined) {
     work.pending_remarks = body.pending_remarks?.trim() || undefined;
@@ -2669,10 +2921,33 @@ async function updateStandaloneWork(workId, body, user) {
   }
   if (body.sequence !== undefined) work.sequence = Number(body.sequence);
 
+  const rescheduleDateStr = body.rescheduled_date || body.rescheduledDate;
+  if (rescheduleDateStr !== undefined) {
+    work.rescheduled_date = rescheduleDateStr ? toValidDate(rescheduleDateStr, rescheduleDateStr) : undefined;
+  }
+
+  applyAuthorityRemarks(work, body, user);
+
   work.updated_by = userId(user);
   work.updated_by_role = getUserRole(user);
 
   await work.save();
+
+  if (body.status === 'rescheduled' && rescheduleDateStr && body.auto_schedule !== false) {
+    try {
+      await addStandaloneWork({
+        sales_user: work.sales_user,
+        plan_date: rescheduleDateStr,
+        title: work.title,
+        description: work.description,
+        manager_remarks: body.manager_remarks || work.manager_remarks,
+        status: 'created',
+      }, user);
+    } catch (err) {
+      console.error('Failed to auto-schedule standalone work to target date:', err);
+    }
+  }
+
   return toPlain(work);
 }
 
@@ -2804,6 +3079,8 @@ async function updateWork(planId, workId, body, user) {
   }
   if (body.completion_remarks !== undefined) {
     work.completion_remarks = body.completion_remarks?.trim() || undefined;
+  } else if (body.outcome !== undefined) {
+    work.completion_remarks = body.outcome?.trim() || undefined;
   }
   if (body.pending_remarks !== undefined) {
     work.pending_remarks = body.pending_remarks?.trim() || undefined;
@@ -2813,10 +3090,32 @@ async function updateWork(planId, workId, body, user) {
   }
   if (body.sequence !== undefined) work.sequence = Number(body.sequence);
 
+  const rescheduleDateStr = body.rescheduled_date || body.rescheduledDate;
+  if (rescheduleDateStr !== undefined) {
+    work.rescheduled_date = rescheduleDateStr ? toValidDate(rescheduleDateStr, rescheduleDateStr) : undefined;
+  }
+
+  applyAuthorityRemarks(work, body, user);
+
   work.updated_by = userId(user);
   work.updated_by_role = getUserRole(user);
 
   await work.save();
+
+  if (body.status === 'rescheduled' && rescheduleDateStr && body.auto_schedule !== false) {
+    try {
+      await addStandaloneWork({
+        sales_user: work.sales_user || plan.sales_user,
+        plan_date: rescheduleDateStr,
+        title: work.title,
+        description: work.description,
+        manager_remarks: body.manager_remarks || work.manager_remarks,
+        status: 'created',
+      }, user);
+    } catch (err) {
+      console.error('Failed to auto-schedule work to target date:', err);
+    }
+  }
 
   if (plan.status === 'rejected') {
     plan.status = 'draft';
@@ -3087,6 +3386,27 @@ async function getEligibleManagers(user) {
     });
 }
 
+async function addWorkPlanAuthorityRemark(id, body, user) {
+  if (!isWpElevated(user)) {
+    throw new ApiError(403, 'Only higher authorities can add authority remarks');
+  }
+  return update(id, body, user);
+}
+
+async function addVisitAuthorityRemark(planId, visitId, body, user) {
+  if (!isWpElevated(user)) {
+    throw new ApiError(403, 'Only higher authorities can add authority remarks');
+  }
+  return updateVisit(planId, visitId, body, user);
+}
+
+async function addWorkAuthorityRemark(planId, workId, body, user) {
+  if (!isWpElevated(user)) {
+    throw new ApiError(403, 'Only higher authorities can add authority remarks');
+  }
+  return updateWork(planId, workId, body, user);
+}
+
 module.exports = {
   list,
   get,
@@ -3130,4 +3450,7 @@ module.exports = {
   getUserSettings,
   updateUserSettings,
   getEligibleManagers,
+  addWorkPlanAuthorityRemark,
+  addVisitAuthorityRemark,
+  addWorkAuthorityRemark,
 };

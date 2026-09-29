@@ -12,12 +12,32 @@ import {
   Send,
   ClipboardCheck,
   Check,
+  XCircle,
+  SkipForward,
+  CalendarClock,
+  ShieldCheck,
+  Sparkles,
+  UserCheck,
+  Camera,
+  MapPin,
 } from "lucide-react";
 import { DayEndRichEditor } from "./DayEndRichEditor";
-import { stripHtml } from "./workPlanUtils";
+import { formatDateTime, formatLocalityCity, getVisitLocationDisplay, stripHtml } from "./workPlanUtils";
+import { readSessionFromStorage, isWpElevated, roleLabel } from "@/utils/authStorage";
+import type { AuthorityRemarkItem, WorkPlanVisitRecord } from "@/types/workPlanner";
+import { useUploadWorkPlanAttachmentMutation } from "@/store/api/workPlannerApiSlice";
 import { toast } from "sonner";
 
-export type WorkflowStatus = "pending" | "in_progress" | "completed";
+export type WorkflowStatus =
+  | "created"
+  | "pending"
+  | "in_progress"
+  | "checked_in"
+  | "checked_out"
+  | "completed"
+  | "cancelled"
+  | "skipped"
+  | "rescheduled";
 
 export type CompleteVisitAnswers = {
   meeting_with_doctor: boolean;
@@ -48,13 +68,24 @@ export interface ItemStatusRemarksModalProps {
   initialPendingRemarks?: string;
   initialInProgressRemarks?: string;
   initialOutcome?: string;
+  initialManagerRemarks?: string;
+  initialRescheduledDate?: string;
+  authorityRemarksHistory?: AuthorityRemarkItem[];
+  planOwnerId?: string;
   initialVisitAnswers?: Partial<CompleteVisitAnswers>;
+  visitRecord?: WorkPlanVisitRecord;
   isSaving?: boolean;
   onClose: () => void;
   onConfirm: (data: {
     status: WorkflowStatus;
     remarks: string;
+    managerRemarks?: string;
+    rescheduledDate?: string;
     visitAnswers?: CompleteVisitAnswers;
+    selfieUrl?: string;
+    lat?: number;
+    lng?: number;
+    address?: string;
   }) => Promise<void> | void;
 }
 
@@ -66,22 +97,46 @@ export function ItemStatusRemarksModal({
   initialPendingRemarks = "",
   initialInProgressRemarks = "",
   initialOutcome = "",
+  initialManagerRemarks = "",
+  initialRescheduledDate = "",
+  authorityRemarksHistory = [],
+  planOwnerId = "",
   initialVisitAnswers,
+  visitRecord,
   isSaving = false,
   onClose,
   onConfirm,
 }: ItemStatusRemarksModalProps) {
+  const sessionUser = readSessionFromStorage()?.user;
+  const elevatedRole = isWpElevated(sessionUser);
+  const currentUserId = String(sessionUser?._id || (sessionUser as any)?.id || "");
+  const isSeniorViewing = elevatedRole && (!planOwnerId || currentUserId !== planOwnerId);
+  const currentRoleName = roleLabel(sessionUser);
+
+  const isVisit = itemType === "visit";
+
   // Determine default selected target status (defaulting to next logical stage or current status)
   const defaultSelectedStatus = (): WorkflowStatus => {
-    const s = String(currentStatus || "").toLowerCase();
-    if (s === "created") return "in_progress";
-    if (s === "pending") return "in_progress";
+    const s = String(currentStatus || "").toLowerCase() as WorkflowStatus;
+    if (isVisit && (s === "created" || s === "pending")) return "checked_in";
+    if (isVisit && s === "checked_in") return "completed";
+    if (s === "created" || s === "pending") return "in_progress";
     if (s === "in_progress") return "completed";
+    if (["completed", "cancelled", "skipped", "rescheduled"].includes(s)) return s;
     return "completed";
   };
 
   const [selectedStatus, setSelectedStatus] = useState<WorkflowStatus>(defaultSelectedStatus);
   const [remarks, setRemarks] = useState("");
+  const [managerRemarks, setManagerRemarks] = useState("");
+  const [rescheduledDate, setRescheduledDate] = useState("");
+  const [selfieFile, setSelfieFile] = useState<File | null>(null);
+  const [selfiePreview, setSelfiePreview] = useState<string | null>(null);
+  const [geoLat, setGeoLat] = useState<number | null>(null);
+  const [geoLng, setGeoLng] = useState<number | null>(null);
+  const [geoAddressStr, setGeoAddressStr] = useState<string>("");
+  const [geoTimeStr, setGeoTimeStr] = useState<string>("");
+  const [uploadAttachmentMut, { isLoading: isUploadingSelfie }] = useUploadWorkPlanAttachmentMutation();
   const [visitAnswers, setVisitAnswers] = useState<Record<keyof CompleteVisitAnswers, boolean | null>>({
     meeting_with_doctor: null,
     meeting_with_purchase: null,
@@ -96,6 +151,29 @@ export function ItemStatusRemarksModal({
     if (open) {
       const initStatus = defaultSelectedStatus();
       setSelectedStatus(initStatus);
+      setSelfieFile(null);
+      setSelfiePreview(null);
+      setGeoTimeStr(new Date().toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }));
+      if (typeof window !== "undefined" && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+            setGeoLat(lat);
+            setGeoLng(lng);
+            fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
+              .then((res) => res.json())
+              .then((data) => {
+                if (data?.display_name) {
+                  setGeoAddressStr(data.display_name);
+                }
+              })
+              .catch(() => {});
+          },
+          () => {},
+          { enableHighAccuracy: true, timeout: 6000 }
+        );
+      }
       if (initStatus === "pending") {
         setRemarks(initialPendingRemarks || "");
       } else if (initStatus === "in_progress") {
@@ -103,6 +181,13 @@ export function ItemStatusRemarksModal({
       } else {
         setRemarks(initialOutcome || "");
       }
+
+      setManagerRemarks(initialManagerRemarks || "");
+      setRescheduledDate(
+        initialRescheduledDate
+          ? initialRescheduledDate.slice(0, 10)
+          : new Date(Date.now() + 86400000).toISOString().slice(0, 10)
+      );
 
       setVisitAnswers({
         meeting_with_doctor:
@@ -131,7 +216,15 @@ export function ItemStatusRemarksModal({
             : null,
       });
     }
-  }, [open, currentStatus, initialPendingRemarks, initialInProgressRemarks, initialOutcome, initialVisitAnswers]);
+  }, [
+    open,
+    currentStatus,
+    initialPendingRemarks,
+    initialInProgressRemarks,
+    initialOutcome,
+    initialManagerRemarks,
+    initialVisitAnswers,
+  ]);
 
   // Update prefilled remarks when target status changes
   const handleStatusChange = (newStatus: WorkflowStatus) => {
@@ -145,8 +238,6 @@ export function ItemStatusRemarksModal({
     }
   };
 
-  const isVisit = itemType === "visit";
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -159,14 +250,25 @@ export function ItemStatusRemarksModal({
       }
     }
 
+    // If rescheduled, require the target date
+    if (selectedStatus === "rescheduled" && !rescheduledDate.trim()) {
+      toast.error("Please select a target date for rescheduling");
+      return;
+    }
+
     const cleanText = stripHtml(remarks).trim();
-    if (!cleanText) {
+    const cleanManagerText = stripHtml(managerRemarks).trim();
+
+    // If executive or regular status update, remarks are required unless higher authority is providing manager remarks
+    if (!cleanText && !cleanManagerText) {
       toast.error(
         selectedStatus === "completed"
           ? "Please provide outcome or completion remarks"
           : selectedStatus === "pending"
           ? "Please enter pending remarks / reason"
-          : "Please enter in-progress status remarks"
+          : selectedStatus === "rescheduled"
+          ? "Please enter reason for rescheduling"
+          : "Please enter status remarks or supervisory notes"
       );
       return;
     }
@@ -184,10 +286,28 @@ export function ItemStatusRemarksModal({
             }
           : undefined;
 
+      let uploadedSelfieUrl: string | undefined = undefined;
+      if (selfieFile) {
+        try {
+          const formData = new FormData();
+          formData.append("file", selfieFile);
+          const res = await uploadAttachmentMut(formData).unwrap();
+          uploadedSelfieUrl = res.url || res.file_name;
+        } catch (err) {
+          console.error("Web selfie upload failed", err);
+        }
+      }
+
       await onConfirm({
         status: selectedStatus,
-        remarks: remarks.trim(),
+        remarks: remarks.trim() || (cleanManagerText ? `Status updated by ${currentRoleName}` : ""),
+        managerRemarks: cleanManagerText ? managerRemarks.trim() : undefined,
+        rescheduledDate: selectedStatus === "rescheduled" ? rescheduledDate : undefined,
         visitAnswers: finalAnswers,
+        selfieUrl: uploadedSelfieUrl,
+        lat: geoLat || undefined,
+        lng: geoLng || undefined,
+        address: geoAddressStr || undefined,
       });
     } catch (err: any) {
       toast.error(err?.message || "Failed to update status & remarks");
@@ -196,33 +316,143 @@ export function ItemStatusRemarksModal({
 
   if (!open) return null;
 
+  // Status options tailored based on itemType and elevated authority level
   const STATUS_OPTIONS: Array<{
     id: WorkflowStatus;
     label: string;
     description: string;
     icon: React.ReactNode;
-  }> = [
-    {
-      id: "pending",
-      label: "Pending",
-      description: "Postpone or mark on hold with pending reason",
-      icon: <Clock className="h-4 w-4 text-slate-500" />,
-    },
-    {
-      id: "in_progress",
-      label: "In Progress",
-      description: "Work/Visit is currently active or underway",
-      icon: <AlertCircle className="h-4 w-4 text-amber-500" />,
-    },
-    {
-      id: "completed",
-      label: "Completed",
-      description: isVisit
-        ? "Complete visit with outcome checklist & notes"
-        : "Successfully finished with final outcome & notes",
-      icon: <CheckCircle2 className="h-4 w-4 text-emerald-500" />,
-    },
-  ];
+  }> = isVisit
+    ? elevatedRole
+      ? [
+          {
+            id: "created",
+            label: "Created / Planned",
+            description: "Reset or keep visit as scheduled/created",
+            icon: <Sparkles className="h-4 w-4 text-sky-500" />,
+          },
+          {
+            id: "pending",
+            label: "Pending",
+            description: "Postpone or mark on hold with pending reason",
+            icon: <Clock className="h-4 w-4 text-slate-500" />,
+          },
+          {
+            id: "in_progress",
+            label: "In Progress",
+            description: "Field visit is currently active or underway",
+            icon: <AlertCircle className="h-4 w-4 text-amber-500" />,
+          },
+          {
+            id: "completed",
+            label: "Completed",
+            description: "Mark visit completed with outcome checklist & notes",
+            icon: <CheckCircle2 className="h-4 w-4 text-emerald-500" />,
+          },
+          {
+            id: "cancelled",
+            label: "Cancelled",
+            description: "Call off or mark visit as cancelled",
+            icon: <XCircle className="h-4 w-4 text-rose-500" />,
+          },
+          {
+            id: "rescheduled",
+            label: "Rescheduled",
+            description: "Rescheduled to a different date or time",
+            icon: <CalendarClock className="h-4 w-4 text-purple-500" />,
+          },
+          {
+            id: "skipped",
+            label: "Skipped",
+            description: "Bypassed or skipped in today's sequence",
+            icon: <SkipForward className="h-4 w-4 text-muted" />,
+          },
+        ]
+      : [
+          {
+            id: "checked_in",
+            label: "Check In",
+            description: "Log check-in time & selfie at the visit site",
+            icon: <UserCheck className="h-4 w-4 text-indigo-500" />,
+          },
+          {
+            id: "completed",
+            label: "Completed (Outcome)",
+            description: "Complete visit with outcome checklist & notes",
+            icon: <CheckCircle2 className="h-4 w-4 text-emerald-500" />,
+          },
+        ]
+    : elevatedRole
+    ? [
+        {
+          id: "created",
+          label: "Created / Open",
+          description: "Keep task in open/initial state",
+          icon: <Sparkles className="h-4 w-4 text-sky-500" />,
+        },
+        {
+          id: "pending",
+          label: "Pending",
+          description: "Mark task pending or on hold",
+          icon: <Clock className="h-4 w-4 text-slate-500" />,
+        },
+        {
+          id: "in_progress",
+          label: "In Progress",
+          description: "Task is currently active and being worked on",
+          icon: <AlertCircle className="h-4 w-4 text-amber-500" />,
+        },
+        {
+          id: "completed",
+          label: "Completed",
+          description: "Successfully finished with final outcome & notes",
+          icon: <CheckCircle2 className="h-4 w-4 text-emerald-500" />,
+        },
+        {
+          id: "cancelled",
+          label: "Cancelled",
+          description: "Mark task as cancelled or dropped",
+          icon: <XCircle className="h-4 w-4 text-rose-500" />,
+        },
+        {
+          id: "rescheduled",
+          label: "Rescheduled",
+          description: "Rescheduled to a different date & plan across",
+          icon: <CalendarClock className="h-4 w-4 text-purple-500" />,
+        },
+        {
+          id: "skipped",
+          label: "Skipped",
+          description: "Bypassed or skipped for today",
+          icon: <SkipForward className="h-4 w-4 text-muted" />,
+        },
+      ]
+    : [
+        {
+          id: "pending",
+          label: "Pending",
+          description: "Postpone or mark on hold with pending reason",
+          icon: <Clock className="h-4 w-4 text-slate-500" />,
+        },
+        {
+          id: "in_progress",
+          label: "In Progress",
+          description: "Task is currently active or underway",
+          icon: <AlertCircle className="h-4 w-4 text-amber-500" />,
+        },
+        {
+          id: "completed",
+          label: "Completed",
+          description: "Successfully finished with final outcome & notes",
+          icon: <CheckCircle2 className="h-4 w-4 text-emerald-500" />,
+        },
+        {
+          id: "rescheduled",
+          label: "Rescheduled",
+          description: "Reschedule to another target date & plan",
+          icon: <CalendarClock className="h-4 w-4 text-purple-500" />,
+        },
+      ];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 font-sans">
@@ -425,6 +655,194 @@ export function ItemStatusRemarksModal({
                 </div>
               </div>
             )}
+            {/* Client Selfie & Geolocation Inspection Section for Visits */}
+            {isVisit && (
+              <div className="rounded-xl border border-border bg-surface-muted/40 p-3.5 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-bold text-foreground">
+                    <Camera className="h-4 w-4 text-primary" />
+                    <span>
+                      {isSeniorViewing
+                        ? "Senior Inspection — Client Selfies & Geolocation"
+                        : "Client Selfie & Geolocation Verification"}
+                    </span>
+                  </div>
+                  {!isSeniorViewing && selfiePreview && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelfieFile(null);
+                        setSelfiePreview(null);
+                      }}
+                      className="text-[11px] font-bold text-rose-500 hover:underline cursor-pointer"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+
+                {/* Preview Cards for Existing or Newly Captured Selfies */}
+                {(() => {
+                  const checkInUrl = visitRecord?.check_in_selfie_url;
+                  const checkOutUrl = visitRecord?.check_out_selfie_url || visitRecord?.outcome_selfie_url;
+                  const hasExisting = Boolean(checkInUrl || checkOutUrl);
+
+                  if (isSeniorViewing) {
+                    if (!hasExisting) {
+                      return (
+                        <div className="rounded-lg border border-border bg-card p-3 text-center text-xs text-muted">
+                          ℹ️ No Client Selfie uploaded by executive for this visit yet.
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="flex flex-wrap items-center gap-3">
+                        {checkInUrl && (
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-semibold text-muted">Check-In Selfie</span>
+                            <div className="relative group w-44 h-40 rounded-xl overflow-hidden border border-border shadow-xs bg-black">
+                              <img
+                                src={checkInUrl}
+                                alt="Check In Selfie"
+                                className="w-full h-full object-cover group-hover:scale-105 transition duration-200 cursor-pointer"
+                                onClick={() => window.open(checkInUrl, "_blank")}
+                              />
+                              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/75 to-transparent p-2 text-[10px] text-white flex flex-col gap-0.5">
+                                <div className="flex items-center gap-1 text-amber-300 font-bold">
+                                  <Clock className="h-3 w-3 shrink-0" />
+                                  <span>{visitRecord?.actual_check_in ? new Date(visitRecord.actual_check_in).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Timestamp Verified"}</span>
+                                </div>
+                                <div className="flex items-center gap-1 text-sky-300 font-semibold truncate">
+                                  <MapPin className="h-3 w-3 shrink-0" />
+                                  <span className="truncate">{getVisitLocationDisplay(visitRecord?.check_in_address || visitRecord?.check_out_address || visitRecord?.address, visitRecord?.check_in_lat ?? visitRecord?.check_out_lat, visitRecord?.check_in_lng ?? visitRecord?.check_out_lng)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        {checkOutUrl && (
+                          <div className="space-y-1">
+                            <span className="text-[10px] font-semibold text-muted">Check-Out Selfie</span>
+                            <div className="relative group w-44 h-40 rounded-xl overflow-hidden border border-border shadow-xs bg-black">
+                              <img
+                                src={checkOutUrl}
+                                alt="Check Out Selfie"
+                                className="w-full h-full object-cover group-hover:scale-105 transition duration-200 cursor-pointer"
+                                onClick={() => window.open(checkOutUrl, "_blank")}
+                              />
+                              <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/75 to-transparent p-2 text-[10px] text-white flex flex-col gap-0.5">
+                                <div className="flex items-center gap-1 text-amber-300 font-bold">
+                                  <Clock className="h-3 w-3 shrink-0" />
+                                  <span>{visitRecord?.actual_check_out ? new Date(visitRecord.actual_check_out).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Timestamp Verified"}</span>
+                                </div>
+                                <div className="flex items-center gap-1 text-sky-300 font-semibold truncate">
+                                  <MapPin className="h-3 w-3 shrink-0" />
+                                  <span className="truncate">{getVisitLocationDisplay(visitRecord?.check_out_address || visitRecord?.check_in_address || visitRecord?.address, visitRecord?.check_out_lat ?? visitRecord?.check_in_lat, visitRecord?.check_out_lng ?? visitRecord?.check_in_lng)}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  // Junior View: Allow Selfie Capture/Upload + Preview
+                  return (
+                    <div className="space-y-3">
+                      {selfiePreview ? (
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="relative group w-48 h-44 rounded-xl overflow-hidden border border-primary shadow-sm bg-black">
+                            <img src={selfiePreview} alt="Selfie preview" className="w-full h-full object-cover" />
+                            <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/75 to-transparent p-2 text-[10px] text-white flex flex-col gap-0.5">
+                              <div className="flex items-center gap-1 text-amber-300 font-bold">
+                                <Clock className="h-3 w-3 shrink-0" />
+                                <span>{geoTimeStr || new Date().toLocaleString("en-GB")}</span>
+                              </div>
+                              <div className="flex items-center gap-1 text-sky-300 font-semibold truncate">
+                                <MapPin className="h-3 w-3 shrink-0" />
+                                <span className="truncate">
+                                  {geoAddressStr ? geoAddressStr : geoLat && geoLng ? `Lat: ${geoLat.toFixed(4)}, Lng: ${geoLng.toFixed(4)}` : "GPS Location Captured"}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <span className="text-[11px] font-medium text-muted">Verified Client Selfie Preview</span>
+                        </div>
+                      ) : (selectedStatus === "checked_in" || selectedStatus === "completed" || selectedStatus === "checked_out") ? (
+                        <label className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-border hover:border-primary rounded-xl cursor-pointer bg-card hover:bg-surface-muted transition gap-1.5 text-center">
+                          <Camera className="h-6 w-6 text-primary" />
+                          <span className="text-xs font-bold text-foreground">Take / Attach Selfie with Client</span>
+                          <span className="text-[10px] text-muted">Click to capture photo using camera or file</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="user"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              setSelfieFile(file);
+                              setSelfiePreview(URL.createObjectURL(file));
+                              setGeoTimeStr(new Date().toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }));
+                              if (navigator.geolocation) {
+                                navigator.geolocation.getCurrentPosition(
+                                  (pos) => {
+                                    const lat = pos.coords.latitude;
+                                    const lng = pos.coords.longitude;
+                                    setGeoLat(lat);
+                                    setGeoLng(lng);
+                                    fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`)
+                                      .then((res) => res.json())
+                                      .then((data) => {
+                                        if (data?.display_name) {
+                                          setGeoAddressStr(data.display_name);
+                                        }
+                                      })
+                                      .catch(() => {});
+                                  },
+                                  (err) => console.log("Geo error", err),
+                                  { enableHighAccuracy: true, timeout: 5000 }
+                                );
+                              }
+                            }}
+                          />
+                        </label>
+                      ) : null}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Reschedule Target Date Picker */}
+            {selectedStatus === "rescheduled" && (
+              <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-4 space-y-2.5 animate-in fade-in duration-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CalendarClock className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
+                    <span className="text-xs font-bold text-foreground">
+                      Reschedule Target Date <span className="text-rose-500">*</span>
+                    </span>
+                  </div>
+                  <span className="rounded bg-indigo-500/15 px-2 py-0.5 text-[10px] font-bold text-indigo-700 dark:text-indigo-300">
+                    Required for Rescheduling
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted leading-tight">
+                  Select the new date for this {isVisit ? "visit" : "task"}. It will automatically be scheduled on that date&apos;s plan across the system.
+                </p>
+                <div>
+                  <input
+                    type="date"
+                    required
+                    value={rescheduledDate}
+                    onChange={(e) => setRescheduledDate(e.target.value)}
+                    className="w-full rounded-xl border border-indigo-500/30 bg-card p-3 text-xs text-foreground font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Dynamic Remarks Input */}
             <div className="space-y-1.5">
@@ -436,14 +854,27 @@ export function ItemStatusRemarksModal({
                       : "Outcome & Final Completion Remarks"
                     : selectedStatus === "pending"
                     ? "Pending Remarks / Delay Reason"
-                    : "In-Progress Status Remarks"}{" "}
-                  <span className="text-rose-500">*</span>
+                    : selectedStatus === "cancelled"
+                    ? "Cancellation Reason / Remarks"
+                    : selectedStatus === "rescheduled"
+                    ? "Reschedule Details & Remarks"
+                    : selectedStatus === "skipped"
+                    ? "Reason for Skipping"
+                    : selectedStatus === "created"
+                    ? "Initial Notes / Objectives"
+                    : "In-Progress Status Remarks"}
+                  {!elevatedRole && <span className="text-rose-500"> *</span>}
                 </span>
+                {elevatedRole && (
+                  <span className="text-[11px] text-muted font-normal">
+                    (Executive field)
+                  </span>
+                )}
               </label>
               <DayEndRichEditor
                 value={remarks}
                 onChange={setRemarks}
-                minHeight="130px"
+                minHeight="110px"
                 placeholder={
                   selectedStatus === "completed"
                     ? isVisit
@@ -451,10 +882,88 @@ export function ItemStatusRemarksModal({
                       : "Describe the outcome, meeting takeaways, key decisions, or task output..."
                     : selectedStatus === "pending"
                     ? "State reason for keeping this item pending / on hold..."
-                    : "Provide current status update, work underway, or meeting details..."
+                    : selectedStatus === "cancelled"
+                    ? "Reason for cancelling this item..."
+                    : selectedStatus === "rescheduled"
+                    ? "Provide reschedule explanation and planned target..."
+                    : "Provide status update, meeting details, or notes..."
                 }
               />
             </div>
+
+            {/* Senior Remarks field — only for the plan owner's senior */}
+            {isSeniorViewing && (
+              <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 dark:bg-purple-950/20 p-4 space-y-2.5 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                    <span className="text-xs font-bold text-foreground">
+                      Senior Remarks / Review Guidance
+                    </span>
+                  </div>
+                  <span className="rounded-full bg-purple-500/15 px-2 py-0.5 text-[10px] font-bold text-purple-700 dark:text-purple-300">
+                    Senior Note
+                  </span>
+                </div>
+                <p className="text-[11px] text-muted leading-tight">
+                  Add senior review remarks, directives, or feedback. This will be stamped with your role and name.
+                </p>
+                <DayEndRichEditor
+                  value={managerRemarks}
+                  onChange={setManagerRemarks}
+                  minHeight="90px"
+                  placeholder="Write senior review feedback, instructions, or follow-up directive..."
+                />
+              </div>
+            )}
+
+            {/* Senior Remarks History — only for the plan owner's senior */}
+            {isSeniorViewing && Array.isArray(authorityRemarksHistory) && authorityRemarksHistory.length > 0 && (
+              <div className="rounded-xl border border-border bg-surface-muted/40 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4 text-primary" />
+                  <h4 className="text-xs font-bold text-foreground">
+                    Senior Remarks History ({authorityRemarksHistory.length})
+                  </h4>
+                </div>
+                <div className="space-y-2.5 max-h-48 overflow-y-auto pr-1">
+                  {authorityRemarksHistory.map((item, idx) => {
+                    const authorName = item.user_name || (typeof item.user === "object" ? item.user?.name : "Senior Authority");
+                    const role = item.role || "Senior Authority";
+                    const roleLower = String(role).toLowerCase();
+                    const badgeTone =
+                      roleLower.includes("admin")
+                        ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/20"
+                        : roleLower.includes("coordinator")
+                        ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20"
+                        : "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/20";
+
+                    return (
+                      <div
+                        key={item._id || idx}
+                        className="rounded-lg border border-border bg-card p-2.5 space-y-1 text-xs"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-foreground">{authorName}</span>
+                            <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold border ${badgeTone}`}>
+                              {role}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-muted">
+                            {formatDateTime(item.created_at)}
+                          </span>
+                        </div>
+                        <div
+                          className="text-muted text-[11px] prose prose-xs dark:prose-invert max-w-none"
+                          dangerouslySetInnerHTML={{ __html: item.remark }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Action Footer */}
