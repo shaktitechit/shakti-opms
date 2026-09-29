@@ -822,7 +822,7 @@ async function notifyDayEndCompleted({ planId, actorUser, dayEndData = null }) {
       : dayEndData?.ccEmails;
     const mailCc = Array.isArray(providedDayEndCc)
       ? providedDayEndCc.map((e) => String(e).trim()).filter(Boolean)
-      : ccList;
+      : [];
 
     const fromAddress = salesUser?.email ? `${executiveName} <${salesUser.email}>` : null;
     const visitsTableHtml = renderVisitsTable(visits);
@@ -925,9 +925,9 @@ async function sendPendingWorkPlanMorningReminder(pendingUsers, dateStr, timeZon
         entity_type: 'work_plan_reminder',
       });
 
-      // Individual Email to Executive (with CC to Manager)
+      // Individual Email to Executive
       if (exec.email) {
-        const mgrCc = directManager?.email ? [directManager.email] : [];
+        const mgrCc = [];
         const subject = `Morning Reminder: Work Plan Pending for Today (${dateStr})`;
         const emailHtml = `
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 550px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
@@ -1078,9 +1078,9 @@ async function sendPendingDayEndEveningReminder(pendingPlansWithUsers, dateStr, 
         entity_id: plan?._id,
       });
 
-      // Individual Email to Executive (with CC to Manager)
+      // Individual Email to Executive
       if (exec.email) {
-        const mgrCc = directManager?.email ? [directManager.email] : [];
+        const mgrCc = [];
         const subject = `Evening Reminder: Day End Report Pending for Today (${dateStr})`;
         const emailHtml = `
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 550px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
