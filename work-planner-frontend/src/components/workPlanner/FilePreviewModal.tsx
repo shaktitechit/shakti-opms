@@ -11,15 +11,24 @@ export type PreviewFile = {
 };
 
 export function isPdfPreview(mime: string = "", name: string = ""): boolean {
-  const m = mime.toLowerCase();
-  const n = name.toLowerCase();
-  return m.includes("pdf") || n.endsWith(".pdf");
+  const m = (mime || "").toLowerCase();
+  const n = (name || "").toLowerCase();
+  return m.includes("pdf") || n.endsWith(".pdf") || /\.pdf(\?|$)/i.test(n) || /\.pdf(\?|$)/i.test(m);
 }
 
 export function isImagePreview(mime: string = "", name: string = ""): boolean {
-  const m = mime.toLowerCase();
-  const n = name.toLowerCase();
-  return m.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(n);
+  const m = (mime || "").toLowerCase();
+  const n = (name || "").toLowerCase();
+  if (isPdfPreview(m, n)) return false;
+  if (m.includes("sheet") || m.includes("excel") || m.includes("csv") || /\.(xlsx?|csv)(\?|$)/i.test(n)) return false;
+  if (m.includes("word") || /\.(docx?|zip|rar|txt)(\?|$)/i.test(n)) return false;
+  return (
+    m.startsWith("image/") ||
+    m.includes("image") ||
+    /\.(png|jpe?g|gif|webp|bmp|svg|heic)(\?|$)/i.test(n) ||
+    /\.(png|jpe?g|gif|webp|bmp|svg|heic)(\?|$)/i.test(m) ||
+    (!m && !/\.(pdf|xlsx?|docx?|csv|zip|rar|txt)(\?|$)/i.test(n))
+  );
 }
 
 type FilePreviewModalProps = {
@@ -173,15 +182,13 @@ export function useFilePreview(token: string | null | undefined) {
 
   const openPreview = useCallback(
     async (doc: PreviewFile) => {
+      const activeMime = doc.mime || "";
       setPreviewDoc(doc);
       setPreviewLoading(true);
       setPreviewBlobUrl(null);
 
-      // File-manager / MinIO presigned URLs are used directly — no auth proxy.
-      const isDirectStorageUrl =
-        /^https?:\/\//i.test(doc.url) && !/\/api\/files\//i.test(doc.url);
-
-      if (isDirectStorageUrl) {
+      // Data URLs or already created blob URLs don't need fetching
+      if (doc.url?.startsWith("data:") || doc.url?.startsWith("blob:")) {
         setPreviewBlobUrl(doc.url);
         setPreviewLoading(false);
         return;
@@ -202,6 +209,7 @@ export function useFilePreview(token: string | null | undefined) {
 
         const response = await fetch(fetchUrl, { headers });
         if (!response.ok) throw new Error(`Failed to load file: ${response.status}`);
+        const contentType = response.headers.get("content-type") || "";
         const blob = await response.blob();
         if (previewBlobRef.current) {
           URL.revokeObjectURL(previewBlobRef.current);
@@ -209,10 +217,18 @@ export function useFilePreview(token: string | null | undefined) {
         const blobUrl = URL.createObjectURL(blob);
         previewBlobRef.current = blobUrl;
         setPreviewBlobUrl(blobUrl);
+        const resolvedMime = activeMime || blob.type || contentType;
+        if (resolvedMime) {
+          setPreviewDoc((prev) => (prev ? { ...prev, mime: resolvedMime } : prev));
+        }
       } catch (err: unknown) {
         console.warn("Blob fetch failed, falling back to direct URL:", err);
         if (doc.url && doc.url !== "#") {
-          setPreviewBlobUrl(doc.url);
+          let fallbackUrl = doc.url;
+          if (token && !fallbackUrl.includes("token=")) {
+            fallbackUrl += (fallbackUrl.includes("?") ? "&" : "?") + `token=${encodeURIComponent(token)}`;
+          }
+          setPreviewBlobUrl(fallbackUrl);
         } else {
           toast.error("Failed to load document preview");
           closePreview();

@@ -2,11 +2,14 @@
  * @fileoverview HTTP Server Bootstrap for work-planner-backend.
  * @module server
  */
+const http = require('http');
 const app = require('./app');
 const { PORT } = require('./config/env');
 const db = require('./config/db');
 const { registerModels, fixWorkPlanIndexes } = require('./data/mongoRegistry');
 const { logger } = require('./utils/logger');
+const { initProjectSocket } = require('./socket/projectSocket');
+const corsOptions = require('./config/cors');
 
 async function startServer() {
   try {
@@ -18,8 +21,13 @@ async function startServer() {
     startSchedulers();
 
     const serverPort = PORT || 7007;
-    app.listen(serverPort, () => {
-      logger.info(`work-planner-backend listening on port ${serverPort}`);
+    const httpServer = http.createServer(app);
+
+    // Initialize real-time Project Chat & Collaboration sockets
+    initProjectSocket(httpServer, corsOptions);
+
+    httpServer.listen(serverPort, () => {
+      logger.info(`work-planner-backend listening on port ${serverPort} (with Socket.IO enabled)`);
     });
   } catch (error) {
     logger.error('Failed to start work-planner-backend server:', error);

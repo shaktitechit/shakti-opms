@@ -24,6 +24,7 @@ import {
 import { DayEndRichEditor } from "./DayEndRichEditor";
 import { formatDateTime, formatLocalityCity, getVisitLocationDisplay, stripHtml } from "./workPlanUtils";
 import { readSessionFromStorage, isWpElevated, roleLabel } from "@/utils/authStorage";
+import { resolvePublicAssetUrl, withFileAccessToken } from "@/lib/env";
 import type { AuthorityRemarkItem, WorkPlanVisitRecord } from "@/types/workPlanner";
 import { useUploadWorkPlanAttachmentMutation } from "@/store/api/workPlannerApiSlice";
 import { toast } from "sonner";
@@ -110,10 +111,19 @@ export function ItemStatusRemarksModal({
   const sessionUser = readSessionFromStorage()?.user;
   const elevatedRole = isWpElevated(sessionUser);
   const currentUserId = String(sessionUser?._id || (sessionUser as any)?.id || "");
-  const isSeniorViewing = elevatedRole && (!planOwnerId || currentUserId !== planOwnerId);
+  const itemOwnerId = String(
+    planOwnerId ||
+    (visitRecord as any)?.sales_user?._id ||
+    (visitRecord as any)?.sales_user ||
+    ""
+  );
+  const isSelf = Boolean(currentUserId && itemOwnerId && currentUserId === itemOwnerId);
+  const isSeniorViewing = elevatedRole && !isSelf;
   const currentRoleName = roleLabel(sessionUser);
 
   const isVisit = itemType === "visit";
+
+  const sessionToken = readSessionFromStorage()?.token;
 
   // Determine default selected target status (defaulting to next logical stage or current status)
   const defaultSelectedStatus = (): WorkflowStatus => {
@@ -683,8 +693,10 @@ export function ItemStatusRemarksModal({
 
                 {/* Preview Cards for Existing or Newly Captured Selfies */}
                 {(() => {
-                  const checkInUrl = visitRecord?.check_in_selfie_url;
-                  const checkOutUrl = visitRecord?.check_out_selfie_url || visitRecord?.outcome_selfie_url;
+                  const rawCheckIn = visitRecord?.check_in_selfie_url;
+                  const checkInUrl = rawCheckIn ? withFileAccessToken(resolvePublicAssetUrl(rawCheckIn), sessionToken) : "";
+                  const rawCheckOut = visitRecord?.check_out_selfie_url || visitRecord?.outcome_selfie_url;
+                  const checkOutUrl = rawCheckOut ? withFileAccessToken(resolvePublicAssetUrl(rawCheckOut), sessionToken) : "";
                   const hasExisting = Boolean(checkInUrl || checkOutUrl);
 
                   if (isSeniorViewing) {
@@ -891,6 +903,21 @@ export function ItemStatusRemarksModal({
               />
             </div>
 
+            {/* Read-only Senior Directive Callout for Executives / Plan Owners */}
+            {!isSeniorViewing && (initialManagerRemarks || managerRemarks) ? (
+              <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 dark:bg-purple-950/20 p-4 space-y-1.5 animate-in fade-in duration-150">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                  <span className="text-xs font-bold text-purple-800 dark:text-purple-200">
+                    Active Senior Directive / Instruction
+                  </span>
+                </div>
+                <div className="text-xs text-foreground whitespace-pre-line">
+                  {stripHtml(initialManagerRemarks || managerRemarks)}
+                </div>
+              </div>
+            ) : null}
+
             {/* Senior Remarks field — only for the plan owner's senior */}
             {isSeniorViewing && (
               <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 dark:bg-purple-950/20 p-4 space-y-2.5 animate-in fade-in duration-150">
@@ -917,8 +944,8 @@ export function ItemStatusRemarksModal({
               </div>
             )}
 
-            {/* Senior Remarks History — only for the plan owner's senior */}
-            {isSeniorViewing && Array.isArray(authorityRemarksHistory) && authorityRemarksHistory.length > 0 && (
+            {/* Senior Remarks History — visible to plan owners, executives, and seniors */}
+            {Array.isArray(authorityRemarksHistory) && authorityRemarksHistory.length > 0 && (
               <div className="rounded-xl border border-border bg-surface-muted/40 p-4 space-y-3">
                 <div className="flex items-center gap-2">
                   <MessageSquare className="h-4 w-4 text-primary" />

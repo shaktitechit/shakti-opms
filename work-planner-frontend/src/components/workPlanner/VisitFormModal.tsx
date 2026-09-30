@@ -8,23 +8,33 @@ import {
   CheckCircle2,
   ChevronDown,
   Info,
+  Mail,
   Phone,
+  Plus,
   Search,
+  Trash2,
   User,
   UserCheck,
+  Users,
   X,
 } from "lucide-react";
 import type { WorkPlanVisitPartyType, WorkPlanVisitRecord } from "@/types/workPlanner";
 import type { PartyRecord } from "@/types/party";
 import type { LeadRecord } from "@/types/lead";
+import type { PowerFacility, PowerEnquiry } from "@/types/powerApp";
 import { useGetPartiesQuery } from "@/store/api/partyApiSlice";
 import { useGetLeadsQuery } from "@/store/api/leadsApiSlice";
+import {
+  useGetPowerFacilitiesQuery,
+  useGetPowerEnquiriesQuery,
+} from "@/store/api/powerAppApiSlice";
 import { useGetUsersQuery } from "@/store/api/authApiSlice";
 import { useGetMyTeamQuery, useGetPlansQuery } from "@/store/api/workPlannerApiSlice";
 import {
   isWpAdmin,
   isWpManager,
   isWpElevated,
+  isPowerAuditUser,
   readSessionFromStorage,
 } from "@/utils/authStorage";
 import { formatPlanDate, formatAuditUser, formatDateTime } from "./workPlanUtils";
@@ -208,6 +218,14 @@ function primaryLeadContact(lead: LeadRecord) {
   return contacts.find((c) => c.is_primary) || contacts[0];
 }
 
+interface ContactFormItem {
+  id: string;
+  contact_person: string;
+  contact_number: string;
+  contact_email: string;
+  designation?: string;
+}
+
 export function VisitFormModal({
   open,
   mode,
@@ -224,8 +242,15 @@ export function VisitFormModal({
   const adminRole = isWpAdmin(sessionUser);
   const managerRole = isWpManager(sessionUser);
   const elevatedRole = isWpElevated(sessionUser);
-  // Senior Remark visible only when current user is NOT the plan owner
-  const isSeniorViewing = elevatedRole && (!planOwnerId || String(sessionUserId) !== String(planOwnerId));
+  const itemOwnerId = String(
+    planOwnerId ||
+    (initial as any)?.sales_user?._id ||
+    (initial as any)?.sales_user ||
+    sessionUserId ||
+    ""
+  );
+  const isSelf = Boolean(sessionUserId && itemOwnerId && String(sessionUserId) === String(itemOwnerId));
+  const isSeniorViewing = elevatedRole && !isSelf;
 
   // Queries for allowed executives
   const { data: usersData } = useGetUsersQuery(undefined, { skip: !open || !adminRole });
@@ -322,13 +347,41 @@ export function VisitFormModal({
   }, [plansData]);
   const planCompleted = existingPlan?.status === "completed";
 
-  const [partyType, setPartyType] = useState<WorkPlanVisitPartyType>("existing");
+  const selectedExecutiveUser = useMemo(() => {
+    return (
+      allowedExecutives.find(
+        (u) => String(u._id || u.id || "") === String(effectiveSalesUserId)
+      ) || sessionUser
+    );
+  }, [allowedExecutives, effectiveSalesUserId, sessionUser]);
+
+  const isPowerAudit = useMemo(() => {
+    return isPowerAuditUser(selectedExecutiveUser) || isPowerAuditUser(sessionUser);
+  }, [selectedExecutiveUser, sessionUser]);
+
+  const partyTypeOptions = useMemo<Array<{ value: WorkPlanVisitPartyType; label: string }>>(() => {
+    if (isPowerAudit) {
+      return [
+        { value: "facility", label: "Audit Facility" },
+        { value: "enquiry", label: "Audit Enquiry" },
+        { value: "existing", label: "Existing Party" },
+        { value: "existing_lead", label: "Existing Leads" },
+        { value: "new_party", label: "New Party" },
+        { value: "new_lead", label: "New Leads" },
+      ];
+    }
+    return PARTY_TYPE_OPTIONS;
+  }, [isPowerAudit]);
+
+  const [partyType, setPartyType] = useState<WorkPlanVisitPartyType>(() =>
+    isPowerAudit ? "facility" : "existing"
+  );
   const [selectedPartyId, setSelectedPartyId] = useState<string>("");
   const [selectedLeadId, setSelectedLeadId] = useState<string>("");
   const [partyName, setPartyName] = useState("");
-  const [contactPerson, setContactPerson] = useState("");
-  const [contactNumber, setContactNumber] = useState("");
-  const [contactEmail, setContactEmail] = useState("");
+  const [contacts, setContacts] = useState<ContactFormItem[]>([
+    { id: "c-1", contact_person: "", contact_number: "", contact_email: "" },
+  ]);
   const [address, setAddress] = useState("");
   const [purpose, setPurpose] = useState("");
   const [notes, setNotes] = useState("");
@@ -339,13 +392,19 @@ export function VisitFormModal({
 
   const [partySearch, setPartySearch] = useState("");
   const [leadSearch, setLeadSearch] = useState("");
+  const [facilitySearch, setFacilitySearch] = useState("");
+  const [enquirySearch, setEnquirySearch] = useState("");
   const [partyDropdownOpen, setPartyDropdownOpen] = useState(false);
   const [leadDropdownOpen, setLeadDropdownOpen] = useState(false);
+  const [facilityDropdownOpen, setFacilityDropdownOpen] = useState(false);
+  const [enquiryDropdownOpen, setEnquiryDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const isFacility = partyType === "facility";
+  const isEnquiry = partyType === "enquiry";
   const isExistingParty = partyType === "existing";
   const isExistingLead = partyType === "existing_lead";
-  const isExistingType = isExistingParty || isExistingLead;
+  const isExistingType = isFacility || isEnquiry || isExistingParty || isExistingLead;
   const assignedExecutiveId = internalSalesUserId?.trim() || "";
 
   const { data: partiesData = [], isLoading: isPartiesLoading } = useGetPartiesQuery(
@@ -363,11 +422,23 @@ export function VisitFormModal({
     { skip: !open || !isExistingLead }
   );
 
+  const { data: facilitiesData = [], isLoading: isFacilitiesLoading } = useGetPowerFacilitiesQuery(
+    { search: facilitySearch.trim() || undefined, limit: 30 },
+    { skip: !open || !isFacility }
+  );
+
+  const { data: enquiriesData = [], isLoading: isEnquiriesLoading } = useGetPowerEnquiriesQuery(
+    { search: enquirySearch.trim() || undefined, limit: 30 },
+    { skip: !open || !isEnquiry }
+  );
+
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setPartyDropdownOpen(false);
         setLeadDropdownOpen(false);
+        setFacilityDropdownOpen(false);
+        setEnquiryDropdownOpen(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
@@ -390,7 +461,7 @@ export function VisitFormModal({
         "";
       setInternalSalesUserId(targetSalesUser);
       if (initial) {
-        setPartyType(initial.party_type || "existing");
+        setPartyType(initial.party_type || (isPowerAudit ? "facility" : "existing"));
         const pId =
           typeof initial.party === "object" && initial.party
             ? initial.party._id || (initial.party as { id?: string }).id
@@ -400,9 +471,32 @@ export function VisitFormModal({
         setSelectedPartyId(pId || "");
         setSelectedLeadId("");
         setPartyName(partyNameOf(initial));
-        setContactPerson(initial.contact_person || "");
-        setContactNumber(initial.contact_number || "");
-        setContactEmail(initial.contact_email || "");
+
+        const rawContacts = Array.isArray(initial.contacts) && initial.contacts.length > 0
+          ? initial.contacts
+          : (initial.contact_person || initial.contact_number || initial.phone || initial.contact_email)
+            ? [
+                {
+                  contact_person: initial.contact_person || "",
+                  contact_number: initial.contact_number || initial.phone || "",
+                  contact_email: initial.contact_email || "",
+                },
+              ]
+            : [];
+
+        if (rawContacts.length > 0) {
+          setContacts(
+            rawContacts.map((c, i) => ({
+              id: `c-init-${i}-${Date.now()}`,
+              contact_person: c.contact_person || "",
+              contact_number: c.contact_number || "",
+              contact_email: c.contact_email || "",
+            }))
+          );
+        } else {
+          setContacts([{ id: "c-1", contact_person: "", contact_number: "", contact_email: "" }]);
+        }
+
         setAddress(initial.address || "");
         setPurpose(initial.purpose || "");
         setNotes(initial.notes || "");
@@ -410,13 +504,11 @@ export function VisitFormModal({
         setPlannedStartTime(timeFromIso(initial.planned_start_time));
         setPlannedEndTime(timeFromIso(initial.planned_end_time));
       } else {
-        setPartyType("existing");
+        setPartyType(isPowerAudit ? "facility" : "existing");
         setSelectedPartyId("");
         setSelectedLeadId("");
         setPartyName("");
-        setContactPerson("");
-        setContactNumber("");
-        setContactEmail("");
+        setContacts([{ id: "c-1", contact_person: "", contact_number: "", contact_email: "" }]);
         setAddress("");
         setPurpose("");
         setNotes("");
@@ -426,12 +518,16 @@ export function VisitFormModal({
       }
       setPartySearch("");
       setLeadSearch("");
+      setFacilitySearch("");
+      setEnquirySearch("");
       setPartyDropdownOpen(false);
       setLeadDropdownOpen(false);
+      setFacilityDropdownOpen(false);
+      setEnquiryDropdownOpen(false);
       setErrors({});
     }
     prevOpenRef.current = open;
-  }, [open, initial, planDate, salesUserId, sessionUserId]);
+  }, [open, initial, planDate, salesUserId, sessionUserId, isPowerAudit]);
 
   if (!open) return null;
 
@@ -440,16 +536,154 @@ export function VisitFormModal({
     setSelectedPartyId(pId);
     setSelectedLeadId("");
     setPartyName(party.party_name || "");
-
-    const mainContact = party.contacts?.[0];
-    setContactPerson(party.contact_person || mainContact?.contact_person || "");
-    setContactNumber(party.mobile || mainContact?.contact_number || "");
-    setContactEmail(party.email || mainContact?.contact_email || "");
     setAddress(formatPartyAddress(party));
 
+    const list: ContactFormItem[] = [];
+    if (Array.isArray(party.contacts) && party.contacts.length > 0) {
+      party.contacts.forEach((c, idx) => {
+        if (c.contact_person || c.contact_number || c.contact_email) {
+          list.push({
+            id: `party-c-${idx}-${Date.now()}`,
+            contact_person: c.contact_person || "",
+            contact_number: c.contact_number || "",
+            contact_email: c.contact_email || "",
+            designation: c.designation || "",
+          });
+        }
+      });
+    }
+
+    if (list.length === 0 && (party.contact_person || party.mobile || party.email)) {
+      list.push({
+        id: `party-root-${Date.now()}`,
+        contact_person: party.contact_person || "",
+        contact_number: party.mobile || "",
+        contact_email: party.email || "",
+      });
+    }
+
+    if (list.length === 0) {
+      list.push({ id: "c-1", contact_person: "", contact_number: "", contact_email: "" });
+    }
+
+    setContacts(list);
     setPartyDropdownOpen(false);
     setPartySearch("");
-    setErrors((prev) => ({ ...prev, partyName: "", contactPerson: "", contactNumber: "" }));
+    setErrors({});
+  }
+
+  function handleSelectFacility(facility: PowerFacility) {
+    const fId = facility.id || facility._id || "";
+    setSelectedPartyId(fId);
+    setSelectedLeadId("");
+    setPartyName(facility.name || "");
+
+    const parts = [facility.address, facility.city].filter(Boolean);
+    if (parts.length > 0) {
+      setAddress(parts.join(", "));
+    }
+
+    if (facility.audit_type) {
+      setPurpose(facility.audit_type);
+    }
+
+    const reps = Array.isArray(facility.client_representatives) && facility.client_representatives.length > 0
+      ? facility.client_representatives
+      : [];
+
+    const list: ContactFormItem[] = [];
+    reps.forEach((rep, idx) => {
+      if (rep.name || rep.contact_number || rep.email) {
+        list.push({
+          id: `c-fac-${idx}-${Date.now()}`,
+          contact_person: rep.name || "",
+          contact_number: rep.contact_number || "",
+          contact_email: rep.email || "",
+          designation: rep.designation || "",
+        });
+      }
+    });
+
+    if (list.length === 0 && (facility.client_representative || facility.client_contact_number || facility.client_email)) {
+      list.push({
+        id: `c-fac-main-${Date.now()}`,
+        contact_person: facility.client_representative || "",
+        contact_number: facility.client_contact_number || "",
+        contact_email: facility.client_email || "",
+      });
+    }
+
+    if (list.length > 0) {
+      setContacts(list);
+    } else {
+      setContacts([{ id: "c-1", contact_person: "", contact_number: "", contact_email: "" }]);
+    }
+
+    if (facility.audit_number) {
+      setNotes((prev) => (prev ? prev : `Audit Number: ${facility.audit_number}`));
+    }
+
+    setFacilityDropdownOpen(false);
+    setFacilitySearch("");
+    setErrors({});
+  }
+
+  function handleSelectEnquiry(enquiry: PowerEnquiry) {
+    const eId = enquiry.id || enquiry._id || "";
+    setSelectedPartyId(eId);
+    setSelectedLeadId(eId);
+    setPartyName(enquiry.name || "");
+
+    const parts = [enquiry.address, enquiry.city].filter(Boolean);
+    if (parts.length > 0) {
+      setAddress(parts.join(", "));
+    }
+
+    if (Array.isArray(enquiry.requested_audit_types) && enquiry.requested_audit_types.length > 0) {
+      setPurpose(enquiry.requested_audit_types.join(", "));
+    } else if (enquiry.source) {
+      setPurpose(`Enquiry Follow-up (${enquiry.source})`);
+    }
+
+    const reps = Array.isArray(enquiry.client_representatives) && enquiry.client_representatives.length > 0
+      ? enquiry.client_representatives
+      : [];
+
+    const list: ContactFormItem[] = [];
+    reps.forEach((rep, idx) => {
+      if (rep.name || rep.contact_number || rep.email) {
+        list.push({
+          id: `c-enq-${idx}-${Date.now()}`,
+          contact_person: rep.name || "",
+          contact_number: rep.contact_number || "",
+          contact_email: rep.email || "",
+          designation: rep.designation || "",
+        });
+      }
+    });
+
+    if (list.length === 0 && (enquiry.client_representative || enquiry.client_contact_number || enquiry.client_email)) {
+      list.push({
+        id: `c-enq-main-${Date.now()}`,
+        contact_person: enquiry.client_representative || "",
+        contact_number: enquiry.client_contact_number || "",
+        contact_email: enquiry.client_email || "",
+      });
+    }
+
+    if (list.length > 0) {
+      setContacts(list);
+    } else {
+      setContacts([{ id: "c-1", contact_person: "", contact_number: "", contact_email: "" }]);
+    }
+
+    if (enquiry.enquiry_number) {
+      setNotes((prev) => (prev ? prev : `Enquiry Number: ${enquiry.enquiry_number}`));
+    }
+
+    setEnquiryDropdownOpen(false);
+    setEnquirySearch("");
+    setErrors({});
   }
 
   function handleSelectLead(lead: LeadRecord) {
@@ -457,16 +691,40 @@ export function VisitFormModal({
     setSelectedLeadId(leadId);
     setSelectedPartyId("");
     setPartyName(leadDisplayName(lead));
-
-    const primary = primaryLeadContact(lead);
-    setContactPerson(primary?.name || lead.name || "");
-    setContactNumber(primary?.phone || lead.phone || lead.alternate_phone || "");
-    setContactEmail(primary?.email || lead.email || "");
     setAddress(formatLeadAddress(lead));
 
+    const list: ContactFormItem[] = [];
+    if (Array.isArray(lead.contacts) && lead.contacts.length > 0) {
+      lead.contacts.forEach((c, idx) => {
+        if (c.name || c.phone || c.alternate_phone || c.email) {
+          list.push({
+            id: `lead-c-${idx}-${Date.now()}`,
+            contact_person: c.name || "",
+            contact_number: c.phone || c.alternate_phone || "",
+            contact_email: c.email || "",
+            designation: c.designation || c.department || "",
+          });
+        }
+      });
+    }
+
+    if (list.length === 0 && (lead.name || lead.phone || lead.alternate_phone || lead.email)) {
+      list.push({
+        id: `lead-root-${Date.now()}`,
+        contact_person: lead.name || "",
+        contact_number: lead.phone || lead.alternate_phone || "",
+        contact_email: lead.email || "",
+      });
+    }
+
+    if (list.length === 0) {
+      list.push({ id: "c-1", contact_person: "", contact_number: "", contact_email: "" });
+    }
+
+    setContacts(list);
     setLeadDropdownOpen(false);
     setLeadSearch("");
-    setErrors((prev) => ({ ...prev, partyName: "", contactPerson: "", contactNumber: "" }));
+    setErrors({});
   }
 
   function handlePartyTypeChange(nextType: WorkPlanVisitPartyType) {
@@ -475,7 +733,7 @@ export function VisitFormModal({
       setSelectedPartyId("");
       setSelectedLeadId("");
     }
-    if (nextType === "existing") {
+    if (nextType === "existing" || nextType === "facility") {
       setSelectedLeadId("");
     }
     if (nextType === "existing_lead") {
@@ -483,7 +741,54 @@ export function VisitFormModal({
     }
     setPartyDropdownOpen(false);
     setLeadDropdownOpen(false);
+    setFacilityDropdownOpen(false);
+    setEnquiryDropdownOpen(false);
   }
+
+  const handleAddContact = () => {
+    setContacts((prev) => [
+      ...prev,
+      {
+        id: `c-new-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        contact_person: "",
+        contact_number: "",
+        contact_email: "",
+      },
+    ]);
+  };
+
+  const handleRemoveContact = (index: number) => {
+    if (contacts.length <= 1) return;
+    setContacts((prev) => prev.filter((_, i) => i !== index));
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next[`contactPerson_${index}`];
+      delete next[`contactNumber_${index}`];
+      delete next[`contactEmail_${index}`];
+      return next;
+    });
+  };
+
+  const handleContactChange = (index: number, field: keyof ContactFormItem, value: string) => {
+    setContacts((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value };
+      return next;
+    });
+    const errKey =
+      field === "contact_person"
+        ? `contactPerson_${index}`
+        : field === "contact_number"
+        ? `contactNumber_${index}`
+        : `contactEmail_${index}`;
+    if (errors[errKey]) {
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next[errKey];
+        return next;
+      });
+    }
+  };
 
   function handleSave() {
     if (planCompleted) return;
@@ -492,43 +797,72 @@ export function VisitFormModal({
       errs.planDate = "Plan date is required";
     }
     if (!partyName.trim()) {
-      errs.partyName = isExistingLead
+      errs.partyName = isFacility
+        ? "Facility name is required"
+        : isEnquiry
+        ? "Enquiry name is required"
+        : isExistingLead
         ? "Lead / company name is required"
         : "Party/Company name is required";
-    }
-    if (!contactPerson.trim()) {
-      errs.contactPerson = "Contact person name is required";
-    }
-    if (!contactNumber.trim()) {
-      errs.contactNumber = "Contact number is required";
-    }
-    if (contactEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail.trim())) {
-      errs.contactEmail = "Enter a valid email address";
     }
     if (isExistingParty && !selectedPartyId) {
       errs.partyName = "Select an existing party from the list";
     }
+    if (isFacility && !selectedPartyId) {
+      errs.partyName = "Select a facility from the search list";
+    }
+    if (isEnquiry && !selectedPartyId) {
+      errs.partyName = "Select an enquiry from the search list";
+    }
+
+    if (contacts.length === 0) {
+      errs.contacts = "At least one contact person is required";
+    }
+
+    contacts.forEach((c, idx) => {
+      if (!c.contact_person.trim()) {
+        errs[`contactPerson_${idx}`] = "Contact person name is required";
+      }
+      if (!c.contact_number.trim()) {
+        errs[`contactNumber_${idx}`] = "Contact phone / mobile is required";
+      }
+      if (c.contact_email?.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.contact_email.trim())) {
+        errs[`contactEmail_${idx}`] = "Enter a valid email address";
+      }
+    });
 
     if (Object.keys(errs).length > 0) {
       setErrors(errs);
       return;
     }
 
-    const sanitizedEmail =
-      contactEmail.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail.trim())
-        ? contactEmail.trim()
-        : `${(contactPerson.trim().toLowerCase().replace(/[^a-z0-9]/g, "") || "contact")}@client.com`;
+    const primary = contacts[0] || { contact_person: "", contact_number: "", contact_email: "" };
+    const primarySanitizedEmail =
+      primary.contact_email?.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(primary.contact_email.trim())
+        ? primary.contact_email.trim()
+        : `${(primary.contact_person.trim().toLowerCase().replace(/[^a-z0-9]/g, "") || "contact")}@client.com`;
 
-    // Backend accepts `party` for party_type=existing; omit for leads / new entries.
+    const cleanContacts = contacts.map((c) => ({
+      contact_person: c.contact_person.trim(),
+      contact_number: c.contact_number.trim(),
+      contact_email:
+        c.contact_email?.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.contact_email.trim())
+          ? c.contact_email.trim()
+          : undefined,
+      ...(c.designation?.trim() ? { designation: c.designation.trim() } : {}),
+    }));
+
+    // Backend accepts `party` for party_type=existing / facility / enquiry.
     onSubmit({
       planDate: internalPlanDate,
       salesUserId: internalSalesUserId || sessionUserId,
       party_type: partyType,
-      ...(isExistingParty && selectedPartyId ? { party: selectedPartyId } : {}),
+      ...((isExistingParty || isFacility || isEnquiry) && selectedPartyId ? { party: selectedPartyId } : {}),
       party_name: partyName.trim(),
-      contact_person: contactPerson.trim(),
-      contact_number: contactNumber.trim(),
-      contact_email: sanitizedEmail,
+      contact_person: primary.contact_person.trim(),
+      contact_number: primary.contact_number.trim(),
+      contact_email: primarySanitizedEmail,
+      contacts: cleanContacts,
       address: address.trim() || undefined,
       purpose: purpose.trim() || undefined,
       notes: notes.trim() || undefined,
@@ -538,21 +872,53 @@ export function VisitFormModal({
     });
   }
 
-  const searchLabel = isExistingLead
+  const searchLabel = isFacility
+    ? "Search Audit Facility"
+    : isEnquiry
+    ? "Search Audit Enquiry"
+    : isExistingLead
     ? "Search Existing Lead"
     : "Search Existing Party / Lead";
-  const searchPlaceholder = isExistingLead
+
+  const searchPlaceholder = isFacility
+    ? "Search by facility name, audit no, city, contact..."
+    : isEnquiry
+    ? "Search by enquiry name, enquiry no, city, contact..."
+    : isExistingLead
     ? "Search by company, contact, phone, lead no..."
     : "Search by party name, mobile, email...";
-  const dropdownOpen = isExistingLead ? leadDropdownOpen : partyDropdownOpen;
-  const searchValue = isExistingLead
+
+  const dropdownOpen = isFacility
+    ? facilityDropdownOpen
+    : isEnquiry
+    ? enquiryDropdownOpen
+    : isExistingLead
+    ? leadDropdownOpen
+    : partyDropdownOpen;
+
+  const searchValue = isFacility
+    ? facilityDropdownOpen
+      ? facilitySearch
+      : partyName
+    : isEnquiry
+    ? enquiryDropdownOpen
+      ? enquirySearch
+      : partyName
+    : isExistingLead
     ? leadDropdownOpen
       ? leadSearch
       : partyName
     : partyDropdownOpen
       ? partySearch
       : partyName;
-  const isSearchLoading = isExistingLead ? isLeadsLoading : isPartiesLoading;
+
+  const isSearchLoading = isFacility
+    ? isFacilitiesLoading
+    : isEnquiry
+    ? isEnquiriesLoading
+    : isExistingLead
+    ? isLeadsLoading
+    : isPartiesLoading;
 
   return (
     <div
@@ -576,6 +942,8 @@ export function VisitFormModal({
                 ? "Portal Admin — Assign and schedule visit for any portal member"
                 : managerRole
                 ? "Portal Manager — Assign and schedule visit for yourself or your reporting team"
+                : isPowerAudit
+                ? "Power Audit — Schedule site audit facility & enquiry field visits"
                 : "Schedule your field visit details"}
             </p>
           </div>
@@ -688,8 +1056,8 @@ export function VisitFormModal({
             <label className={labelClass}>
               Party Category / Type <span className="text-rose-500">*</span>
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {PARTY_TYPE_OPTIONS.map((opt) => {
+            <div className={`grid gap-2 ${partyTypeOptions.length > 4 ? "grid-cols-2 sm:grid-cols-3" : "grid-cols-2 sm:grid-cols-4"}`}>
+              {partyTypeOptions.map((opt) => {
                 const isSelected = partyType === opt.value;
                 return (
                   <label
@@ -742,13 +1110,21 @@ export function VisitFormModal({
                   placeholder={searchPlaceholder}
                   value={searchValue}
                   onFocus={() => {
-                    if (isExistingLead) setLeadDropdownOpen(true);
+                    if (isFacility) setFacilityDropdownOpen(true);
+                    else if (isEnquiry) setEnquiryDropdownOpen(true);
+                    else if (isExistingLead) setLeadDropdownOpen(true);
                     else setPartyDropdownOpen(true);
                   }}
                   onChange={(e) => {
                     const value = e.target.value;
                     setPartyName(value);
-                    if (isExistingLead) {
+                    if (isFacility) {
+                      setFacilitySearch(value);
+                      if (!facilityDropdownOpen) setFacilityDropdownOpen(true);
+                    } else if (isEnquiry) {
+                      setEnquirySearch(value);
+                      if (!enquiryDropdownOpen) setEnquiryDropdownOpen(true);
+                    } else if (isExistingLead) {
                       setLeadSearch(value);
                       if (!leadDropdownOpen) setLeadDropdownOpen(true);
                     } else {
@@ -768,6 +1144,8 @@ export function VisitFormModal({
                       setSelectedLeadId("");
                       setPartySearch("");
                       setLeadSearch("");
+                      setFacilitySearch("");
+                      setEnquirySearch("");
                     }}
                     className="absolute right-2.5 top-2.5 text-muted hover:text-foreground"
                   >
@@ -784,6 +1162,135 @@ export function VisitFormModal({
                 <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-60 overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
                   {isSearchLoading ? (
                     <div className="p-3 text-center text-xs text-muted">Searching…</div>
+                  ) : isFacility ? (
+                    facilitiesData.length === 0 ? (
+                      <div className="p-3 text-center text-xs text-muted">
+                        No audit facilities found. You can switch to &quot;New Party&quot; to add manually.
+                      </div>
+                    ) : (
+                      facilitiesData.map((facility: PowerFacility) => {
+                        const fId = facility.id || facility._id || "";
+                        const isSelected = selectedPartyId === fId;
+                        return (
+                          <div
+                            key={fId}
+                            onClick={() => handleSelectFacility(facility)}
+                            className={`flex cursor-pointer items-start justify-between border-b border-border/50 p-2.5 text-xs hover:bg-surface-muted transition ${
+                              isSelected ? "bg-primary/10" : ""
+                            }`}
+                          >
+                            <div className="space-y-1 min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-foreground truncate">
+                                  {facility.name}
+                                </span>
+                                {facility.audit_number ? (
+                                  <span className="shrink-0 rounded-md bg-blue-500/10 px-1.5 py-0.5 text-[10px] font-bold text-blue-600 dark:text-blue-400">
+                                    {facility.audit_number}
+                                  </span>
+                                ) : null}
+                                {facility.status ? (
+                                  <span
+                                    className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
+                                      facility.status === "active"
+                                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                        : "bg-zinc-500/10 text-zinc-500"
+                                    }`}
+                                  >
+                                    {facility.status.toUpperCase()}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="text-muted text-[11px] flex flex-wrap items-center gap-x-2">
+                                {facility.client_representative ? (
+                                  <span>{facility.client_representative}</span>
+                                ) : null}
+                                {facility.client_contact_number ? (
+                                  <span>• {facility.client_contact_number}</span>
+                                ) : null}
+                                {facility.audit_type ? (
+                                  <span className="text-primary font-medium">
+                                    • {facility.audit_type}
+                                  </span>
+                                ) : null}
+                              </div>
+                              {facility.address || facility.city ? (
+                                <div className="text-muted/80 text-[11px] truncate">
+                                  {[facility.address, facility.city]
+                                    .filter(Boolean)
+                                    .join(", ")}
+                                </div>
+                              ) : null}
+                            </div>
+                            {isSelected && (
+                              <Check className="h-4 w-4 text-primary shrink-0 ml-2 mt-0.5" />
+                            )}
+                          </div>
+                        );
+                      })
+                    )
+                  ) : isEnquiry ? (
+                    enquiriesData.length === 0 ? (
+                      <div className="p-3 text-center text-xs text-muted">
+                        No audit enquiries found. You can switch to &quot;New Party&quot; to add manually.
+                      </div>
+                    ) : (
+                      enquiriesData.map((enquiry: PowerEnquiry) => {
+                        const eId = enquiry.id || enquiry._id || "";
+                        const isSelected = selectedPartyId === eId || selectedLeadId === eId;
+                        return (
+                          <div
+                            key={eId}
+                            onClick={() => handleSelectEnquiry(enquiry)}
+                            className={`flex cursor-pointer items-start justify-between border-b border-border/50 p-2.5 text-xs hover:bg-surface-muted transition ${
+                              isSelected ? "bg-primary/10" : ""
+                            }`}
+                          >
+                            <div className="space-y-1 min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-foreground truncate">
+                                  {enquiry.name}
+                                </span>
+                                {enquiry.enquiry_number ? (
+                                  <span className="shrink-0 rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                                    {enquiry.enquiry_number}
+                                  </span>
+                                ) : null}
+                                {enquiry.enquiry_status ? (
+                                  <span className="shrink-0 rounded-md bg-purple-500/10 px-1.5 py-0.5 text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase">
+                                    {enquiry.enquiry_status}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div className="text-muted text-[11px] flex flex-wrap items-center gap-x-2">
+                                {enquiry.client_representative ? (
+                                  <span>{enquiry.client_representative}</span>
+                                ) : null}
+                                {enquiry.client_contact_number ? (
+                                  <span>• {enquiry.client_contact_number}</span>
+                                ) : null}
+                                {Array.isArray(enquiry.requested_audit_types) &&
+                                enquiry.requested_audit_types.length > 0 ? (
+                                  <span className="text-primary font-medium">
+                                    • {enquiry.requested_audit_types.join(", ")}
+                                  </span>
+                                ) : null}
+                              </div>
+                              {enquiry.address || enquiry.city ? (
+                                <div className="text-muted/80 text-[11px] truncate">
+                                  {[enquiry.address, enquiry.city]
+                                    .filter(Boolean)
+                                    .join(", ")}
+                                </div>
+                              ) : null}
+                            </div>
+                            {isSelected && (
+                              <Check className="h-4 w-4 text-primary shrink-0 ml-2 mt-0.5" />
+                            )}
+                          </div>
+                        );
+                      })
+                    )
                   ) : isExistingLead ? (
                     leadsData.length === 0 ? (
                       <div className="p-3 text-center text-xs text-muted">
@@ -887,69 +1394,154 @@ export function VisitFormModal({
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className={labelClass}>
-                Contact Person Name <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={contactPerson}
-                onChange={(e) => setContactPerson(e.target.value)}
-                placeholder="Dr. Rajesh Gupta / Mr. Sharma"
+          {/* Contacts Section */}
+          <div className="space-y-3 rounded-xl border border-border bg-surface-muted/40 p-3.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-primary" />
+                <span className="text-xs font-bold text-foreground">
+                  Contacts / People Met ({contacts.length})
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleAddContact}
                 disabled={isSaving}
-                className={inputClass}
-              />
-              {errors.contactPerson && (
-                <p className="mt-1 text-xs text-rose-500">{errors.contactPerson}</p>
-              )}
+                className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition cursor-pointer"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Add Contact</span>
+              </button>
             </div>
 
-            <div>
-              <label className={labelClass}>
-                Contact Phone / Mobile <span className="text-rose-500">*</span>
-              </label>
-              <input
-                type="tel"
-                value={contactNumber}
-                onChange={(e) => setContactNumber(e.target.value)}
-                placeholder="9876543210"
-                disabled={isSaving}
-                className={inputClass}
-              />
-              {errors.contactNumber && (
-                <p className="mt-1 text-xs text-rose-500">{errors.contactNumber}</p>
-              )}
+            {errors.contacts && (
+              <p className="text-xs text-rose-500 font-medium">{errors.contacts}</p>
+            )}
+
+            <div className="space-y-3">
+              {contacts.map((contact, idx) => (
+                <div
+                  key={contact.id}
+                  className="rounded-lg border border-border bg-card p-3 space-y-2.5 relative shadow-2xs"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold ${
+                          idx === 0
+                            ? "bg-primary/15 text-primary"
+                            : "bg-surface-muted text-muted"
+                        }`}
+                      >
+                        {idx === 0 ? "Primary Contact" : `Contact #${idx + 1}`}
+                      </span>
+                      {contact.designation && (
+                        <span className="text-[10px] text-muted italic">
+                          ({contact.designation})
+                        </span>
+                      )}
+                    </div>
+                    {contacts.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveContact(idx)}
+                        disabled={isSaving}
+                        className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-600 transition cursor-pointer"
+                        title="Remove contact"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="mb-1 block text-[11px] font-medium text-muted">
+                        Contact Person Name <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <User className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted" />
+                        <input
+                          type="text"
+                          value={contact.contact_person}
+                          onChange={(e) =>
+                            handleContactChange(idx, "contact_person", e.target.value)
+                          }
+                          placeholder="Dr. Rajesh Gupta / Mr. Sharma"
+                          disabled={isSaving}
+                          className={`${inputClass} pl-8 text-xs`}
+                        />
+                      </div>
+                      {errors[`contactPerson_${idx}`] && (
+                        <p className="mt-1 text-[11px] text-rose-500">
+                          {errors[`contactPerson_${idx}`]}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-[11px] font-medium text-muted">
+                        Contact Phone / Mobile <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <Phone className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted" />
+                        <input
+                          type="tel"
+                          value={contact.contact_number}
+                          onChange={(e) =>
+                            handleContactChange(idx, "contact_number", e.target.value)
+                          }
+                          placeholder="9876543210"
+                          disabled={isSaving}
+                          className={`${inputClass} pl-8 text-xs`}
+                        />
+                      </div>
+                      {errors[`contactNumber_${idx}`] && (
+                        <p className="mt-1 text-[11px] text-rose-500">
+                          {errors[`contactNumber_${idx}`]}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-[11px] font-medium text-muted">
+                      Contact Email (Optional)
+                    </label>
+                    <div className="relative">
+                      <Mail className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted" />
+                      <input
+                        type="email"
+                        value={contact.contact_email}
+                        onChange={(e) =>
+                          handleContactChange(idx, "contact_email", e.target.value)
+                        }
+                        placeholder="contact@client.com"
+                        disabled={isSaving}
+                        className={`${inputClass} pl-8 text-xs`}
+                      />
+                    </div>
+                    {errors[`contactEmail_${idx}`] && (
+                      <p className="mt-1 text-[11px] text-rose-500">
+                        {errors[`contactEmail_${idx}`]}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className={labelClass}>Contact Email (Optional)</label>
-              <input
-                type="email"
-                value={contactEmail}
-                onChange={(e) => setContactEmail(e.target.value)}
-                placeholder="contact@client.com"
-                disabled={isSaving}
-                className={inputClass}
-              />
-              {errors.contactEmail && (
-                <p className="mt-1 text-xs text-rose-500">{errors.contactEmail}</p>
-              )}
-            </div>
-
-            <div>
-              <label className={labelClass}>Address / Location</label>
-              <input
-                type="text"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="City, State, or full address"
-                disabled={isSaving}
-                className={inputClass}
-              />
-            </div>
+          <div>
+            <label className={labelClass}>Address / Location</label>
+            <input
+              type="text"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="City, State, or full address"
+              disabled={isSaving}
+              className={inputClass}
+            />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

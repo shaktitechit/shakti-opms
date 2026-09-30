@@ -381,6 +381,26 @@ export function TasksVisitsPage() {
             }
           }
 
+          const visitContacts = Array.isArray(v.contacts) && v.contacts.length > 0
+            ? v.contacts
+            : (v.contact_person || v.contact_number || v.phone || v.contact_email)
+              ? [
+                  {
+                    contact_person: v.contact_person,
+                    contact_number: v.contact_number || v.phone,
+                    contact_email: v.contact_email,
+                  },
+                ]
+              : [];
+
+          const contactPersonStr = visitContacts.length > 0
+            ? visitContacts.map((c) => c.contact_person).filter(Boolean).join(", ") || ""
+            : v.contact_person || "";
+
+          const contactNumberStr = visitContacts.length > 0
+            ? visitContacts.map((c) => c.contact_number).filter(Boolean).join(", ") || ""
+            : v.contact_number || v.phone || "";
+
           list.push({
             id: vId,
             planId: pId,
@@ -394,8 +414,8 @@ export function TasksVisitsPage() {
               v.party_name ||
               (typeof v.party === "object" ? (v.party as any)?.party_name : undefined) ||
               "Field Visit",
-            contactPerson: v.contact_person || "",
-            contactNumber: v.contact_number || v.phone || "",
+            contactPerson: contactPersonStr,
+            contactNumber: contactNumberStr,
             locationOrAddress: v.address || p.location || "",
             descriptionOrNotes: v.purpose || v.notes || "",
             plannedTime: formatTime(v.planned_start_time),

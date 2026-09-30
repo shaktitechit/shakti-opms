@@ -318,9 +318,25 @@ export function DownloadWorkPlansModal({
           .map((v, vIdx) => {
             const partyObj = typeof v.party === "object" && v.party !== null ? (v.party as Record<string, unknown>) : null;
             const partyName = v.party_name || (partyObj?.party_name as string) || "Visit";
-            const contactPerson = v.contact_person || (partyObj?.contact_person as string) || "";
-            const contactMobile = v.contact_number || (partyObj?.mobile as string) || "";
-            const contactInfo = [contactPerson, contactMobile].filter(Boolean).join(" · ") || "—";
+            
+            const visitContacts = Array.isArray(v.contacts) && v.contacts.length > 0
+              ? v.contacts
+              : (v.contact_person || v.contact_number || (partyObj?.contact_person as string) || (partyObj?.mobile as string))
+                ? [
+                    {
+                      contact_person: v.contact_person || (partyObj?.contact_person as string) || "",
+                      contact_number: v.contact_number || (partyObj?.mobile as string) || "",
+                      contact_email: v.contact_email || (partyObj?.email as string) || "",
+                    },
+                  ]
+                : [];
+
+            const contactInfo = visitContacts.length > 0
+              ? visitContacts
+                  .map((c) => [c.contact_person, c.contact_number].filter(Boolean).join(" · "))
+                  .filter(Boolean)
+                  .join(" | ") || "—"
+              : "—";
             const billingAddr = partyObj?.billing_address as { city?: string } | undefined;
             const address = v.address || billingAddr?.city || planLocation;
 

@@ -123,51 +123,17 @@ export function readSessionFromStorage(): UserSession | null {
       }
     }
 
-    if (!hasSessionCookie()) {
-      const rawFallback = window.localStorage.getItem(SESSION_STORAGE_KEY);
-      if (!rawFallback) {
-        saveSessionToStorage(null);
-        return null;
-      }
-    }
-
     const accessToken = getCookie(ACCESS_COOKIE);
     const refreshToken = getCookie(REFRESH_COOKIE) || undefined;
-    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw) as UserSession;
-        if (parsed?.user && hasAppAccess(parsed.user)) {
-          const fromJwt = parsed.token ? parseJwtUser(parsed.token) : null;
-          const user =
-            fromJwt && hasAppAccess(fromJwt)
-              ? {
-                  ...parsed.user,
-                  ...fromJwt,
-                  portals:
-                    fromJwt.portals?.length
-                      ? fromJwt.portals
-                      : parsed.user.portals,
-                }
-              : parsed.user;
-          return {
-            token: parsed.token || accessToken || "",
-            refreshToken: refreshToken || parsed.refreshToken,
-            refreshExpiresAt: parsed.refreshExpiresAt,
-            user,
-          };
-        }
-      } catch {
-        /* ignore parse error */
-      }
-    }
 
     if (accessToken) {
       const userFromJwt = parseJwtUser(accessToken);
       if (userFromJwt && hasAppAccess(userFromJwt)) {
-        const session = { token: accessToken, refreshToken, user: userFromJwt };
-        window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
-        return session;
+        return {
+          token: accessToken,
+          refreshToken,
+          user: userFromJwt,
+        };
       }
     }
 
@@ -191,7 +157,12 @@ export function saveSessionToStorage(session: UserSession | null): void {
       deleteCookie(cookieName);
     }
   } else {
-    window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+    // Purge legacy localStorage session key
+    try {
+      window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
     writeSessionCookies(session);
   }
 }

@@ -266,14 +266,6 @@ export function PortalsSection() {
           /* keep fallback */
         }
         document.cookie = `access_token=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
-
-        // localStorage is origin-scoped; only useful for same-origin micro-frontends.
-        if (portal.storageKey && !portal.isOpmsWorkspace) {
-          localStorage.setItem(
-            portal.storageKey,
-            JSON.stringify({ token, user }),
-          );
-        }
       } catch {
         /* ignore */
       }

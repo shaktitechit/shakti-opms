@@ -40,6 +40,7 @@ const PORTAL_HOME = "/super_admin" as const;
 
 export default function SuperAdminOverview() {
   const user = useAppSelector((state) => state.auth.user);
+  const token = useAppSelector((state) => state.auth.token);
   const userName =
     typeof user?.name === "string" ? user.name : "Super Administrator";
 
@@ -117,23 +118,13 @@ export default function SuperAdminOverview() {
     isParentDataFetching;
 
   const handleOpenUserManager = () => {
-    let token = "";
-    try {
-      const authRaw = localStorage.getItem("medica.auth");
-      if (authRaw) {
-        const parsed = JSON.parse(authRaw);
-        token = parsed.token || "";
-      }
-      if (token) {
-        document.cookie = `access_token=${encodeURIComponent(token)}; path=/; SameSite=Lax; Max-Age=${60 * 60 * 8}`;
-        localStorage.setItem("shakti.user_manager.session", JSON.stringify({ token, user }));
-      }
-    } catch {
-      // Fallback
+    const currentToken = token || "";
+    if (currentToken && typeof document !== "undefined") {
+      document.cookie = `access_token=${encodeURIComponent(currentToken)}; path=/; SameSite=Lax; Max-Age=${60 * 60 * 8}`;
     }
     const baseUrl = process.env.NEXT_PUBLIC_USER_MANAGER_URL || "http://localhost:7004/dashboard";
     void (async () => {
-      const targetUrl = token ? await buildSsoLaunchUrl(baseUrl, token) : baseUrl;
+      const targetUrl = currentToken ? await buildSsoLaunchUrl(baseUrl, currentToken) : baseUrl;
       window.open(targetUrl, "_blank");
     })();
   };

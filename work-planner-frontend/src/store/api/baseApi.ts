@@ -114,6 +114,8 @@ export const baseApi = createApi({
     "Product",
     "Party",
     "Lead",
+    "PowerFacility",
+    "PowerEnquiry",
     "Notifications",
   ],
   endpoints: () => ({}),

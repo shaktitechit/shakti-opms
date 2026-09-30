@@ -214,7 +214,7 @@ function registerModels() {
         sequence: { type: Number, required: true, min: 1, default: 1 },
         party_type: {
           type: String,
-          enum: ['existing', 'new_party', 'new_lead', 'existing_lead'],
+          enum: ['existing', 'new_party', 'new_lead', 'existing_lead', 'facility', 'enquiry'],
           default: 'existing',
           index: true,
         },
@@ -521,6 +521,20 @@ function registerModels() {
     mongoose.model('WorkPlannerReportingEdge', reportingEdgeSchema);
   }
 
+  // Project management schemas
+  if (!mongoose.models.Project) {
+    require('../models/Project');
+  }
+  if (!mongoose.models.ProjectActionStep) {
+    require('../models/ProjectActionStep');
+  }
+  if (!mongoose.models.ProjectMessage) {
+    require('../models/ProjectMessage');
+  }
+  if (!mongoose.models.ProjectFile) {
+    require('../models/ProjectFile');
+  }
+
   _cached = {
     User: mongoose.model('User'),
     CompanyInfo: mongoose.models.CompanyInfo || null,
@@ -534,6 +548,10 @@ function registerModels() {
     WorkPlanExpense: mongoose.model('WorkPlanExpense'),
     UserWorkPlannerSettings: mongoose.model('UserWorkPlannerSettings'),
     WorkPlannerReportingEdge: mongoose.model('WorkPlannerReportingEdge'),
+    Project: mongoose.model('Project'),
+    ProjectActionStep: mongoose.model('ProjectActionStep'),
+    ProjectMessage: mongoose.model('ProjectMessage'),
+    ProjectFile: mongoose.model('ProjectFile'),
   };
 
   return _cached;

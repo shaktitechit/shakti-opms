@@ -27,10 +27,13 @@ import {
   ShieldCheck,
   CalendarClock,
   Camera,
+  RotateCcw,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   useGetPlanQuery,
+  useLazyGetPlansQuery,
   useSubmitPlanMutation,
   useApprovePlanMutation,
   useRejectPlanMutation,
@@ -47,6 +50,7 @@ import {
   useAddWorkPlanAuthorityRemarkMutation,
 } from "@/store/api/workPlannerApiSlice";
 import { isWpAdmin, isWpManager, isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
+import { resolvePublicAssetUrl, withFileAccessToken } from "@/lib/env";
 import type {
   DayEndPayload,
   WorkPlanRecord,
@@ -108,6 +112,7 @@ function RichTextDisplay({ content, className = "" }: { content?: string; classN
 export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   const router = useRouter();
   const sessionUser = useMemo(() => readSessionFromStorage()?.user, []);
+  const sessionToken = useMemo(() => readSessionFromStorage()?.token, []);
   const adminRole = isWpAdmin(sessionUser);
   const managerRole = isWpManager(sessionUser);
   const elevatedRole = isWpElevated(sessionUser);
@@ -120,6 +125,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   }
 
   const { data: plan, isLoading: loading, refetch: loadPlan } = useGetPlanQuery(planId);
+  const [lazyGetPlans] = useLazyGetPlansQuery();
   const [actionLoading, setActionLoading] = useState(false);
 
   const [submitPlanMut] = useSubmitPlanMutation();
@@ -477,7 +483,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
           </div>
         ) : null}
 
-        {/* Plan Senior Remarks Card — visible to the plan owner's senior only */}
+        {/* Plan Senior Remarks Card — visible to plan owners, executives, and seniors */}
         {(() => {
           const planOwnerId = plan.sales_user
             ? typeof plan.sales_user === "object"
@@ -485,14 +491,15 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
               : String(plan.sales_user)
             : "";
           const isSeniorViewing = elevatedRole && currentUserId !== planOwnerId;
-          return isSeniorViewing ? (
+          const hasSeniorRemarks = Boolean(plan.manager_remarks) || (Array.isArray(plan.authority_remarks) && plan.authority_remarks.length > 0);
+          return isSeniorViewing || hasSeniorRemarks ? (
           <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-4 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5 text-xs font-bold text-purple-700 dark:text-purple-300">
                 <ShieldCheck className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                <span>Senior Remarks</span>
+                <span>Senior Directives & Remarks</span>
               </div>
-              {elevatedRole && (
+              {isSeniorViewing && (
                 <button
                   type="button"
                   onClick={() => {
@@ -598,22 +605,72 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                       {renderVisitStatusBadge(v.status)}
                     </div>
 
-                    {v.contact_person || v.phone ? (
-                      <div className="flex items-center gap-4 text-xs text-foreground">
-                        {v.contact_person && (
-                          <span className="flex items-center gap-1">
-                            <UserCheck className="h-3.5 w-3.5 text-muted" />
-                            {v.contact_person}
-                          </span>
-                        )}
-                        {v.phone && (
-                          <span className="flex items-center gap-1">
-                            <Phone className="h-3.5 w-3.5 text-muted" />
-                            {v.phone}
-                          </span>
-                        )}
-                      </div>
-                    ) : null}
+                    {(() => {
+                      const visitContacts = Array.isArray(v.contacts) && v.contacts.length > 0
+                        ? v.contacts
+                        : (v.contact_person || v.contact_number || v.phone || v.contact_email)
+                          ? [
+                              {
+                                contact_person: v.contact_person,
+                                contact_number: v.contact_number || v.phone,
+                                contact_email: v.contact_email,
+                              },
+                            ]
+                          : [];
+
+                      if (visitContacts.length === 0) return null;
+
+                      return (
+                        <div className="space-y-1.5 rounded-lg border border-border/60 bg-surface-muted/30 p-2.5">
+                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
+                            <Users className="h-3.5 w-3.5 text-primary" />
+                            <span>Contacts ({visitContacts.length})</span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {visitContacts.map((c, cIdx) => (
+                              <div
+                                key={cIdx}
+                                className="flex flex-col gap-0.5 rounded-md border border-border/50 bg-card p-2 text-xs"
+                              >
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="font-semibold text-foreground flex items-center gap-1 truncate">
+                                    <UserCheck className="h-3.5 w-3.5 text-muted shrink-0" />
+                                    {c.contact_person || "Contact"}
+                                  </span>
+                                  {cIdx === 0 && visitContacts.length > 1 && (
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                                      Primary
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted mt-0.5">
+                                  {c.contact_number && (
+                                    <a
+                                      href={`tel:${c.contact_number}`}
+                                      className="flex items-center gap-1 text-foreground/80 hover:text-primary transition"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <Phone className="h-3 w-3 text-muted" />
+                                      <span>{c.contact_number}</span>
+                                    </a>
+                                  )}
+                                  {c.contact_email && (
+                                    <a
+                                      href={`mailto:${c.contact_email}`}
+                                      className="flex items-center gap-1 text-foreground/80 hover:text-primary transition truncate max-w-[180px]"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <Mail className="h-3 w-3 text-muted shrink-0" />
+                                      <span className="truncate">{c.contact_email}</span>
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     {v.pending_remarks ? (
                       <div className="rounded-lg bg-slate-500/10 p-2 text-xs text-slate-600 dark:text-slate-400">
@@ -649,15 +706,17 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                           Verified Client Selfies
                         </span>
                         <div className="flex flex-wrap items-center gap-3">
-                          {v.check_in_selfie_url ? (
+                          {v.check_in_selfie_url ? (() => {
+                            const checkInUrl = withFileAccessToken(resolvePublicAssetUrl(v.check_in_selfie_url), sessionToken);
+                            return (
                             <div className="space-y-1">
                               <span className="text-[10px] font-semibold text-muted">Check-In Selfie</span>
                               <div className="relative group w-44 h-40 rounded-xl overflow-hidden border border-border shadow-xs bg-black">
                                 <img
-                                  src={v.check_in_selfie_url}
+                                  src={checkInUrl}
                                   alt="Check In Selfie"
                                   className="w-full h-full object-cover group-hover:scale-105 transition duration-200 cursor-pointer"
-                                  onClick={() => window.open(v.check_in_selfie_url, "_blank")}
+                                  onClick={() => window.open(checkInUrl, "_blank")}
                                 />
                                 <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/75 to-transparent p-2 text-[10px] text-white flex flex-col gap-0.5">
                                   <div className="flex items-center gap-1 text-amber-300 font-bold">
@@ -671,16 +730,20 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                                 </div>
                               </div>
                             </div>
-                          ) : null}
-                          {(v.check_out_selfie_url || (v.outcome_selfie_url && v.outcome_selfie_url !== v.check_in_selfie_url)) ? (
+                            );
+                          })() : null}
+                          {(v.check_out_selfie_url || (v.outcome_selfie_url && v.outcome_selfie_url !== v.check_in_selfie_url)) ? (() => {
+                            const checkOutRaw = v.check_out_selfie_url || v.outcome_selfie_url || "";
+                            const checkOutUrl = withFileAccessToken(resolvePublicAssetUrl(checkOutRaw), sessionToken);
+                            return (
                             <div className="space-y-1">
                               <span className="text-[10px] font-semibold text-muted">Check-Out Selfie</span>
                               <div className="relative group w-44 h-40 rounded-xl overflow-hidden border border-border shadow-xs bg-black">
                                 <img
-                                  src={v.check_out_selfie_url || v.outcome_selfie_url}
+                                  src={checkOutUrl}
                                   alt="Check Out Selfie"
                                   className="w-full h-full object-cover group-hover:scale-105 transition duration-200 cursor-pointer"
-                                  onClick={() => window.open(v.check_out_selfie_url || v.outcome_selfie_url, "_blank")}
+                                  onClick={() => window.open(checkOutUrl, "_blank")}
                                 />
                                 <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/75 to-transparent p-2 text-[10px] text-white flex flex-col gap-0.5">
                                   <div className="flex items-center gap-1 text-amber-300 font-bold">
@@ -694,7 +757,8 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                                 </div>
                               </div>
                             </div>
-                          ) : null}
+                            );
+                          })() : null}
                         </div>
                       </div>
                     ) : null}
@@ -707,19 +771,26 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                     ) : null}
 
                     {(() => {
-                      const planOwnerId = plan.sales_user
-                        ? typeof plan.sales_user === "object"
-                          ? String((plan.sales_user as any)._id || (plan.sales_user as any).id || "")
-                          : String(plan.sales_user)
-                        : "";
-                      const isSeniorViewing = elevatedRole && currentUserId !== planOwnerId;
-                      return isSeniorViewing && v.manager_remarks ? (
-                      <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-2 text-xs text-purple-700 dark:text-purple-300">
-                        <div className="flex items-center gap-1 font-bold mb-1">
+                      const hasRemarks = Boolean(v.manager_remarks) || (Array.isArray(v.authority_remarks) && v.authority_remarks.length > 0);
+                      return hasRemarks ? (
+                      <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-2 text-xs text-purple-700 dark:text-purple-300 space-y-1">
+                        <div className="flex items-center gap-1 font-bold">
                           <ShieldCheck className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
-                          <span>Senior Remark:</span>
+                          <span>Senior Directive / Remark:</span>
                         </div>
-                        <RichTextDisplay content={v.manager_remarks} />
+                        {v.manager_remarks ? <RichTextDisplay content={v.manager_remarks} /> : null}
+                        {v.authority_remarks && v.authority_remarks.length > 0 && (
+                          <div className="pt-1 border-t border-purple-500/20 space-y-1 text-[11px]">
+                            {v.authority_remarks.map((r: any, idx: number) => (
+                              <div key={r._id || idx} className="flex items-start justify-between gap-1">
+                                <span className="font-semibold text-purple-800 dark:text-purple-200">
+                                  {r.user_name || "Senior Authority"} ({r.role || "Manager"}):
+                                </span>
+                                <span className="flex-1 text-right">{r.remark}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       ) : null;
                     })()}
@@ -992,19 +1063,26 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                     ) : null}
 
                     {(() => {
-                      const planOwnerId = plan.sales_user
-                        ? typeof plan.sales_user === "object"
-                          ? String((plan.sales_user as any)._id || (plan.sales_user as any).id || "")
-                          : String(plan.sales_user)
-                        : "";
-                      const isSeniorViewing = elevatedRole && currentUserId !== planOwnerId;
-                      return isSeniorViewing && w.manager_remarks ? (
-                      <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-2 text-xs text-purple-700 dark:text-purple-300 ml-7">
-                        <div className="flex items-center gap-1 font-bold mb-1">
+                      const hasRemarks = Boolean(w.manager_remarks) || (Array.isArray(w.authority_remarks) && w.authority_remarks.length > 0);
+                      return hasRemarks ? (
+                      <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-2 text-xs text-purple-700 dark:text-purple-300 ml-7 space-y-1">
+                        <div className="flex items-center gap-1 font-bold">
                           <ShieldCheck className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
-                          <span>Senior Remark:</span>
+                          <span>Senior Directive / Remark:</span>
                         </div>
-                        <RichTextDisplay content={w.manager_remarks} />
+                        {w.manager_remarks ? <RichTextDisplay content={w.manager_remarks} /> : null}
+                        {w.authority_remarks && w.authority_remarks.length > 0 && (
+                          <div className="pt-1 border-t border-purple-500/20 space-y-1 text-[11px]">
+                            {w.authority_remarks.map((r: any, idx: number) => (
+                              <div key={r._id || idx} className="flex items-start justify-between gap-1">
+                                <span className="font-semibold text-purple-800 dark:text-purple-200">
+                                  {r.user_name || "Senior Authority"} ({r.role || "Manager"}):
+                                </span>
+                                <span className="flex-1 text-right">{r.remark}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       ) : null;
                     })()}

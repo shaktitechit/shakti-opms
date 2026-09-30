@@ -24,8 +24,13 @@ const adminRole = requireWorkPlannerRole('admin');
 router.use(requireAuth);
 router.use(requireWorkPlannerAccess);
 
-// Authenticated attachment streaming redirect (browser may pass ?token=)
+// Authenticated attachment streaming & previews (accepts Authorization header or ?token=)
+router.get('/attachments/:attachmentId/preview', controller.previewAttachment);
 router.get('/attachments/:attachmentId/view', controller.viewAttachment);
+router.get('/attachments/:attachmentId/download', controller.downloadAttachment);
+router.get('/files/:fileId/preview', controller.previewAttachment);
+router.get('/files/:fileId/view', controller.viewAttachment);
+router.get('/files/:fileId/download', controller.downloadAttachment);
 
 router.post('/expenses/upload', upload.single('file'), controller.uploadExpenseReceipt);
 router.post('/attachments/upload', upload.single('file'), controller.uploadAttachment);

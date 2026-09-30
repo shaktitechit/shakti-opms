@@ -26,6 +26,7 @@ import {
   AlertTriangle,
   Lock,
   Sparkles,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useGetUsersQuery } from "@/store/api/authApiSlice";
@@ -262,6 +263,10 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
 
   // Modal state for selecting previous pending/in-progress items
   const [previousModalMode, setPreviousModalMode] = useState<"visits" | "tasks" | null>(null);
+
+  // Auto-rollover loading state and tracker
+  const [autoRolloverLoading, setAutoRolloverLoading] = useState(false);
+  const autoRolloverRanRef = useRef<string>("");
 
   // Creation Email Panel Modal state
   const [createMailModalOpen, setCreateMailModalOpen] = useState(false);
@@ -946,6 +951,126 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     }
   }, [planType, dbUserSettings, isEditing, isCopying]);
 
+  // Handle Auto-Rollover of uncompleted visits and tasks from previous valid plans
+  const handleAutoRollover = async (isManual = false) => {
+    if (isPlanCompleted) return;
+    if (!planDate || !targetUserId) return;
+
+    try {
+      setAutoRolloverLoading(true);
+      const res = await lazyGetPlans({
+        sales_user: targetUserId,
+        sales_user_id: targetUserId,
+        limit: 50,
+        include_standalone: false,
+        include_visits: true,
+        include_works: true,
+      }).unwrap();
+
+      const allPlans: WorkPlanRecord[] = res?.data || [];
+      const currentPlanDateNormalized = planDate.split("T")[0];
+
+      // Filter previous plans strictly prior to current plan date and not expired (> 3 days)
+      const previousPlans = allPlans
+        .filter((p) => {
+          if (!p.plan_date) return false;
+          const pDateNormalized = p.plan_date.split("T")[0];
+          if (pDateNormalized >= currentPlanDateNormalized) return false;
+          if (isPlanDate3DaysExpired(p.plan_date)) return false;
+          return true;
+        })
+        .sort((a, b) => new Date(b.plan_date).getTime() - new Date(a.plan_date).getTime());
+
+      if (previousPlans.length === 0) {
+        if (isManual) {
+          toast.info("No eligible previous plans within the 3-day window found for auto-rollover.");
+        }
+        return;
+      }
+
+      const existingVisitIds = new Set(visits.map((v) => String(v._id || v.id || "")).filter(Boolean));
+      const existingWorkIds = new Set(works.map((w) => String(w._id || w.id || "")).filter(Boolean));
+
+      const newVisitsToAdd: Array<Record<string, any>> = [];
+      const newWorksToAdd: Array<Record<string, any>> = [];
+
+      for (const p of previousPlans) {
+        const pDateStr = p.plan_date;
+        if (Array.isArray(p.visits)) {
+          for (const v of p.visits) {
+            const vId = String(v._id || v.id || "");
+            if (vId && existingVisitIds.has(vId)) continue;
+            if (["created", "pending", "in_progress", "checked_in"].includes(v.status)) {
+              if (vId) existingVisitIds.add(vId);
+              newVisitsToAdd.push({
+                ...v,
+                is_from_previous_plan: true,
+                previous_plan_date: pDateStr,
+              });
+            }
+          }
+        }
+        if (Array.isArray(p.works)) {
+          for (const w of p.works) {
+            const wId = String(w._id || w.id || "");
+            if (wId && existingWorkIds.has(wId)) continue;
+            if (["created", "pending", "in_progress"].includes(w.status)) {
+              if (wId) existingWorkIds.add(wId);
+              newWorksToAdd.push({
+                ...w,
+                is_from_previous_plan: true,
+                previous_plan_date: pDateStr,
+              });
+            }
+          }
+        }
+      }
+
+      const visitsCount = newVisitsToAdd.length;
+      const tasksCount = newWorksToAdd.length;
+
+      if (visitsCount === 0 && tasksCount === 0) {
+        if (isManual) {
+          toast.info("No uncompleted visits or tasks found to roll over.");
+        }
+        return;
+      }
+
+      if (visitsCount > 0) {
+        setVisits((prev) => [...prev, ...newVisitsToAdd]);
+      }
+      if (tasksCount > 0) {
+        setWorks((prev) => [...prev, ...newWorksToAdd]);
+      }
+
+      if (tasksCount > 0 && (planType === "Visits" || visits.length > 0 || visitsCount > 0)) {
+        setPlanType("Tasks & Visits");
+      }
+
+      toast.success(
+        `Auto-rollover completed: ${visitsCount} visit${visitsCount === 1 ? "" : "s"} and ${tasksCount} task${tasksCount === 1 ? "" : "s"} rolled over.`
+      );
+    } catch (err: unknown) {
+      if (isManual) {
+        toast.error(extractErrorMessage(err, "Auto-rollover failed."));
+      }
+    } finally {
+      setAutoRolloverLoading(false);
+    }
+  };
+
+  // Auto-trigger rollover on create mode when date & user are loaded and no existing plan is detected
+  useEffect(() => {
+    if (isEditing || planId || copyId || checkingExisting || existingPlanId || !planDate || !targetUserId) return;
+    if (isPlanDate3DaysExpired(planDate)) return;
+
+    const currentKey = `${targetUserId}_${planDate}`;
+    if (autoRolloverRanRef.current === currentKey) return;
+    autoRolloverRanRef.current = currentKey;
+
+    handleAutoRollover(false);
+  }, [isEditing, planId, copyId, checkingExisting, existingPlanId, planDate, targetUserId]);
+
   // Effect 2: Default "Discussed with Manager" to the plan type manager (or global default manager)
   useEffect(() => {
     if (isEditing) return;
@@ -1323,6 +1448,8 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           party_name: v.party_name || (typeof v.party === "object" ? v.party?.party_name : undefined) || "Client Visit",
           contact_person: v.contact_person,
           contact_number: v.contact_number,
+          contact_email: v.contact_email,
+          contacts: v.contacts,
           address: v.address,
           planned_start_time: v.planned_start_time,
           status: v.status || "created",
@@ -1386,6 +1513,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                 v.contact_email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v.contact_email).trim())
                   ? String(v.contact_email).trim()
                   : `${(v.contact_person || "contact").toLowerCase().replace(/[^a-z0-9]/g, "") || "contact"}@client.com`,
+              contacts: v.contacts,
               address: v.address || undefined,
               purpose: v.purpose || undefined,
               notes: v.notes || undefined,
@@ -1466,6 +1594,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                 v.contact_email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v.contact_email).trim())
                   ? String(v.contact_email).trim()
                   : `${(v.contact_person || "contact").toLowerCase().replace(/[^a-z0-9]/g, "") || "contact"}@client.com`,
+              contacts: v.contacts,
               address: v.address || undefined,
               purpose: v.purpose || undefined,
               notes: v.notes || undefined,
@@ -2165,8 +2294,18 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    onClick={() => handleAutoRollover(true)}
+                    disabled={autoRolloverLoading}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition shadow-xs cursor-pointer disabled:opacity-50"
+                    title="Auto rollover uncompleted items from last 3 days"
+                  >
+                    <RotateCcw className={`h-3.5 w-3.5 ${autoRolloverLoading ? "animate-spin" : ""}`} />
+                    Auto Rollover
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setPreviousModalMode("visits")}
-                    className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition shadow-xs cursor-pointer"
+                    className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-surface-hover transition shadow-xs cursor-pointer"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     Add Previous Created / Pending Visits
@@ -2215,11 +2354,28 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                             Purpose: {v.purpose}
                           </p>
                         )}
-                        {(v.contact_person || v.phone) && (
-                          <p className="text-[11px] text-foreground font-medium">
-                            {v.contact_person} {v.phone ? `(${v.phone})` : ""}
-                          </p>
-                        )}
+                        {(() => {
+                          const visitContacts = Array.isArray(v.contacts) && v.contacts.length > 0
+                            ? v.contacts
+                            : (v.contact_person || v.contact_number || v.phone)
+                              ? [{ contact_person: v.contact_person, contact_number: v.contact_number || v.phone }]
+                              : [];
+                          if (visitContacts.length === 0) return null;
+                          const primary = visitContacts[0];
+                          const extraCount = visitContacts.length - 1;
+                          return (
+                            <p className="text-[11px] text-foreground font-medium flex items-center gap-1.5 flex-wrap">
+                              <span>
+                                {primary.contact_person} {primary.contact_number ? `(${primary.contact_number})` : ""}
+                              </span>
+                              {extraCount > 0 && (
+                                <span className="inline-flex rounded bg-primary/10 px-1.5 py-0.2 text-[9px] font-bold text-primary">
+                                  +{extraCount} more
+                                </span>
+                              )}
+                            </p>
+                          );
+                        })()}
                         {v.planned_start_time && (
                           <p className="text-[10px] text-muted flex items-center gap-1 font-medium">
                             <Clock className="h-3 w-3" />
@@ -2284,8 +2440,18 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
+                    onClick={() => handleAutoRollover(true)}
+                    disabled={autoRolloverLoading}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition shadow-xs cursor-pointer disabled:opacity-50"
+                    title="Auto rollover uncompleted items from last 3 days"
+                  >
+                    <RotateCcw className={`h-3.5 w-3.5 ${autoRolloverLoading ? "animate-spin" : ""}`} />
+                    Auto Rollover
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setPreviousModalMode("tasks")}
-                    className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition shadow-xs cursor-pointer"
+                    className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-surface-hover transition shadow-xs cursor-pointer"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     Add Previous Created / Pending Tasks

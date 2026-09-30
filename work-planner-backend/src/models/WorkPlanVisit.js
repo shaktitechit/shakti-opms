@@ -40,7 +40,7 @@ const workPlanVisitSchema = new mongoose.Schema(
     sequence: { type: Number, required: true, min: 1, default: 1 },
     party_type: {
       type: String,
-      enum: ["existing", "new_party", "new_lead", "existing_lead"],
+      enum: ["existing", "new_party", "new_lead", "existing_lead", "facility", "enquiry"],
       default: "existing",
       index: true,
     },

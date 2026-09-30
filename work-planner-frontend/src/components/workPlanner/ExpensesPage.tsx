@@ -373,13 +373,19 @@ export function ExpensesPage() {
                           return (
                             <div className="mt-1 flex flex-wrap items-center gap-1.5">
                               {attList.map((att, attIdx) => {
-                                const url = typeof att === "object" ? att.url : undefined;
+                                const attObj = typeof att === "object" && att !== null ? (att as any) : null;
+                                const rawUrl =
+                                  attObj
+                                    ? attObj.url || (attObj._id ? `/api/work-planner/attachments/${attObj._id}/view` : "") || (attObj.id ? `/api/work-planner/attachments/${attObj.id}/view` : "") || (attObj.storage_path || "")
+                                    : typeof att === "string"
+                                    ? att
+                                    : "";
                                 const docName =
-                                  typeof att === "object"
-                                    ? att.original_name || att.file_name || `Receipt #${attIdx + 1}`
+                                  attObj
+                                    ? attObj.original_name || attObj.file_name || `Receipt #${attIdx + 1}`
                                     : `Receipt #${attIdx + 1}`;
-                                const mimeType = typeof att === "object" ? att.mime_type || "" : "";
-                                const baseUrl = url ? resolvePublicAssetUrl(url) : "#";
+                                const mimeType = attObj ? attObj.mime_type || "" : "";
+                                const baseUrl = rawUrl ? resolvePublicAssetUrl(rawUrl, sessionToken) : "#";
                                 const fullUrl = withFileAccessToken(baseUrl, sessionToken);
                                 return (
                                   <div key={attIdx} className="inline-flex items-center gap-1">
@@ -392,7 +398,7 @@ export function ExpensesPage() {
                                           mime: mimeType,
                                         })
                                       }
-                                      className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary/20 transition"
+                                      className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary/20 transition cursor-pointer"
                                       title="Preview document"
                                     >
                                       <Eye className="h-3 w-3" />

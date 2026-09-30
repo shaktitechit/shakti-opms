@@ -63,10 +63,7 @@ function applySession(token: string, dispatch: ReturnType<typeof useAppDispatch>
   if (!user || !hasOpmsAccess(user)) return false;
   dispatch(setCredentials({ token, user }));
   try {
-    window.localStorage.setItem(
-      AUTH_STORAGE_KEY,
-      JSON.stringify({ token, user }),
-    );
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
   } catch {
     /* ignore */
   }

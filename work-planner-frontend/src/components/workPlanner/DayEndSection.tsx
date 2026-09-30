@@ -18,7 +18,7 @@ import {
   Users,
 } from "lucide-react";
 import type { WorkPlanRecord } from "@/types/workPlanner";
-import { WORK_PLANNER_SERVICE_URL, withAccessToken } from "@/lib/env";
+import { WORK_PLANNER_SERVICE_URL, resolvePublicAssetUrl, withAccessToken } from "@/lib/env";
 import { readSessionFromStorage } from "@/utils/authStorage";
 import { workPlanWindowHint } from "./workPlanUtils";
 
@@ -196,12 +196,12 @@ export function DayEndSection({
                   <a
                     key={att._id}
                     href={
-                      att._id
-                        ? withAccessToken(
-                            `${WORK_PLANNER_SERVICE_URL}/api/work-planner/attachments/${att._id}/view`,
-                            sessionToken
-                          )
-                        : att.url
+                      withAccessToken(
+                        resolvePublicAssetUrl(
+                          att._id ? `/api/work-planner/attachments/${att._id}/view` : (att.url || "")
+                        ),
+                        sessionToken
+                      )
                     }
                     target="_blank"
                     rel="noopener noreferrer"

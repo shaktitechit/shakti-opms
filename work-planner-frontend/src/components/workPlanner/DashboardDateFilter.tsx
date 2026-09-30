@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Calendar, Filter } from "lucide-react";
 import { formatPlanDate } from "./workPlanUtils";
 
-export type DateFilterPreset = "today" | "7d" | "current_month" | "last_month" | "custom";
+export type DateFilterPreset = "today" | "7d" | "current_month" | "last_month" | "all" | "custom";
 
 export type DateRange = {
   from: string;
@@ -29,6 +29,10 @@ export function calculateDateRange(
   customTo?: string
 ): { from: string; to: string } {
   const now = new Date();
+
+  if (preset === "all") {
+    return { from: "", to: "" };
+  }
 
   if (preset === "today") {
     const ymd = toYmdString(now);
@@ -64,15 +68,16 @@ export function calculateDateRange(
 }
 
 const PRESETS: Array<{ id: DateFilterPreset; label: string }> = [
+  { id: "current_month", label: "Current Month" },
   { id: "today", label: "Today" },
   { id: "7d", label: "7 Days" },
-  { id: "current_month", label: "Current Month" },
   { id: "last_month", label: "Last Month" },
+  { id: "all", label: "All Time" },
   { id: "custom", label: "Custom Date" },
 ];
 
 export function DashboardDateFilter({ onChange }: DashboardDateFilterProps) {
-  const [preset, setPreset] = useState<DateFilterPreset>("today");
+  const [preset, setPreset] = useState<DateFilterPreset>("current_month");
   const todayYmd = toYmdString(new Date());
   const [customFrom, setCustomFrom] = useState(todayYmd);
   const [customTo, setCustomTo] = useState(todayYmd);

@@ -20,6 +20,8 @@ export type WorkPlanVisitStatus =
 export type WorkPlanVisitPartyType =
   | "existing"
   | "existing_lead"
+  | "facility"
+  | "enquiry"
   | "new_party"
   | "new_lead";
 

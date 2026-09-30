@@ -150,8 +150,15 @@ export function WorkFormModal({
   const adminRole = isWpAdmin(sessionUser);
   const managerRole = isWpManager(sessionUser);
   const elevatedRole = isWpElevated(sessionUser);
-  // Senior Remark visible only when current user is NOT the plan owner
-  const isSeniorViewing = elevatedRole && (!planOwnerId || String(sessionUserId) !== String(planOwnerId));
+  const itemOwnerId = String(
+    planOwnerId ||
+    (initial as any)?.sales_user?._id ||
+    (initial as any)?.sales_user ||
+    sessionUserId ||
+    ""
+  );
+  const isSelf = Boolean(sessionUserId && itemOwnerId && String(sessionUserId) === String(itemOwnerId));
+  const isSeniorViewing = elevatedRole && !isSelf;
 
   // Queries for allowed executives
   const { data: usersData } = useGetUsersQuery(undefined, { skip: !open || !adminRole });

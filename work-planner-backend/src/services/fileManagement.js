@@ -54,22 +54,35 @@ function resolveFileIdCandidateList(item) {
   if (!item) return [];
   const list = [];
   if (typeof item === 'string') {
-    const resMatch = item.match(/\/resource\/[^/]+\/([a-f0-9]{24})\//i);
+    const trimmed = item.trim();
+    if (/^[a-f0-9]{24}$/i.test(trimmed)) {
+      list.push(trimmed);
+    }
+
+    const resMatch = trimmed.match(/\/resource\/[^/]+\/([a-f0-9]{24})\//i);
     if (resMatch?.[1]) list.push(resMatch[1]);
 
-    const origMatch = item.match(/\/original\/([^/?#]+)/i);
+    const attMatch = trimmed.match(/\/(?:api\/)?(?:work-planner|projects)\/attachments\/([^/?#]+)/i);
+    if (attMatch?.[1]) list.push(attMatch[1]);
+
+    const origMatch = trimmed.match(/\/original\/([^/?#]+)/i);
     if (origMatch?.[1]) list.push(origMatch[1]);
 
-    const fileMatch = item.match(/\/(?:api\/)?files\/([^/?#]+)/i);
+    const fileMatch = trimmed.match(/\/(?:api\/)?files\/([^/?#]+)/i);
     if (fileMatch?.[1]) list.push(fileMatch[1]);
 
-    const uuidMatch = item.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.[a-z0-9]+)/i);
+    const uuidMatch = trimmed.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
     if (uuidMatch?.[1]) list.push(uuidMatch[1]);
+
+    const uuidExtMatch = trimmed.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\.[a-z0-9]+)/i);
+    if (uuidExtMatch?.[1]) list.push(uuidExtMatch[1]);
   } else if (typeof item === 'object') {
-    if (item._id) list.push(String(item._id));
     if (item.filename && !String(item.filename).includes('/')) list.push(String(item.filename));
+    if (item.file_name && !String(item.file_name).includes('/')) list.push(String(item.file_name));
     if (item.storage_path) list.push(...resolveFileIdCandidateList(String(item.storage_path)));
     if (item.url) list.push(...resolveFileIdCandidateList(String(item.url)));
+    if (item._id) list.push(String(item._id));
+    if (item.id) list.push(String(item.id));
   }
   return [...new Set(list)].filter(Boolean);
 }
@@ -80,7 +93,7 @@ function resolveFileId(item) {
 }
 
 /**
- * Replace a stored/legacy attachment URL with a fresh file-manager view URL.
+ * Replace a stored/legacy attachment URL with a backend proxy preview URL.
  * @param {object|null} item
  * @returns {Promise<object|null>}
  */
@@ -89,28 +102,38 @@ async function withFreshViewUrl(item) {
   const obj = item.toObject ? item.toObject() : { ...item };
   const candidates = resolveFileIdCandidateList(obj);
   if (candidates.length === 0) return obj;
-
-  for (const cid of candidates) {
-    try {
-      obj.url = await getViewPresignedUrl(cid);
-      return obj;
-    } catch (_e) {}
-  }
+  obj.url = `/api/work-planner/attachments/${candidates[0]}/preview`;
   return obj;
 }
 
 async function refreshUrlString(urlStr) {
   if (!urlStr || typeof urlStr !== 'string') return urlStr;
+  const { Attachment } = getModels();
   const candidates = resolveFileIdCandidateList(urlStr);
   if (candidates.length === 0) return urlStr;
 
-  for (const cid of candidates) {
-    try {
-      const fresh = await getViewPresignedUrl(cid);
-      if (fresh) return fresh;
-    } catch (_e) {}
+  if (Attachment) {
+    for (const cid of candidates) {
+      if (cid && cid.length >= 8) {
+        try {
+          const query = [
+            { filename: cid },
+            { storage_path: { $regex: cid, $options: 'i' } },
+            { url: { $regex: cid, $options: 'i' } },
+          ];
+          if (mongoose.Types.ObjectId.isValid(cid)) {
+            query.unshift({ _id: new mongoose.Types.ObjectId(cid) });
+          }
+          const att = await Attachment.findOne({ $or: query }).lean();
+          if (att) {
+            return `/api/work-planner/attachments/${att._id}/preview`;
+          }
+        } catch (_err) {}
+      }
+    }
   }
-  return urlStr;
+
+  return `/api/work-planner/attachments/${candidates[0]}/preview`;
 }
 
 /**
@@ -306,12 +329,231 @@ async function uploadMulterFile(file, resourceType = 'work_plan_expense', resour
   return attachment;
 }
 
+/**
+ * Resolve a short-lived presigned download URL from the file-management API.
+ * @param {string} fileId
+ * @returns {Promise<string>}
+ */
+async function getDownloadPresignedUrl(fileId) {
+  if (!fileId) throw new Error('No fileId provided');
+  const candidates = [fileId];
+  if (typeof fileId === 'string' && fileId.includes('.')) {
+    candidates.push(fileId.split('.')[0]);
+  }
+
+  for (const cid of candidates) {
+    try {
+      const { data } = await axios.get(`${FILE_MANAGEMENT_API_URL}/files/${cid}/download-url`, {
+        headers: fmHeaders(),
+        timeout: 8000,
+      });
+      const url = data?.url || data?.downloadUrl;
+      if (url) return url;
+    } catch (_err) {}
+  }
+
+  throw new Error(`File management API did not return a download URL for ${fileId}`);
+}
+
+const FILE_NOT_FOUND_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400">
+  <rect width="100%" height="100%" fill="#f8fafc"/>
+  <rect x="2" y="2" width="596" height="396" rx="12" fill="none" stroke="#e2e8f0" stroke-width="4"/>
+  <g transform="translate(250, 110)">
+    <circle cx="50" cy="50" r="45" fill="#fee2e2"/>
+    <path d="M35 35 L65 65 M65 35 L35 65" stroke="#ef4444" stroke-width="6" stroke-linecap="round"/>
+  </g>
+  <text x="300" y="240" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="600" fill="#1e293b" text-anchor="middle">Document Preview Unavailable</text>
+  <text x="300" y="275" font-family="system-ui, -apple-system, sans-serif" font-size="14" fill="#64748b" text-anchor="middle">The requested attachment payload could not be loaded from storage.</text>
+</svg>`;
+
+/**
+ * Streams file binary payload from File Management / MinIO backend directly to the HTTP response.
+ * Completely eliminates MinIO "Access Denied" errors and avoids client-side presigned URL expiration.
+ * @param {string} identifier Attachment ID, ProjectFile ID, filename, or storage_path
+ * @param {object} res Express response object
+ * @param {object} options Options like disposition ('inline' | 'attachment') and filename
+ */
+async function streamFileToResponse(identifier, res, options = {}) {
+  const { Attachment, ProjectFile } = getModels();
+
+  let att = null;
+  if (identifier && mongoose.Types.ObjectId.isValid(identifier)) {
+    if (Attachment) {
+      att = await Attachment.findById(identifier).lean();
+    }
+    if (!att && ProjectFile) {
+      const pFile = await ProjectFile.findById(identifier).lean();
+      if (pFile) {
+        if (pFile.attachment_id && mongoose.Types.ObjectId.isValid(pFile.attachment_id)) {
+          att = await Attachment.findById(pFile.attachment_id).lean();
+        }
+        if (!att) {
+          att = {
+            filename: pFile.attachment_id || pFile._id,
+            file_name: pFile.file_name,
+            original_name: pFile.file_name,
+            mime_type: pFile.mime_type,
+            size: pFile.size_bytes,
+          };
+        }
+      }
+    }
+  }
+
+  if (!att && Attachment && identifier) {
+    att = await Attachment.findOne({
+      $or: [
+        { filename: identifier },
+        { fileId: identifier },
+        { storage_path: identifier },
+        { key: identifier },
+        { url: identifier },
+        { storage_path: { $regex: identifier, $options: 'i' } },
+        { url: { $regex: identifier, $options: 'i' } },
+      ],
+    }).lean();
+  }
+
+  const rawCandidates = resolveFileIdCandidateList(att || identifier);
+  if (typeof identifier === 'string' && identifier && !rawCandidates.includes(identifier)) {
+    rawCandidates.unshift(identifier);
+  }
+
+  // If still not found, try candidates regex lookup
+  if (!att && Attachment) {
+    for (const cid of rawCandidates) {
+      if (cid && cid.length >= 8) {
+        try {
+          att = await Attachment.findOne({
+            $or: [
+              { filename: cid },
+              { storage_path: { $regex: cid, $options: 'i' } },
+              { url: { $regex: cid, $options: 'i' } },
+            ],
+          }).lean();
+          if (att) break;
+        } catch (_err) {}
+      }
+    }
+  }
+
+  const candidates = [];
+  if (att?.filename && !candidates.includes(String(att.filename))) candidates.push(String(att.filename));
+  if (att?.fileId && !candidates.includes(String(att.fileId))) candidates.push(String(att.fileId));
+  for (const c of rawCandidates) {
+    if (c && !candidates.includes(c)) candidates.push(c);
+  }
+  if (att?._id && !candidates.includes(String(att._id))) candidates.push(String(att._id));
+
+  for (const cid of candidates) {
+    try {
+      const presignedUrl =
+        options.disposition === 'attachment'
+          ? await getDownloadPresignedUrl(cid).catch(() => getViewPresignedUrl(cid))
+          : await getViewPresignedUrl(cid);
+
+      if (presignedUrl) {
+        let streamRes;
+        try {
+          streamRes = await axios.get(presignedUrl, {
+            responseType: 'stream',
+            timeout: 20000,
+            headers: {
+              'User-Agent': 'WorkPlannerBackend/1.0',
+            },
+          });
+        } catch (err) {
+          if (presignedUrl.includes('localhost') || presignedUrl.includes('127.0.0.1')) {
+            const altUrl = presignedUrl.replace(/localhost|127\.0\.0\.1/, 'host.docker.internal');
+            streamRes = await axios.get(altUrl, {
+              responseType: 'stream',
+              timeout: 20000,
+              headers: {
+                'User-Agent': 'WorkPlannerBackend/1.0',
+              },
+            });
+          } else {
+            throw err;
+          }
+        }
+
+        const contentType =
+          options.mimeType ||
+          att?.mime_type ||
+          streamRes.headers['content-type'] ||
+          'application/octet-stream';
+
+        const filename = options.filename || att?.file_name || att?.original_name || 'attachment';
+        const disposition = options.disposition || 'inline';
+
+        res.setHeader('Content-Type', contentType);
+        if (streamRes.headers['content-length']) {
+          res.setHeader('Content-Length', streamRes.headers['content-length']);
+        }
+        res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(filename)}"`);
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+
+        return streamRes.data.pipe(res);
+      }
+    } catch (_err) {
+      // try next candidate
+    }
+  }
+
+  // If a direct URL exists on the attachment record, attempt streaming it
+  if (att?.url && /^https?:\/\//i.test(att.url)) {
+    try {
+      let directRes;
+      try {
+        directRes = await axios.get(att.url, {
+          responseType: 'stream',
+          timeout: 20000,
+        });
+      } catch (err) {
+        if (att.url.includes('localhost') || att.url.includes('127.0.0.1')) {
+          const altDirect = att.url.replace(/localhost|127\.0\.0\.1/, 'host.docker.internal');
+          directRes = await axios.get(altDirect, {
+            responseType: 'stream',
+            timeout: 20000,
+          });
+        } else {
+          throw err;
+        }
+      }
+      const contentType =
+        options.mimeType ||
+        att?.mime_type ||
+        directRes.headers['content-type'] ||
+        'application/octet-stream';
+      const filename = options.filename || att?.file_name || att?.original_name || 'attachment';
+      const disposition = options.disposition || 'inline';
+
+      res.setHeader('Content-Type', contentType);
+      if (directRes.headers['content-length']) {
+        res.setHeader('Content-Length', directRes.headers['content-length']);
+      }
+      res.setHeader('Content-Disposition', `${disposition}; filename="${encodeURIComponent(filename)}"`);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return directRes.data.pipe(res);
+    } catch (_err) {}
+  }
+
+  // Serve fallback SVG if binary payload cannot be resolved
+  res.setHeader('Content-Type', 'image/svg+xml');
+  res.setHeader('Cache-Control', 'no-cache');
+  return res.status(200).send(FILE_NOT_FOUND_SVG);
+}
+
 module.exports = {
   uploadMulterFile,
   getFileMeta,
   getViewPresignedUrl,
+  getDownloadPresignedUrl,
+  streamFileToResponse,
   resolveFileId,
+  resolveFileIdCandidateList,
   withFreshViewUrl,
   withFreshVisitSelfieUrls,
   withFreshExpenseAttachmentUrls,
 };
+

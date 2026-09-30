@@ -181,7 +181,7 @@ export function isExecutive(user: AuthUser | null | undefined): boolean {
 export function readSessionFromStorage(): UserSession | null {
   if (typeof window === "undefined") return null;
   try {
-    // 0. Check URL query token parameter
+    // 0. Check URL query token parameter (SSO handoff)
     const urlParams = new URLSearchParams(window.location.search);
     const urlToken = urlParams.get("token");
     if (urlToken) {
@@ -197,39 +197,17 @@ export function readSessionFromStorage(): UserSession | null {
       }
     }
 
-    if (!getCookie(ACCESS_COOKIE) && !getCookie(REFRESH_COOKIE)) {
-      const rawFallback = window.localStorage.getItem(SESSION_STORAGE_KEY);
-      if (!rawFallback) {
-        saveSessionToStorage(null);
-        return null;
-      }
-    }
-
     const accessToken = getCookie(ACCESS_COOKIE);
     const refreshToken = getCookie(REFRESH_COOKIE) || undefined;
-    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw) as UserSession;
-        if (parsed?.user && hasLeadManagerPortalAccess(parsed.user)) {
-          return {
-            token: parsed.token || accessToken || "",
-            refreshToken: refreshToken || parsed.refreshToken,
-            refreshExpiresAt: parsed.refreshExpiresAt,
-            user: parsed.user,
-          };
-        }
-      } catch {
-        /* ignore parse error */
-      }
-    }
 
     if (accessToken) {
       const userFromJwt = parseJwtUser(accessToken);
       if (userFromJwt && hasLeadManagerPortalAccess(userFromJwt)) {
-        const session = { token: accessToken, refreshToken, user: userFromJwt };
-        window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
-        return session;
+        return {
+          token: accessToken,
+          refreshToken,
+          user: userFromJwt,
+        };
       }
     }
 
@@ -253,7 +231,12 @@ export function saveSessionToStorage(session: UserSession | null): void {
       deleteCookie(cookieName);
     }
   } else {
-    window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+    // Purge legacy localStorage session key
+    try {
+      window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
     if (session.token) {
       setCookieMaxAge(ACCESS_COOKIE, session.token, jwtMaxAgeSeconds(session.token));
     }
@@ -262,8 +245,9 @@ export function saveSessionToStorage(session: UserSession | null): void {
         ? Math.floor((session.refreshExpiresAt - Date.now()) / 1000)
         : 7 * 24 * 60 * 60; // 7 days default
       setCookieMaxAge(REFRESH_COOKIE, session.refreshToken, Math.max(refreshMax, 60));
+    } else {
+      deleteCookie(REFRESH_COOKIE);
     }
-    else deleteCookie(REFRESH_COOKIE);
     for (const name of LEGACY_COOKIES) deleteCookie(name);
   }
 }

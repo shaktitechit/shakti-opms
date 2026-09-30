@@ -38,52 +38,70 @@ export const authInitialState: AuthState = {
   user: null,
 };
 
-/** Read persisted auth (client-only; safe empty on SSR / first paint). */
+function getCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
+  return match ? decodeURIComponent(match[2]) : null;
+}
+
+function parseJwtUser(token: string): AuthUser | null {
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const json = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join(""),
+    );
+    const decoded = JSON.parse(json) as Record<string, unknown>;
+    return {
+      _id: String(decoded.sub || decoded._id || decoded.id || "user"),
+      name: String(decoded.name || decoded.email || "User"),
+      email: String(decoded.email || ""),
+      department: String(decoded.department || ""),
+      roles: Array.isArray(decoded.roles) ? decoded.roles : [],
+      role_codes: Array.isArray(decoded.role_codes)
+        ? decoded.role_codes.map(String)
+        : [],
+      portals: Array.isArray(decoded.portals)
+        ? (decoded.portals as UserPortalAccess[])
+        : [],
+      ...decoded,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Read auth session from cookies (client-only; safe empty on SSR). */
 export function readAuthFromStorage(): Partial<
   Pick<AuthState, "token" | "refreshToken" | "refreshExpiresAt" | "user">
 > {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as Partial<
-      Pick<AuthState, "token" | "refreshToken" | "refreshExpiresAt" | "user">
-    >;
-    return {
-      token: typeof parsed.token === "string" ? parsed.token : null,
-      refreshToken: typeof parsed.refreshToken === "string" ? parsed.refreshToken : null,
-      refreshExpiresAt: typeof parsed.refreshExpiresAt === "number" ? parsed.refreshExpiresAt : null,
-      user: parsed.user && typeof parsed.user === "object"
-        ? (parsed.user as AuthUser)
-        : null,
-    };
-  } catch {
-    return {};
-  }
+  if (typeof document === "undefined") return {};
+  const token = getCookie("access_token");
+  const refreshToken = getCookie("refresh_token");
+  if (!token) return { refreshToken: refreshToken || null };
+  const user = parseJwtUser(token);
+  return {
+    token,
+    refreshToken: refreshToken || null,
+    user,
+  };
 }
 
 export function writeAuthToStorage(state?: AuthState | null): void {
-  if (typeof window === "undefined" || !state) return;
+  if (typeof window === "undefined") return;
   try {
-    if (!state.token && !state.user && !state.refreshToken && !state.refreshExpiresAt) {
-      window.localStorage.removeItem(AUTH_STORAGE_KEY);
-      return;
-    }
-    window.localStorage.setItem(
-      AUTH_STORAGE_KEY,
-      JSON.stringify({
-        token: state.token,
-        refreshToken: state.refreshToken,
-        refreshExpiresAt: state.refreshExpiresAt,
-        user: state.user,
-      }),
-    );
+    // Purge legacy localStorage auth key if present
+    window.localStorage.removeItem(AUTH_STORAGE_KEY);
   } catch {
-    /* ignore quota / privacy mode */
+    /* ignore */
   }
 }
 
-/** Hydrate slice from `localStorage` (call from `makeStore` preloadedState on client only). */
+/** Hydrate slice from cookies (call from `makeStore` preloadedState on client only). */
 export function hydrateAuthState(): AuthState {
   const { token = null, refreshToken = null, refreshExpiresAt = null, user = null } =
     readAuthFromStorage();

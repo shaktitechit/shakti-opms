@@ -11,10 +11,13 @@ const { errorMiddleware } = require('./middlewares/error.middleware');
 const { notFound } = require('./middlewares/notFound.middleware');
 
 const workPlannerRoutes = require('./modules/workPlanner/workPlanner.routes');
+const projectRoutes = require('./modules/project/project.routes');
 const { proxyToNotificationService } = require('./utils/proxyToNotificationService');
 const { proxyToMessageService } = require('./utils/proxyToMessageService');
 const { proxyToPartyService } = require('./utils/proxyToPartyService');
 const { proxyToLeadManagerService } = require('./utils/proxyToLeadManagerService');
+
+const powerAppRoutes = require('./modules/powerApp/powerApp.routes');
 
 const app = express();
 
@@ -30,7 +33,20 @@ app.get(['/health', '/api/health'], (req, res) => {
   res.json({ status: 'ok', service: 'work-planner-backend', timestamp: new Date().toISOString() });
 });
 
+app.get(['/api/files/:fileId/preview', '/api/files/:fileId/view', '/api/files/:fileId'], async (req, res) => {
+  const { streamFileToResponse } = require('./services/fileManagement');
+  await streamFileToResponse(req.params.fileId, res, { disposition: 'inline' });
+});
+app.get('/api/files/:fileId/download', async (req, res) => {
+  const { streamFileToResponse } = require('./services/fileManagement');
+  await streamFileToResponse(req.params.fileId, res, { disposition: 'attachment' });
+});
+
 app.use('/api/work-planner', workPlannerRoutes);
+app.use('/api/projects', projectRoutes);
+app.use('/api/power-app', powerAppRoutes);
+app.use('/api/facilities', powerAppRoutes);
+app.use('/api/enquiries', powerAppRoutes);
 app.use('/api/parties', proxyToPartyService);
 app.use('/api/leads', proxyToLeadManagerService);
 app.use('/api/notifications', proxyToNotificationService);

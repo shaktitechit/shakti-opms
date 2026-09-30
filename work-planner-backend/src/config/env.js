@@ -20,4 +20,6 @@ module.exports = {
   WORK_PLAN_PENDING_CRON: process.env.WORK_PLAN_PENDING_CRON || '0 10 * * *',
   DAY_END_PENDING_CRON: process.env.DAY_END_PENDING_CRON || '0 18 * * *',
   WORK_PLANNER_REMINDERS_ENABLED: process.env.WORK_PLANNER_REMINDERS_ENABLED || 'true',
+  POWER_APP_BASE_URL: process.env.POWER_APP_BASE_URL || process.env.POWER_APP_SERVICE_URL || 'https://power.spspl.com',
+  POWER_APP_API_KEY: process.env.POWER_APP_API_KEY || '',
 };

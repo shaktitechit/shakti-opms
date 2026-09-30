@@ -17,7 +17,7 @@ const rootReducer = combineReducers({
 
 export type RootState = ReturnType<typeof rootReducer>;
 
-/** Persists `{ token, user }` when the auth subtree changes (`localStorage` and cookies on browser). */
+/** Persists session cookies when the auth subtree changes on browser. */
 const authPersistMiddleware =
   (): Middleware<Record<string, never>, RootState> =>
   (api) =>
@@ -32,7 +32,6 @@ const authPersistMiddleware =
       prev?.refreshExpiresAt !== nextAuth?.refreshExpiresAt ||
       prev?.user !== nextAuth?.user;
     if (typeof window !== "undefined" && changed && nextAuth) {
-      writeAuthToStorage(nextAuth);
       if (nextAuth.token) {
         persistSessionMarksFromAuth({
           token: nextAuth.token,
