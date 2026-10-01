@@ -920,7 +920,7 @@ async function sendPendingWorkPlanMorningReminder(pendingUsers, dateStr, timeZon
       // In-App Notification to Executive
       await sendInAppNotification(exec._id, {
         title: 'Morning Reminder: Work Plan Pending',
-        message: `You have not created your Work Plan for today (${dateStr}). Please plan and submit your visits & tasks.`,
+        message: `You have not planned your Work Plan for today (${dateStr}). Please plan your visits & tasks.`,
         type: 'warning',
         entity_type: 'work_plan_reminder',
       });
@@ -932,20 +932,20 @@ async function sendPendingWorkPlanMorningReminder(pendingUsers, dateStr, timeZon
         const emailHtml = `
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 550px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
             <div style="background-color: #d97706; color: #ffffff; padding: 20px 24px; border-radius: 8px 8px 0 0;">
-              <h2 style="margin: 0 0 4px 0; font-size: 18px; font-weight: 700; color: #ffffff;">Work Plan Creation Pending</h2>
+              <h2 style="margin: 0 0 4px 0; font-size: 18px; font-weight: 700; color: #ffffff;">Work Plan Pending</h2>
               <p style="margin: 0; font-size: 13px; opacity: 0.95;">Morning 10:00 AM Alert • <strong>${dateStr}</strong></p>
             </div>
             <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
               <p style="font-size: 14px; margin-top: 0;">Hi <strong>${escapeHtml(execName)}</strong>,</p>
               <p style="font-size: 13px; color: #334155;">
-                This is a reminder that your daily Work Plan for today, <strong>${dateStr}</strong>, has not been submitted yet.
+                This is a reminder that your daily Work Plan for today, <strong>${dateStr}</strong>, has not been planned yet.
               </p>
               <p style="font-size: 13px; color: #334155;">
-                Please log in to the Work Planner portal or mobile app to submit your scheduled visits and tasks.
+                Please log in to the Work Planner portal or mobile app to plan your scheduled visits and tasks for today.
               </p>
               <div style="margin: 24px 0 10px 0; text-align: center;">
                 <a href="${(FRONTEND_URL || '').replace(/\/$/, '')}/work-plans" style="background-color: #d97706; color: #ffffff; padding: 10px 22px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 13px; display: inline-block;">
-                  Create Work Plan Now
+                  Plan Today's Work
                 </a>
               </div>
             </div>
@@ -983,7 +983,7 @@ async function sendPendingWorkPlanMorningReminder(pendingUsers, dateStr, timeZon
       // In-App Notification to Manager
       await sendInAppNotification(mgrId, {
         title: `Work Plan Pending Digest (${dateStr})`,
-        message: `${pendingExecs.length} team member(s) have not created their work plan for today: ${pendingExecs.map((e) => e.name || e.email).join(', ')}.`,
+        message: `${pendingExecs.length} team member(s) have not planned their work plan for today: ${pendingExecs.map((e) => e.name || e.email).join(', ')}.`,
         type: 'warning',
         entity_type: 'manager_digest',
       });
@@ -996,7 +996,7 @@ async function sendPendingWorkPlanMorningReminder(pendingUsers, dateStr, timeZon
             <tr>
               <td style="padding: 8px 12px; border: 1px solid #e2e8f0; font-size: 13px; font-weight: 600;">${i + 1}. ${escapeHtml(e.name || e.email)}</td>
               <td style="padding: 8px 12px; border: 1px solid #e2e8f0; font-size: 13px; color: #475569;">${escapeHtml(e.email)}</td>
-              <td style="padding: 8px 12px; border: 1px solid #e2e8f0; font-size: 13px; text-align: center;"><span style="color: #b45309; font-weight: 700; font-size: 11px; background: #fef3c7; padding: 2px 8px; border-radius: 9999px;">Pending</span></td>
+              <td style="padding: 8px 12px; border: 1px solid #e2e8f0; font-size: 13px; text-align: center;"><span style="color: #b45309; font-weight: 700; font-size: 11px; background: #fef3c7; padding: 2px 8px; border-radius: 9999px;">Not Planned</span></td>
             </tr>
           `
           )
@@ -1011,7 +1011,7 @@ async function sendPendingWorkPlanMorningReminder(pendingUsers, dateStr, timeZon
             <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
               <p style="font-size: 14px; margin-top: 0;">Hi <strong>${escapeHtml(mgrName)}</strong>,</p>
               <p style="font-size: 13px; color: #334155;">
-                The following <strong>${pendingExecs.length}</strong> team member(s) have not yet created their Work Plan for today (<strong>${dateStr}</strong>):
+                The following <strong>${pendingExecs.length}</strong> team member(s) have not yet planned their Work Plan for today (<strong>${dateStr}</strong>):
               </p>
               <table style="width: 100%; border-collapse: collapse; margin: 16px 0;">
                 <thead>

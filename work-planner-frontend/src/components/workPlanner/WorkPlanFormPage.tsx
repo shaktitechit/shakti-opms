@@ -951,7 +951,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     }
   }, [planType, dbUserSettings, isEditing, isCopying]);
 
-  // Handle Auto-Rollover of uncompleted visits and tasks from previous valid plans
+  // Handle Auto-Rollover of uncompleted tasks from previous valid plans
   const handleAutoRollover = async (isManual = false) => {
     if (isPlanCompleted) return;
     if (!planDate || !targetUserId) return;
@@ -963,7 +963,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         sales_user_id: targetUserId,
         limit: 50,
         include_standalone: false,
-        include_visits: true,
+        include_visits: false,
         include_works: true,
       }).unwrap();
 
@@ -988,28 +988,11 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         return;
       }
 
-      const existingVisitIds = new Set(visits.map((v) => String(v._id || v.id || "")).filter(Boolean));
       const existingWorkIds = new Set(works.map((w) => String(w._id || w.id || "")).filter(Boolean));
-
-      const newVisitsToAdd: Array<Record<string, any>> = [];
       const newWorksToAdd: Array<Record<string, any>> = [];
 
       for (const p of previousPlans) {
         const pDateStr = p.plan_date;
-        if (Array.isArray(p.visits)) {
-          for (const v of p.visits) {
-            const vId = String(v._id || v.id || "");
-            if (vId && existingVisitIds.has(vId)) continue;
-            if (["created", "pending", "in_progress", "checked_in"].includes(v.status)) {
-              if (vId) existingVisitIds.add(vId);
-              newVisitsToAdd.push({
-                ...v,
-                is_from_previous_plan: true,
-                previous_plan_date: pDateStr,
-              });
-            }
-          }
-        }
         if (Array.isArray(p.works)) {
           for (const w of p.works) {
             const wId = String(w._id || w.id || "");
@@ -1026,29 +1009,25 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         }
       }
 
-      const visitsCount = newVisitsToAdd.length;
       const tasksCount = newWorksToAdd.length;
 
-      if (visitsCount === 0 && tasksCount === 0) {
+      if (tasksCount === 0) {
         if (isManual) {
-          toast.info("No uncompleted visits or tasks found to roll over.");
+          toast.info("No uncompleted tasks found to roll over.");
         }
         return;
       }
 
-      if (visitsCount > 0) {
-        setVisits((prev) => [...prev, ...newVisitsToAdd]);
-      }
       if (tasksCount > 0) {
         setWorks((prev) => [...prev, ...newWorksToAdd]);
       }
 
-      if (tasksCount > 0 && (planType === "Visits" || visits.length > 0 || visitsCount > 0)) {
+      if (tasksCount > 0 && (planType === "Visits" || visits.length > 0)) {
         setPlanType("Tasks & Visits");
       }
 
       toast.success(
-        `Auto-rollover completed: ${visitsCount} visit${visitsCount === 1 ? "" : "s"} and ${tasksCount} task${tasksCount === 1 ? "" : "s"} rolled over.`
+        `Auto-rollover completed: ${tasksCount} task${tasksCount === 1 ? "" : "s"} rolled over.`
       );
     } catch (err: unknown) {
       if (isManual) {
@@ -2294,16 +2273,6 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => handleAutoRollover(true)}
-                    disabled={autoRolloverLoading}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition shadow-xs cursor-pointer disabled:opacity-50"
-                    title="Auto rollover uncompleted items from last 3 days"
-                  >
-                    <RotateCcw className={`h-3.5 w-3.5 ${autoRolloverLoading ? "animate-spin" : ""}`} />
-                    Auto Rollover
-                  </button>
-                  <button
-                    type="button"
                     onClick={() => setPreviousModalMode("visits")}
                     className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-surface-hover transition shadow-xs cursor-pointer"
                   >
@@ -2443,7 +2412,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                     onClick={() => handleAutoRollover(true)}
                     disabled={autoRolloverLoading}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition shadow-xs cursor-pointer disabled:opacity-50"
-                    title="Auto rollover uncompleted items from last 3 days"
+                    title="Auto rollover uncompleted tasks from last 3 days"
                   >
                     <RotateCcw className={`h-3.5 w-3.5 ${autoRolloverLoading ? "animate-spin" : ""}`} />
                     Auto Rollover
