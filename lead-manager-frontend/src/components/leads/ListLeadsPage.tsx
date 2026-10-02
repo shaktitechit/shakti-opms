@@ -38,6 +38,7 @@ import { useAppSelector } from "@/store/hooks";
 import { TablePaginationBar } from "@/components/portal/shared/pagination/TablePaginationBar";
 import { PortalBusyOverlay } from "@/components/portal/shared/PortalBusyOverlay";
 import {
+  formatLeadAssignees,
   formatCurrencyINR,
   formatLeadDate,
   formatLeadDateTime,
@@ -58,6 +59,7 @@ import { FollowUpModal } from "./FollowUpModal";
 import { ConfirmDeleteLeadModal } from "./ConfirmDeleteLeadModal";
 import { GoogleSheetLeadsModal } from "./GoogleSheetLeadsModal";
 import { BulkUploadLeadsModal } from "./BulkUploadLeadsModal";
+import { DownloadLeadsPreviewModal, type ColumnDef } from "./DownloadLeadsPreviewModal";
 
 
 import { readSessionFromStorage } from "@/utils/authStorage";
@@ -75,6 +77,24 @@ const STATUS_TABS: Array<{ id: string; label: string }> = [
   { id: "won", label: "Won" },
   { id: "lost", label: "Lost" },
   { id: "converted", label: "Converted" },
+];
+
+const DEFAULT_LEAD_EXPORT_COLUMNS: ColumnDef[] = [
+  { key: "lead_no", label: "Lead No*", defaultSelected: true, widthPdf: 1.2 },
+  { key: "name", label: "Contact Person*", defaultSelected: true, widthPdf: 1.5 },
+  { key: "company_name", label: "Company / Clinic*", defaultSelected: true, widthPdf: 1.6 },
+  { key: "phone", label: "Phone*", defaultSelected: true, widthPdf: 1.2 },
+  { key: "email", label: "Email", defaultSelected: false, widthPdf: 1.4 },
+  { key: "city", label: "City*", defaultSelected: true, widthPdf: 1 },
+  { key: "state", label: "State", defaultSelected: false, widthPdf: 1 },
+  { key: "source", label: "Source", defaultSelected: true, widthPdf: 1.2 },
+  { key: "status", label: "Status*", defaultSelected: true, widthPdf: 1 },
+  { key: "priority", label: "Priority*", defaultSelected: true, widthPdf: 1 },
+  { key: "assigned_to_name", label: "Assigned To*", defaultSelected: true, widthPdf: 1.3 },
+  { key: "estimated_value_fmt", label: "Est. Value (₹)", defaultSelected: true, widthPdf: 1.3 },
+  { key: "products_summary", label: "Products / Requirement", defaultSelected: false, widthPdf: 2 },
+  { key: "next_follow_up_at", label: "Next Follow-Up", defaultSelected: true, widthPdf: 1.2 },
+  { key: "created_at_fmt", label: "Created Date", defaultSelected: false, widthPdf: 1.2 },
 ];
 
 export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
@@ -101,12 +121,12 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
   const [showFilters, setShowFilters] = useState<boolean>(false);
 
   // Modals state
+  const [downloadModalOpen, setDownloadModalOpen] = useState<boolean>(false);
   const [assignTarget, setAssignTarget] = useState<LeadRecord | null>(null);
   const [followUpTarget, setFollowUpTarget] = useState<LeadRecord | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<LeadRecord | null>(null);
   const [sheetOpen, setSheetOpen] = useState<boolean>(false);
   const [bulkUploadOpen, setBulkUploadOpen] = useState<boolean>(false);
-
 
   const { data: sources } = useListLeadSourcesQuery();
   const { data: usersData } = useListUsersQuery();
@@ -168,6 +188,47 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
     ? usersData
     : (usersData as { data?: Array<{ _id: string; name: string; department?: string; portals?: Array<{ portal_code: string; access_roles?: string[] }> }> })?.data || []) as Array<{ _id: string; name: string; department?: string; portals?: Array<{ portal_code: string; access_roles?: string[] }> }>;
 
+  const formattedLeadsForExport = useMemo(() => {
+    return items.map((lead: LeadRecord) => {
+      const assignedNames = formatLeadAssignees(lead) || "Unassigned";
+      const productsSummary = (lead.products || [])
+        .map((p: any) => p.product_name || p.name || "")
+        .filter(Boolean)
+        .join(", ") || (lead as any).requirement_details || (lead as any).products_interested || "N/A";
+      const party = lead.party_id;
+      const contactName =
+        (typeof (lead as any).name === "string" && (lead as any).name) ||
+        party?.party_name ||
+        (party as any)?.legal_name ||
+        "N/A";
+      const companyName = party?.party_name || (lead as any).company_name || (party as any)?.legal_name || "N/A";
+      const phoneVal = (lead as any).phone || party?.mobile || "N/A";
+      const emailVal = (lead as any).email || party?.email || "N/A";
+      const cityVal = party?.district || party?.billing_address?.city || (lead as any).city || "N/A";
+      const stateVal = party?.state || party?.billing_address?.state || (lead as any).state || "N/A";
+      const createdDate = lead.createdAt || (lead as any).created_at;
+
+      return {
+        _id: lead._id,
+        lead_no: lead.lead_no || `LEAD-${lead._id.slice(-6).toUpperCase()}`,
+        name: contactName,
+        company_name: companyName,
+        phone: phoneVal,
+        email: emailVal,
+        city: cityVal,
+        state: stateVal,
+        source: typeof lead.source === "string" ? lead.source : (lead.source as any)?.name || "Direct",
+        status: (lead.status || "new").toUpperCase(),
+        priority: (lead.priority || "medium").toUpperCase(),
+        assigned_to_name: assignedNames,
+        estimated_value_fmt: lead.estimated_value ? `₹${Number(lead.estimated_value).toLocaleString("en-IN")}` : "₹0",
+        products_summary: productsSummary,
+        next_follow_up_at: lead.next_follow_up_at ? formatLeadDate(lead.next_follow_up_at) : "None",
+        created_at_fmt: createdDate ? formatLeadDate(createdDate) : "N/A",
+      };
+    });
+  }, [items]);
+
   const clearFilters = () => {
     setSearch("");
     setPriorityFilter("all");
@@ -215,6 +276,14 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
             >
               <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
               Refresh
+            </button>
+            <button
+              type="button"
+              onClick={() => setDownloadModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-500/30 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800 shadow-xs transition hover:bg-emerald-100 dark:border-emerald-500/20 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-950/70"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+              Export Leads (.xlsx)
             </button>
             {isAdmin && (
               <>
@@ -788,6 +857,15 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
         <BulkUploadLeadsModal
           isOpen={bulkUploadOpen}
           onClose={() => setBulkUploadOpen(false)}
+        />
+      )}
+
+      {downloadModalOpen && (
+        <DownloadLeadsPreviewModal
+          open={downloadModalOpen}
+          onClose={() => setDownloadModalOpen(false)}
+          leads={formattedLeadsForExport}
+          availableColumns={DEFAULT_LEAD_EXPORT_COLUMNS}
         />
       )}
     </div>

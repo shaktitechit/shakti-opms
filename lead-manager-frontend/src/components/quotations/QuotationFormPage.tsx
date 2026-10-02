@@ -53,7 +53,7 @@ import { useAppSelector } from "@/store/hooks";
 import { toast } from "@/lib/toast";
 import { mutationRejectedMessage } from "@/lib/mutationMessages";
 import { PortalBusyOverlay } from "@/components/portal/shared/PortalBusyOverlay";
-import { formatCurrencyINR, canCreateQuotation, canManageQuotations } from "./quotationUtils";
+import { formatCurrencyINR, canCreateQuotation, canManageQuotations, isSalesDepartmentUser } from "./quotationUtils";
 import { RichTextEditor } from "./RichTextEditor";
 import { RichTextDisplay } from "./RichTextDisplay";
 import { getFieldText } from "@/components/leads/LeadFormPage";
@@ -75,6 +75,8 @@ type ItemState = {
   quantity: number;
   unit: string;
   rate: number;
+  discount_percent?: number;
+  discount_amount?: number;
   gst_rate: number;
 };
 
@@ -878,6 +880,11 @@ export function QuotationFormPage({
     });
   }, [usersList]);
 
+  // Filter users who belong to sales department / sales roles
+  const salesUsers = useMemo(() => {
+    return usersList.filter((u: any) => isSalesDepartmentUser(u));
+  }, [usersList]);
+
   // Master Terms & Conditions sets list for multi-selection
   const { data: masterTermsData } = useListTermsAndConditionsQuery({ limit: 100 });
   const masterTermsSets: TermsAndConditionsRecord[] = useMemo(() => {
@@ -942,6 +949,13 @@ export function QuotationFormPage({
   const [signatoryPhone, setSignatoryPhone] = useState("");
   const [signatoryEmail, setSignatoryEmail] = useState("");
   const [signatoryDesignation, setSignatoryDesignation] = useState("");
+
+  // Sales Person State (Internal)
+  const [salesPersonUserId, setSalesPersonUserId] = useState("");
+  const [salesPersonName, setSalesPersonName] = useState("");
+  const [salesPersonPhone, setSalesPersonPhone] = useState("");
+  const [salesPersonEmail, setSalesPersonEmail] = useState("");
+  const [salesPersonDesignation, setSalesPersonDesignation] = useState("Sales Executive");
 
   const [items, setItems] = useState<ItemState[]>([
     {
@@ -1104,7 +1118,7 @@ export function QuotationFormPage({
     if (isEditing && existingQuotation) {
       const qAny = existingQuotation as any;
       setSelectedPartyId(existingQuotation.party_id || "");
-      setSelectedLeadId(typeof existingQuotation.lead === "object" ? existingQuotation.lead?._id : existingQuotation.lead || "");
+      setSelectedLeadId(typeof existingQuotation.lead === "object" && existingQuotation.lead !== null ? existingQuotation.lead._id : (existingQuotation.lead || ""));
       setRefNo(existingQuotation.ref_no || "");
       setCustomerRef(qAny.customer_ref || "");
       setQuotationDate(
@@ -1130,14 +1144,25 @@ export function QuotationFormPage({
 
       // Signatory from quotation
       const qSignatoryId =
-        typeof existingQuotation.signatory_user === "object"
+        typeof existingQuotation.signatory_user === "object" && existingQuotation.signatory_user !== null
           ? (existingQuotation.signatory_user as any)?._id || ""
-          : existingQuotation.signatory_user || "";
+          : (existingQuotation.signatory_user as string) || "";
       setSignatoryUserId(qSignatoryId);
       setSignatoryName(existingQuotation.signatory_name || "");
       setSignatoryPhone(existingQuotation.signatory_phone || "");
       setSignatoryEmail(existingQuotation.signatory_email || "");
       setSignatoryDesignation(existingQuotation.signatory_designation || "");
+
+      // Sales Person from quotation
+      const qSalesPersonId =
+        typeof (existingQuotation as any).sales_person_user === "object" && (existingQuotation as any).sales_person_user !== null
+          ? ((existingQuotation as any).sales_person_user as any)?._id || ""
+          : ((existingQuotation as any).sales_person_user as string) || "";
+      setSalesPersonUserId(qSalesPersonId);
+      setSalesPersonName(existingQuotation.sales_person_name || "");
+      setSalesPersonPhone(existingQuotation.sales_person_phone || "");
+      setSalesPersonEmail(existingQuotation.sales_person_email || "");
+      setSalesPersonDesignation(existingQuotation.sales_person_designation || "Sales Executive");
 
       if (existingQuotation.items && existingQuotation.items.length > 0) {
         setItems(
@@ -1149,6 +1174,8 @@ export function QuotationFormPage({
             quantity: Number(i.quantity) || 1,
             unit: i.unit || "Nos",
             rate: Number(i.rate) || 0,
+            discount_percent: Number(i.discount_percent) || 0,
+            discount_amount: Number(i.discount_amount) || 0,
             gst_rate: Number(i.gst_rate) ?? 5,
           }))
         );
@@ -1163,8 +1190,15 @@ export function QuotationFormPage({
       setRefNo(autoNextRefNo);
     } else if (!isEditing) {
       setRefNo(autoNextRefNo);
+      if (authUser && isSalesDepartmentUser(authUser as any)) {
+        setSalesPersonUserId(String(authUser._id || (authUser as any).id || ""));
+        setSalesPersonName(String(authUser.name || authUser.email || ""));
+        setSalesPersonPhone(String((authUser as any).phone || ""));
+        setSalesPersonEmail(String(authUser.email || ""));
+        setSalesPersonDesignation(String((authUser as any).designation || "Sales Executive"));
+      }
     }
-  }, [isEditing, existingQuotation, linkedLead, autoNextRefNo]);
+  }, [isEditing, existingQuotation, linkedLead, autoNextRefNo, authUser]);
 
   const handleSelectAdminUser = (userId: string) => {
     if (!userId) {
@@ -1189,24 +1223,65 @@ export function QuotationFormPage({
     );
   };
 
+  const handleSelectSalesPersonUser = (userId: string) => {
+    if (!userId) {
+      setSalesPersonUserId("");
+      setSalesPersonName("");
+      setSalesPersonPhone("");
+      setSalesPersonEmail("");
+      setSalesPersonDesignation("Sales Executive");
+      return;
+    }
+    const selected = usersList.find((u: any) => String(u._id) === String(userId)) as any;
+    if (!selected) return;
+    setSalesPersonUserId(selected._id);
+    setSalesPersonName(selected.name || selected.email || "");
+    setSalesPersonPhone(selected.phone || "");
+    setSalesPersonEmail(selected.email || "");
+    setSalesPersonDesignation(
+      selected.designation ||
+        (selected.department
+          ? `${selected.department.charAt(0).toUpperCase() + selected.department.slice(1)} Executive`
+          : "Sales Executive")
+    );
+  };
+
   // Calculations
   const calculations = useMemo(() => {
     const computedItems = items.map((item) => {
       const qty = Number(item.quantity) || 0;
       const rate = Number(item.rate) || 0;
-      const taxable = Math.round(qty * rate * 100) / 100;
+      const gross = Math.round(qty * rate * 100) / 100;
+
+      let discPercent = Number(item.discount_percent) || 0;
+      let discAmt = Number(item.discount_amount) || 0;
+      if (discPercent > 0) {
+        discAmt = Math.round(((gross * discPercent) / 100) * 100) / 100;
+      } else if (discAmt > 0 && gross > 0) {
+        discPercent = Math.round(((discAmt / gross) * 100) * 100) / 100;
+      } else {
+        discPercent = 0;
+        discAmt = 0;
+      }
+
+      const taxable = Math.max(0, Math.round((gross - discAmt) * 100) / 100);
       const gstRate = Number(item.gst_rate) || 0;
       const gstAmt = Math.round(((taxable * gstRate) / 100) * 100) / 100;
       const lineTotal = Math.round((taxable + gstAmt) * 100) / 100;
 
       return {
         ...item,
+        gross,
+        discPercent,
+        discAmt,
         taxable,
         gstAmt,
         lineTotal,
       };
     });
 
+    const totalGross = Math.round(computedItems.reduce((acc, it) => acc + it.gross, 0) * 100) / 100;
+    const totalDiscount = Math.round(computedItems.reduce((acc, it) => acc + it.discAmt, 0) * 100) / 100;
     const subtotal = Math.round(computedItems.reduce((acc, it) => acc + it.taxable, 0) * 100) / 100;
     const totalGst = Math.round(computedItems.reduce((acc, it) => acc + it.gstAmt, 0) * 100) / 100;
     const rawGrandTotal = subtotal + totalGst;
@@ -1215,6 +1290,8 @@ export function QuotationFormPage({
 
     return {
       items: computedItems,
+      totalGross,
+      totalDiscount,
       subtotal,
       totalGst,
       roundOff,
@@ -1475,6 +1552,8 @@ export function QuotationFormPage({
         quantity: Number(i.quantity) || 1,
         unit: i.unit.trim() || "Nos",
         rate: Number(i.rate) || 0,
+        discount_percent: Number(i.discount_percent) || 0,
+        discount_amount: Number(i.discount_amount) || 0,
         gst_rate: Number(i.gst_rate) || 0,
       })),
       terms_and_conditions: cleanedTerms,
@@ -1483,6 +1562,11 @@ export function QuotationFormPage({
       signatory_email: signatoryEmail.trim(),
       signatory_designation: signatoryDesignation.trim() || "Lead Manager",
       signatory_user: signatoryUserId || undefined,
+      sales_person_name: salesPersonName.trim(),
+      sales_person_phone: salesPersonPhone.trim(),
+      sales_person_email: salesPersonEmail.trim(),
+      sales_person_designation: salesPersonDesignation.trim() || "Sales Executive",
+      sales_person_user: salesPersonUserId || undefined,
     };
 
     const targetLeadId = selectedLeadId || leadId || "";
@@ -1584,6 +1668,38 @@ export function QuotationFormPage({
 
       {/* Main Form Body */}
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Revision Information Banner for Edit Mode */}
+        {isEditing && existingQuotation && (
+          <div className="rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50/80 via-white to-indigo-50/50 p-4 dark:border-indigo-900/50 dark:bg-slate-900 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-center gap-3.5">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white font-black text-xs shadow-md shadow-indigo-600/20">
+                v{existingQuotation.version || 1}
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-extrabold text-slate-900 dark:text-white">
+                    Editing Quotation #{existingQuotation.quotation_no}
+                  </h4>
+                  <span className="rounded-md bg-indigo-100 px-2 py-0.5 text-[10px] font-black uppercase text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                    Current: v{existingQuotation.version || 1}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                  {existingQuotation.status !== "draft"
+                    ? `Saving will archive version ${existingQuotation.version || 1} into history, update this quotation to v${(existingQuotation.version || 1) + 1}, and request signatory re-approval.`
+                    : "Draft quotation content will be updated directly."}
+                </p>
+              </div>
+            </div>
+            {existingQuotation.status !== "draft" && (
+              <div className="flex items-center gap-2 self-start md:self-auto rounded-xl bg-indigo-100/70 px-3 py-1.5 dark:bg-indigo-950/70 text-xs font-bold text-indigo-800 dark:text-indigo-300">
+                <span>Next Revision:</span>
+                <span className="rounded bg-indigo-600 px-1.5 py-0.5 text-white">v{(existingQuotation.version || 1) + 1}</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Lead Link / Direct Selection Banner */}
         {!isEditing && (
           <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4">
@@ -2018,7 +2134,7 @@ export function QuotationFormPage({
                     </div>
 
                     {/* HSN */}
-                    <div className="col-span-4 sm:col-span-2">
+                    <div className="col-span-4 sm:col-span-1">
                       <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
                         HSN/SAC
                       </label>
@@ -2085,6 +2201,30 @@ export function QuotationFormPage({
                       />
                     </div>
 
+                    {/* Disc % */}
+                    <div className="col-span-3 sm:col-span-1">
+                      <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
+                        Disc %
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={it.discount_percent ?? 0}
+                        onChange={(e) => {
+                          const p = Math.min(100, Math.max(0, Number(e.target.value) || 0));
+                          const gross = (Number(it.quantity) || 1) * (Number(it.rate) || 0);
+                          const amt = Math.round(((gross * p) / 100) * 100) / 100;
+                          setItems((prev) =>
+                            prev.map((x, i) => (i === idx ? { ...x, discount_percent: p, discount_amount: amt } : x))
+                          );
+                        }}
+                        className="w-full rounded-lg border border-slate-200 bg-white px-1.5 py-1.5 text-xs font-semibold text-slate-900 dark:border-white/10 dark:bg-slate-900 dark:text-white"
+                        placeholder="0"
+                      />
+                    </div>
+
                     {/* GST % */}
                     <div className="col-span-3 sm:col-span-1">
                       <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
@@ -2122,7 +2262,7 @@ export function QuotationFormPage({
 
                   {/* Line breakdown */}
                   <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/60 pt-2 text-[11px] text-slate-600 dark:border-white/5 dark:text-slate-400">
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-[180px]">
                       <input
                         type="text"
                         value={it.description}
@@ -2135,9 +2275,17 @@ export function QuotationFormPage({
                         className="w-full bg-transparent border-0 border-b border-dashed border-slate-300 py-0.5 text-[11px] focus:border-primary focus:outline-none dark:border-slate-700"
                       />
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                       <span>
-                        Subtotal: <strong>{formatCurrencyINR(comp?.taxable || 0)}</strong>
+                        Gross: <strong>{formatCurrencyINR(comp?.gross || 0)}</strong>
+                      </span>
+                      {(comp?.discAmt || 0) > 0 ? (
+                        <span className="text-amber-600 dark:text-amber-400 font-semibold">
+                          Disc: -{formatCurrencyINR(comp?.discAmt || 0)} ({comp?.discPercent}%)
+                        </span>
+                      ) : null}
+                      <span>
+                        Taxable: <strong>{formatCurrencyINR(comp?.taxable || 0)}</strong>
                       </span>
                       <span>
                         GST: <strong>{formatCurrencyINR(comp?.gstAmt || 0)}</strong>
@@ -2161,20 +2309,152 @@ export function QuotationFormPage({
                 Grand Total Summary
               </div>
               <div className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-                Taxable Subtotal + Applicable GST (CGST/SGST or IGST)
+                Gross Total - Total Discount = Taxable Subtotal + Applicable GST
               </div>
             </div>
 
             <div className="space-y-1 text-right text-xs">
+              {calculations.totalDiscount > 0 ? (
+                <>
+                  <div className="text-slate-600 dark:text-slate-300">
+                    Gross Total: <strong>{formatCurrencyINR(calculations.totalGross)}</strong>
+                  </div>
+                  <div className="text-amber-600 dark:text-amber-400 font-semibold">
+                    Total Discount: <strong>-{formatCurrencyINR(calculations.totalDiscount)}</strong>
+                  </div>
+                </>
+              ) : null}
               <div className="text-slate-600 dark:text-slate-300">
                 Taxable Sub Total: <strong>{formatCurrencyINR(calculations.subtotal)}</strong>
               </div>
               <div className="text-slate-600 dark:text-slate-300">
                 Total GST Amount: <strong>{formatCurrencyINR(calculations.totalGst)}</strong>
               </div>
+              {calculations.roundOff !== 0 ? (
+                <div className="text-slate-600 dark:text-slate-300">
+                  Round Off: <strong>{formatCurrencyINR(calculations.roundOff)}</strong>
+                </div>
+              ) : null}
               <div className="text-base font-extrabold text-blue-900 dark:text-blue-200 pt-1 border-t border-blue-200 dark:border-blue-900/40">
                 Grand Total: {formatCurrencyINR(calculations.grandTotal)}
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Sales Representative Section (Internal Role / Sales Department) */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-white/10 dark:bg-slate-900">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3 dark:border-white/10">
+            <div>
+              <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2 text-xs uppercase tracking-wider">
+                <UserCheck className="h-4 w-4 text-emerald-600" />
+                Sales Representative / Sales Person (Internal Use &amp; Order Handover)
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Assign the sales department representative responsible for this account. Kept for internal operations and automatically assigns the sales person when converting to an Order.
+              </p>
+            </div>
+
+            {usersList.length > 0 && (
+              <div className="flex items-center gap-2">
+                <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                  Choose Sales Person:
+                </label>
+                <select
+                  value={salesPersonUserId}
+                  onChange={(e) => handleSelectSalesPersonUser(e.target.value)}
+                  className="rounded-lg border border-emerald-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-800 shadow-xs focus:border-emerald-500 focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-slate-100 cursor-pointer"
+                >
+                  <option value="">
+                    -- Select Sales Person (Sales Department) --
+                  </option>
+                  {salesUsers.map((u: any) => {
+                    const deptLabel = u.department ? `[${u.department.toUpperCase()}]` : "";
+                    const roleLabel = u.role ? `• ${u.role}` : "";
+                    return (
+                      <option key={u._id} value={u._id}>
+                        {u.name || u.email} {deptLabel} {roleLabel} {u.phone ? `(${u.phone})` : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+                {salesPersonUserId && (
+                  <button
+                    type="button"
+                    onClick={() => handleSelectSalesPersonUser("")}
+                    className="text-[11px] font-semibold text-rose-600 hover:underline dark:text-rose-400 cursor-pointer"
+                    title="Clear selected sales person"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Sales Person Name
+                </label>
+                <span className="text-[10px] text-slate-400 font-medium">Read-only</span>
+              </div>
+              <input
+                type="text"
+                readOnly
+                value={salesPersonName}
+                placeholder="Choose sales person from dropdown..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-100/90 px-3 py-2 text-xs text-slate-700 shadow-xs cursor-not-allowed dark:border-white/10 dark:bg-slate-800/80 dark:text-slate-300 font-bold"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Sales Role / Designation
+                </label>
+                <span className="text-[10px] text-emerald-600 font-bold dark:text-emerald-400">Editable</span>
+              </div>
+              <input
+                type="text"
+                value={salesPersonDesignation}
+                onChange={(e) => setSalesPersonDesignation(e.target.value)}
+                placeholder="e.g. Sales Executive / Account Executive"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-xs focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-900 dark:text-white font-medium"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Phone / Mobile
+                </label>
+                <span className="text-[10px] text-slate-400 font-medium">Read-only</span>
+              </div>
+              <input
+                type="text"
+                readOnly
+                value={salesPersonPhone}
+                placeholder="Auto-filled from profile"
+                className="w-full rounded-xl border border-slate-200 bg-slate-100/90 px-3 py-2 text-xs text-slate-700 shadow-xs cursor-not-allowed dark:border-white/10 dark:bg-slate-800/80 dark:text-slate-300 font-medium"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Email
+                </label>
+                <span className="text-[10px] text-slate-400 font-medium">Read-only</span>
+              </div>
+              <input
+                type="email"
+                readOnly
+                value={salesPersonEmail}
+                placeholder="Auto-filled from profile"
+                className="w-full rounded-xl border border-slate-200 bg-slate-100/90 px-3 py-2 text-xs text-slate-700 shadow-xs cursor-not-allowed dark:border-white/10 dark:bg-slate-800/80 dark:text-slate-300 font-medium"
+              />
             </div>
           </div>
         </div>

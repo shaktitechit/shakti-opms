@@ -7,7 +7,7 @@ const { toPlain } = require('../../utils/mongoJson');
 const { ApiError } = require('../../utils/ApiError');
 const activityService = require('../activity/activity.service');
 const notificationService = require('../notifications/notification.service');
-const { isLeadAdmin } = require('./lead.service');
+const { isLeadAdmin, isLeadManager } = require('./lead.service');
 
 /**
  * Schedule a new follow-up for a lead.
@@ -196,35 +196,89 @@ async function getCalendar(query = {}, user) {
     q.status = query.status;
   }
 
+  if (query.type && query.type !== 'all') {
+    q.type = query.type;
+  }
+
+  const isAdmin = isLeadAdmin(user);
+  const isMgr = isLeadManager(user);
+  const hasQuotationAccess = isAdmin || isMgr;
+  const userIdStr = String(user._id);
+
+  if (!hasQuotationAccess) {
+    q.quotation = null;
+    q.lead = { $ne: null };
+  } else if (query.entity_type === 'lead') {
+    q.quotation = null;
+    q.lead = { $ne: null };
+  } else if (query.entity_type === 'quotation') {
+    q.quotation = { $ne: null };
+  }
+
   const rows = await LeadFollowUp.find(q)
     .populate({
       path: 'lead',
-      select: 'lead_no name company_name phone email status priority assigned_to',
-      populate: { path: 'assigned_to', select: 'name email' },
+      select: 'lead_no name company_name phone email status priority assigned_to estimated_value party_id requirement_details',
+      populate: [
+        { path: 'assigned_to', select: 'name email department' },
+        { path: 'party_id', select: 'party_name legal_name district state' },
+      ],
     })
-    .populate('created_by', 'name email')
-    .populate('completed_by', 'name email')
+    .populate({
+      path: 'quotation',
+      select: 'quotation_no version grand_total status customer_name kind_attn phone email subject party_id created_by sales_person_name sales_person_user lead',
+      populate: [
+        { path: 'sales_person_user', select: 'name email department' },
+        { path: 'party_id', select: 'party_name legal_name' },
+      ],
+    })
+    .populate('created_by', 'name email department')
+    .populate('completed_by', 'name email department')
     .sort({ follow_up_date: 1 })
     .lean();
 
-  // If user is not admin, filter strictly to leads assigned to them
-  if (!isLeadAdmin(user)) {
-    const userStr = String(user._id);
-    return rows
-      .filter((r) => {
-        const assignedId = r.lead?.assigned_to?._id ? String(r.lead.assigned_to._id) : '';
-        return assignedId === userStr;
-      })
-      .map(toPlain);
+  // Filter based on user scope
+  if (!isAdmin) {
+    if (isMgr) {
+      // Manager: quotation follow-ups on own created quotations, lead follow-ups on own assigned leads
+      return rows
+        .filter((r) => {
+          const fuCreator = r.created_by?._id ? String(r.created_by._id) : (r.created_by ? String(r.created_by) : null);
+          if (r.quotation) {
+            const qCreator = r.quotation?.created_by?._id ? String(r.quotation.created_by._id) : (r.quotation?.created_by ? String(r.quotation.created_by) : null);
+            const qRep = r.quotation?.sales_person_user?._id ? String(r.quotation.sales_person_user._id) : (r.quotation?.sales_person_user ? String(r.quotation.sales_person_user) : null);
+            return qCreator === userIdStr || qRep === userIdStr || fuCreator === userIdStr;
+          }
+          if (r.lead) {
+            const leadAssignee = r.lead?.assigned_to?._id ? String(r.lead.assigned_to._id) : (r.lead?.assigned_to ? String(r.lead.assigned_to) : null);
+            return leadAssignee === userIdStr || fuCreator === userIdStr;
+          }
+          return fuCreator === userIdStr;
+        })
+        .map(toPlain);
+    } else {
+      // Executive: strictly see their assigned or created lead follow-ups (no quotations)
+      return rows
+        .filter((r) => {
+          if (r.quotation) return false;
+          const assignedId = r.lead?.assigned_to?._id ? String(r.lead.assigned_to._id) : (r.lead?.assigned_to ? String(r.lead.assigned_to) : null);
+          const fuCreator = r.created_by?._id ? String(r.created_by._id) : (r.created_by ? String(r.created_by) : null);
+          return assignedId === userIdStr || fuCreator === userIdStr;
+        })
+        .map(toPlain);
+    }
   }
 
   // If admin filtered by assigned_to
-  if (query.assigned_to && query.assigned_to !== 'all') {
+  if (isAdmin && query.assigned_to && query.assigned_to !== 'all') {
     const targetAssignee = String(query.assigned_to);
     return rows
       .filter((r) => {
-        const assignedId = r.lead?.assigned_to?._id ? String(r.lead.assigned_to._id) : '';
-        return assignedId === targetAssignee;
+        const leadAssignee = r.lead?.assigned_to?._id ? String(r.lead.assigned_to._id) : (r.lead?.assigned_to ? String(r.lead.assigned_to) : null);
+        const qRep = r.quotation?.sales_person_user?._id ? String(r.quotation.sales_person_user._id) : (r.quotation?.sales_person_user ? String(r.quotation.sales_person_user) : null);
+        const qCreator = r.quotation?.created_by?._id ? String(r.quotation.created_by._id) : (r.quotation?.created_by ? String(r.quotation.created_by) : null);
+        const fuCreator = r.created_by?._id ? String(r.created_by._id) : (r.created_by ? String(r.created_by) : null);
+        return leadAssignee === targetAssignee || qRep === targetAssignee || qCreator === targetAssignee || fuCreator === targetAssignee;
       })
       .map(toPlain);
   }
@@ -232,9 +286,108 @@ async function getCalendar(query = {}, user) {
   return rows.map(toPlain);
 }
 
+/**
+ * Get urgent follow-ups summary (overdue + due today) scoped by user role.
+ * Powers the frontend persistent unskippable banner & intercept action modal.
+ */
+async function getUrgentSummary(user, timeZone = 'Asia/Kolkata') {
+  const { LeadFollowUp } = getModels();
+  const now = new Date();
+
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    })
+      .formatToParts(now)
+      .filter((p) => p.type !== 'literal')
+      .map((p) => [p.type, p.value])
+  );
+
+  const [y, m, d] = [Number(parts.year), Number(parts.month), Number(parts.day)];
+  const currentMinutes = Number(parts.hour) * 60 + Number(parts.minute);
+  const startOfToday = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
+  const endOfToday = new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999));
+
+  const allPending = await LeadFollowUp.find({
+    deletedAt: null,
+    status: 'pending',
+    follow_up_date: { $lte: endOfToday },
+  })
+    .populate({
+      path: 'lead',
+      select: 'lead_no name company_name phone email status priority assigned_to requirement products party_id contacts',
+      populate: [
+        { path: 'party_id', select: 'party_name legal_name' },
+        { path: 'assigned_to', select: 'name email' },
+      ],
+    })
+    .populate({
+      path: 'quotation',
+      select: 'quotation_no version grand_total status customer_name kind_attn phone email subject party_id created_by lead',
+    })
+    .sort({ follow_up_date: 1, follow_up_time: 1 })
+    .lean();
+
+  const isAdmin = isLeadAdmin(user);
+  const userStr = String(user._id);
+
+  // Filter based on user scope
+  const filtered = allPending.filter((fu) => {
+    if (isAdmin) return true;
+    const leadAssignee = fu.lead?.assigned_to?._id ? String(fu.lead.assigned_to._id) : (fu.lead?.assigned_to ? String(fu.lead.assigned_to) : null);
+    const qCreator = fu.quotation?.created_by ? String(fu.quotation.created_by) : null;
+    const fuCreator = fu.created_by ? String(fu.created_by) : null;
+    return leadAssignee === userStr || qCreator === userStr || fuCreator === userStr;
+  });
+
+  const overdue = [];
+  const dueToday = [];
+  const upcomingSoon = [];
+
+  for (const item of filtered) {
+    const isPast = new Date(item.follow_up_date) < startOfToday;
+    if (isPast) {
+      overdue.push(item);
+    } else {
+      dueToday.push(item);
+      if (item.follow_up_time) {
+        const timeParts = item.follow_up_time.split(':');
+        if (timeParts.length >= 2) {
+          const itemMins = parseInt(timeParts[0], 10) * 60 + parseInt(timeParts[1], 10);
+          if (itemMins >= currentMinutes && itemMins <= currentMinutes + 60) {
+            upcomingSoon.push(item);
+          }
+        }
+      }
+    }
+  }
+
+  const quoteCount = filtered.filter((f) => f.quotation).length;
+  const leadCount = filtered.filter((f) => f.lead && !f.quotation).length;
+
+  return {
+    total_urgent: filtered.length,
+    overdue_count: overdue.length,
+    today_count: dueToday.length,
+    upcoming_soon_count: upcomingSoon.length,
+    quote_count: quoteCount,
+    lead_count: leadCount,
+    overdue: overdue.map(toPlain),
+    due_today: dueToday.map(toPlain),
+    upcoming_soon: upcomingSoon.map(toPlain),
+  };
+}
+
 module.exports = {
   createForLead,
   listForLead,
   complete,
   getCalendar,
+  getUrgentSummary,
 };

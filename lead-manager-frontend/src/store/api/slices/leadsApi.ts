@@ -167,17 +167,35 @@ export type LeadInputPayload = Omit<
 export type LeadFollowUpRecord = {
   _id: string;
   id?: string;
-  lead: {
+  lead?: {
     _id: string;
-    lead_no: string;
-    name: string;
+    lead_no?: string;
+    name?: string;
     company_name?: string;
     phone?: string;
     email?: string;
-    status: LeadStatus;
-    priority: LeadPriority;
+    status?: LeadStatus;
+    priority?: LeadPriority;
     assigned_to?: { _id: string; name: string };
-  } | string;
+    party_id?: { _id?: string; party_name?: string; legal_name?: string };
+    contacts?: Array<{ name?: string; phone?: string; email?: string; designation?: string }>;
+  } | string | null;
+  quotation?: {
+    _id: string;
+    quotation_no?: string;
+    version?: number;
+    grand_total?: number;
+    status?: string;
+    customer_name?: string;
+    kind_attn?: string;
+    phone?: string;
+    email?: string;
+    subject?: string;
+    party_id?: string | { _id?: string; party_name?: string };
+    sales_person_user?: string | { _id?: string; name?: string; email?: string };
+    sales_person_name?: string;
+    created_by?: string | { _id?: string; name?: string };
+  } | string | null;
   follow_up_date: string;
   follow_up_time?: string;
   type: LeadFollowUpType;
@@ -191,6 +209,18 @@ export type LeadFollowUpRecord = {
   createdAt?: string;
   updatedAt?: string;
 };
+
+export interface UrgentFollowUpsSummary {
+  total_urgent: number;
+  overdue_count: number;
+  today_count: number;
+  upcoming_soon_count: number;
+  quote_count: number;
+  lead_count: number;
+  overdue: LeadFollowUpRecord[];
+  due_today: LeadFollowUpRecord[];
+  upcoming_soon: LeadFollowUpRecord[];
+}
 
 export type LeadTimelineEntry = {
   _id: string;
@@ -231,6 +261,7 @@ export type DuplicateCheckResult = {
 
 export type LeadDashboardStats = {
   totalLeads: number;
+  total_leads?: number;
   newLeads: number;
   followUpLeads?: number;
   assignedLeads?: number;
@@ -247,6 +278,24 @@ export type LeadDashboardStats = {
   totalWonValue: number;
   totalPipelineQuantity?: number;
   totalWonQuantity?: number;
+  win_rate?: number;
+  conversion_rate?: number;
+  avg_deal_size?: number;
+  won_deals?: {
+    count: number;
+    value: number;
+    win_rate?: number;
+  };
+  converted_accounts?: {
+    count: number;
+    value: number;
+    conversion_rate?: number;
+  };
+  active_pipeline?: {
+    count: number;
+    value: number;
+    quantity?: number;
+  };
 };
 
 export type LeadFunnelStage = {
@@ -268,6 +317,7 @@ export type LeadSalesPerformance = {
   quotations: number;
   won_leads: number;
   lost_leads: number;
+  win_rate?: number;
   conversion_rate: number;
   pipeline_qty?: number;
   pipeline_quantity?: number;
@@ -280,6 +330,46 @@ export type LeadSalesPerformance = {
   avg_lead_value: number;
   completed_followups: number;
   overdue_followups: number;
+};
+
+export type LeadReportQueryParams = {
+  period?: string;
+  startDate?: string;
+  endDate?: string;
+  start_date?: string;
+  end_date?: string;
+  from?: string;
+  to?: string;
+  assigned_to?: string;
+  sales_person?: string;
+  status?: string;
+};
+
+export type LeadMonthlyTrend = {
+  period_key: string;
+  period_label: string;
+  total_leads: number;
+  pipeline_value: number;
+  won_count: number;
+  won_value: number;
+  converted_count: number;
+  converted_value: number;
+  lost_count: number;
+  lost_value: number;
+  quotation_count: number;
+};
+
+export type LeadProductPerformance = {
+  product_name: string;
+  unit: string;
+  times_inquired: number;
+  total_quantity: number;
+  total_estimated_value: number;
+  won_quantity: number;
+  won_value: number;
+  converted_quantity: number;
+  converted_value: number;
+  avg_unit_price?: number;
 };
 
 export type LeadSourcePerformance = {
@@ -297,6 +387,105 @@ export type LeadSourcePerformance = {
   lost_quantity?: number;
   pipeline_value: number;
   won_value: number;
+};
+
+export type FollowUpReportSummary = {
+  total_followups: number;
+  completed_count: number;
+  pending_count: number;
+  cancelled_count: number;
+  rescheduled_count: number;
+  overdue_count: number;
+  due_today_count: number;
+  upcoming_count: number;
+  on_time_completed_count: number;
+  on_time_rate: number;
+  completion_rate: number;
+  lead_followups_count: number;
+  quotation_followups_count: number;
+};
+
+export type FollowUpChannelBreakdown = {
+  type: string;
+  label: string;
+  total_count: number;
+  completed_count: number;
+  pending_count: number;
+  overdue_count: number;
+  completion_rate: number;
+  share_percent: number;
+};
+
+export type FollowUpOutcomeBreakdown = {
+  outcome: string;
+  count: number;
+  percent: number;
+};
+
+export type FollowUpRepScorecard = {
+  user_id: string;
+  name: string;
+  email: string;
+  department: string;
+  total_scheduled: number;
+  completed: number;
+  on_time: number;
+  pending: number;
+  overdue: number;
+  lead_count: number;
+  quotation_count: number;
+  on_time_rate: number;
+  completion_rate: number;
+};
+
+export type FollowUpDailyTrend = {
+  date: string;
+  scheduled: number;
+  completed: number;
+  overdue: number;
+  pending: number;
+};
+
+export type FollowUpDetailedRecord = {
+  _id: string;
+  entity_type: "lead" | "quotation";
+  entity_ref_no: string;
+  lead_id?: string | null;
+  quotation_id?: string | null;
+  customer_name: string;
+  company_name: string;
+  phone: string;
+  email: string;
+  city: string;
+  rep_name: string;
+  type: LeadFollowUpType;
+  status: LeadFollowUpStatus;
+  display_status: string;
+  follow_up_date: string | null;
+  follow_up_time: string;
+  completed_at: string | null;
+  outcome: string;
+  notes: string;
+  commercial_value: number;
+};
+
+export type FollowUpReportData = {
+  summary: FollowUpReportSummary;
+  channel_breakdown: FollowUpChannelBreakdown[];
+  outcome_breakdown: FollowUpOutcomeBreakdown[];
+  rep_scorecard: FollowUpRepScorecard[];
+  daily_trends: FollowUpDailyTrend[];
+  detailed_records: FollowUpDetailedRecord[];
+};
+
+export type FollowUpReportQueryParams = {
+  from_date?: string;
+  to_date?: string;
+  period?: "today" | "this_week" | "this_month" | "this_quarter" | "all" | string;
+  assigned_to?: string;
+  entity_type?: "all" | "lead" | "quotation" | string;
+  type?: string;
+  status?: string;
 };
 
 export type ListLeadsQueryArgs = {
@@ -516,6 +705,7 @@ export const leadsApi = medicaApi.injectEndpoints({
           applied_rate_type?: string;
           unit_price?: number;
           discount_percent?: number;
+          discount_amount?: number;
           gst_percent?: number;
           remarks?: string;
         }>;
@@ -675,17 +865,7 @@ export const leadsApi = medicaApi.injectEndpoints({
 
     getLeadDashboardStats: build.query<
       LeadDashboardStats,
-      {
-        assigned_to?: string;
-        from?: string;
-        to?: string;
-        years?: string;
-        months?: string;
-        startDate?: string;
-        endDate?: string;
-        start_date?: string;
-        end_date?: string;
-      } | void
+      LeadReportQueryParams | void
     >({
       query: (params) => ({
         url: "/leads/reports/dashboard",
@@ -696,21 +876,21 @@ export const leadsApi = medicaApi.injectEndpoints({
     }),
 
     getLeadSalesFunnel: build.query<
-      { total_leads: number; stages: LeadFunnelStage[] },
-      { assigned_to?: string } | void
+      { total_leads: number; stages: LeadFunnelStage[]; drop_offs?: { lost?: { count: number; value: number } } },
+      LeadReportQueryParams | void
     >({
       query: (params) => ({
         url: "/leads/reports/funnel",
         params: params || undefined,
       }),
-      transformResponse: (res: ApiEnvelope<{ total_leads: number; stages: LeadFunnelStage[] }>) =>
+      transformResponse: (res: ApiEnvelope<{ total_leads: number; stages: LeadFunnelStage[]; drop_offs?: { lost?: { count: number; value: number } } }>) =>
         unwrapEnvelope(res),
       providesTags: [{ type: "Lead" as const, id: "FUNNEL" }],
     }),
 
     getLeadSalesPerformance: build.query<
       LeadSalesPerformance[],
-      { assigned_to?: string } | void
+      LeadReportQueryParams | void
     >({
       query: (params) => ({
         url: "/leads/reports/sales-performance",
@@ -722,7 +902,7 @@ export const leadsApi = medicaApi.injectEndpoints({
 
     getLeadSourcePerformance: build.query<
       LeadSourcePerformance[],
-      { assigned_to?: string } | void
+      LeadReportQueryParams | void
     >({
       query: (params) => ({
         url: "/leads/reports/source-performance",
@@ -730,6 +910,57 @@ export const leadsApi = medicaApi.injectEndpoints({
       }),
       transformResponse: (res: ApiEnvelope<LeadSourcePerformance[]>) => unwrapEnvelope(res),
       providesTags: [{ type: "Lead" as const, id: "SOURCE_PERFORMANCE" }],
+    }),
+
+    getLeadMonthlyTrends: build.query<
+      LeadMonthlyTrend[],
+      LeadReportQueryParams | void
+    >({
+      query: (params) => ({
+        url: "/leads/reports/monthly-trends",
+        params: params || undefined,
+      }),
+      transformResponse: (res: ApiEnvelope<LeadMonthlyTrend[]>) => unwrapEnvelope(res),
+      providesTags: [{ type: "Lead" as const, id: "MONTHLY_TRENDS" }],
+    }),
+
+    getLeadProductBreakdown: build.query<
+      LeadProductPerformance[],
+      LeadReportQueryParams | void
+    >({
+      query: (params) => ({
+        url: "/leads/reports/products",
+        params: params || undefined,
+      }),
+      transformResponse: (res: ApiEnvelope<LeadProductPerformance[]>) => unwrapEnvelope(res),
+      providesTags: [{ type: "Lead" as const, id: "PRODUCT_BREAKDOWN" }],
+    }),
+
+    getUrgentFollowUpsSummary: build.query<UrgentFollowUpsSummary, { tz?: string } | void>({
+      query: (params) => ({
+        url: "/leads/follow-ups/urgent-summary",
+        params: params || undefined,
+      }),
+      transformResponse: (res: ApiEnvelope<UrgentFollowUpsSummary>) => unwrapEnvelope(res),
+      providesTags: [
+        { type: "LeadFollowUp" as const, id: "URGENT_SUMMARY" },
+        { type: "LeadQuotation" as const, id: "LIST" },
+      ],
+    }),
+
+    getFollowUpAnalyticsReport: build.query<
+      FollowUpReportData,
+      FollowUpReportQueryParams | void
+    >({
+      query: (params) => ({
+        url: "/leads/reports/follow-ups",
+        params: params || undefined,
+      }),
+      transformResponse: (res: ApiEnvelope<FollowUpReportData>) => unwrapEnvelope(res),
+      providesTags: [
+        { type: "LeadFollowUp" as const, id: "REPORT" },
+        { type: "Lead" as const, id: "LIST" },
+      ],
     }),
   }),
 });
@@ -755,10 +986,14 @@ export const {
   useCreateLeadFollowUpMutation,
   useCompleteLeadFollowUpMutation,
   useGetLeadFollowUpCalendarQuery,
+  useGetUrgentFollowUpsSummaryQuery,
+  useGetFollowUpAnalyticsReportQuery,
   useRunTodaysFollowUpRemindersMutation,
   useRunOverdueFollowUpRemindersMutation,
   useGetLeadDashboardStatsQuery,
   useGetLeadSalesFunnelQuery,
   useGetLeadSalesPerformanceQuery,
   useGetLeadSourcePerformanceQuery,
+  useGetLeadMonthlyTrendsQuery,
+  useGetLeadProductBreakdownQuery,
 } = leadsApi;

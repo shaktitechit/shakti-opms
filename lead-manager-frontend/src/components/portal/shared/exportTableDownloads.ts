@@ -169,44 +169,91 @@ export function downloadTableXlsx(options: {
   rows: ExportTableRow[];
 }): void {
   const { filename, sheetName = "Sheet1", title, columns, rows } = options;
+  downloadMultiSheetXlsx({
+    filename,
+    sheets: [
+      {
+        sheetName,
+        title,
+        columns,
+        rows,
+      },
+    ],
+  });
+}
+
+export type MultiSheetXlsxTab = {
+  sheetName: string;
+  title?: string;
+  columns: ExportTableColumn[];
+  rows: ExportTableRow[];
+};
+
+/** Download a multi-sheet .xlsx workbook. */
+export function downloadMultiSheetXlsx(options: {
+  filename: string;
+  sheets: MultiSheetXlsxTab[];
+}): void {
+  const { filename, sheets } = options;
+  if (!sheets || sheets.length === 0) return;
+
   const encoder = new TextEncoder();
-  const safeSheet = sheetName.replace(/[\\/*?:\[\]]/g, "_").slice(0, 31) || "Sheet1";
+  const fileEntries: Array<{ name: string; data: Uint8Array }> = [];
 
-  const sheetRows: string[] = [];
-  let rowIdx = 1;
+  const contentTypeOverrides: string[] = [];
+  const sheetElements: string[] = [];
+  const relElements: string[] = [];
 
-  if (title) {
-    sheetRows.push(
-      `<row r="${rowIdx}"><c r="A${rowIdx}" t="inlineStr"><is><t>${xmlEscape(title)}</t></is></c></row>`,
+  sheets.forEach((tab, tabIdx) => {
+    const sheetId = tabIdx + 1;
+    const relId = `rId${sheetId}`;
+    const safeSheet = tab.sheetName.replace(/[\\/*?:\[\]]/g, "_").slice(0, 31) || `Sheet${sheetId}`;
+
+    contentTypeOverrides.push(
+      `<Override PartName="/xl/worksheets/sheet${sheetId}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
     );
-    rowIdx += 1;
-    sheetRows.push(`<row r="${rowIdx}"/>`);
-    rowIdx += 1;
-  }
+    sheetElements.push(
+      `<sheet name="${xmlEscape(safeSheet)}" sheetId="${sheetId}" r:id="${relId}"/>`
+    );
+    relElements.push(
+      `<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${sheetId}.xml"/>`
+    );
 
-  const headerCells = columns
-    .map(
-      (col, i) =>
-        `<c r="${colLetter(i)}${rowIdx}" t="inlineStr"><is><t>${xmlEscape(col.label)}</t></is></c>`,
-    )
-    .join("");
-  sheetRows.push(`<row r="${rowIdx}">${headerCells}</row>`);
-  rowIdx += 1;
+    const sheetRows: string[] = [];
+    let rowIdx = 1;
 
-  for (const row of rows) {
-    const cells = columns
-      .map((col, i) => {
-        const text = xmlEscape(cellText(row[col.key]));
-        return `<c r="${colLetter(i)}${rowIdx}" t="inlineStr"><is><t>${text}</t></is></c>`;
-      })
+    if (tab.title) {
+      sheetRows.push(
+        `<row r="${rowIdx}"><c r="A${rowIdx}" t="inlineStr"><is><t>${xmlEscape(tab.title)}</t></is></c></row>`
+      );
+      rowIdx += 1;
+      sheetRows.push(`<row r="${rowIdx}"/>`);
+      rowIdx += 1;
+    }
+
+    const headerCells = tab.columns
+      .map(
+        (col, i) =>
+          `<c r="${colLetter(i)}${rowIdx}" t="inlineStr"><is><t>${xmlEscape(col.label)}</t></is></c>`
+      )
       .join("");
-    sheetRows.push(`<row r="${rowIdx}">${cells}</row>`);
+    sheetRows.push(`<row r="${rowIdx}">${headerCells}</row>`);
     rowIdx += 1;
-  }
 
-  const lastCol = colLetter(Math.max(0, columns.length - 1));
-  const lastRow = Math.max(1, rowIdx - 1);
-  const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    for (const row of tab.rows) {
+      const cells = tab.columns
+        .map((col, i) => {
+          const text = xmlEscape(cellText(row[col.key]));
+          return `<c r="${colLetter(i)}${rowIdx}" t="inlineStr"><is><t>${text}</t></is></c>`;
+        })
+        .join("");
+      sheetRows.push(`<row r="${rowIdx}">${cells}</row>`);
+      rowIdx += 1;
+    }
+
+    const lastCol = colLetter(Math.max(0, tab.columns.length - 1));
+    const lastRow = Math.max(1, rowIdx - 1);
+    const sheetXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <dimension ref="A1:${lastCol}${lastRow}"/>
   <sheetData>
@@ -214,12 +261,18 @@ export function downloadTableXlsx(options: {
   </sheetData>
 </worksheet>`;
 
+    fileEntries.push({
+      name: `xl/worksheets/sheet${sheetId}.xml`,
+      data: encoder.encode(sheetXml),
+    });
+  });
+
   const contentTypes = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
   <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
   <Default Extension="xml" ContentType="application/xml"/>
   <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-  <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+  ${contentTypeOverrides.join("\n  ")}
 </Types>`;
 
   const rels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
@@ -230,13 +283,13 @@ export function downloadTableXlsx(options: {
   const workbook = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
   <sheets>
-    <sheet name="${xmlEscape(safeSheet)}" sheetId="1" r:id="rId1"/>
+    ${sheetElements.join("\n    ")}
   </sheets>
 </workbook>`;
 
   const workbookRels = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
+  ${relElements.join("\n  ")}
 </Relationships>`;
 
   const blob = zipStore([
@@ -244,7 +297,7 @@ export function downloadTableXlsx(options: {
     { name: "_rels/.rels", data: encoder.encode(rels) },
     { name: "xl/workbook.xml", data: encoder.encode(workbook) },
     { name: "xl/_rels/workbook.xml.rels", data: encoder.encode(workbookRels) },
-    { name: "xl/worksheets/sheet1.xml", data: encoder.encode(sheetXml) },
+    ...fileEntries,
   ]);
 
   const safeName = filename.endsWith(".xlsx") ? filename : `${filename}.xlsx`;

@@ -30,6 +30,8 @@ import {
   Users,
   Send,
   Loader2,
+  BarChart3,
+  FileSpreadsheet,
 } from "lucide-react";
 
 import {
@@ -40,6 +42,7 @@ import {
   type LeadFollowUpRecord,
   type LeadFollowUpType,
   type LeadFollowUpStatus,
+  type FollowUpDetailedRecord,
 } from "@/store/api";
 import { useAppSelector } from "@/store/hooks";
 import { useLeadManagerRole } from "@/hooks/useLeadManagerRole";
@@ -51,8 +54,13 @@ import {
   formatLeadDateTime,
   isUserInLeadManagerPortal,
   getLeadManagerPortalRole,
+  isLeadAdmin,
+  isLeadManagerRole,
 } from "./leadUtils";
 import { CompleteFollowUpModal } from "./CompleteFollowUpModal";
+import { DownloadFollowUpsPreviewModal } from "./DownloadFollowUpsPreviewModal";
+import { CalendarMonthGrid } from "./calendar/CalendarMonthGrid";
+import { CalendarWeekTimeline } from "./calendar/CalendarWeekTimeline";
 
 type Props = {
   portalHome?: string;
@@ -112,7 +120,8 @@ function FollowUpTypeBadge({ type }: { type: LeadFollowUpType }) {
 
 export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
   const currentUser = useAppSelector((state) => state.auth.user);
-  const { isAdmin } = useLeadManagerRole();
+  const { isAdmin, isManager } = useLeadManagerRole();
+  const hasQuotationAccess = isAdmin || isManager;
 
   const [datePreset, setDatePreset] = useState<DateFilterPreset>("all");
   const [customFrom, setCustomFrom] = useState<string>("");
@@ -120,10 +129,13 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [assignedFilter, setAssignedFilter] = useState<string>("all");
+  const [entityType, setEntityType] = useState<string>(() => (hasQuotationAccess ? "all" : "lead"));
   const [search, setSearch] = useState<string>("");
-  const [viewMode, setViewMode] = useState<"agenda" | "table">("agenda");
+  const [viewMode, setViewMode] = useState<"calendar" | "week" | "agenda" | "table">("calendar");
+  const [calendarDate, setCalendarDate] = useState<Date>(new Date());
 
   const [completeTarget, setCompleteTarget] = useState<LeadFollowUpRecord | null>(null);
+  const [downloadModalOpen, setDownloadModalOpen] = useState<boolean>(false);
 
   const [runTodaysReminders, { isLoading: sendingToday }] =
     useRunTodaysFollowUpRemindersMutation();
@@ -157,21 +169,37 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
     skip: !isAdmin,
   });
 
+  // Available entity tabs based on quotation access
+  const availableEntityTabs = useMemo(() => {
+    if (!hasQuotationAccess) {
+      return [{ id: "lead", label: "My Leads Calendar" }];
+    }
+    return [
+      { id: "all", label: "All Activities" },
+      { id: "lead", label: "Leads Follow-ups" },
+      { id: "quotation", label: "Quotation Follow-ups" },
+    ];
+  }, [hasQuotationAccess]);
+
+  const effectiveEntityType = hasQuotationAccess ? entityType : "lead";
+
   // Calculate Date bounds for query if needed
   const dateQueryParams = useMemo(() => {
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const toYmd = (d: Date) => d.toISOString().split("T")[0];
 
+    const entityParam = hasQuotationAccess && effectiveEntityType !== "all" ? effectiveEntityType : undefined;
+
     if (datePreset === "today") {
       const todayStr = toYmd(startOfToday);
-      return { from_date: todayStr, to_date: todayStr };
+      return { from_date: todayStr, to_date: todayStr, entity_type: entityParam };
     }
     if (datePreset === "tomorrow") {
       const tomorrow = new Date(startOfToday);
       tomorrow.setDate(tomorrow.getDate() + 1);
       const tomStr = toYmd(tomorrow);
-      return { from_date: tomStr, to_date: tomStr };
+      return { from_date: tomStr, to_date: tomStr, entity_type: entityParam };
     }
     if (datePreset === "this_week") {
       const day = startOfToday.getDay(); // 0 is Sunday
@@ -180,16 +208,33 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
       monday.setDate(diff);
       const sunday = new Date(monday);
       sunday.setDate(monday.getDate() + 6);
-      return { from_date: toYmd(monday), to_date: toYmd(sunday) };
+      return { from_date: toYmd(monday), to_date: toYmd(sunday), entity_type: entityParam };
     }
     if (datePreset === "custom" && (customFrom || customTo)) {
       return {
         from_date: customFrom || undefined,
         to_date: customTo || undefined,
+        entity_type: entityParam,
       };
     }
-    return undefined;
-  }, [datePreset, customFrom, customTo]);
+    if (viewMode === "calendar" && datePreset === "all") {
+      const y = calendarDate.getFullYear();
+      const m = calendarDate.getMonth();
+      const first = new Date(y, m - 1, 20).toISOString().split("T")[0];
+      const last = new Date(y, m + 2, 10).toISOString().split("T")[0];
+      return { from_date: first, to_date: last, entity_type: entityParam };
+    }
+    if (viewMode === "week" && datePreset === "all") {
+      const d = new Date(calendarDate);
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+      const monday = new Date(d.setDate(diff));
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      return { from_date: toYmd(monday), to_date: toYmd(sunday), entity_type: entityParam };
+    }
+    return entityParam ? { entity_type: entityParam } : undefined;
+  }, [datePreset, customFrom, customTo, viewMode, calendarDate, hasQuotationAccess, effectiveEntityType]);
 
   const {
     data: followUps = [],
@@ -206,11 +251,25 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
   const filteredFollowUps = useMemo(() => {
     return followUps.filter((fu) => {
       const leadObj = typeof fu.lead === "object" && fu.lead !== null ? fu.lead : null;
+      const quoteObj = typeof fu.quotation === "object" && fu.quotation !== null ? fu.quotation : null;
+      const isQuotation = Boolean(quoteObj);
+
+      // Role check: if not manager/admin, quotation must NOT be displayed
+      if (!hasQuotationAccess && isQuotation) return false;
+
+      // Entity type filter
+      if (hasQuotationAccess && effectiveEntityType !== "all") {
+        if (effectiveEntityType === "lead" && isQuotation) return false;
+        if (effectiveEntityType === "quotation" && !isQuotation) return false;
+      }
+
       const leadNo = leadObj?.lead_no || "";
+      const quoteNo = quoteObj?.quotation_no || "";
       const leadName = leadObj?.name || "";
-      const companyName = leadObj?.company_name || "";
-      const phone = leadObj?.phone || "";
-      const email = leadObj?.email || "";
+      const customerName = quoteObj?.customer_name || quoteObj?.kind_attn || "";
+      const companyName = leadObj?.company_name || quoteObj?.customer_name || "";
+      const phone = leadObj?.phone || quoteObj?.phone || "";
+      const email = leadObj?.email || quoteObj?.email || "";
       const notes = fu.notes || "";
       const outcome = fu.outcome || "";
       const fuDate = fu.follow_up_date ? fu.follow_up_date.split("T")[0] : "";
@@ -228,14 +287,20 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
       // Overdue preset filter
       if (datePreset === "overdue" && !isOverdue) return false;
 
-      // Non-admin: only assigned leads
+      // Non-admin: only assigned leads or created follow-ups
       if (!isAdmin) {
         const assignedId = leadObj?.assigned_to?._id
           ? String(leadObj.assigned_to._id)
           : typeof leadObj?.assigned_to === "string"
           ? leadObj.assigned_to
           : "";
-        if (assignedId !== String(currentUser?._id)) {
+        const creatorId = fu.created_by?._id
+          ? String(fu.created_by._id)
+          : typeof fu.created_by === "string"
+          ? fu.created_by
+          : "";
+        const userId = String(currentUser?._id);
+        if (assignedId !== userId && creatorId !== userId) {
           return false;
         }
       }
@@ -247,7 +312,14 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
           : typeof leadObj?.assigned_to === "string"
           ? leadObj.assigned_to
           : "";
-        if (assignedId !== assignedFilter) {
+        const qRep = quoteObj?.sales_person_user;
+        const qRepId =
+          typeof qRep === "object" && qRep !== null && "_id" in qRep
+            ? String(qRep._id || "")
+            : typeof qRep === "string"
+            ? qRep
+            : "";
+        if (assignedId !== assignedFilter && qRepId !== assignedFilter) {
           return false;
         }
       }
@@ -257,7 +329,9 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
         const q = search.toLowerCase().trim();
         const matches =
           leadNo.toLowerCase().includes(q) ||
+          quoteNo.toLowerCase().includes(q) ||
           leadName.toLowerCase().includes(q) ||
+          customerName.toLowerCase().includes(q) ||
           companyName.toLowerCase().includes(q) ||
           phone.toLowerCase().includes(q) ||
           email.toLowerCase().includes(q) ||
@@ -268,7 +342,19 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
 
       return true;
     });
-  }, [followUps, statusFilter, typeFilter, datePreset, assignedFilter, search, todayStr, isAdmin, currentUser?._id]);
+  }, [
+    followUps,
+    statusFilter,
+    typeFilter,
+    datePreset,
+    assignedFilter,
+    search,
+    todayStr,
+    isAdmin,
+    hasQuotationAccess,
+    effectiveEntityType,
+    currentUser?._id,
+  ]);
 
   // Summary counts
   const summary = useMemo(() => {
@@ -338,6 +424,62 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
     };
   }, [filteredFollowUps, todayStr]);
 
+  // Exportable follow-up records
+  const exportRecords: FollowUpDetailedRecord[] = useMemo(() => {
+    return filteredFollowUps.map((fu) => {
+      const leadObj = typeof fu.lead === "object" && fu.lead !== null ? fu.lead : null;
+      const quoteObj = typeof fu.quotation === "object" && fu.quotation !== null ? fu.quotation : null;
+      const isQuotation = Boolean(quoteObj);
+
+      const contactPerson =
+        quoteObj?.kind_attn ||
+        leadObj?.name ||
+        "Contact Person";
+
+      const companyName =
+        quoteObj?.customer_name ||
+        leadObj?.company_name ||
+        "Company";
+
+      const phone = quoteObj?.phone || leadObj?.phone || "";
+      const email = quoteObj?.email || leadObj?.email || "";
+
+      const repName =
+        (typeof fu.created_by === "object" && fu.created_by !== null ? (fu.created_by as any).name : "") ||
+        (leadObj?.assigned_to && typeof leadObj.assigned_to === "object" ? leadObj.assigned_to.name : "") ||
+        "Unassigned";
+
+      const fuDate = fu.follow_up_date ? fu.follow_up_date.split("T")[0] : "";
+      const isDone = fu.status === "completed";
+      let displayStatus: string = fu.status;
+      if (!isDone && fuDate < todayStr) displayStatus = "overdue";
+      else if (!isDone && fuDate === todayStr) displayStatus = "due_today";
+
+      return {
+        _id: fu._id,
+        entity_type: isQuotation ? "quotation" : "lead",
+        entity_ref_no: isQuotation ? quoteObj?.quotation_no || "QUOTE" : leadObj?.lead_no || "LEAD",
+        lead_id: leadObj?._id ? String(leadObj._id) : null,
+        quotation_id: quoteObj?._id ? String(quoteObj._id) : null,
+        customer_name: contactPerson,
+        company_name: companyName,
+        phone,
+        email,
+        city: "—",
+        rep_name: repName,
+        type: fu.type,
+        status: fu.status,
+        display_status: displayStatus,
+        follow_up_date: fu.follow_up_date || null,
+        follow_up_time: fu.follow_up_time || "—",
+        completed_at: fu.completed_at || null,
+        outcome: fu.outcome || "—",
+        notes: fu.notes || "—",
+        commercial_value: isQuotation ? (quoteObj?.grand_total || 0) : 0,
+      };
+    });
+  }, [filteredFollowUps, todayStr]);
+
   return (
     <div className="space-y-6 pb-12 font-sans">
       {/* ── HEADER ── */}
@@ -397,12 +539,20 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
               </button>
             </>
           ) : null}
+          <button
+            type="button"
+            onClick={() => setDownloadModalOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-teal-500/30 bg-teal-50 px-3.5 py-2 text-xs font-bold text-teal-800 shadow-xs transition hover:bg-teal-100 dark:border-teal-500/20 dark:bg-teal-950/40 dark:text-teal-300 dark:hover:bg-teal-950/70"
+          >
+            <FileSpreadsheet className="h-3.5 w-3.5 text-teal-600 dark:text-teal-400" />
+            <span>Export (.xlsx)</span>
+          </button>
           <Link
-            href={`${portalHome}/leads/reports`}
+            href="/dashboard/leads/follow-ups/reports"
             className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
           >
-            <CalendarIcon className="h-3.5 w-3.5 text-slate-400" />
-            <span>Reports & Analytics</span>
+            <BarChart3 className="h-3.5 w-3.5 text-teal-600 dark:text-teal-400" />
+            <span>Follow-Up Reports</span>
           </Link>
           <Link
             href={`${portalHome}/leads/new`}
@@ -484,157 +634,207 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
         </div>
       </div>
 
-      {/* ── FILTER & CONTROL BAR ── */}
-      <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900 space-y-4">
-        {/* Date presets row */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3 dark:border-white/10">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {[
-              { id: "all", label: "All Follow-ups" },
-              { id: "today", label: "Today" },
-              { id: "tomorrow", label: "Tomorrow" },
-              { id: "this_week", label: "This Week" },
-              { id: "overdue", label: "Overdue Only" },
-              { id: "custom", label: "Custom Range" },
-            ].map((preset) => (
+      {/* ── ENTITY FILTER TABS & VIEW SWITCHER STRIP ── */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-white/10 pb-2">
+        <div className="flex overflow-x-auto gap-2">
+          {availableEntityTabs.map((tab) => {
+            const isActive = effectiveEntityType === tab.id;
+            return (
               <button
-                key={preset.id}
+                key={tab.id}
                 type="button"
-                onClick={() => setDatePreset(preset.id as DateFilterPreset)}
-                className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
-                  datePreset === preset.id
-                    ? "bg-primary text-white shadow-sm"
+                onClick={() => setEntityType(tab.id)}
+                className={`rounded-xl px-3.5 py-1.5 text-xs font-bold transition ${
+                  isActive
+                    ? "bg-primary text-white shadow-xs"
                     : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
                 }`}
               >
-                {preset.label}
+                {tab.label}
               </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
-            <button
-              type="button"
-              onClick={() => setViewMode("agenda")}
-              className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
-                viewMode === "agenda"
-                  ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white"
-                  : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-              }`}
-            >
-              <LayoutList className="h-3.5 w-3.5" />
-              <span>Agenda</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("table")}
-              className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
-                viewMode === "table"
-                  ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white"
-                  : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-              }`}
-            >
-              <TableIcon className="h-3.5 w-3.5" />
-              <span>Table</span>
-            </button>
-          </div>
+            );
+          })}
         </div>
 
-        {/* Custom date range inputs */}
-        {datePreset === "custom" && (
-          <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-white/5">
-            <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Custom Date:</span>
-            <input
-              type="date"
-              value={customFrom}
-              onChange={(e) => setCustomFrom(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 dark:border-white/10 dark:bg-slate-900 dark:text-white"
-            />
-            <span className="text-xs text-slate-400">to</span>
-            <input
-              type="date"
-              value={customTo}
-              onChange={(e) => setCustomTo(e.target.value)}
-              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 dark:border-white/10 dark:bg-slate-900 dark:text-white"
-            />
-          </div>
-        )}
-
-        {/* Secondary filters row */}
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search lead, company, phone, notes..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-9 pr-3.5 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary dark:border-white/10 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
-            />
-          </div>
-
-          {/* Channel Type filter */}
-          <div>
-            <select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-white/10 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
-            >
-              <option value="all">All Interaction Channels</option>
-              <option value="call">Phone Call</option>
-              <option value="meeting">Meeting</option>
-              <option value="whatsapp">WhatsApp</option>
-              <option value="email">Email</option>
-              <option value="demo">Product Demo</option>
-              <option value="visit">Site Visit</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-
-          {/* Status filter */}
-          <div>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-white/10 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
-            >
-              <option value="all">All Statuses</option>
-              <option value="pending">Pending</option>
-              <option value="overdue">Overdue</option>
-              <option value="completed">Completed</option>
-            </select>
-          </div>
-
-          {/* Sales rep filter (for Admin / Super Admin) */}
-          {isAdmin ? (
-            <div>
-              <select
-                value={assignedFilter}
-                onChange={(e) => setAssignedFilter(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-white/10 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
-              >
-                <option value="all">All Users</option>
-                {Array.isArray(usersData) &&
-                  usersData
-                    .filter(isUserInLeadManagerPortal)
-                    .map((u: any) => {
-                      const roleBadge = getLeadManagerPortalRole(u);
-                      return (
-                        <option key={u._id || u.id} value={u._id || u.id}>
-                          {u.name} {roleBadge ? `(${roleBadge})` : ""}
-                        </option>
-                      );
-                    })}
-              </select>
-            </div>
-          ) : (
-            <div className="flex items-center text-xs text-slate-500 font-semibold px-2">
-              Viewing your scheduled interactions
-            </div>
-          )}
+        {/* View Mode Switcher */}
+        <div className="flex items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+          <button
+            type="button"
+            onClick={() => setViewMode("calendar")}
+            className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+              viewMode === "calendar"
+                ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white"
+                : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+            }`}
+          >
+            <CalendarIcon className="h-3.5 w-3.5" />
+            <span>Month Grid</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("week")}
+            className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+              viewMode === "week"
+                ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white"
+                : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+            }`}
+          >
+            <CalendarClock className="h-3.5 w-3.5" />
+            <span>Week</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("agenda")}
+            className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+              viewMode === "agenda"
+                ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white"
+                : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+            }`}
+          >
+            <LayoutList className="h-3.5 w-3.5" />
+            <span>Agenda</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("table")}
+            className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+              viewMode === "table"
+                ? "bg-white text-slate-900 shadow-sm dark:bg-slate-700 dark:text-white"
+                : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+            }`}
+          >
+            <TableIcon className="h-3.5 w-3.5" />
+            <span>Table</span>
+          </button>
         </div>
       </div>
+
+      {/* ── FILTER & CONTROL BAR (Agenda & Table Modes) ── */}
+      {(viewMode === "agenda" || viewMode === "table") && (
+        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900 space-y-4">
+          {/* Date presets row */}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3 dark:border-white/10">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { id: "all", label: "All Follow-ups" },
+                { id: "today", label: "Today" },
+                { id: "tomorrow", label: "Tomorrow" },
+                { id: "this_week", label: "This Week" },
+                { id: "overdue", label: "Overdue Only" },
+                { id: "custom", label: "Custom Range" },
+              ].map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => setDatePreset(preset.id as DateFilterPreset)}
+                  className={`rounded-xl px-3 py-1.5 text-xs font-bold transition ${
+                    datePreset === preset.id
+                      ? "bg-primary text-white shadow-sm"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Custom date range inputs */}
+          {datePreset === "custom" && (
+            <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-white/5">
+              <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Custom Date:</span>
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(e) => setCustomFrom(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 dark:border-white/10 dark:bg-slate-900 dark:text-white"
+              />
+              <span className="text-xs text-slate-400">to</span>
+              <input
+                type="date"
+                value={customTo}
+                onChange={(e) => setCustomTo(e.target.value)}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 dark:border-white/10 dark:bg-slate-900 dark:text-white"
+              />
+            </div>
+          )}
+
+          {/* Secondary filters row */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search lead, company, phone, notes..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-9 pr-3.5 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary dark:border-white/10 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
+              />
+            </div>
+
+            {/* Channel Type filter */}
+            <div>
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-white/10 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
+              >
+                <option value="all">All Interaction Channels</option>
+                <option value="call">Phone Call</option>
+                <option value="meeting">Meeting</option>
+                <option value="whatsapp">WhatsApp</option>
+                <option value="email">Email</option>
+                <option value="demo">Product Demo</option>
+                <option value="visit">Site Visit</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+
+            {/* Status filter */}
+            <div>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-white/10 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
+              >
+                <option value="all">All Statuses</option>
+                <option value="pending">Pending</option>
+                <option value="overdue">Overdue</option>
+                <option value="completed">Completed</option>
+              </select>
+            </div>
+
+            {/* Sales rep filter (for Admin / Super Admin) */}
+            {isAdmin ? (
+              <div>
+                <select
+                  value={assignedFilter}
+                  onChange={(e) => setAssignedFilter(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-white/10 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
+                >
+                  <option value="all">All Users</option>
+                  {Array.isArray(usersData) &&
+                    usersData
+                      .filter(isUserInLeadManagerPortal)
+                      .map((u: any) => {
+                        const roleBadge = getLeadManagerPortalRole(u);
+                        return (
+                          <option key={u._id || u.id} value={u._id || u.id}>
+                            {u.name} {roleBadge ? `(${roleBadge})` : ""}
+                          </option>
+                        );
+                      })}
+                </select>
+              </div>
+            ) : (
+              <div className="flex items-center text-xs text-slate-500 font-semibold px-2">
+                Viewing your scheduled interactions
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── CONTENT AREA ── */}
       {isFetching ? (
@@ -642,6 +842,22 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
           <CalendarClock className="h-8 w-8 animate-pulse text-blue-500 mb-2" />
           <p className="text-xs font-semibold text-slate-500">Loading follow-up schedule...</p>
         </div>
+      ) : viewMode === "calendar" ? (
+        <CalendarMonthGrid
+          followUps={filteredFollowUps}
+          currentDate={calendarDate}
+          onDateChange={setCalendarDate}
+          onSelectEvent={(fu) => setCompleteTarget(fu)}
+          hasQuotationAccess={hasQuotationAccess}
+        />
+      ) : viewMode === "week" ? (
+        <CalendarWeekTimeline
+          followUps={filteredFollowUps}
+          currentDate={calendarDate}
+          onDateChange={setCalendarDate}
+          onSelectEvent={(fu) => setCompleteTarget(fu)}
+          hasQuotationAccess={hasQuotationAccess}
+        />
       ) : filteredFollowUps.length === 0 ? (
         <div className="rounded-2xl border border-slate-200/80 bg-white p-12 text-center shadow-sm dark:border-white/10 dark:bg-slate-900">
           <CheckCircle2 className="mx-auto h-12 w-12 text-emerald-500/60 dark:text-emerald-400/40 mb-3" />
@@ -916,6 +1132,15 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
             setCompleteTarget(null);
             refetch();
           }}
+        />
+      )}
+
+      {/* ── MODAL: EXPORT PREVIEW ── */}
+      {downloadModalOpen && (
+        <DownloadFollowUpsPreviewModal
+          open={downloadModalOpen}
+          onClose={() => setDownloadModalOpen(false)}
+          followUps={exportRecords}
         />
       )}
     </div>

@@ -49,29 +49,14 @@ import {
   useCreateAttachmentMutation,
   useDeleteAttachmentMutation,
   useListLeadFollowUpsQuery,
-  useListLeadQuotationsQuery,
-  useUpdateLeadQuotationMutation,
-  useSubmitLeadQuotationForApprovalMutation,
-  useApproveLeadQuotationMutation,
-  useRejectLeadQuotationMutation,
   type LeadRecord,
   type LeadFollowUpRecord,
-  type LeadQuotationRecord,
 } from "@/store/api";
 import { useAppSelector } from "@/store/hooks";
 import { toast } from "@/lib/toast";
 import { mutationRejectedMessage } from "@/lib/mutationMessages";
 import { PortalBusyOverlay } from "@/components/portal/shared/PortalBusyOverlay";
 import { FilePreviewModal, useFilePreview } from "@/components/portal/shared/FilePreviewModal";
-import {
-  isAssignedSignatory,
-  isStrictSignatory,
-  canViewQuotationPdf,
-  canEmailQuotation,
-  canEditQuotation,
-  canSubmitForApproval,
-  isDraftVisible,
-} from "../quotations/quotationUtils";
 import {
   formatCurrencyINR,
   formatLeadDate,
@@ -81,8 +66,6 @@ import {
   isFollowUpToday,
   isLeadAdmin,
   canAssignLead,
-  canCreateQuotation,
-  canManageQuotations,
   canViewLeadPricing,
   leadLineValue,
   leadEstimatedValue,
@@ -93,10 +76,8 @@ import {
 import { AssignLeadModal } from "./AssignLeadModal";
 import { MarkWonModal } from "./MarkWonModal";
 import { MarkLostModal } from "./MarkLostModal";
-import { ConvertLeadModal } from "./ConvertLeadModal";
 import { FollowUpModal } from "./FollowUpModal";
 import { CompleteFollowUpModal } from "./CompleteFollowUpModal";
-import { QuotationViewModal } from "./QuotationViewModal";
 import { LeadTimelineTab } from "./LeadTimelineTab";
 
 import { readSessionFromStorage } from "@/utils/authStorage";
@@ -115,20 +96,15 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
   const showPricing = canViewLeadPricing(authUser, portalHome);
 
   const [activeTab, setActiveTab] = useState<
-    "overview" | "products" | "followups" | "orders" | "attachments" | "timeline"
+    "overview" | "products" | "followups" | "attachments" | "timeline"
   >("overview");
 
   // Modals state
   const [assignOpen, setAssignOpen] = useState(false);
   const [wonOpen, setWonOpen] = useState(false);
   const [lostOpen, setLostOpen] = useState(false);
-  const [convertOpen, setConvertOpen] = useState(false);
-  const [convertQuotationId, setConvertQuotationId] = useState<string | undefined>();
   const [followUpOpen, setFollowUpOpen] = useState(false);
   const [completingFollowUp, setCompletingFollowUp] = useState<LeadFollowUpRecord | null>(null);
-
-  // Quotation modals state
-  const [viewingQuotation, setViewingQuotation] = useState<LeadQuotationRecord | null>(null);
 
   // File preview — attachment.url is a file-manager presigned URL (no auth proxy)
   const {
@@ -148,52 +124,10 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
   });
 
   const { data: followUps, refetch: refetchFollowUps } = useListLeadFollowUpsQuery(leadId);
-  const { data: quotations, refetch: refetchQuotations } = useListLeadQuotationsQuery(leadId);
 
   const [createAttachment, { isLoading: uploading }] = useCreateAttachmentMutation();
   const [deleteAttachment] = useDeleteAttachmentMutation();
-  const [updateLeadQuotation, { isLoading: isUpdatingQuotation }] = useUpdateLeadQuotationMutation();
-  const [submitLeadQuotationForApproval, { isLoading: isSubmittingQuotation }] = useSubmitLeadQuotationForApprovalMutation();
-  const [approveLeadQuotation, { isLoading: isApprovingQuotation }] = useApproveLeadQuotationMutation();
-  const [rejectLeadQuotation, { isLoading: isRejectingQuotation }] = useRejectLeadQuotationMutation();
   const [changeStatus, { isLoading: isChangingStatus }] = useChangeLeadStatusMutation();
-
-
-
-  const handleSubmitLeadQuotationForApproval = async (quotationId: string, qNo: string) => {
-    try {
-      await submitLeadQuotationForApproval({ quotationId, leadId }).unwrap();
-      toast.success(`Quotation ${qNo} submitted for signatory approval`);
-      refetchQuotations();
-      refetch();
-    } catch (err) {
-      toast.error(mutationRejectedMessage(err) || "Failed to submit quotation for approval");
-    }
-  };
-
-  const handleApproveLeadQuotation = async (quotationId: string, qNo: string) => {
-    try {
-      await approveLeadQuotation({ quotationId, leadId }).unwrap();
-      toast.success(`Quotation ${qNo} approved successfully`);
-      refetchQuotations();
-      refetch();
-    } catch (err) {
-      toast.error(mutationRejectedMessage(err) || "Failed to approve quotation");
-    }
-  };
-
-  const handleRejectLeadQuotation = async (quotationId: string, qNo: string) => {
-    const reason = window.prompt(`Reason for rejecting quotation ${qNo}:`);
-    if (reason === null) return;
-    try {
-      await rejectLeadQuotation({ quotationId, leadId, rejection_reason: reason || "Rejected by signatory" }).unwrap();
-      toast.success(`Quotation ${qNo} rejected`);
-      refetchQuotations();
-      refetch();
-    } catch (err) {
-      toast.error(mutationRejectedMessage(err) || "Failed to reject quotation");
-    }
-  };
 
   if (isLoading || !lead) {
     return (
@@ -354,16 +288,6 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
               </button>
             )}
 
-            {canManageQuotations(authUser, portalHome) && canCreateQuotation(lead.status) && (
-              <Link
-                href={`${portalHome}/quotations/new?leadId=${leadId}`}
-                className="inline-flex items-center gap-1 rounded-xl border border-purple-200 bg-purple-50 px-3 py-2 text-xs font-semibold text-purple-700 shadow-sm transition hover:bg-purple-100 dark:border-purple-900/40 dark:bg-purple-950/40 dark:text-purple-300 cursor-pointer"
-              >
-                <FilePlus className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
-                Create Quotation
-              </Link>
-            )}
-
             {!isWon && !isLost && !isConverted && (
               <button
                 type="button"
@@ -372,17 +296,6 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
               >
                 <Trophy className="h-3.5 w-3.5 text-emerald-600" />
                 Mark Won
-              </button>
-            )}
-
-            {isAdmin && !isLost && !isConverted && (
-              <button
-                type="button"
-                onClick={() => setConvertOpen(true)}
-                className="inline-flex items-center gap-1 rounded-xl bg-primary px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-primary-hover"
-              >
-                <CheckCircle className="h-3.5 w-3.5" />
-                Convert
               </button>
             )}
 
@@ -446,7 +359,7 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
           {(() => {
             const hasAssigned =
               Boolean(lead.assigned_to) ||
-              ["assigned", "follow_up", "quotation", "won", "converted"].includes(lead.status);
+              ["assigned", "follow_up", "won", "converted"].includes(lead.status);
             const isCurrent = lead.status === "assigned";
             const assigneeLabel = formatLeadAssignees(lead);
             return (
@@ -484,7 +397,7 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
 
           {/* Step 3: Follow Up */}
           {(() => {
-            const hasFollowUp = (followUps && followUps.length > 0) || ["follow_up", "quotation", "won", "converted"].includes(lead.status);
+            const hasFollowUp = (followUps && followUps.length > 0) || ["follow_up", "won", "converted"].includes(lead.status);
             const isCurrent = lead.status === "follow_up";
             return (
               <div className={`relative flex items-center gap-3 rounded-xl border p-3 transition-all ${
@@ -517,44 +430,37 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
             );
           })()}
 
-          {/* Step 4: Quotation */}
+          {/* Step 4: Qualification / Discussion */}
           {(() => {
-            const hasQuotations = (quotations && quotations.length > 0) || ["quotation", "won", "converted"].includes(lead.status);
-            const isCurrent = lead.status === "quotation";
+            const isQualified = ["follow_up", "won", "converted"].includes(lead.status) || (followUps && followUps.length > 0);
             return (
               <div className={`relative flex items-center gap-3 rounded-xl border p-3 transition-all ${
-                isCurrent
-                  ? "border-purple-500/40 bg-purple-50/50 shadow-sm ring-1 ring-purple-500/20 dark:bg-purple-950/30"
-                  : hasQuotations
+                isQualified
                   ? "border-slate-200/80 bg-slate-50/40 dark:border-white/10 dark:bg-slate-800/40"
                   : "border-slate-200/40 bg-slate-50/20 opacity-60 dark:border-white/5 dark:bg-slate-800/20"
               }`}>
                 <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
-                  isCurrent
-                    ? "bg-purple-600 text-white shadow-sm"
-                    : hasQuotations
+                  isQualified
                     ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300"
                     : "bg-slate-200 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
                 }`}>
-                  {isCurrent ? "4" : hasQuotations ? "✓" : "4"}
+                  {isQualified ? "✓" : "4"}
                 </div>
                 <div className="min-w-0">
                   <div className="text-xs font-bold text-slate-900 dark:text-white">
-                    4. Quotation
+                    4. Qualification
                   </div>
                   <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    {quotations && quotations.length > 0
-                      ? `${quotations.length} proposal${quotations.length > 1 ? "s" : ""}`
-                      : "Draft proposal"}
+                    Requirements &amp; Scope
                   </div>
                 </div>
               </div>
             );
           })()}
 
-          {/* Step 5: Outcome (Won / Converted / Lost / In Progress) */}
+          {/* Step 5: Outcome (Won / Lost / In Progress) */}
           {(() => {
-            if (isWon) {
+            if (isWon || isConverted) {
               return (
                 <div className="relative flex items-center gap-3 rounded-xl border border-emerald-500/40 bg-emerald-50/50 p-3 shadow-sm ring-1 ring-emerald-500/20 dark:bg-emerald-950/30">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white shadow-sm">
@@ -565,24 +471,7 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
                       5. Deal Won 🎉
                     </div>
                     <div className="text-[11px] text-emerald-700 dark:text-emerald-400 truncate">
-                      Ready to convert
-                    </div>
-                  </div>
-                </div>
-              );
-            }
-            if (isConverted) {
-              return (
-                <div className="relative flex items-center gap-3 rounded-xl border border-teal-500/40 bg-teal-50/50 p-3 shadow-sm ring-1 ring-teal-500/20 dark:bg-teal-950/30">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-teal-600 text-white shadow-sm">
-                    <CheckCircle className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-xs font-bold text-teal-900 dark:text-teal-200">
-                      5. Converted
-                    </div>
-                    <div className="text-[11px] text-teal-700 dark:text-teal-400 truncate">
-                      Party & Order created
+                      Successfully Closed
                     </div>
                   </div>
                 </div>
@@ -615,7 +504,7 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
                     5. Decision
                   </div>
                   <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    Pending Won / Lost
+                    In Pipeline
                   </div>
                 </div>
               </div>
@@ -630,9 +519,6 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
           { id: "overview", label: "Overview & Contacts" },
           { id: "products", label: `Requirements (${lead.products?.length || 0})` },
           { id: "followups", label: `Follow-ups (${followUps?.length || 0})` },
-          ...(canManageQuotations(authUser, portalHome)
-            ? [{ id: "orders", label: `Quotations (${quotations?.length || 0})` }]
-            : []),
           { id: "attachments", label: `Attachments (${attachments?.length || 0})` },
           { id: "timeline", label: "Timeline & Activity" },
         ].map((tab) => {
@@ -1142,277 +1028,7 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
         </div>
       )}
 
-      {/* Tab 5: Quotations & Orders */}
-      {activeTab === "orders" && canManageQuotations(authUser, portalHome) && (
-        <div className="space-y-6">
-          {/* Quotations Section */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-slate-900">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4 dark:border-white/10">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <FileText className="h-4 w-4 text-blue-600" />
-                  Quotation Proposals ({quotations?.length || 0})
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Generate, print, and track official letterhead quotations
-                </p>
-              </div>
-
-              {canManageQuotations(authUser, portalHome) && (
-                canCreateQuotation(lead.status) ? (
-                  <Link
-                    href={`${portalHome}/quotations/new?leadId=${leadId}`}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-primary-hover cursor-pointer"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Create Quotation
-                  </Link>
-                ) : (
-                  <span
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-[11px] font-semibold text-slate-400 dark:border-white/5 dark:bg-slate-800/40 dark:text-slate-500"
-                    title={`Quotations cannot be drafted for ${lead.status} leads`}
-                  >
-                    Quotations locked ({lead.status})
-                  </span>
-                )
-              )}
-            </div>
-
-            <div className="mt-5 space-y-3.5">
-              {!quotations || quotations.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 py-12 text-center dark:border-white/10">
-                  <FileText className="mx-auto h-8 w-8 text-slate-300 dark:text-slate-600" />
-                  <p className="mt-2 text-xs font-medium text-slate-600 dark:text-slate-400">
-                    No quotations generated for this lead yet.
-                  </p>
-                  <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
-                    {canManageQuotations(authUser, portalHome)
-                      ? canCreateQuotation(lead.status)
-                        ? "Click 'Create Quotation' above to draft an official proposal."
-                        : `Quotations cannot be generated for leads in '${lead.status}' status.`
-                      : "Official quotation proposals can only be generated by administrators."}
-                  </p>
-                  {canManageQuotations(authUser, portalHome) && canCreateQuotation(lead.status) && (
-                    <Link
-                      href={`${portalHome}/quotations/new?leadId=${leadId}`}
-                      className="mt-3 inline-flex items-center gap-1 rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-bold text-blue-700 hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-300 cursor-pointer"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      Create First Quotation
-                    </Link>
-                  )}
-                </div>
-              ) : (
-                quotations
-                  .filter((q) => isDraftVisible(authUser, q as unknown as any))
-                  .map((q) => {
-                  const isSignatory = isAssignedSignatory(authUser, q);
-                  const canViewPdf = canViewQuotationPdf(authUser, q);
-                  const canEmail = canEmailQuotation(q);
-                  const canEdit = canEditQuotation(authUser, q);
-                  const isPending = q.approval_status === "pending_approval" || q.status === "pending_approval";
-                  const isApproved = q.approval_status === "approved" || q.status === "approved";
-                  const canSubmit = canSubmitForApproval(authUser, q as unknown as any);
-
-                  return (
-                    <div
-                      key={q._id}
-                      className="flex flex-col gap-3 rounded-xl border border-slate-200/80 bg-slate-50/50 p-4 transition-all hover:border-blue-300 dark:border-white/5 dark:bg-slate-800/40 dark:hover:border-blue-800"
-                    >
-                      {/* Top Row: Ref No, Subject, Status Badge, and Process Stepper */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-white/5 pb-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-xs font-extrabold text-blue-700 dark:text-blue-400">
-                            {q.ref_no || q.quotation_no}
-                          </span>
-                          <span className="text-xs text-slate-400">•</span>
-                          <span className="text-xs font-semibold text-slate-900 dark:text-white">
-                            {q.subject || "Quotation Proposal"}
-                          </span>
-                          <span
-                            className={`rounded-full px-2.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wide flex items-center gap-1 ${
-                              isPending
-                                ? "bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border border-amber-300/60"
-                                : isApproved
-                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-300/60"
-                                : q.status === "accepted"
-                                ? "bg-teal-100 text-teal-800 dark:bg-teal-950/60 dark:text-teal-300 border border-teal-300/60"
-                                : q.status === "sent"
-                                ? "bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-300/60"
-                                : q.status === "rejected"
-                                ? "bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-300/60"
-                                : "bg-slate-200/70 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-300"
-                            }`}
-                          >
-                            {isPending && <Clock className="h-3 w-3" />}
-                            {isPending ? "Pending Approval" : isApproved ? "Approved" : q.status}
-                          </span>
-                        </div>
-
-                        {/* Process Stage Stepper */}
-                        <div className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-                          <span className={`flex items-center gap-1 px-2 py-0.5 rounded-md ${q.status ? "bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-200 font-bold" : ""}`}>
-                            1. Draft
-                          </span>
-                          <span>→</span>
-                          <span className={`flex items-center gap-1 px-2 py-0.5 rounded-md ${isPending ? "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 font-bold animate-pulse" : isApproved || ["sent", "accepted", "rejected"].includes(q.status) ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-bold" : "opacity-60"}`}>
-                            2. Approval {isApproved ? "✓" : ""}
-                          </span>
-                          <span>→</span>
-                          <span className={`flex items-center gap-1 px-2 py-0.5 rounded-md ${["sent", "accepted", "rejected"].includes(q.status) ? "bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 font-bold" : "opacity-60"}`}>
-                            3. Sent
-                          </span>
-                          <span>→</span>
-                          <span className={`flex items-center gap-1 px-2 py-0.5 rounded-md ${q.status === "accepted" ? "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300 font-bold" : q.status === "rejected" ? "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 font-bold" : "opacity-60"}`}>
-                            4. Decision {q.status === "accepted" ? "✓" : q.status === "rejected" ? "✗" : ""}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Middle Row: Quotation Specs & Signatory Info */}
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
-                          <span>
-                            Date: <strong>{formatLeadDate(q.quotation_date)}</strong>
-                          </span>
-                          {q.validity_days && (
-                            <span>
-                              Validity: <strong>{q.validity_days} Days</strong>
-                            </span>
-                          )}
-                          <span>
-                            Items: <strong>{q.items?.length || 0}</strong>
-                          </span>
-                          <span>
-                            Signatory: <strong>{q.signatory_name || "Signatory"}</strong>
-                          </span>
-                        </div>
-
-                        <div className="text-xs text-slate-700 dark:text-slate-300">
-                          Grand Total: <strong className="text-sm font-extrabold text-slate-900 dark:text-white">{formatCurrencyINR(q.grand_total)}</strong>
-                          <span className="text-[11px] text-slate-400 ml-1.5">(incl. {formatCurrencyINR(q.total_gst)} GST)</span>
-                        </div>
-                      </div>
-
-                      {/* Bottom Row: Process Actions Bar */}
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-white/5">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {/* Signatory Approval Buttons */}
-                          {isPending && isSignatory && (
-                            <div className="flex items-center gap-1.5 bg-amber-50 dark:bg-amber-950/40 p-1 rounded-xl border border-amber-200/80 dark:border-amber-900/40">
-                              <span className="text-[11px] font-bold text-amber-800 dark:text-amber-300 px-1">
-                                Signatory Action:
-                              </span>
-                              <button
-                                type="button"
-                                disabled={isApprovingQuotation || isRejectingQuotation}
-                                onClick={() => handleApproveLeadQuotation(q._id, q.ref_no || q.quotation_no)}
-                                className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 cursor-pointer disabled:opacity-50"
-                              >
-                                <Check className="h-3.5 w-3.5" /> Approve
-                              </button>
-                              <button
-                                type="button"
-                                disabled={isApprovingQuotation || isRejectingQuotation}
-                                onClick={() => handleRejectLeadQuotation(q._id, q.ref_no || q.quotation_no)}
-                                className="inline-flex items-center gap-1 rounded-lg bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-200 dark:bg-rose-950 dark:text-rose-300 cursor-pointer disabled:opacity-50"
-                              >
-                                <X className="h-3.5 w-3.5" /> Reject
-                              </button>
-                            </div>
-                          )}
-
-                          {canManageQuotations(authUser, portalHome) && (
-                            <>
-                              {/* Process Action Buttons */}
-                              {canSubmit && (
-                                <button
-                                  type="button"
-                                  disabled={isSubmittingQuotation}
-                                  onClick={() => handleSubmitLeadQuotationForApproval(q._id, q.ref_no || q.quotation_no)}
-                                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:bg-primary-hover cursor-pointer disabled:opacity-50"
-                                  title="Submit quotation for signatory approval"
-                                >
-                                  <Send className="h-3.5 w-3.5" />
-                                  Send for Approval
-                                </button>
-                              )}
-                            </>
-                          )}
-                        </div>
-
-                        {/* Tool Actions: View */}
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!canViewPdf) {
-                                toast.warning("Quotation preview is locked until approved by the assigned signatory.");
-                                return;
-                              }
-                              setViewingQuotation(q);
-                            }}
-                            className={`inline-flex items-center gap-1 rounded-xl px-3 py-1.5 text-xs font-semibold shadow-sm transition cursor-pointer ${
-                              canViewPdf
-                                ? "bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400"
-                                : "bg-amber-500 text-white hover:bg-amber-600"
-                            }`}
-                            title={canViewPdf ? "View Letterhead Preview & Print" : "Quotation preview is locked until approved by signatory"}
-                          >
-                            {canViewPdf ? <Eye className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />}
-                            {canViewPdf ? "View / Print" : "PDF Locked"}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          {/* Converted Orders Section */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-slate-900">
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white border-b border-slate-100 pb-4 dark:border-white/10">
-              Linked Converted Orders
-            </h3>
-
-            <div className="mt-4">
-              {lead.conversion?.order_id ? (
-                <div className="flex items-center justify-between rounded-xl border border-teal-200 bg-teal-50/50 p-4 dark:border-teal-900/40 dark:bg-teal-950/30">
-                  <div>
-                    <span className="text-xs font-bold uppercase tracking-wider text-teal-800 dark:text-teal-300">
-                      Converted Order
-                    </span>
-                    <div className="text-sm font-bold text-slate-900 dark:text-white mt-1">
-                      Order #{typeof lead.conversion.order_id === "object" ? lead.conversion.order_id.order_no : lead.conversion.order_id}
-                    </div>
-                    {typeof lead.conversion.order_id === "object" && (
-                      <div className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
-                        Grand Total: {formatCurrencyINR(lead.conversion.order_id.grand_total)} • Status: {lead.conversion.order_id.status}
-                      </div>
-                    )}
-                  </div>
-
-                  <Link
-                    href={`${portalHome}/order/${typeof lead.conversion.order_id === "object" ? lead.conversion.order_id._id : lead.conversion.order_id}`}
-                    className="inline-flex items-center gap-1 rounded-xl bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-teal-500"
-                  >
-                    View Order
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </Link>
-                </div>
-              ) : (
-                <div className="py-8 text-center text-xs text-slate-400">
-                  No orders converted from this lead yet.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Tab 6: Attachments */}
+      {/* Tab 4: Attachments */}
       {activeTab === "attachments" && (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-slate-900">
           <div className="flex items-center justify-between border-b border-slate-100 pb-4 dark:border-white/10">
@@ -1504,7 +1120,7 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
         </div>
       )}
 
-      {/* Tab 7: Timeline */}
+      {/* Tab 5: Timeline */}
       {activeTab === "timeline" && (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-slate-900">
           <h3 className="text-sm font-bold text-slate-900 dark:text-white border-b border-slate-100 pb-4 dark:border-white/10">
@@ -1544,19 +1160,6 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
         />
       )}
 
-      {isAdmin && convertOpen && (
-        <ConvertLeadModal
-          lead={lead}
-          open={convertOpen}
-          initialQuotationId={convertQuotationId}
-          onClose={() => {
-            setConvertOpen(false);
-            setConvertQuotationId(undefined);
-          }}
-          onSuccess={() => refetch()}
-        />
-      )}
-
       {followUpOpen && (
         <FollowUpModal
           lead={lead}
@@ -1588,17 +1191,6 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
           loading={previewLoading}
           onClose={closePreview}
           onDownload={downloadFile}
-        />
-      )}
-
-
-
-      {viewingQuotation && (
-        <QuotationViewModal
-          quotation={viewingQuotation}
-          open={Boolean(viewingQuotation)}
-          onClose={() => setViewingQuotation(null)}
-          portalLabel={portalHome === "/admin" ? "Admin Portal" : "Sales Portal"}
         />
       )}
     </div>

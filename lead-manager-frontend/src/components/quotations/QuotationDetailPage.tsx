@@ -35,6 +35,11 @@ import {
   Tag,
   Phone,
   PauseCircle,
+  Copy,
+  MessageSquare,
+  History,
+  ShoppingCart,
+  RefreshCw,
 } from "lucide-react";
 import {
   useGetLeadQuotationQuery,
@@ -42,6 +47,8 @@ import {
   useApproveLeadQuotationMutation,
   useRejectLeadQuotationMutation,
   useUpdateLeadQuotationMutation,
+  useMarkQuotationProformaIssuedMutation,
+  useGetCompanyInfoQuery,
   type LeadQuotationRecord,
   type LeadRecord,
 } from "@/store/api";
@@ -50,6 +57,13 @@ import { readSessionFromStorage, isManager } from "@/utils/authStorage";
 import { toast } from "@/lib/toast";
 import QuotationPdfTemplate from "./QuotationPdfTemplate";
 import { SendQuotationEmailModal } from "./SendQuotationEmailModal";
+import { QuotationLifecycleStepper } from "./QuotationLifecycleStepper";
+import { QuotationFollowUpCard } from "./QuotationFollowUpCard";
+import { CustomerRejectQuotationModal } from "./CustomerRejectQuotationModal";
+import { ConvertQuotationModal } from "./ConvertQuotationModal";
+import { GenerateProformaModal } from "./GenerateProformaModal";
+import { ExtendQuotationValidityModal } from "./ExtendQuotationValidityModal";
+import { buildQuotationPdf } from "./buildQuotationPdf";
 import {
   formatCurrencyINR,
   isAssignedSignatory,
@@ -60,6 +74,10 @@ import {
   canEditQuotation,
   canSubmitForApproval,
   isQuotationApproved,
+  canConvertQuotation,
+  isQuotationExpired,
+  isQuotationExpiringSoon,
+  getQuotationExpiryInfo,
 } from "./quotationUtils";
 
 type Props = {
@@ -100,6 +118,8 @@ export default function QuotationDetailPage({ quotationId, portalHome = "/dashbo
   const [approveQuotation, { isLoading: isApproving }] = useApproveLeadQuotationMutation();
   const [rejectQuotation, { isLoading: isRejecting }] = useRejectLeadQuotationMutation();
   const [updateQuotation, { isLoading: isUpdating }] = useUpdateLeadQuotationMutation();
+  const [markProformaIssued] = useMarkQuotationProformaIssuedMutation();
+  const { data: companyData } = useGetCompanyInfoQuery();
 
   // Dialog & Modal States
   const [emailModalOpen, setEmailModalOpen] = useState(false);
@@ -107,7 +127,35 @@ export default function QuotationDetailPage({ quotationId, portalHome = "/dashbo
   const [showAcceptModal, setShowAcceptModal] = useState(false);
   const [showOnHoldModal, setShowOnHoldModal] = useState(false);
   const [showApproveModal, setShowApproveModal] = useState(false);
+  const [showCustomerRejectModal, setShowCustomerRejectModal] = useState(false);
+  const [showConvertModal, setShowConvertModal] = useState(false);
+  const [showProformaModal, setShowProformaModal] = useState(false);
+  const [showExtendValidityModal, setShowExtendValidityModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [downloadingProforma, setDownloadingProforma] = useState(false);
+
+  const handleDownloadProforma = async () => {
+    if (!quotation) return;
+    try {
+      setDownloadingProforma(true);
+      const pdf = await buildQuotationPdf({
+        quotation,
+        company: companyData as any,
+        portalLabel: "Lead Manager",
+        downloadedBy: authUser?.name,
+        documentType: "proforma",
+      });
+      const fileName = `${(quotation.ref_no || quotation.quotation_no || "Quotation").replace(/\//g, "-")}_Proforma_Invoice.pdf`;
+      pdf.save(fileName);
+      await markProformaIssued(quotation._id).unwrap();
+      toast.success("Proforma Invoice downloaded and recorded successfully");
+    } catch (err: any) {
+      console.error("Proforma generation failed", err);
+      toast.error("Failed to generate Proforma Invoice");
+    } finally {
+      setDownloadingProforma(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -159,6 +207,12 @@ export default function QuotationDetailPage({ quotationId, portalHome = "/dashbo
   // Status Badge Helper
   const getStatusBadge = () => {
     switch (quotation.status) {
+      case "converted":
+        return (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300/40">
+            <ShoppingCart className="h-3.5 w-3.5" /> Converted to Order
+          </span>
+        );
       case "approved":
         return (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300 border border-emerald-300/40">
@@ -173,8 +227,14 @@ export default function QuotationDetailPage({ quotationId, portalHome = "/dashbo
         );
       case "sent":
         return (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-300/40">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-100 px-3 py-1 text-xs font-bold text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-300/40">
             <Send className="h-3.5 w-3.5" /> Sent to Customer
+          </span>
+        );
+      case "in_negotiation":
+        return (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-300/40">
+            <MessageSquare className="h-3.5 w-3.5" /> In Negotiation
           </span>
         );
       case "accepted":
@@ -191,7 +251,7 @@ export default function QuotationDetailPage({ quotationId, portalHome = "/dashbo
         );
       case "expired":
         return (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-300/40">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-300/40">
             <Clock className="h-3.5 w-3.5" /> Expired
           </span>
         );
@@ -202,6 +262,13 @@ export default function QuotationDetailPage({ quotationId, portalHome = "/dashbo
           </span>
         );
       default:
+        if (isQuotationExpired(quotation)) {
+          return (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-rose-100 px-3 py-1 text-xs font-bold text-rose-800 dark:bg-rose-950/80 dark:text-rose-300 border border-rose-300/40">
+              <Clock className="h-3.5 w-3.5" /> Expired
+            </span>
+          );
+        }
         return (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-200 px-3 py-1 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-300">
             <FileText className="h-3.5 w-3.5" /> Draft
@@ -304,6 +371,20 @@ export default function QuotationDetailPage({ quotationId, portalHome = "/dashbo
     }
   };
 
+  const handleStartNegotiation = async () => {
+    try {
+      await updateQuotation({
+        quotationId: quotation._id,
+        leadId: leadId || "",
+        body: { status: "in_negotiation" },
+      }).unwrap();
+      toast.success(`Quotation ${quotation.quotation_no} moved to In Negotiation`);
+      refetch();
+    } catch {
+      toast.error("Failed to update status to negotiation");
+    }
+  };
+
   const handleConfirmAccept = async () => {
     try {
       await updateQuotation({
@@ -374,6 +455,9 @@ export default function QuotationDetailPage({ quotationId, portalHome = "/dashbo
               <h1 className="text-xl font-black text-slate-900 dark:text-white sm:text-2xl">
                 {quotation.ref_no || quotation.quotation_no}
               </h1>
+              <span className="rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-0.5 text-xs font-black text-indigo-700 dark:border-indigo-900/50 dark:bg-indigo-950 dark:text-indigo-300">
+                v{quotation.version || 1}
+              </span>
               {getStatusBadge()}
             </div>
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
@@ -422,8 +506,20 @@ export default function QuotationDetailPage({ quotationId, portalHome = "/dashbo
             </>
           )}
 
-          {/* Approved / Sent / On Hold Status Action Buttons: Mark Accepted, Put On Hold / Resume, Customer Rejected */}
-          {(quotation.status === "approved" || quotation.status === "sent" || quotation.status === "on_hold") && (
+          {/* Sent Status: Start Negotiation button */}
+          {quotation.status === "sent" && (
+            <button
+              type="button"
+              disabled={isUpdating}
+              onClick={handleStartNegotiation}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-bold text-white shadow-md hover:bg-blue-700 disabled:opacity-50 cursor-pointer transition-all"
+            >
+              <MessageSquare className="h-4 w-4" /> Start Negotiation
+            </button>
+          )}
+
+          {/* Approved / Sent / In Negotiation / On Hold Status Action Buttons: Mark Accepted, Put On Hold / Resume, Customer Rejected */}
+          {(quotation.status === "approved" || quotation.status === "sent" || quotation.status === "in_negotiation" || quotation.status === "on_hold") && (
             <>
               <button
                 type="button"
@@ -457,10 +553,7 @@ export default function QuotationDetailPage({ quotationId, portalHome = "/dashbo
               <button
                 type="button"
                 disabled={isUpdating || isRejecting}
-                onClick={() => {
-                  setRejectionReason("");
-                  setShowRejectModal(true);
-                }}
+                onClick={() => setShowCustomerRejectModal(true)}
                 className="inline-flex items-center gap-1.5 rounded-xl bg-rose-100 px-3.5 py-2 text-xs font-bold text-rose-700 hover:bg-rose-200 dark:bg-rose-950 dark:text-rose-300 disabled:opacity-50 cursor-pointer transition-all"
               >
                 <XCircle className="h-4 w-4" /> Customer Rejected
@@ -468,13 +561,54 @@ export default function QuotationDetailPage({ quotationId, portalHome = "/dashbo
             </>
           )}
 
-          {/* Edit Button */}
+          {/* Convert to Order & Proforma Actions - only active after client acceptance */}
+          {quotation.status === "accepted" && (
+            <>
+              <button
+                type="button"
+                onClick={() => setShowProformaModal(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-teal-300 bg-teal-50 px-3.5 py-2 text-xs font-bold text-teal-800 shadow-xs hover:bg-teal-100 dark:border-teal-800 dark:bg-teal-950/60 dark:text-teal-200 cursor-pointer transition-all"
+              >
+                <FileText className="h-4 w-4 text-teal-600" />
+                {quotation.proforma_issued_at ? "Proforma Invoice" : "Generate Proforma"}
+              </button>
+
+              {canConvertQuotation(authUser) && (
+                <button
+                  type="button"
+                  onClick={() => setShowConvertModal(true)}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-emerald-600/20 hover:opacity-95 cursor-pointer transition-all"
+                >
+                  <ShoppingCart className="h-4 w-4" /> Convert to Order
+                </button>
+              )}
+            </>
+          )}
+
+          {/* Extend Validity Button */}
+          {quotation.status !== "converted" && (
+            <button
+              type="button"
+              onClick={() => setShowExtendValidityModal(true)}
+              className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold shadow-xs transition-colors cursor-pointer ${
+                isQuotationExpired(quotation)
+                  ? "bg-rose-600 text-white hover:bg-rose-700 shadow-rose-600/30 shadow-md"
+                  : "border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:border-indigo-900/50 dark:bg-indigo-950/60 dark:text-indigo-300"
+              }`}
+            >
+              <Calendar className="h-4 w-4" />
+              {isQuotationExpired(quotation) ? "Extend Validity" : "Extend Validity"}
+            </button>
+          )}
+
+          {/* Edit / Revise Button */}
           {canEdit && (
             <Link
               href={`${portalHome}/quotations/${quotation._id}/edit`}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-slate-700 shadow-xs hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800 transition-colors"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3.5 py-2 text-xs font-bold text-indigo-700 shadow-xs hover:bg-indigo-100 dark:border-indigo-900/50 dark:bg-indigo-950/60 dark:text-indigo-300 transition-colors"
             >
-              <Pencil className="h-4 w-4" /> Edit
+              <Pencil className="h-4 w-4" />
+              {quotation.status === "draft" ? "Edit Quotation" : `Revise & Edit (v${(quotation.version || 1) + 1})`}
             </Link>
           )}
 
@@ -506,6 +640,142 @@ export default function QuotationDetailPage({ quotationId, portalHome = "/dashbo
           </button>
         </div>
       </div>
+
+      {/* Expired Status Banner */}
+      {isQuotationExpired(quotation) && (
+        <div className="rounded-2xl border border-rose-300 bg-rose-50/90 p-4 shadow-xs dark:border-rose-900/60 dark:bg-rose-950/40">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-600 text-white shadow-xs">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-rose-950 dark:text-rose-100">
+                  Quotation Expired on {quotation.valid_until ? new Date(quotation.valid_until).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : "N/A"}
+                </h3>
+                <p className="text-xs text-rose-700 dark:text-rose-300">
+                  This proposal has passed its validity window. Direct Order conversion and client communication are paused until validity is extended.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowExtendValidityModal(true)}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white shadow-sm shadow-rose-600/30 hover:bg-rose-700 transition cursor-pointer"
+            >
+              <RefreshCw className="h-3.5 w-3.5" /> Extend Validity Now
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Expiring Soon Banner */}
+      {!isQuotationExpired(quotation) && isQuotationExpiringSoon(quotation) && (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50/80 p-3.5 shadow-xs dark:border-amber-900/50 dark:bg-amber-950/30 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 text-xs text-amber-900 dark:text-amber-200">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 animate-pulse" />
+            <span>
+              <strong>Attention:</strong> This quotation expires on {quotation.valid_until ? new Date(quotation.valid_until).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "N/A"} ({getQuotationExpiryInfo(quotation).label}).
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowExtendValidityModal(true)}
+            className="inline-flex items-center gap-1 text-xs font-bold text-amber-800 hover:underline dark:text-amber-300 cursor-pointer"
+          >
+            <Calendar className="h-3.5 w-3.5" /> Extend Validity
+          </button>
+        </div>
+      )}
+
+      {/* Visual Lifecycle Stepper */}
+      <QuotationLifecycleStepper quotation={quotation} />
+
+      {/* Accepted Status: Proforma & Order Conversion Card */}
+      {quotation.status === "accepted" && (
+        <div className="rounded-2xl border border-teal-200 bg-gradient-to-r from-teal-50 via-emerald-50 to-teal-50/80 p-5 text-teal-950 dark:border-teal-900/50 dark:bg-gradient-to-r dark:from-teal-950/40 dark:via-emerald-950/40 dark:to-teal-950/30 dark:text-teal-100 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-600 text-white shadow-md shadow-teal-600/20">
+                <CheckCircle2 className="h-6 w-6" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black flex items-center gap-2">
+                  Client Accepted Quotation (Deal Won)
+                  <span className="rounded-full bg-teal-200 px-2.5 py-0.5 text-[11px] font-bold text-teal-900 dark:bg-teal-900 dark:text-teal-200">
+                    Ready for Fulfillment
+                  </span>
+                </h4>
+                <p className="mt-0.5 text-xs text-teal-800 dark:text-teal-300">
+                  {quotation.proforma_issued_at
+                    ? `Proforma Invoice #${quotation.proforma_details?.proforma_no || "Issued"} on ${new Date(quotation.proforma_issued_at).toLocaleDateString("en-IN", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                      })} • View, edit commercial dispatch parameters, or proceed to Convert to Order.`
+                    : "Client has accepted this commercial proposal. You can generate a dedicated Proforma Invoice with Order Details for advance payment/PO release, or proceed to Convert to Order."}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowProformaModal(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-teal-300 bg-white px-3.5 py-2 text-xs font-bold text-teal-800 shadow-xs hover:bg-teal-50 dark:border-teal-800 dark:bg-slate-900 dark:text-teal-200 cursor-pointer transition-all"
+              >
+                <FileText className="h-4 w-4 text-teal-600" />
+                {quotation.proforma_issued_at ? "View / Edit Proforma" : "Generate Proforma Invoice"}
+              </button>
+
+              {canConvertQuotation(authUser) && (
+                <button
+                  type="button"
+                  onClick={() => setShowConvertModal(true)}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-emerald-600/20 hover:opacity-95 cursor-pointer transition-all"
+                >
+                  <ShoppingCart className="h-4 w-4" /> Convert to Order
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Converted to Order Success Banner */}
+      {quotation.status === "converted" && quotation.conversion && (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-4.5 text-emerald-950 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-100 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-md shadow-emerald-600/20">
+                <ShoppingCart className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black flex items-center gap-2">
+                  Quotation Successfully Converted to Order
+                  <span className="rounded-full bg-emerald-200/80 px-2.5 py-0.5 text-[11px] font-bold text-emerald-900 dark:bg-emerald-900 dark:text-emerald-200">
+                    Active Order
+                  </span>
+                </h4>
+                <p className="mt-0.5 text-xs text-emerald-800 dark:text-emerald-300">
+                  {quotation.conversion.converted_at
+                    ? `Converted on ${new Date(quotation.conversion.converted_at).toLocaleDateString("en-IN", {
+                        day: "2-digit",
+                        month: "short",
+                        year: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}`
+                    : "Order has been submitted and sent to the order workflow."}
+                  {typeof quotation.conversion.order_id === "object" && (quotation.conversion.order_id as any)?.order_no
+                    ? ` • Order #${(quotation.conversion.order_id as any).order_no}`
+                    : ""}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Rejection Notice Banner */}
       {isRejected && (
@@ -644,10 +914,29 @@ export default function QuotationDetailPage({ quotationId, portalHome = "/dashbo
             </h3>
 
             <div className="space-y-2 text-xs">
-              <div className="flex justify-between text-slate-600 dark:text-slate-400">
-                <span>Subtotal ({quotation.items?.length || 0} items):</span>
-                <span className="font-semibold text-slate-900 dark:text-white">{formatCurrencyINR(quotation.subtotal || 0)}</span>
-              </div>
+              {Boolean(quotation.total_discount && quotation.total_discount > 0) ? (
+                <>
+                  <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                    <span>Gross Total:</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">
+                      {formatCurrencyINR((quotation.subtotal || 0) + (quotation.total_discount || 0))}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-emerald-600 dark:text-emerald-400 font-medium">
+                    <span>Total Discount:</span>
+                    <span className="font-semibold">-{formatCurrencyINR(quotation.total_discount || 0)}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                    <span>Taxable Subtotal:</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">{formatCurrencyINR(quotation.subtotal || 0)}</span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex justify-between text-slate-600 dark:text-slate-400">
+                  <span>Subtotal ({quotation.items?.length || 0} items):</span>
+                  <span className="font-semibold text-slate-900 dark:text-white">{formatCurrencyINR(quotation.subtotal || 0)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-slate-600 dark:text-slate-400">
                 <span>Total GST:</span>
                 <span className="font-semibold text-slate-900 dark:text-white">{formatCurrencyINR(quotation.total_gst || 0)}</span>
@@ -690,6 +979,27 @@ export default function QuotationDetailPage({ quotationId, portalHome = "/dashbo
                 )}
               </div>
 
+              {(quotation.sales_person_name || quotation.sales_person_user) && (
+                <div className="rounded-xl bg-emerald-50/60 p-3 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/30">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                    Sales Representative (Internal)
+                  </div>
+                  <div className="font-bold text-slate-900 dark:text-white mt-0.5">
+                    {quotation.sales_person_name ||
+                      (typeof quotation.sales_person_user === "object" ? quotation.sales_person_user?.name : "") ||
+                      "Sales Executive"}
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {quotation.sales_person_designation || "Sales Department"}
+                  </div>
+                  {(quotation.sales_person_phone || quotation.sales_person_email) && (
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                      {[quotation.sales_person_phone, quotation.sales_person_email].filter(Boolean).join(" • ")}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {quotation.created_by && (
                 <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800/60">
                   <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Quotation Creator</div>
@@ -705,6 +1015,59 @@ export default function QuotationDetailPage({ quotationId, portalHome = "/dashbo
               )}
             </div>
           </div>
+
+          {/* Revision History Archive Card */}
+          {quotation.revision_history && quotation.revision_history.length > 0 && (
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs dark:border-white/10 dark:bg-slate-900 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-extrabold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+                  <History className="h-4 w-4 text-indigo-500" /> Revision History
+                </h3>
+                <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                  {quotation.revision_history.length} Past Iteration{quotation.revision_history.length > 1 ? "s" : ""}
+                </span>
+              </div>
+
+              <div className="space-y-2.5">
+                {quotation.revision_history
+                  .slice()
+                  .reverse()
+                  .map((rev, idx) => (
+                    <div
+                      key={rev._id || idx}
+                      className="rounded-xl border border-slate-100 bg-slate-50/70 p-3 text-xs dark:border-white/5 dark:bg-slate-800/40 space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-extrabold text-indigo-700 dark:text-indigo-400">
+                          Version {rev.version}
+                        </span>
+                        <span className="text-[10px] font-medium text-slate-400">
+                          {rev.saved_at
+                            ? new Date(rev.saved_at).toLocaleDateString("en-IN", {
+                                day: "numeric",
+                                month: "short",
+                                year: "numeric",
+                              })
+                            : ""}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-slate-600 dark:text-slate-300">
+                        <span>Total: <strong className="text-slate-900 dark:text-white">{formatCurrencyINR(rev.grand_total || 0)}</strong></span>
+                        <span>{rev.items?.length || 0} items</span>
+                      </div>
+                      {rev.saved_by && (
+                        <div className="text-[10px] text-slate-400 truncate">
+                          Revised by {typeof rev.saved_by === "object" ? rev.saved_by.name : "Staff"}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* Quotation Follow-Up Timeline Card */}
+          <QuotationFollowUpCard quotation={quotation} />
         </div>
       </div>
 
@@ -866,6 +1229,40 @@ export default function QuotationDetailPage({ quotationId, portalHome = "/dashbo
           onClose={() => setEmailModalOpen(false)}
         />
       )}
+
+      {/* Customer Rejection / Lost Deal Modal */}
+      <CustomerRejectQuotationModal
+        quotation={quotation}
+        open={showCustomerRejectModal}
+        onClose={() => {
+          setShowCustomerRejectModal(false);
+          refetch();
+        }}
+      />
+
+      {/* Generate / Preview Dedicated Proforma Invoice Modal */}
+      <GenerateProformaModal
+        quotation={quotation}
+        open={showProformaModal}
+        onClose={() => setShowProformaModal(false)}
+        onSuccess={() => refetch()}
+      />
+
+      {/* Convert Quotation to Confirmed Order Modal */}
+      <ConvertQuotationModal
+        quotation={quotation}
+        open={showConvertModal}
+        onClose={() => setShowConvertModal(false)}
+        onSuccess={() => refetch()}
+      />
+
+      {/* Extend Quotation Validity Modal */}
+      <ExtendQuotationValidityModal
+        quotation={quotation}
+        open={showExtendValidityModal}
+        onClose={() => setShowExtendValidityModal(false)}
+        onSuccess={() => refetch()}
+      />
     </div>
   );
 }

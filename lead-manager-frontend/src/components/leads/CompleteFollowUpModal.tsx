@@ -35,7 +35,10 @@ export function CompleteFollowUpModal({ followUp, open, onClose, onSuccess }: Pr
 
   if (!open) return null;
 
-  const leadId = typeof followUp.lead === "object" ? followUp.lead._id : followUp.lead;
+  const leadId =
+    typeof followUp.lead === "object" && followUp.lead !== null
+      ? followUp.lead._id
+      : (followUp.lead || undefined);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

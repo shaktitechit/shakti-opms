@@ -2,6 +2,7 @@
  * @fileoverview Quotation Service - Generates, lists, updates, and deletes quotations.
  * @module modules/quotations/quotation.service
  */
+const mongoose = require('mongoose');
 const { getModels } = require('../../data/mongoRegistry');
 const { ApiError } = require('../../utils/ApiError');
 const activityService = require('../activity/activity.service');
@@ -11,6 +12,7 @@ const microsoftGraph = require('../../config/microsoftGraph');
 const { logger } = require('../../utils/logger');
 const { isAdmin, isManager } = require('../../middlewares/leadManagerAuth.middleware');
 const authService = require('../../services/authService');
+const { generateOrderNo } = require('../../utils/generateOrderNo');
 
 const TEMPLATE_APPROVAL_REQUEST = 'lead_quotation_approval_request';
 const TEMPLATE_APPROVED = 'lead_quotation_approved';
@@ -419,11 +421,26 @@ async function getDefaultTerms() {
 function computeTotals(items) {
   let subtotal = 0;
   let totalGst = 0;
+  let totalDiscount = 0;
 
   const computedItems = (items || []).map((item) => {
     const qty = Number(item.quantity) || 1;
     const rate = Number(item.rate) || 0;
-    const taxableAmount = Math.round(qty * rate * 100) / 100;
+    const grossAmount = Math.round(qty * rate * 100) / 100;
+
+    let discountPercent = Number(item.discount_percent) || 0;
+    let discountAmount = Number(item.discount_amount) || 0;
+
+    if (discountPercent > 0) {
+      discountAmount = Math.round(((grossAmount * discountPercent) / 100) * 100) / 100;
+    } else if (discountAmount > 0 && grossAmount > 0) {
+      discountPercent = Math.round(((discountAmount / grossAmount) * 100) * 100) / 100;
+    } else {
+      discountPercent = 0;
+      discountAmount = 0;
+    }
+
+    const taxableAmount = Math.max(0, Math.round((grossAmount - discountAmount) * 100) / 100);
     const gstRate = Number(item.gst_rate) || 0;
 
     let cgstRate = 0;
@@ -449,6 +466,7 @@ function computeTotals(items) {
 
     const lineTotal = Math.round((taxableAmount + totalGstAmount) * 100) / 100;
 
+    totalDiscount += discountAmount;
     subtotal += taxableAmount;
     totalGst += totalGstAmount;
 
@@ -456,6 +474,8 @@ function computeTotals(items) {
       ...item,
       quantity: qty,
       rate,
+      discount_percent: discountPercent,
+      discount_amount: discountAmount,
       taxable_amount: taxableAmount,
       gst_rate: gstRate,
       cgst_rate: cgstRate,
@@ -469,6 +489,7 @@ function computeTotals(items) {
     };
   });
 
+  totalDiscount = Math.round(totalDiscount * 100) / 100;
   subtotal = Math.round(subtotal * 100) / 100;
   totalGst = Math.round(totalGst * 100) / 100;
   const rawGrandTotal = subtotal + totalGst;
@@ -478,6 +499,7 @@ function computeTotals(items) {
 
   return {
     items: computedItems,
+    total_discount: totalDiscount,
     subtotal,
     total_gst: totalGst,
     round_off: roundOff,
@@ -573,10 +595,112 @@ function buildQuotationVisibilityFilter(user) {
 }
 
 /**
+ * Automatically expire all active quotations that have passed their valid_until date.
+ */
+async function autoExpireQuotations() {
+  const { LeadQuotation } = getModels();
+  const now = new Date();
+  const filter = {
+    deletedAt: null,
+    valid_until: { $lt: now },
+    status: { $in: ['draft', 'pending_approval', 'approved', 'sent', 'in_negotiation', 'on_hold'] },
+  };
+
+  try {
+    const expiredQuotes = await LeadQuotation.find(filter)
+      .select('_id quotation_no customer_name created_by valid_until status')
+      .lean();
+
+    if (expiredQuotes.length === 0) {
+      return { count: 0, expired: [] };
+    }
+
+    const ids = expiredQuotes.map((q) => q._id);
+    await LeadQuotation.updateMany(
+      { _id: { $in: ids } },
+      { $set: { status: 'expired' } }
+    );
+
+    for (const q of expiredQuotes) {
+      await activityService.create({
+        entity_type: 'quotation',
+        entity_id: q._id,
+        action: 'status_changed',
+        actor: q.created_by || null,
+        message: `Quotation #${q.quotation_no} auto-expired (valid until ${q.valid_until ? new Date(q.valid_until).toLocaleDateString('en-IN') : 'N/A'})`,
+        new_value: { status: 'expired', previous_status: q.status },
+      }).catch(() => {});
+    }
+
+    logger.info(`[Quotation Service] Auto-expired ${ids.length} quotation(s) past valid_until.`);
+    return { count: ids.length, expired: expiredQuotes };
+  } catch (err) {
+    logger.error(`[Quotation Service] autoExpireQuotations error: ${err.message}`);
+    return { count: 0, expired: [] };
+  }
+}
+
+/**
+ * Check and send 48-hour pre-expiry alerts to creators and sales persons.
+ */
+async function checkAndSendPreExpiryAlerts() {
+  const { LeadQuotation } = getModels();
+  const now = new Date();
+  const in48Hours = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+
+  try {
+    const filter = {
+      deletedAt: null,
+      valid_until: { $gt: now, $lte: in48Hours },
+      status: { $in: ['approved', 'sent', 'in_negotiation'] },
+      expiry_alert_sent_at: null,
+    };
+
+    const upcomingQuotes = await LeadQuotation.find(filter)
+      .populate('created_by', 'name email')
+      .populate('sales_person_user', 'name email')
+      .populate('signatory_user', 'name email');
+
+    for (const quote of upcomingQuotes) {
+      const creatorId = userIdOf(quote.created_by);
+      const salesId = userIdOf(quote.sales_person_user);
+      const targetUsers = Array.from(new Set([creatorId, salesId].filter(Boolean)));
+
+      const daysLeft = Math.max(1, Math.ceil((new Date(quote.valid_until) - now) / (1000 * 60 * 60 * 24)));
+      const title = `Quotation #${quote.quotation_no} Expiring in ${daysLeft} Day${daysLeft > 1 ? 's' : ''}`;
+      const msg = `Quotation #${quote.quotation_no} for ${quote.customer_name || 'Customer'} expires on ${new Date(quote.valid_until).toLocaleDateString('en-IN')}. Please follow up or extend validity.`;
+
+      for (const uid of targetUsers) {
+        await notificationHelper.createForUser(uid, {
+          title,
+          message: msg,
+          type: 'warning',
+          module: 'lead',
+          entity_type: 'quotation',
+          entity_id: quote._id,
+        }).catch(() => {});
+      }
+
+      quote.expiry_alert_sent_at = now;
+      await quote.save().catch(() => {});
+    }
+
+    return { count: upcomingQuotes.length };
+  } catch (err) {
+    logger.error(`[Quotation Service] checkAndSendPreExpiryAlerts error: ${err.message}`);
+    return { count: 0 };
+  }
+}
+
+/**
  * List all quotations with filtering and pagination.
  */
 async function listAll(query = {}, user) {
   const { LeadQuotation } = getModels();
+
+  // Run lazy auto-expiry for any active quotes past validity date
+  await autoExpireQuotations().catch(() => {});
+
   const filter = { deletedAt: null };
   const conditions = [];
 
@@ -725,7 +849,7 @@ async function create(leadIdOrBody, bodyOrUser, userParam) {
     ? new Date(body.valid_until)
     : new Date(quotationDate.getTime() + validityDays * 24 * 60 * 60 * 1000);
 
-  const { items, subtotal, total_gst, round_off, grand_total, amount_in_words } = computeTotals(
+  const { items, total_discount, subtotal, total_gst, round_off, grand_total, amount_in_words } = computeTotals(
     body.items && body.items.length > 0
       ? body.items
       : [
@@ -766,6 +890,7 @@ async function create(leadIdOrBody, bodyOrUser, userParam) {
       country: lead?.address?.country || 'India',
     },
     items,
+    total_discount,
     subtotal,
     total_gst,
     round_off,
@@ -794,6 +919,11 @@ async function create(leadIdOrBody, bodyOrUser, userParam) {
     signatory_email: body.signatory_email || defaultSignatory?.email || '',
     signatory_designation: body.signatory_designation || (defaultSignatory?.department ? (defaultSignatory.department.charAt(0).toUpperCase() + defaultSignatory.department.slice(1)) : 'Authorized Signatory'),
     signatory_user: body.signatory_user || defaultSignatory?._id || null,
+    sales_person_name: body.sales_person_name || '',
+    sales_person_phone: body.sales_person_phone || '',
+    sales_person_email: body.sales_person_email || '',
+    sales_person_designation: body.sales_person_designation || 'Sales Executive',
+    sales_person_user: body.sales_person_user || null,
     approval_status: body.approval_status || 'pending_approval',
     status: body.status || 'draft',
     created_by: user._id,
@@ -848,9 +978,32 @@ async function create(leadIdOrBody, bodyOrUser, userParam) {
  */
 async function getById(id, user) {
   const { LeadQuotation } = getModels();
+
+  // Lazy auto-expiry check for this quotation if past valid_until
+  const now = new Date();
+  const raw = await LeadQuotation.findOne({ _id: id, deletedAt: null });
+  if (
+    raw &&
+    raw.valid_until &&
+    new Date(raw.valid_until) < now &&
+    ['draft', 'pending_approval', 'approved', 'sent', 'in_negotiation', 'on_hold'].includes(raw.status)
+  ) {
+    raw.status = 'expired';
+    await raw.save();
+  }
+
   const quotation = await LeadQuotation.findOne({ _id: id, deletedAt: null })
     .populate('lead')
     .populate('created_by', 'name email department')
+    .populate('signatory_user', 'name email department phone designation')
+    .populate('sales_person_user', 'name email department phone designation')
+    .populate('conversion.converted_by', 'name email department')
+    .populate('conversion.party_id')
+    .populate('conversion.order_id', 'order_no status grand_total total_amount')
+    .populate('revision_history.saved_by', 'name email department')
+    .populate('revision_history.approved_by', 'name email department')
+    .populate('proforma_details.generated_by', 'name email department')
+    .populate({ path: 'validity_extension_history.extended_by', select: 'name email department', strictPopulate: false })
     .lean();
 
   if (!quotation) throw new ApiError(404, 'Quotation not found');
@@ -864,6 +1017,10 @@ async function update(id, body, user) {
   const { Lead, LeadQuotation } = getModels();
   const quotation = await LeadQuotation.findOne({ _id: id, deletedAt: null });
   if (!quotation) throw new ApiError(404, 'Quotation not found');
+
+  if (quotation.status === 'converted') {
+    throw new ApiError(400, 'No further actions allowed: this quotation has already been converted to an order');
+  }
 
   const isCreator =
     quotation.created_by &&
@@ -883,16 +1040,59 @@ async function update(id, body, user) {
     body.kind_attn ||
     body.address ||
     body.signatory_user ||
+    body.sales_person_user ||
     body.validity_days ||
     body.valid_until ||
     body.ref_no
   );
 
   const previousStatus = quotation.status;
+  const previousApprovalStatus = quotation.approval_status;
+  const previousVersion = quotation.version || 1;
+  let versionIncremented = false;
+
+  if (isContentUpdate) {
+    const isRevisionEligible =
+      previousStatus !== 'draft' ||
+      previousApprovalStatus === 'approved' ||
+      previousVersion > 1;
+
+    if (isRevisionEligible) {
+      if (!Array.isArray(quotation.revision_history)) {
+        quotation.revision_history = [];
+      }
+      quotation.revision_history.push({
+        version: previousVersion,
+        items: quotation.items || [],
+        subtotal: quotation.subtotal || 0,
+        total_discount: quotation.total_discount || 0,
+        total_gst: quotation.total_gst || 0,
+        round_off: quotation.round_off || 0,
+        grand_total: quotation.grand_total || 0,
+        amount_in_words: quotation.amount_in_words || '',
+        terms_and_conditions: quotation.terms_and_conditions || [],
+        signatory_name: quotation.signatory_name || '',
+        signatory_user: quotation.signatory_user || null,
+        sales_person_name: quotation.sales_person_name || '',
+        sales_person_user: quotation.sales_person_user || null,
+        status: previousStatus,
+        approval_status: previousApprovalStatus || 'pending_approval',
+        approved_by: quotation.approved_by || null,
+        approved_at: quotation.approved_at || null,
+        saved_by: user._id,
+        saved_at: new Date(),
+        change_summary: body.change_summary || `Revised to version ${previousVersion + 1}`,
+      });
+
+      quotation.version = previousVersion + 1;
+      versionIncremented = true;
+    }
+  }
 
   if (body.items) {
     const computed = computeTotals(body.items);
     quotation.items = computed.items;
+    quotation.total_discount = computed.total_discount;
     quotation.subtotal = computed.subtotal;
     quotation.total_gst = computed.total_gst;
     quotation.round_off = computed.round_off;
@@ -933,8 +1133,16 @@ async function update(id, body, user) {
     'signatory_email',
     'signatory_designation',
     'signatory_user',
+    'sales_person_name',
+    'sales_person_phone',
+    'sales_person_email',
+    'sales_person_designation',
+    'sales_person_user',
     'approval_status',
     'status',
+    'lost_reason',
+    'next_follow_up_at',
+    'last_follow_up_at',
   ];
 
   for (const field of allowedFields) {
@@ -990,7 +1198,9 @@ async function update(id, body, user) {
   let actionType = 'updated';
 
   if (isContentUpdate) {
-    message = `Updated Quotation #${quotation.quotation_no} - Resubmitted for Signatory Approval`;
+    message = versionIncremented
+      ? `Updated Quotation #${quotation.quotation_no} to Revision v${quotation.version} - Resubmitted for Signatory Approval`
+      : `Updated Quotation #${quotation.quotation_no} - Resubmitted for Signatory Approval`;
 
     const populatedQuotation = await LeadQuotation.findOne({ _id: quotation._id })
       .populate('created_by', 'name email department')
@@ -1001,10 +1211,16 @@ async function update(id, body, user) {
     });
   } else if (body.status && body.status !== previousStatus) {
     actionType = 'status_changed';
-    message =
-      body.status === 'sent' && leadAdvancedToQuotation
-        ? `Quotation #${quotation.quotation_no} marked as SENT — linked lead advanced to quotation`
-        : `Quotation #${quotation.quotation_no} marked as '${body.status.toUpperCase()}'`;
+    if (body.status === 'rejected' && body.lost_reason) {
+      message = `Quotation #${quotation.quotation_no} marked as REJECTED/LOST. Reason: ${body.lost_reason}`;
+    } else if (body.status === 'in_negotiation') {
+      message = `Quotation #${quotation.quotation_no} marked as IN NEGOTIATION`;
+    } else {
+      message =
+        body.status === 'sent' && leadAdvancedToQuotation
+          ? `Quotation #${quotation.quotation_no} marked as SENT — linked lead advanced to quotation`
+          : `Quotation #${quotation.quotation_no} marked as '${body.status.toUpperCase()}'`;
+    }
   }
 
   if (quotation.lead) {
@@ -1037,6 +1253,10 @@ async function submitForApproval(id, user) {
     .populate('signatory_user', 'name email department');
   if (!quotation) throw new ApiError(404, 'Quotation not found');
 
+  if (quotation.status === 'converted') {
+    throw new ApiError(400, 'No further actions allowed: this quotation has already been converted to an order');
+  }
+
   quotation.approval_status = 'pending_approval';
   quotation.status = 'pending_approval';
   quotation.updated_by = user._id;
@@ -1067,6 +1287,10 @@ async function remove(id, user) {
   const { LeadQuotation } = getModels();
   const quotation = await LeadQuotation.findOne({ _id: id, deletedAt: null });
   if (!quotation) throw new ApiError(404, 'Quotation not found');
+
+  if (quotation.status === 'converted') {
+    throw new ApiError(400, 'No further actions allowed: this quotation has already been converted to an order');
+  }
 
   if (!isQuotationManager(user)) {
     throw new ApiError(403, 'Only administrators can delete quotations');
@@ -1100,6 +1324,10 @@ async function approve(id, user) {
     .populate('created_by', 'name email department')
     .populate('signatory_user', 'name email department');
   if (!quotation) throw new ApiError(404, 'Quotation not found');
+
+  if (quotation.status === 'converted') {
+    throw new ApiError(400, 'No further actions allowed: this quotation has already been converted to an order');
+  }
 
   const isSignatoryUser =
     isAdmin(user) ||
@@ -1148,6 +1376,10 @@ async function reject(id, reason, user) {
     .populate('signatory_user', 'name email department');
   if (!quotation) throw new ApiError(404, 'Quotation not found');
 
+  if (quotation.status === 'converted') {
+    throw new ApiError(400, 'No further actions allowed: this quotation has already been converted to an order');
+  }
+
   const isSignatoryUser =
     isAdmin(user) ||
     (quotation.signatory_user && String(quotation.signatory_user._id || quotation.signatory_user) === String(user._id)) ||
@@ -1187,6 +1419,889 @@ async function reject(id, reason, user) {
   return quotation;
 }
 
+/**
+ * Schedule a new follow-up for a quotation.
+ */
+async function scheduleFollowUp(quotationId, body, user) {
+  const { Lead, LeadQuotation, LeadFollowUp } = getModels();
+  const quotation = await LeadQuotation.findOne({ _id: quotationId, deletedAt: null });
+  if (!quotation) throw new ApiError(404, 'Quotation not found');
+
+  if (quotation.status === 'converted') {
+    throw new ApiError(400, 'No further actions allowed: this quotation has already been converted to an order');
+  }
+
+  const followUpDate = new Date(body.follow_up_date);
+  if (isNaN(followUpDate.getTime())) {
+    throw new ApiError(400, 'Invalid follow-up date');
+  }
+
+  const doc = await LeadFollowUp.create({
+    quotation: quotation._id,
+    lead: quotation.lead || null,
+    follow_up_date: followUpDate,
+    follow_up_time: body.follow_up_time ? String(body.follow_up_time).trim() : '',
+    type: body.type || 'call',
+    notes: body.notes ? String(body.notes).trim() : '',
+    status: 'pending',
+    created_by: user._id,
+    updated_by: user._id,
+  });
+
+  quotation.next_follow_up_at = followUpDate;
+  if (quotation.status === 'sent') {
+    quotation.status = 'in_negotiation';
+  }
+  quotation.updated_by = user._id;
+  await quotation.save();
+
+  if (quotation.lead) {
+    const lead = await Lead.findOne({ _id: quotation.lead, deletedAt: null });
+    if (lead) {
+      lead.next_follow_up_at = followUpDate;
+      lead.last_activity_at = new Date();
+      await lead.save();
+
+      await activityService.create({
+        actor: user._id,
+        entity_type: 'lead',
+        entity_id: lead._id,
+        action: 'created',
+        message: `Quotation #${quotation.quotation_no} follow-up scheduled (${body.type || 'call'}) for ${followUpDate.toLocaleDateString('en-IN')}`,
+        new_value: {
+          quotation_id: quotation._id,
+          quotation_no: quotation.quotation_no,
+          follow_up_date: followUpDate,
+          type: body.type,
+          notes: body.notes,
+        },
+      });
+    }
+  }
+
+  return doc;
+}
+
+/**
+ * List all follow-ups for a single quotation.
+ */
+async function listFollowUps(quotationId, user) {
+  const { LeadQuotation, LeadFollowUp } = getModels();
+  const quotation = await LeadQuotation.findOne({ _id: quotationId, deletedAt: null });
+  if (!quotation) throw new ApiError(404, 'Quotation not found');
+
+  const rows = await LeadFollowUp.find({ quotation: quotationId, deletedAt: null })
+    .populate('created_by', 'name email')
+    .populate('completed_by', 'name email')
+    .sort({ follow_up_date: -1 })
+    .lean();
+
+  return rows;
+}
+
+/**
+ * Complete a quotation follow-up, record outcome, and optionally schedule next follow-up.
+ */
+async function completeFollowUp(followUpId, body, user) {
+  const { Lead, LeadQuotation, LeadFollowUp } = getModels();
+  const fu = await LeadFollowUp.findOne({ _id: followUpId, deletedAt: null });
+  if (!fu) throw new ApiError(404, 'Follow-up not found');
+
+  const quotation = await LeadQuotation.findOne({ _id: fu.quotation, deletedAt: null });
+  const isConverted = quotation && quotation.status === 'converted';
+
+  fu.status = 'completed';
+  fu.outcome = body.outcome ? String(body.outcome).trim() : 'Follow-up completed';
+  fu.completed_at = new Date();
+  fu.completed_by = user._id;
+  fu.updated_by = user._id;
+
+  let nextFu = null;
+  if (body.next_follow_up_date && !isConverted) {
+    const nextDate = new Date(body.next_follow_up_date);
+    fu.next_follow_up_date = nextDate;
+
+    nextFu = await LeadFollowUp.create({
+      quotation: fu.quotation || (quotation ? quotation._id : null),
+      lead: fu.lead || (quotation ? quotation.lead : null),
+      follow_up_date: nextDate,
+      follow_up_time: body.next_follow_up_time || '',
+      type: body.next_type || fu.type || 'call',
+      notes: body.next_notes || '',
+      status: 'pending',
+      created_by: user._id,
+      updated_by: user._id,
+    });
+
+    if (quotation) {
+      quotation.next_follow_up_at = nextDate;
+    }
+  } else if (quotation && !isConverted) {
+    const nextPending = await LeadFollowUp.findOne({
+      quotation: quotation._id,
+      status: 'pending',
+      deletedAt: null,
+      _id: { $ne: fu._id },
+    }).sort({ follow_up_date: 1 });
+
+    quotation.next_follow_up_at = nextPending ? nextPending.follow_up_date : null;
+  } else if (quotation && isConverted) {
+    quotation.next_follow_up_at = null;
+  }
+
+  if (quotation) {
+    quotation.last_follow_up_at = new Date();
+    if (quotation.status === 'sent') {
+      quotation.status = 'in_negotiation';
+    }
+    quotation.updated_by = user._id;
+    await quotation.save();
+  }
+
+  await fu.save();
+
+  if (quotation && quotation.lead) {
+    const lead = await Lead.findOne({ _id: quotation.lead, deletedAt: null });
+    if (lead) {
+      lead.last_contacted_at = new Date();
+      lead.last_activity_at = new Date();
+      if (body.next_follow_up_date) {
+        lead.next_follow_up_at = new Date(body.next_follow_up_date);
+      }
+      await lead.save();
+
+      await activityService.create({
+        actor: user._id,
+        entity_type: 'lead',
+        entity_id: lead._id,
+        action: 'status_changed',
+        message: `Quotation #${quotation.quotation_no} follow-up completed: ${body.outcome || 'Done'}`,
+        new_value: {
+          quotation_id: quotation._id,
+          quotation_no: quotation.quotation_no,
+          outcome: body.outcome,
+          next_follow_up_date: body.next_follow_up_date || null,
+        },
+      });
+    }
+  }
+
+  return {
+    completed: fu,
+    next: nextFu,
+  };
+}
+
+/**
+ * Revise a quotation in-place (increments version, snapshots prior version into history).
+ */
+async function reviseQuotation(quotationId, user) {
+  const { Lead, LeadQuotation } = getModels();
+  const quotation = await LeadQuotation.findOne({ _id: quotationId, deletedAt: null });
+  if (!quotation) throw new ApiError(404, 'Quotation not found');
+
+  if (quotation.status === 'converted') {
+    throw new ApiError(400, 'No further actions allowed: this quotation has already been converted to an order');
+  }
+
+  const isCreator =
+    quotation.created_by &&
+    String(quotation.created_by._id || quotation.created_by) === String(user._id);
+
+  if (!isAdmin(user) && !isCreator) {
+    throw new ApiError(403, 'Only administrators and quotation creators can edit quotations');
+  }
+
+  const previousVersion = quotation.version || 1;
+  const previousStatus = quotation.status;
+  const previousApprovalStatus = quotation.approval_status;
+
+  if (!Array.isArray(quotation.revision_history)) {
+    quotation.revision_history = [];
+  }
+
+  quotation.revision_history.push({
+    version: previousVersion,
+    items: quotation.items || [],
+    subtotal: quotation.subtotal || 0,
+    total_discount: quotation.total_discount || 0,
+    total_gst: quotation.total_gst || 0,
+    round_off: quotation.round_off || 0,
+    grand_total: quotation.grand_total || 0,
+    amount_in_words: quotation.amount_in_words || '',
+    terms_and_conditions: quotation.terms_and_conditions || [],
+    status: previousStatus,
+    approval_status: previousApprovalStatus || 'pending_approval',
+    approved_by: quotation.approved_by || null,
+    approved_at: quotation.approved_at || null,
+    saved_by: user._id,
+    saved_at: new Date(),
+    change_summary: `Created Revision v${previousVersion + 1} from v${previousVersion}`,
+  });
+
+  quotation.version = previousVersion + 1;
+  quotation.status = 'draft';
+  quotation.approval_status = 'pending_approval';
+  quotation.approved_at = null;
+  quotation.approved_by = null;
+  quotation.updated_by = user._id;
+
+  await quotation.save();
+
+  if (quotation.lead) {
+    await activityService.create({
+      entity_type: 'lead',
+      entity_id: quotation.lead,
+      action: 'updated',
+      actor: user._id,
+      message: `Quotation #${quotation.quotation_no} revised to v${quotation.version}`,
+      new_value: {
+        quotation_id: quotation._id,
+        quotation_no: quotation.quotation_no,
+        version: quotation.version,
+      },
+    });
+  }
+
+  return quotation;
+}
+
+/**
+ * Get dashboard KPI counters for Quotations commercial hub.
+ */
+async function getDashboardStats(query = {}, user) {
+  const { LeadQuotation } = getModels();
+  const { isLeadAdmin } = require('../leads/lead.service');
+  const q = { deletedAt: null };
+
+  if (user && !isLeadAdmin(user)) {
+    q.created_by = user._id;
+  }
+
+  // Period / Date filter
+  if (query.from || query.to) {
+    q.quotation_date = {};
+    if (query.from) q.quotation_date.$gte = new Date(`${query.from}T00:00:00.000Z`);
+    if (query.to) q.quotation_date.$lte = new Date(`${query.to}T23:59:59.999Z`);
+  } else if (query.startDate || query.endDate || query.start_date || query.end_date) {
+    const s = query.startDate || query.start_date;
+    const e = query.endDate || query.end_date;
+    q.quotation_date = {};
+    if (s) q.quotation_date.$gte = new Date(s);
+    if (e) q.quotation_date.$lte = new Date(e);
+  }
+
+  const allQuotes = await LeadQuotation.find(q)
+    .select('quotation_no version status approval_status grand_total total_discount items valid_until quotation_date customer_name')
+    .lean();
+
+  let totalQuotations = allQuotes.length;
+  let draftCount = 0;
+  let pendingApprovalCount = 0;
+  let approvedCount = 0;
+  let sentCount = 0;
+  let inNegotiationCount = 0;
+  let acceptedCount = 0;
+  let rejectedCount = 0;
+  let expiredCount = 0;
+
+  let totalQuotedValue = 0;
+  let totalWonValue = 0;
+  let totalDiscountValue = 0;
+  let totalGrossValue = 0;
+  let totalExpiredValue = 0;
+
+  for (const quote of allQuotes) {
+    const st = quote.status;
+    const appSt = quote.approval_status;
+    const gTotal = Number(quote.grand_total) || 0;
+    const disc = Number(quote.total_discount) || 0;
+
+    totalDiscountValue += disc;
+    totalGrossValue += gTotal + disc;
+
+    if (st === 'expired') {
+      expiredCount += 1;
+      totalExpiredValue += gTotal;
+    } else if (appSt === 'pending_approval' || st === 'pending_approval') {
+      pendingApprovalCount += 1;
+    } else if (st === 'approved') {
+      approvedCount += 1;
+    } else if (st === 'sent') {
+      sentCount += 1;
+      totalQuotedValue += gTotal;
+    } else if (st === 'in_negotiation') {
+      inNegotiationCount += 1;
+      totalQuotedValue += gTotal;
+    } else if (st === 'accepted') {
+      acceptedCount += 1;
+      totalWonValue += gTotal;
+    } else if (st === 'rejected') {
+      rejectedCount += 1;
+    } else if (st === 'draft') {
+      draftCount += 1;
+    }
+  }
+
+  const avgDiscountPercent = totalGrossValue > 0 ? Math.round((totalDiscountValue / totalGrossValue) * 100 * 10) / 10 : 0;
+  const winRate = (sentCount + inNegotiationCount + acceptedCount) > 0
+    ? Math.round((acceptedCount / (sentCount + inNegotiationCount + acceptedCount)) * 100)
+    : 0;
+
+  return {
+    total_quotations: totalQuotations,
+    draft_count: draftCount,
+    pending_approval_count: pendingApprovalCount,
+    approved_count: approvedCount,
+    sent_count: sentCount,
+    in_negotiation_count: inNegotiationCount,
+    accepted_count: acceptedCount,
+    rejected_count: rejectedCount,
+    expired_count: expiredCount,
+    total_quoted_value: totalQuotedValue,
+    total_won_value: totalWonValue,
+    total_discount_value: totalDiscountValue,
+    total_expired_value: totalExpiredValue,
+    avg_discount_percent: avgDiscountPercent,
+    win_rate: winRate,
+  };
+}
+
+/**
+ * Convert quotation into a Customer (Party) + Order.
+ */
+async function convert(id, body = {}, user) {
+  const { LeadQuotation, Lead, Party, Order, Product } = getModels();
+  const quotation = await LeadQuotation.findOne({ _id: id, deletedAt: null }).populate('lead');
+  if (!quotation) throw new ApiError(404, 'Quotation not found');
+
+  if (!isAdmin(user) && !isManager(user)) {
+    throw new ApiError(403, 'Only administrators and managers can convert quotations to orders');
+  }
+
+  if (quotation.status === 'converted') {
+    throw new ApiError(400, 'No further actions allowed: this quotation has already been converted to an order');
+  }
+
+  if (quotation.status === 'expired' || (quotation.valid_until && new Date(quotation.valid_until) < new Date())) {
+    throw new ApiError(400, 'This quotation has expired. Please extend its validity before converting to an order.');
+  }
+
+  if (quotation.status !== 'accepted') {
+    throw new ApiError(400, 'Quotation must be accepted by the client before converting to an order');
+  }
+
+  const conversionType = body.conversion_type || 'existing_customer';
+  let targetPartyId = body.party_id || quotation.party_id || (quotation.lead ? quotation.lead.party_id : null);
+  let createdOrder = null;
+
+  // Check if target party exists in database
+  let existingParty = null;
+  if (targetPartyId && mongoose.Types.ObjectId.isValid(targetPartyId)) {
+    existingParty = await Party.findOne({ _id: targetPartyId, deletedAt: null });
+  }
+
+  // 1. Party resolution or creation (with deduplication)
+  if (conversionType === 'new_customer' || (!existingParty && conversionType !== 'existing_customer')) {
+    const partyData = body.party_data || {};
+    const partyName = partyData.party_name || body.party_name || quotation.customer_name || (quotation.lead ? quotation.lead.company_name || quotation.lead.name : '');
+    const cleanGst = (partyData.gst_no || body.gst_no || quotation.gstin) ? String(partyData.gst_no || body.gst_no || quotation.gstin).toUpperCase().trim() : '';
+    const cleanPhone = quotation.phone || quotation.cell || (partyData.contacts && partyData.contacts[0] && partyData.contacts[0].phone) || (quotation.lead ? quotation.lead.phone : '') || '';
+
+    // Check if matching Party exists by GST or exact name/phone
+    if (cleanGst) {
+      existingParty = await Party.findOne({ gst_no: cleanGst, deletedAt: null });
+    }
+    if (!existingParty && partyName && cleanPhone) {
+      existingParty = await Party.findOne({
+        party_name: { $regex: new RegExp(`^${partyName.trim()}$`, 'i') },
+        mobile: cleanPhone.trim(),
+        deletedAt: null,
+      });
+    }
+
+    if (existingParty) {
+      targetPartyId = existingParty._id;
+    } else {
+      const contactsList = Array.isArray(partyData.contacts) && partyData.contacts.length > 0
+        ? partyData.contacts
+        : [
+            {
+              name: quotation.kind_attn || quotation.customer_name || 'Primary Contact',
+              phone: cleanPhone,
+              email: quotation.email || '',
+              designation: '',
+              is_primary: true,
+            },
+          ];
+
+      const billingAddr = partyData.billing_address || body.billing_address || {
+        address_line_1: quotation.address?.address_line_1 || '',
+        city: quotation.address?.city || '',
+        state: quotation.address?.state || '',
+        pincode: quotation.address?.pincode || '',
+        country: quotation.address?.country || 'India',
+      };
+      const shippingAddr = partyData.shipping_address || body.shipping_address || billingAddr;
+
+      const newParty = await Party.create({
+        company_id: user.company_id,
+        party_type: partyData.party_type || 'customer',
+        party_name: partyName || 'Customer',
+        contact_person: quotation.kind_attn || quotation.customer_name || '',
+        mobile: cleanPhone,
+        email: quotation.email || '',
+        contacts: contactsList,
+        gst_no: cleanGst || undefined,
+        drug_license_no: partyData.drug_license_no || body.drug_license_no || undefined,
+        district: partyData.district || billingAddr.city || '',
+        state: partyData.state || billingAddr.state || '',
+        payment_terms: partyData.payment_terms || body.payment_terms || 'Advance',
+        billing_address: billingAddr,
+        shipping_address: shippingAddr,
+        created_by: user._id,
+        is_active: true,
+      });
+      targetPartyId = newParty._id;
+
+      await activityService.create({
+        actor: user._id,
+        entity_type: 'party',
+        entity_id: newParty._id,
+        action: 'created',
+        message: `Party '${newParty.party_name}' created from Quotation #${quotation.quotation_no}`,
+      });
+    }
+  } else if (existingParty) {
+    targetPartyId = existingParty._id;
+  }
+
+  if (!targetPartyId) {
+    throw new ApiError(400, 'A valid customer party is required to create an order');
+  }
+
+  // 2. Generate Order
+  const orderNo = await generateOrderNo(targetPartyId, new Date());
+  const items = [];
+  let grossSubtotal = 0;
+  let totalDiscount = 0;
+  let subtotal = 0;
+  let totalTax = 0;
+
+  const sourceItems = Array.isArray(body.order_items) && body.order_items.length > 0
+    ? body.order_items
+    : Array.isArray(quotation.items) ? quotation.items : [];
+
+  if (sourceItems.length > 0) {
+    for (const prodItem of sourceItems) {
+      let pName = prodItem.product_name || 'Product';
+      const rateType = prodItem.applied_rate_type || 'SR';
+      let unitPrice = 0;
+      let gstPct = 18;
+      const qty = Number(prodItem.quantity || prodItem.ordered_quantity || 1);
+
+      let productId = prodItem.product || prodItem.productId;
+      let pDoc = null;
+
+      if (productId && mongoose.Types.ObjectId.isValid(productId)) {
+        pDoc = await Product.findById(productId).lean();
+      }
+      if (!pDoc && pName) {
+        pDoc = await Product.findOne({ product_name: pName, deletedAt: null }).lean();
+      }
+      if (!pDoc) {
+        pDoc = await Product.findOne({ deletedAt: null }).lean();
+      }
+
+      if (pDoc) {
+        productId = pDoc._id;
+        pName = prodItem.product_name || pDoc.product_name || pName;
+        if (rateType === 'SR') {
+          unitPrice = Number(pDoc.base_price || 0);
+        } else if (rateType === 'SRA') {
+          unitPrice = Number(pDoc.minimum_sale_rate || pDoc.base_price || 0);
+        } else if (rateType === 'CR') {
+          unitPrice = Number(pDoc.mrp || pDoc.base_price || 0);
+        } else {
+          unitPrice = Number(pDoc.base_price || 0);
+        }
+
+        if (pDoc.gst_percent !== undefined) {
+          gstPct = Number(pDoc.gst_percent);
+        }
+      }
+
+      const priceSource = prodItem.rate ?? prodItem.unit_price;
+      if (priceSource !== undefined && priceSource !== null && priceSource !== '') {
+        const explicitPrice = Number(priceSource);
+        if (Number.isFinite(explicitPrice) && explicitPrice >= 0) {
+          unitPrice = explicitPrice;
+        }
+      }
+
+      const gstSource = prodItem.gst_rate ?? prodItem.gst_percent;
+      if (gstSource !== undefined && gstSource !== null && gstSource !== '') {
+        const explicitGst = Number(gstSource);
+        if (Number.isFinite(explicitGst) && explicitGst >= 0) {
+          gstPct = explicitGst;
+        }
+      }
+
+      if (!productId) {
+        const createdProduct = await Product.create({
+          company_id: user.company_id,
+          product_name: pName,
+          unit: prodItem.unit || 'pcs',
+          base_price: unitPrice,
+          minimum_sale_rate: unitPrice,
+          mrp: unitPrice,
+          gst_percent: gstPct,
+          created_by: user._id,
+        });
+        productId = createdProduct._id;
+      }
+
+      const gross = unitPrice * qty;
+      let discPct = Number(prodItem.discount_percent) || 0;
+      let discAmt = Number(prodItem.discount_amount) || 0;
+      if (discPct > 0) {
+        discAmt = Math.round(((gross * discPct) / 100) * 100) / 100;
+      } else if (discAmt > 0 && gross > 0) {
+        discPct = Math.round(((discAmt / gross) * 100) * 100) / 100;
+      } else {
+        discPct = 0;
+        discAmt = 0;
+      }
+      discAmt = Math.min(gross, discAmt);
+      const taxable = Math.max(0, Math.round((gross - discAmt) * 100) / 100);
+      const gst = Math.round(((taxable * gstPct) / 100) * 100) / 100;
+      const total = Math.round((taxable + gst) * 100) / 100;
+
+      grossSubtotal += gross;
+      totalDiscount += discAmt;
+      subtotal += taxable;
+      totalTax += gst;
+
+      items.push({
+        product: productId,
+        product_name: pName,
+        sku: pDoc?.sku || prodItem.sku || undefined,
+        unit: pDoc?.unit || prodItem.unit || 'pcs',
+        ordered_quantity: qty,
+        unit_price: unitPrice,
+        applied_rate_type: rateType,
+        discount_percent: discPct,
+        discount_amount: discAmt,
+        gst_percent: gstPct,
+        taxable_amount: taxable,
+        gst_amount: gst,
+        total_amount: total,
+        remarks: prodItem.description || prodItem.remarks || undefined,
+        line_status: 'active',
+      });
+    }
+  }
+
+  if (items.length === 0) {
+    throw new ApiError(400, 'Order must contain at least one valid product from the quotation/catalog');
+  }
+
+  const grandTotal = Math.round((subtotal + totalTax) * 100) / 100;
+  const pDetails = quotation.proforma_details || {};
+  const customerPoNumber = String(orderData.customer_po_number || body.customer_po_number || quotation.customer_po_number || pDetails.customer_po_number || '').trim();
+  const rawPoDate = orderData.customer_po_date || body.customer_po_date || quotation.customer_po_date || pDetails.customer_po_date;
+  const customerPoDate = rawPoDate ? new Date(rawPoDate) : undefined;
+  const advanceAmount = Number(orderData.advance_amount ?? body.advance_amount ?? quotation.advance_amount ?? 0) || 0;
+  const paymentMode = String(orderData.payment_mode || body.payment_mode || quotation.payment_mode || '').trim();
+  const paymentReference = String(orderData.payment_reference || body.payment_reference || quotation.payment_reference || '').trim();
+  const rawDeliveryDate = orderData.delivery_date || pDetails.dispatch_date || quotation.valid_until;
+  const expectedDeliveryDate = rawDeliveryDate ? new Date(rawDeliveryDate) : undefined;
+
+  createdOrder = await Order.create({
+    company_id: user.company_id,
+    order_no: orderNo,
+    order_date: orderData.order_date ? new Date(orderData.order_date) : new Date(),
+    expected_delivery_date: expectedDeliveryDate,
+    customer_po_number: customerPoNumber || undefined,
+    customer_po_date: customerPoDate || undefined,
+    advance_amount: advanceAmount,
+    payment_mode: paymentMode || undefined,
+    payment_reference: paymentReference || undefined,
+    party: targetPartyId,
+    customer: targetPartyId,
+    lead: quotation.lead?._id || quotation.lead || undefined,
+    quotation: quotation._id,
+    assigned_sales_user: orderData.assigned_sales_user || body.assigned_sales_user || quotation.sales_person_user || quotation.created_by || user._id,
+    current_assignee: orderData.assigned_sales_user || body.assigned_sales_user || quotation.sales_person_user || quotation.created_by || user._id,
+    current_department: 'sales',
+    pending_with_role: 'sales',
+    order_items: items,
+    subtotal: grossSubtotal,
+    discount_amount: totalDiscount,
+    taxable_amount: subtotal,
+    gst_amount: totalTax,
+    total_amount: grandTotal,
+    grand_total: grandTotal,
+    remarks: orderData.remarks || body.notes || quotation.subject || undefined,
+    status: 'submitted',
+    lifecycle_status: 'draft',
+    workflow_stage: 'sales',
+    current_action: 'submitted',
+    created_by: user._id,
+  });
+
+  await activityService.create({
+    actor: user._id,
+    entity_type: 'order',
+    entity_id: createdOrder._id,
+    action: 'generated',
+    message: `Order #${createdOrder.order_no} submitted upon conversion of Quotation #${quotation.quotation_no}${customerPoNumber ? ` (Customer PO: ${customerPoNumber})` : ''}`,
+  });
+
+  // 3. Update Quotation Status
+  quotation.status = 'converted';
+  quotation.party_id = targetPartyId;
+  if (customerPoNumber) quotation.customer_po_number = customerPoNumber;
+  if (customerPoDate) quotation.customer_po_date = customerPoDate;
+  if (advanceAmount) quotation.advance_amount = advanceAmount;
+  if (paymentMode) quotation.payment_mode = paymentMode;
+  if (paymentReference) quotation.payment_reference = paymentReference;
+  quotation.conversion = {
+    converted_at: new Date(),
+    converted_by: user._id,
+    party_id: targetPartyId,
+    order_id: createdOrder._id,
+    customer_po_number: customerPoNumber,
+    customer_po_date: customerPoDate,
+    advance_amount: advanceAmount,
+    payment_mode: paymentMode,
+    payment_reference: paymentReference,
+    notes: body.notes ? String(body.notes).trim() : '',
+  };
+  quotation.updated_by = user._id;
+  await quotation.save();
+
+  await activityService.create({
+    actor: user._id,
+    entity_type: 'quotation',
+    entity_id: quotation._id,
+    action: 'status_changed',
+    message: `Quotation #${quotation.quotation_no} converted to Order #${createdOrder.order_no}`,
+    new_value: quotation.conversion,
+  });
+
+  // 4. Update linked Lead if exists
+  if (quotation.lead) {
+    const leadDoc = await Lead.findOne({ _id: quotation.lead._id || quotation.lead, deletedAt: null });
+    if (leadDoc && leadDoc.status !== 'converted') {
+      leadDoc.party_id = targetPartyId;
+      leadDoc.status = 'converted';
+      leadDoc.conversion = {
+        converted_at: new Date(),
+        converted_by: user._id,
+        conversion_type: 'quotation',
+        party_id: targetPartyId,
+        order_id: createdOrder._id,
+        quotation_id: quotation._id,
+        notes: body.notes ? String(body.notes).trim() : '',
+      };
+      leadDoc.last_activity_at = new Date();
+      leadDoc.updated_by = user._id;
+      await leadDoc.save();
+
+      await activityService.create({
+        actor: user._id,
+        entity_type: 'lead',
+        entity_id: leadDoc._id,
+        action: 'status_changed',
+        message: `Lead #${leadDoc.lead_no} converted via Quotation #${quotation.quotation_no}`,
+        new_value: leadDoc.conversion,
+      });
+    }
+  }
+
+  const populated = await LeadQuotation.findById(id)
+    .populate('lead')
+    .populate('created_by', 'name email department')
+    .populate('signatory_user', 'name email department')
+    .populate('conversion.converted_by', 'name email department')
+    .populate('conversion.party_id')
+    .populate('conversion.order_id', 'order_no status grand_total total_amount')
+    .lean();
+
+  return {
+    quotation: populated,
+    order: createdOrder,
+    party_id: targetPartyId,
+  };
+}
+
+/**
+ * Record that a Proforma Invoice was generated / issued for this quotation.
+ */
+async function markProformaIssued(id, user) {
+  const { LeadQuotation } = getModels();
+  const quotation = await LeadQuotation.findOne({ _id: id, deletedAt: null });
+  if (!quotation) {
+    throw new ApiError(404, 'Quotation not found');
+  }
+
+  if (quotation.status === 'converted') {
+    throw new ApiError(400, 'No further actions allowed: this quotation has already been converted to an order');
+  }
+
+  quotation.proforma_issued_at = new Date();
+  quotation.updated_by = user._id;
+  await quotation.save();
+
+  await activityService.create({
+    actor: user._id,
+    entity_type: 'quotation',
+    entity_id: quotation._id,
+    action: 'status_changed',
+    message: `Proforma Invoice generated for Quotation #${quotation.quotation_no}`,
+  });
+
+  return getById(quotation._id, user);
+}
+
+/**
+ * Save / Update Proforma Invoice details and mark as generated.
+ */
+async function saveProformaDetails(id, body = {}, user) {
+  const { LeadQuotation } = getModels();
+  const quotation = await LeadQuotation.findOne({ _id: id, deletedAt: null });
+  if (!quotation) {
+    throw new ApiError(404, 'Quotation not found');
+  }
+
+  if (quotation.status === 'converted') {
+    throw new ApiError(400, 'No further actions allowed: this quotation has already been converted to an order');
+  }
+
+  const rawNo = quotation.quotation_no ? quotation.quotation_no.replace(/^QUOT-?/i, '') : String(Date.now()).slice(-4);
+  const proformaNo = body.proforma_no || quotation.proforma_details?.proforma_no || `PINV-${rawNo}`;
+  const invoiceDate = body.invoice_date ? new Date(body.invoice_date) : (quotation.proforma_details?.invoice_date || new Date());
+  const poNumber = (body.customer_po_number ?? quotation.customer_po_number ?? '').trim();
+  const poDate = body.customer_po_date ? new Date(body.customer_po_date) : (quotation.customer_po_date || null);
+  const dispatchDate = body.dispatch_date ? new Date(body.dispatch_date) : (quotation.proforma_details?.dispatch_date || null);
+
+  quotation.proforma_issued_at = new Date();
+  if (poNumber) quotation.customer_po_number = poNumber;
+  if (poDate) quotation.customer_po_date = poDate;
+
+  quotation.proforma_details = {
+    proforma_no: proformaNo,
+    invoice_date: invoiceDate,
+    customer_po_number: poNumber || 'Verbal',
+    customer_po_date: poDate || invoiceDate,
+    sales_person: body.sales_person || quotation.proforma_details?.sales_person || user.name || '',
+    orc: body.orc || quotation.proforma_details?.orc || 'na',
+    dispatch_date: dispatchDate,
+    freight_charges: body.freight_charges || quotation.proforma_details?.freight_charges || 'Extra at actual',
+    payment_terms: body.payment_terms || quotation.proforma_details?.payment_terms || 'On Delivery',
+    transport: body.transport || quotation.proforma_details?.transport || '',
+    ship_to_address: body.ship_to_address || quotation.proforma_details?.ship_to_address || 'same as billing',
+    customer_type: body.customer_type || quotation.proforma_details?.customer_type || 'Dealer',
+    installation_required: body.installation_required || quotation.proforma_details?.installation_required || 'No',
+    gst_concession: body.gst_concession || quotation.proforma_details?.gst_concession || 'na',
+    margin_sheet_attached: body.margin_sheet_attached || quotation.proforma_details?.margin_sheet_attached || 'na',
+    kyc_status: body.kyc_status || quotation.proforma_details?.kyc_status || 'na',
+    remarks: body.remarks || quotation.proforma_details?.remarks || '',
+    generated_at: new Date(),
+    generated_by: user._id,
+  };
+  quotation.updated_by = user._id;
+  await quotation.save();
+
+  await activityService.create({
+    actor: user._id,
+    entity_type: 'quotation',
+    entity_id: quotation._id,
+    action: 'status_changed',
+    message: `Proforma Invoice #${proformaNo} generated and configured`,
+    new_value: quotation.proforma_details,
+  });
+
+  return getById(quotation._id, user);
+}
+
+/**
+ * Extend validity of a quotation (e.g. +7 days, +15 days, +30 days, or custom date) and restore from expired status if needed.
+ */
+async function extendValidity(id, body = {}, user) {
+  const { LeadQuotation } = getModels();
+  const quotation = await LeadQuotation.findOne({ _id: id, deletedAt: null });
+  if (!quotation) throw new ApiError(404, 'Quotation not found');
+
+  if (quotation.status === 'converted') {
+    throw new ApiError(400, 'No further actions allowed: this quotation has already been converted to an order');
+  }
+
+  const isCreator =
+    quotation.created_by &&
+    String(quotation.created_by._id || quotation.created_by) === String(user._id);
+
+  if (!isAdmin(user) && !isCreator && !isManager(user)) {
+    throw new ApiError(403, 'Only administrators, managers, and the quotation creator can extend quotation validity');
+  }
+
+  const previousValidUntil = quotation.valid_until;
+  const previousStatus = quotation.status;
+
+  let newValidUntil;
+  if (body.valid_until) {
+    newValidUntil = new Date(body.valid_until);
+  } else {
+    const days = Math.max(1, Number(body.validity_days) || 15);
+    newValidUntil = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    quotation.validity_days = days;
+  }
+
+  if (isNaN(newValidUntil.getTime())) {
+    throw new ApiError(400, 'Invalid validity date provided');
+  }
+
+  quotation.valid_until = newValidUntil;
+  quotation.expiry_alert_sent_at = null; // Reset alert trigger for new validity window
+
+  // If quotation was expired, restore to an active status
+  if (quotation.status === 'expired') {
+    const targetStatus = body.restore_status || (quotation.approval_status === 'approved' ? 'sent' : 'draft');
+    quotation.status = targetStatus;
+  }
+
+  if (!Array.isArray(quotation.validity_extension_history)) {
+    quotation.validity_extension_history = [];
+  }
+
+  quotation.validity_extension_history.push({
+    extended_at: new Date(),
+    extended_by: user._id,
+    previous_valid_until: previousValidUntil,
+    new_valid_until: newValidUntil,
+    reason: body.reason || 'Validity extended',
+  });
+
+  quotation.updated_by = user._id;
+  await quotation.save();
+
+  await activityService.create({
+    actor: user._id,
+    entity_type: 'quotation',
+    entity_id: quotation._id,
+    action: 'status_changed',
+    message: `Validity of Quotation #${quotation.quotation_no} extended to ${newValidUntil.toLocaleDateString('en-IN')}${body.reason ? ` (Reason: ${body.reason})` : ''}`,
+    new_value: {
+      valid_until: newValidUntil,
+      status: quotation.status,
+      previous_status: previousStatus,
+    },
+  });
+
+  return getById(quotation._id, user);
+}
+
 module.exports = {
   create,
   listAll,
@@ -1195,10 +2310,21 @@ module.exports = {
   getById,
   update,
   remove,
+  convert,
+  markProformaIssued,
+  saveProformaDetails,
+  extendValidity,
+  autoExpireQuotations,
+  checkAndSendPreExpiryAlerts,
   submitForApproval,
   approve,
   reject,
+  scheduleFollowUp,
+  listFollowUps,
+  completeFollowUp,
+  reviseQuotation,
   getDefaultTerms,
+  getDashboardStats,
   generateQuotationNo,
   numberToIndianWords,
   getDefaultTermsAndConditions,

@@ -6,7 +6,7 @@
  */
 const mongoose = require('mongoose');
 const { getModels } = require('../../data/mongoRegistry');
-const { isLeadAdmin } = require('./lead.service');
+const { isLeadAdmin, isLeadManager } = require('./lead.service');
 
 function toObjectId(id) {
   if (!id) return null;
@@ -31,16 +31,96 @@ function leadAssignedToUser(lead, userId) {
 }
 
 /**
- * Admins: optional assigned_to filter. Managers and Executives: force self scope.
+ * Builds lead filter based on date ranges, period presets, sales rep filter, and user visibility permissions.
  */
-function applyAssigneeScope(q, query, user) {
-  if (isLeadAdmin(user)) {
-    if (query.assigned_to && query.assigned_to !== 'all') {
-      q.$or = assigneeMatchOr(query.assigned_to);
-    }
-    return;
+function buildLeadReportFilter(query = {}, user) {
+  const q = { deletedAt: null };
+  const andConditions = [];
+
+  // Visibility: Admin can filter by assigned_to/sales_person; Managers & Executives are scoped to their own leads
+  if (!isLeadAdmin(user)) {
+    const userId = toObjectId(user._id);
+    andConditions.push({
+      $or: [
+        { assigned_to: userId },
+        { assigned_to: String(user._id) },
+        { created_by: userId },
+      ],
+    });
+  } else if (query.assigned_to && query.assigned_to !== 'all') {
+    const assignedId = toObjectId(query.assigned_to);
+    andConditions.push({
+      $or: [
+        { assigned_to: assignedId },
+        { assigned_to: String(query.assigned_to) },
+      ],
+    });
+  } else if (query.sales_person && query.sales_person !== 'all') {
+    const spId = toObjectId(query.sales_person);
+    andConditions.push({
+      $or: [
+        { assigned_to: spId },
+        { assigned_to: String(query.sales_person) },
+      ],
+    });
   }
-  q.$or = assigneeMatchOr(user._id);
+
+  // Date range / period presets
+  if (query.from || query.to) {
+    const dateCond = {};
+    if (query.from) dateCond.$gte = new Date(`${query.from}T00:00:00.000Z`);
+    if (query.to) dateCond.$lte = new Date(`${query.to}T23:59:59.999Z`);
+    andConditions.push({ createdAt: dateCond });
+  } else if (query.startDate || query.endDate || query.start_date || query.end_date) {
+    const s = query.startDate || query.start_date;
+    const e = query.endDate || query.end_date;
+    const dateCond = {};
+    if (s) dateCond.$gte = new Date(s);
+    if (e) dateCond.$lte = new Date(e);
+    andConditions.push({ createdAt: dateCond });
+  } else if (query.period && query.period !== 'all_time') {
+    const now = new Date();
+    const dateCond = {};
+    if (query.period === 'today') {
+      dateCond.$gte = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+      dateCond.$lte = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+    } else if (query.period === 'this_week') {
+      const day = now.getDay() || 7;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - day + 1);
+      monday.setHours(0, 0, 0, 0);
+      dateCond.$gte = monday;
+      dateCond.$lte = now;
+    } else if (query.period === 'this_month') {
+      dateCond.$gte = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 1, 0, 0, 0));
+      dateCond.$lte = new Date(Date.UTC(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999));
+    } else if (query.period === 'last_month') {
+      dateCond.$gte = new Date(Date.UTC(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0));
+      dateCond.$lte = new Date(Date.UTC(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999));
+    } else if (query.period === 'this_quarter') {
+      const qMonth = Math.floor(now.getMonth() / 3) * 3;
+      dateCond.$gte = new Date(Date.UTC(now.getFullYear(), qMonth, 1, 0, 0, 0));
+      dateCond.$lte = new Date(Date.UTC(now.getFullYear(), qMonth + 3, 0, 23, 59, 59, 999));
+    } else if (query.period === 'this_year') {
+      // Indian Financial Year: April 1 to March 31
+      const startYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+      dateCond.$gte = new Date(Date.UTC(startYear, 3, 1, 0, 0, 0));
+      dateCond.$lte = new Date(Date.UTC(startYear + 1, 2, 31, 23, 59, 59, 999));
+    }
+    if (Object.keys(dateCond).length > 0) {
+      andConditions.push({ createdAt: dateCond });
+    }
+  }
+
+  if (query.status && query.status !== 'all') {
+    andConditions.push({ status: query.status });
+  }
+
+  if (andConditions.length > 0) {
+    q.$and = andConditions;
+  }
+
+  return q;
 }
 
 /**
@@ -48,52 +128,14 @@ function applyAssigneeScope(q, query, user) {
  */
 async function getDashboardStats(query = {}, user) {
   const { Lead } = getModels();
-  const q = { deletedAt: null };
-
-  applyAssigneeScope(q, query, user);
-
-  // Period / Date filter
-  if (query.from || query.to) {
-    q.createdAt = {};
-    if (query.from) q.createdAt.$gte = new Date(`${query.from}T00:00:00.000Z`);
-    if (query.to) q.createdAt.$lte = new Date(`${query.to}T23:59:59.999Z`);
-  } else if (query.startDate || query.endDate || query.start_date || query.end_date) {
-    const s = query.startDate || query.start_date;
-    const e = query.endDate || query.end_date;
-    q.createdAt = {};
-    if (s) q.createdAt.$gte = new Date(s);
-    if (e) q.createdAt.$lte = new Date(e);
-  } else if (query.years) {
-    const yearList = String(query.years).split(',').map(Number).filter(Boolean);
-    if (yearList.length > 0) {
-      const monthList = query.months
-        ? String(query.months).split(',').map(Number).filter(Boolean)
-        : [];
-      if (yearList.length === 1 && monthList.length > 0) {
-        const yr = yearList[0];
-        const minMonth = Math.min(...monthList) - 1;
-        const maxMonth = Math.max(...monthList);
-        q.createdAt = {
-          $gte: new Date(Date.UTC(yr, minMonth, 1, 0, 0, 0, 0)),
-          $lt: new Date(Date.UTC(yr, maxMonth, 1, 0, 0, 0, 0)),
-        };
-      } else {
-        const minYr = Math.min(...yearList);
-        const maxYr = Math.max(...yearList);
-        q.createdAt = {
-          $gte: new Date(Date.UTC(minYr, 0, 1, 0, 0, 0, 0)),
-          $lt: new Date(Date.UTC(maxYr + 1, 0, 1, 0, 0, 0, 0)),
-        };
-      }
-    }
-  }
+  const q = buildLeadReportFilter(query, user);
 
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
   const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
 
   const allLeads = await Lead.find(q)
-    .select('status estimated_value products.quantity next_follow_up_at')
+    .select('status estimated_value products.quantity next_follow_up_at lead_no company_name name')
     .lean();
 
   let totalLeads = allLeads.length;
@@ -144,8 +186,23 @@ async function getDashboardStats(query = {}, user) {
     }
   }
 
+  const qualifiedLeads = quotationLeads + wonLeads + convertedLeads;
+  const totalDecided = wonLeads + convertedLeads + lostLeads;
+  const winRate = totalDecided > 0
+    ? Math.round(((wonLeads + convertedLeads) / totalDecided) * 1000) / 10
+    : 0;
+  const conversionRate = totalLeads > 0
+    ? Math.round(((wonLeads + convertedLeads) / totalLeads) * 1000) / 10
+    : 0;
+  const avgDealSize = (wonLeads + convertedLeads) > 0
+    ? Math.round(totalWonValue / (wonLeads + convertedLeads))
+    : totalLeads > 0
+    ? Math.round((totalPipelineValue + totalWonValue) / totalLeads)
+    : 0;
+
   return {
     totalLeads,
+    total_leads: totalLeads,
     newLeads,
     assignedLeads,
     followUpLeads,
@@ -153,12 +210,40 @@ async function getDashboardStats(query = {}, user) {
     wonLeads,
     lostLeads,
     convertedLeads,
+    qualifiedLeads,
     followUpsToday,
     overdueFollowUps,
     totalPipelineValue,
     totalWonValue,
     totalPipelineQuantity,
     totalWonQuantity,
+    win_rate: winRate,
+    conversion_rate: conversionRate,
+    avg_deal_size: avgDealSize,
+    won_deals: {
+      count: wonLeads + convertedLeads,
+      value: totalWonValue,
+      win_rate: winRate,
+    },
+    converted_accounts: {
+      count: convertedLeads,
+      value: totalWonValue,
+      conversion_rate: conversionRate,
+    },
+    active_pipeline: {
+      count: newLeads + assignedLeads + followUpLeads + quotationLeads,
+      value: totalPipelineValue,
+      quantity: totalPipelineQuantity,
+    },
+    status_breakdown: {
+      new: { count: newLeads },
+      assigned: { count: assignedLeads },
+      follow_up: { count: followUpLeads },
+      quotation: { count: quotationLeads },
+      won: { count: wonLeads },
+      converted: { count: convertedLeads },
+      lost: { count: lostLeads },
+    },
   };
 }
 
@@ -167,21 +252,18 @@ async function getDashboardStats(query = {}, user) {
  */
 async function getSalesFunnel(query = {}, user) {
   const { Lead } = getModels();
-  const q = { deletedAt: null };
-
-  applyAssigneeScope(q, query, user);
+  const q = buildLeadReportFilter(query, user);
 
   const leads = await Lead.find(q).select('status estimated_value products.quantity').lean();
   const total = leads.length || 1;
 
   const stageDefs = [
-    { key: 'new', label: 'New', statuses: ['new'] },
-    { key: 'assigned', label: 'Assigned', statuses: ['assigned'] },
-    { key: 'follow_up', label: 'Follow Up', statuses: ['follow_up'] },
-    { key: 'quotation', label: 'Quotation', statuses: ['quotation'] },
-    { key: 'won', label: 'Won', statuses: ['won'] },
-    { key: 'lost', label: 'Lost', statuses: ['lost'] },
-    { key: 'converted', label: 'Converted', statuses: ['converted'] },
+    { key: 'new', label: 'New Inquiries', statuses: ['new'] },
+    { key: 'assigned', label: 'Sales Assigned', statuses: ['assigned'] },
+    { key: 'follow_up', label: 'Active Follow-Up', statuses: ['follow_up'] },
+    { key: 'quotation', label: 'Quotation Submitted', statuses: ['quotation'] },
+    { key: 'won', label: 'Deal Won', statuses: ['won'] },
+    { key: 'converted', label: 'Converted to Account', statuses: ['converted'] },
   ];
 
   const stages = stageDefs.map((def) => {
@@ -208,27 +290,29 @@ async function getSalesFunnel(query = {}, user) {
     };
   });
 
+  const lostLeads = leads.filter((l) => l.status === 'lost');
+  const lostCount = lostLeads.length;
+  const lostValue = lostLeads.reduce((sum, l) => sum + (Number(l.estimated_value) || 0), 0);
+
   return {
     total_leads: leads.length,
     stages,
+    drop_offs: {
+      lost: {
+        count: lostCount,
+        value: lostValue,
+      },
+    },
   };
 }
 
 /**
- * Performance breakdown by assignee.
- * Managers see lead_manager executives only; executives see self only.
+ * Performance breakdown by sales executive / assignee.
  */
 async function getSalesPerformance(query = {}, user) {
   const { Lead, LeadFollowUp, User } = getModels();
 
-  if (!isLeadAdmin(user)) {
-    query.assigned_to = String(user._id);
-  }
-
-  const matchQ = { deletedAt: null };
-  if (query.assigned_to && query.assigned_to !== 'all') {
-    matchQ.$or = assigneeMatchOr(query.assigned_to);
-  }
+  const matchQ = buildLeadReportFilter(query, user);
 
   const userFilter = {
     is_active: true,
@@ -242,12 +326,9 @@ async function getSalesPerformance(query = {}, user) {
     .lean();
 
   const leads = await Lead.find(matchQ)
-    .select(
-      'assigned_to status estimated_value next_follow_up_at products'
-    )
+    .select('assigned_to status estimated_value next_follow_up_at products')
     .lean();
 
-  // Admins: prefer lead_manager portal users; fall back to users who have assigned leads
   if (isLeadAdmin(user)) {
     const executives = assignees.filter((su) => {
       const portals = Array.isArray(su.portals)
@@ -278,13 +359,13 @@ async function getSalesPerformance(query = {}, user) {
           .filter(Boolean)
       );
       assignees = assignees.filter(
-        (su) => leadAssigneeIds.has(String(su._id)) && String(su._id) !== String(user._id)
+        (su) => leadAssigneeIds.has(String(su._id))
       );
     }
   }
 
   const followUps = await LeadFollowUp.find({ deletedAt: null })
-    .select('created_by status follow_up_date')
+    .select('created_by status follow_up_date lead')
     .lean();
 
   const now = new Date();
@@ -303,6 +384,8 @@ async function getSalesPerformance(query = {}, user) {
     const wonLeads = userLeads.filter((l) => ['won', 'converted'].includes(l.status)).length;
     const lostLeads = userLeads.filter((l) => l.status === 'lost').length;
 
+    const decided = wonLeads + lostLeads;
+    const winRate = decided > 0 ? Number(((wonLeads / decided) * 100).toFixed(1)) : 0;
     const conversionRate = totalLeads > 0 ? Number(((wonLeads / totalLeads) * 100).toFixed(1)) : 0;
 
     const pipelineQty = userLeads
@@ -371,6 +454,7 @@ async function getSalesPerformance(query = {}, user) {
       quotations,
       won_leads: wonLeads,
       lost_leads: lostLeads,
+      win_rate: winRate,
       conversion_rate: conversionRate,
       pipeline_qty: pipelineQty,
       pipeline_quantity: pipelineQty,
@@ -386,7 +470,132 @@ async function getSalesPerformance(query = {}, user) {
     };
   });
 
+  performance.sort((a, b) => b.won_value - a.won_value || b.total_leads - a.total_leads);
   return performance;
+}
+
+/**
+ * Monthly / Periodic Pipeline & Conversion Trends.
+ */
+async function getLeadMonthlyTrends(query = {}, user) {
+  const { Lead } = getModels();
+  const filter = buildLeadReportFilter(query, user);
+
+  const leads = await Lead.find(filter)
+    .select('createdAt status estimated_value products')
+    .sort({ createdAt: 1 })
+    .lean();
+
+  const monthMap = new Map();
+
+  for (const l of leads) {
+    const d = l.createdAt ? new Date(l.createdAt) : new Date();
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const label = d.toLocaleDateString('en-IN', { month: 'short', year: 'numeric' });
+
+    if (!monthMap.has(key)) {
+      monthMap.set(key, {
+        period_key: key,
+        period_label: label,
+        total_leads: 0,
+        pipeline_value: 0,
+        won_count: 0,
+        won_value: 0,
+        converted_count: 0,
+        converted_value: 0,
+        lost_count: 0,
+        lost_value: 0,
+        quotation_count: 0,
+      });
+    }
+
+    const m = monthMap.get(key);
+    const estVal = Number(l.estimated_value) || 0;
+    const st = l.status;
+
+    m.total_leads += 1;
+    m.pipeline_value += estVal;
+
+    if (st === 'won' || st === 'converted') {
+      m.won_count += 1;
+      m.won_value += estVal;
+      if (st === 'converted') {
+        m.converted_count += 1;
+        m.converted_value += estVal;
+      }
+    } else if (st === 'lost') {
+      m.lost_count += 1;
+      m.lost_value += estVal;
+    } else if (st === 'quotation') {
+      m.quotation_count += 1;
+    }
+  }
+
+  return Array.from(monthMap.values()).sort((a, b) => a.period_key.localeCompare(b.period_key));
+}
+
+/**
+ * Top Demanded Products & Revenue Breakdown in Leads.
+ */
+async function getLeadProductBreakdown(query = {}, user) {
+  const { Lead } = getModels();
+  const filter = buildLeadReportFilter(query, user);
+
+  const leads = await Lead.find(filter)
+    .select('products status createdAt estimated_value')
+    .lean();
+
+  const productMap = new Map();
+
+  for (const l of leads) {
+    const isWon = l.status === 'won' || l.status === 'converted';
+    const isConverted = l.status === 'converted';
+
+    if (Array.isArray(l.products)) {
+      for (const p of l.products) {
+        const pName = (p.name || p.product_name || 'Standard Product').trim();
+        const qty = Number(p.quantity) || 1;
+        const targetPrice = Number(p.target_price || p.price || 0);
+        const estValue = Number(p.estimated_value || targetPrice * qty) || 0;
+
+        if (!productMap.has(pName)) {
+          productMap.set(pName, {
+            product_name: pName,
+            unit: p.unit || 'Nos',
+            times_inquired: 0,
+            total_quantity: 0,
+            total_estimated_value: 0,
+            won_quantity: 0,
+            won_value: 0,
+            converted_quantity: 0,
+            converted_value: 0,
+          });
+        }
+
+        const prod = productMap.get(pName);
+        prod.times_inquired += 1;
+        prod.total_quantity += qty;
+        prod.total_estimated_value += estValue;
+
+        if (isWon) {
+          prod.won_quantity += qty;
+          prod.won_value += estValue;
+        }
+        if (isConverted) {
+          prod.converted_quantity += qty;
+          prod.converted_value += estValue;
+        }
+      }
+    }
+  }
+
+  const productList = Array.from(productMap.values()).map((p) => {
+    p.avg_unit_price = p.total_quantity > 0 ? Math.round(p.total_estimated_value / p.total_quantity) : 0;
+    return p;
+  });
+
+  productList.sort((a, b) => b.total_estimated_value - a.total_estimated_value);
+  return productList.slice(0, 50);
 }
 
 /**
@@ -394,9 +603,7 @@ async function getSalesPerformance(query = {}, user) {
  */
 async function getLeadSourcePerformance(query = {}, user) {
   const { Lead, LeadSource } = getModels();
-  const q = { deletedAt: null };
-
-  applyAssigneeScope(q, query, user);
+  const q = buildLeadReportFilter(query, user);
 
   const [leads, sources] = await Promise.all([
     Lead.find(q).select('source status estimated_value products').lean(),
@@ -489,8 +696,395 @@ async function getLeadSourcePerformance(query = {}, user) {
   });
 
   report.sort((a, b) => b.total_leads - a.total_leads);
-
   return report;
+}
+
+/**
+ * Get comprehensive follow-ups analytics report covering both Leads and Quotations.
+ */
+async function getFollowUpAnalyticsReport(query = {}, user) {
+  const { LeadFollowUp } = getModels();
+
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+  const q = { deletedAt: null };
+
+  // Period / Date filters on follow_up_date
+  if (query.from_date || query.to_date || query.from || query.to) {
+    q.follow_up_date = {};
+    const fromStr = query.from_date || query.from;
+    const toStr = query.to_date || query.to;
+    if (fromStr) {
+      const fromDate = new Date(`${fromStr}T00:00:00.000Z`);
+      if (!isNaN(fromDate.getTime())) q.follow_up_date.$gte = fromDate;
+    }
+    if (toStr) {
+      const toDate = new Date(`${toStr}T23:59:59.999Z`);
+      if (!isNaN(toDate.getTime())) q.follow_up_date.$lte = toDate;
+    }
+  } else if (query.period) {
+    const p = String(query.period).toLowerCase();
+    if (p === 'today') {
+      q.follow_up_date = { $gte: startOfToday, $lte: endOfToday };
+    } else if (p === 'this_week') {
+      const dayOfWeek = now.getDay();
+      const firstDay = new Date(now);
+      firstDay.setDate(now.getDate() - dayOfWeek);
+      firstDay.setHours(0, 0, 0, 0);
+      const lastDay = new Date(firstDay);
+      lastDay.setDate(firstDay.getDate() + 6);
+      lastDay.setHours(23, 59, 59, 999);
+      q.follow_up_date = { $gte: firstDay, $lte: lastDay };
+    } else if (p === 'this_month') {
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+      q.follow_up_date = { $gte: firstDay, $lte: lastDay };
+    } else if (p === 'this_quarter') {
+      const currentQuarter = Math.floor(now.getMonth() / 3);
+      const firstDay = new Date(now.getFullYear(), currentQuarter * 3, 1, 0, 0, 0, 0);
+      const lastDay = new Date(now.getFullYear(), currentQuarter * 3 + 3, 0, 23, 59, 59, 999);
+      q.follow_up_date = { $gte: firstDay, $lte: lastDay };
+    }
+  }
+
+  // Type filter
+  if (query.type && query.type !== 'all') {
+    q.type = query.type;
+  }
+
+  // Status filter
+  if (query.status && query.status !== 'all') {
+    q.status = query.status;
+  }
+
+  const isAdmin = isLeadAdmin(user);
+  const isMgr = isLeadManager(user);
+  const hasQuotationAccess = isAdmin || isMgr;
+  const userIdStr = String(user._id);
+
+  // Executives do NOT have quotation access - strictly filter to Leads follow-ups
+  if (!hasQuotationAccess) {
+    q.quotation = null;
+    q.lead = { $ne: null };
+  } else if (query.entity_type === 'lead') {
+    q.quotation = null;
+    q.lead = { $ne: null };
+  } else if (query.entity_type === 'quotation') {
+    q.quotation = { $ne: null };
+  }
+
+  // Fetch follow-ups populated with lead, quotation, created_by, completed_by
+  const rows = await LeadFollowUp.find(q)
+    .populate({
+      path: 'lead',
+      select: 'lead_no name company_name phone email status priority estimated_value assigned_to party_id requirement_details',
+      populate: [
+        { path: 'party_id', select: 'party_name legal_name district state mobile email' },
+        { path: 'assigned_to', select: 'name email department' },
+      ],
+    })
+    .populate({
+      path: 'quotation',
+      select: 'quotation_no version grand_total status customer_name kind_attn phone email subject party_id created_by sales_person_name sales_person_user lead',
+      populate: [
+        { path: 'sales_person_user', select: 'name email department' },
+        { path: 'party_id', select: 'party_name legal_name' },
+      ],
+    })
+    .populate('created_by', 'name email department')
+    .populate('completed_by', 'name email department')
+    .sort({ follow_up_date: -1 })
+    .lean();
+
+  // Filter based on user scope
+  let filtered = rows;
+  if (!isAdmin) {
+    if (isMgr) {
+      // Manager: for quotation follow-ups, strictly see follow-ups of their own created quotations
+      // for lead follow-ups, strictly see their assigned or created lead follow-ups
+      filtered = rows.filter((fu) => {
+        const fuCreator = fu.created_by?._id ? String(fu.created_by._id) : (fu.created_by ? String(fu.created_by) : null);
+        if (fu.quotation) {
+          const qCreator = fu.quotation?.created_by?._id ? String(fu.quotation.created_by._id) : (fu.quotation?.created_by ? String(fu.quotation.created_by) : null);
+          const qRep = fu.quotation?.sales_person_user?._id ? String(fu.quotation.sales_person_user._id) : (fu.quotation?.sales_person_user ? String(fu.quotation.sales_person_user) : null);
+          return qCreator === userIdStr || qRep === userIdStr || fuCreator === userIdStr;
+        }
+        if (fu.lead) {
+          const leadAssignee = fu.lead?.assigned_to?._id ? String(fu.lead.assigned_to._id) : (fu.lead?.assigned_to ? String(fu.lead.assigned_to) : null);
+          return leadAssignee === userIdStr || fuCreator === userIdStr;
+        }
+        return fuCreator === userIdStr;
+      });
+    } else {
+      // Executive: strictly see their assigned or created lead follow-ups (no quotations)
+      filtered = rows.filter((fu) => {
+        if (fu.quotation) return false;
+        const leadAssignee = fu.lead?.assigned_to?._id ? String(fu.lead.assigned_to._id) : (fu.lead?.assigned_to ? String(fu.lead.assigned_to) : null);
+        const fuCreator = fu.created_by?._id ? String(fu.created_by._id) : (fu.created_by ? String(fu.created_by) : null);
+        return leadAssignee === userIdStr || fuCreator === userIdStr;
+      });
+    }
+  } else if (isAdmin && query.assigned_to && query.assigned_to !== 'all') {
+    const targetUserId = String(query.assigned_to);
+    filtered = rows.filter((fu) => {
+      const leadAssignee = fu.lead?.assigned_to?._id ? String(fu.lead.assigned_to._id) : (fu.lead?.assigned_to ? String(fu.lead.assigned_to) : null);
+      const qRep = fu.quotation?.sales_person_user?._id ? String(fu.quotation.sales_person_user._id) : (fu.quotation?.sales_person_user ? String(fu.quotation.sales_person_user) : null);
+      const qCreator = fu.quotation?.created_by?._id ? String(fu.quotation.created_by._id) : (fu.quotation?.created_by ? String(fu.quotation.created_by) : null);
+      const fuCreator = fu.created_by?._id ? String(fu.created_by._id) : (fu.created_by ? String(fu.created_by) : null);
+      return leadAssignee === targetUserId || qRep === targetUserId || qCreator === targetUserId || fuCreator === targetUserId;
+    });
+  }
+
+  // Compute Summary KPIs
+  let totalFollowups = filtered.length;
+  let completedCount = 0;
+  let pendingCount = 0;
+  let cancelledCount = 0;
+  let rescheduledCount = 0;
+  let overdueCount = 0;
+  let dueTodayCount = 0;
+  let upcomingCount = 0;
+  let onTimeCompletedCount = 0;
+  let leadFollowupsCount = 0;
+  let quotationFollowupsCount = 0;
+
+  // Track channels & outcomes
+  const channelMap = {
+    call: { type: 'call', label: 'Phone Call', total: 0, completed: 0, pending: 0, overdue: 0 },
+    meeting: { type: 'meeting', label: 'Meeting / Discussion', total: 0, completed: 0, pending: 0, overdue: 0 },
+    whatsapp: { type: 'whatsapp', label: 'WhatsApp', total: 0, completed: 0, pending: 0, overdue: 0 },
+    email: { type: 'email', label: 'Email Outreach', total: 0, completed: 0, pending: 0, overdue: 0 },
+    visit: { type: 'visit', label: 'Field Visit', total: 0, completed: 0, pending: 0, overdue: 0 },
+    demo: { type: 'demo', label: 'Product Demo', total: 0, completed: 0, pending: 0, overdue: 0 },
+    other: { type: 'other', label: 'Other Touchpoint', total: 0, completed: 0, pending: 0, overdue: 0 },
+  };
+
+  const outcomeMap = {};
+  const repMap = {};
+  const trendMap = {};
+
+  for (const item of filtered) {
+    const fDate = new Date(item.follow_up_date);
+    const isPast = fDate < startOfToday;
+    const isToday = fDate >= startOfToday && fDate <= endOfToday;
+    const isFuture = fDate > endOfToday;
+
+    if (item.quotation) {
+      quotationFollowupsCount++;
+    } else if (item.lead) {
+      leadFollowupsCount++;
+    }
+
+    if (item.status === 'completed') {
+      completedCount++;
+      if (item.completed_at) {
+        const cDate = new Date(item.completed_at);
+        const dueLimit = new Date(fDate.getFullYear(), fDate.getMonth(), fDate.getDate(), 23, 59, 59, 999);
+        if (cDate <= dueLimit) {
+          onTimeCompletedCount++;
+        }
+      } else {
+        onTimeCompletedCount++;
+      }
+
+      if (item.outcome) {
+        const outKey = String(item.outcome).trim();
+        if (outKey) {
+          outcomeMap[outKey] = (outcomeMap[outKey] || 0) + 1;
+        }
+      }
+    } else if (item.status === 'cancelled') {
+      cancelledCount++;
+    } else if (item.status === 'rescheduled') {
+      rescheduledCount++;
+    } else {
+      pendingCount++;
+      if (isPast) overdueCount++;
+      else if (isToday) dueTodayCount++;
+      else if (isFuture) upcomingCount++;
+    }
+
+    // Channel stats
+    const cType = channelMap[item.type] ? item.type : 'other';
+    channelMap[cType].total++;
+    if (item.status === 'completed') {
+      channelMap[cType].completed++;
+    } else if (item.status === 'pending') {
+      channelMap[cType].pending++;
+      if (isPast) channelMap[cType].overdue++;
+    }
+
+    // Rep stats
+    const repUser = item.created_by || item.lead?.assigned_to || item.quotation?.sales_person_user;
+    const repId = repUser?._id ? String(repUser._id) : 'unassigned';
+    const repName = repUser?.name || 'Unassigned';
+    const repEmail = repUser?.email || '—';
+    const repDept = repUser?.department || 'Sales';
+
+    if (!repMap[repId]) {
+      repMap[repId] = {
+        user_id: repId,
+        name: repName,
+        email: repEmail,
+        department: repDept,
+        total_scheduled: 0,
+        completed: 0,
+        on_time: 0,
+        pending: 0,
+        overdue: 0,
+        lead_count: 0,
+        quotation_count: 0,
+      };
+    }
+    repMap[repId].total_scheduled++;
+    if (item.quotation) repMap[repId].quotation_count++;
+    else if (item.lead) repMap[repId].lead_count++;
+
+    if (item.status === 'completed') {
+      repMap[repId].completed++;
+      if (item.completed_at) {
+        const cDate = new Date(item.completed_at);
+        const dueLimit = new Date(fDate.getFullYear(), fDate.getMonth(), fDate.getDate(), 23, 59, 59, 999);
+        if (cDate <= dueLimit) repMap[repId].on_time++;
+      } else {
+        repMap[repId].on_time++;
+      }
+    } else if (item.status === 'pending') {
+      repMap[repId].pending++;
+      if (isPast) repMap[repId].overdue++;
+    }
+
+    // Daily Trend stats
+    const dateKey = !isNaN(fDate.getTime()) ? fDate.toISOString().slice(0, 10) : 'Unknown';
+    if (!trendMap[dateKey]) {
+      trendMap[dateKey] = {
+        date: dateKey,
+        scheduled: 0,
+        completed: 0,
+        overdue: 0,
+        pending: 0,
+      };
+    }
+    trendMap[dateKey].scheduled++;
+    if (item.status === 'completed') trendMap[dateKey].completed++;
+    else if (item.status === 'pending') {
+      trendMap[dateKey].pending++;
+      if (isPast) trendMap[dateKey].overdue++;
+    }
+  }
+
+  const onTimeRate = completedCount > 0 ? Math.round((onTimeCompletedCount / completedCount) * 100) : 100;
+  const completionRate = totalFollowups > 0 ? Math.round((completedCount / totalFollowups) * 100) : 0;
+
+  const channelBreakdown = Object.values(channelMap).map((ch) => ({
+    type: ch.type,
+    label: ch.label,
+    total_count: ch.total,
+    completed_count: ch.completed,
+    pending_count: ch.pending,
+    overdue_count: ch.overdue,
+    completion_rate: ch.total > 0 ? Math.round((ch.completed / ch.total) * 100) : 0,
+    share_percent: totalFollowups > 0 ? Math.round((ch.total / totalFollowups) * 100) : 0,
+  }));
+
+  const outcomeBreakdown = Object.entries(outcomeMap)
+    .map(([outcome, count]) => ({
+      outcome,
+      count,
+      percent: completedCount > 0 ? Math.round((count / completedCount) * 100) : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  const repScorecard = Object.values(repMap)
+    .map((r) => ({
+      ...r,
+      on_time_rate: r.completed > 0 ? Math.round((r.on_time / r.completed) * 100) : 100,
+      completion_rate: r.total_scheduled > 0 ? Math.round((r.completed / r.total_scheduled) * 100) : 0,
+    }))
+    .sort((a, b) => b.total_scheduled - a.total_scheduled);
+
+  const dailyTrends = Object.values(trendMap).sort((a, b) => a.date.localeCompare(b.date));
+
+  // Build flattened detailed records
+  const detailedRecords = filtered.map((fu) => {
+    const isPast = new Date(fu.follow_up_date) < startOfToday;
+    const isDueToday = new Date(fu.follow_up_date) >= startOfToday && new Date(fu.follow_up_date) <= endOfToday;
+    const isQuotation = Boolean(fu.quotation);
+
+    const leadObj = fu.lead;
+    const quoteObj = fu.quotation;
+
+    const contactPerson =
+      quoteObj?.kind_attn ||
+      leadObj?.name ||
+      (typeof leadObj?.party_id === 'object' ? leadObj.party_id?.party_name : '') ||
+      '—';
+
+    const companyName =
+      (typeof quoteObj?.party_id === 'object' ? quoteObj.party_id?.party_name : '') ||
+      (typeof leadObj?.party_id === 'object' ? leadObj.party_id?.party_name : '') ||
+      quoteObj?.customer_name ||
+      leadObj?.company_name ||
+      '—';
+
+    const phone = quoteObj?.phone || leadObj?.phone || (typeof leadObj?.party_id === 'object' ? leadObj.party_id?.mobile : '') || '—';
+    const email = quoteObj?.email || leadObj?.email || (typeof leadObj?.party_id === 'object' ? leadObj.party_id?.email : '') || '—';
+    const city = (typeof leadObj?.party_id === 'object' ? leadObj.party_id?.district : '') || '—';
+
+    const repName = fu.created_by?.name || leadObj?.assigned_to?.name || quoteObj?.sales_person_name || 'Unassigned';
+
+    let displayStatus = fu.status;
+    if (fu.status === 'pending' && isPast) displayStatus = 'overdue';
+    else if (fu.status === 'pending' && isDueToday) displayStatus = 'due_today';
+
+    return {
+      _id: String(fu._id),
+      entity_type: isQuotation ? 'quotation' : 'lead',
+      entity_ref_no: isQuotation ? quoteObj?.quotation_no || 'QUOTE' : leadObj?.lead_no || 'LEAD',
+      lead_id: leadObj?._id ? String(leadObj._id) : null,
+      quotation_id: quoteObj?._id ? String(quoteObj._id) : null,
+      customer_name: contactPerson,
+      company_name: companyName,
+      phone,
+      email,
+      city,
+      rep_name: repName,
+      type: fu.type,
+      status: fu.status,
+      display_status: displayStatus,
+      follow_up_date: fu.follow_up_date ? new Date(fu.follow_up_date).toISOString() : null,
+      follow_up_time: fu.follow_up_time || '—',
+      completed_at: fu.completed_at ? new Date(fu.completed_at).toISOString() : null,
+      outcome: fu.outcome || '—',
+      notes: fu.notes || '—',
+      commercial_value: isQuotation ? (quoteObj?.grand_total || 0) : (leadObj?.estimated_value || 0),
+    };
+  });
+
+  return {
+    summary: {
+      total_followups: totalFollowups,
+      completed_count: completedCount,
+      pending_count: pendingCount,
+      cancelled_count: cancelledCount,
+      rescheduled_count: rescheduledCount,
+      overdue_count: overdueCount,
+      due_today_count: dueTodayCount,
+      upcoming_count: upcomingCount,
+      on_time_completed_count: onTimeCompletedCount,
+      on_time_rate: onTimeRate,
+      completion_rate: completionRate,
+      lead_followups_count: leadFollowupsCount,
+      quotation_followups_count: quotationFollowupsCount,
+    },
+    channel_breakdown: channelBreakdown,
+    outcome_breakdown: outcomeBreakdown,
+    rep_scorecard: repScorecard,
+    daily_trends: dailyTrends,
+    detailed_records: detailedRecords,
+  };
 }
 
 module.exports = {
@@ -499,4 +1093,7 @@ module.exports = {
   getSalesPerformance,
   getSourcePerformance: getLeadSourcePerformance,
   getLeadSourcePerformance,
+  getLeadMonthlyTrends,
+  getLeadProductBreakdown,
+  getFollowUpAnalyticsReport,
 };

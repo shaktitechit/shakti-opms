@@ -333,14 +333,17 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
 
       if (Array.isArray(existingLead.products) && existingLead.products.length > 0) {
         setProducts(
-          existingLead.products.map((p) => ({
-            product: typeof p.product === "object" ? p.product._id : p.product,
-            product_name: getFieldText(p.product_name) || (typeof p.product === "object" ? getFieldText((p.product as Record<string, unknown>).product_name) : "") || "",
-            quantity: p.quantity || 1,
-            target_price: p.target_price || 0,
-            unit: getFieldText(p.unit) || "pcs",
-            remarks: p.remarks || "",
-          }))
+          existingLead.products.map((p) => {
+            const pObj = typeof p.product === "object" && p.product !== null ? (p.product as Record<string, unknown>) : null;
+            return {
+              product: pObj ? (pObj._id as string) : (typeof p.product === "string" ? p.product : undefined),
+              product_name: getFieldText(p.product_name) || (pObj ? getFieldText(pObj.product_name) : "") || "",
+              quantity: p.quantity || 1,
+              target_price: p.target_price || 0,
+              unit: getFieldText(p.unit) || (pObj ? getFieldText(pObj.unit) : "") || "pcs",
+              remarks: p.remarks || "",
+            };
+          })
         );
       }
 

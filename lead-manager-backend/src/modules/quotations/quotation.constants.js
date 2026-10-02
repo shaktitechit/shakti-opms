@@ -3,7 +3,7 @@
  * @module modules/quotations/quotation.constants
  */
 
-const QUOTATION_STATUSES = ['draft', 'pending_approval', 'approved', 'sent', 'accepted', 'rejected', 'expired', 'on_hold'];
+const QUOTATION_STATUSES = ['draft', 'pending_approval', 'approved', 'sent', 'in_negotiation', 'accepted', 'rejected', 'expired', 'on_hold', 'converted'];
 
 // Roles authorized to view/read quotations
 const QUOTATION_ROLES = ['sales', 'admin', 'super_admin', 'finance'];

@@ -37,6 +37,7 @@ export type BuildQuotationPdfInput = {
   company?: QuotationCompanyInfo;
   portalLabel?: string;
   downloadedBy?: string;
+  documentType?: "quotation" | "proforma";
 };
 
 // Brand Color Palette (RGB)
@@ -375,17 +376,21 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
     currentY += 4;
   };
 
-  // Helper: Draw Quotation Title & Ref Bar
+  // Helper: Draw Quotation / Proforma Title & Ref Bar
   const drawTitleBar = () => {
+    const isProforma = input.documentType === "proforma";
+    const docTitle = isProforma ? "PROFORMA INVOICE" : "QUOTATION";
+    const refLabel = isProforma ? "PI Ref. No. :" : "Ref. No. :";
+
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(11);
     pdf.setTextColor(...NAVY);
-    pdf.text("QUOTATION", M, currentY + 3);
+    pdf.text(docTitle, M, currentY + 3);
 
     pdf.setFontSize(7.5);
     pdf.setFont("helvetica", "bold");
     pdf.setTextColor(...TEXT);
-    pdf.text("Ref. No. :", PAGE_W - M - 30, currentY + 1, { align: "right" });
+    pdf.text(refLabel, PAGE_W - M - 30, currentY + 1, { align: "right" });
     pdf.setTextColor(...BLUE);
     pdf.text(refNumber, PAGE_W - M, currentY + 1, { align: "right" });
 
@@ -553,6 +558,9 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(6.5);
     const descLines = it.description ? pdf.splitTextToSize(it.description, 51) : [];
+    if (it.discount_percent && it.discount_percent > 0) {
+      descLines.unshift(`Disc: ${it.discount_percent}% (-Rs. ${formatCurrency(it.discount_amount || 0)})`);
+    }
 
     const totalTextLines = titleLines.length + descLines.length;
     const rHeight = Math.max(totalTextLines * 3.2 + 3, 7);
@@ -631,7 +639,10 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
     currentY += rHeight;
   }
 
-  const summaryH = 22;
+  const hasDiscount = Boolean(quotation.total_discount && quotation.total_discount > 0);
+  const hasRoundOff = quotation.round_off !== undefined && quotation.round_off !== 0;
+  const standardRowCount = (hasDiscount ? 3 : 1) + 1 + (hasRoundOff ? 1 : 0);
+  const summaryH = standardRowCount * 5 + 6.5;
   checkPageBreak(summaryH + 4, false);
 
   const leftW = 112;
@@ -682,9 +693,15 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
     }
   };
 
-  renderSummaryRow("Sub Total (Taxable):", `Rs. ${formatCurrency(quotation.subtotal)}`);
+  if (hasDiscount) {
+    renderSummaryRow("Gross Total:", `Rs. ${formatCurrency((quotation.subtotal || 0) + (quotation.total_discount || 0))}`);
+    renderSummaryRow("Total Discount:", `-Rs. ${formatCurrency(quotation.total_discount)}`);
+    renderSummaryRow("Sub Total (Taxable):", `Rs. ${formatCurrency(quotation.subtotal)}`);
+  } else {
+    renderSummaryRow("Sub Total (Taxable):", `Rs. ${formatCurrency(quotation.subtotal)}`);
+  }
   renderSummaryRow("Total GST:", `Rs. ${formatCurrency(quotation.total_gst)}`);
-  if (quotation.round_off !== undefined && quotation.round_off !== 0) {
+  if (hasRoundOff) {
     renderSummaryRow("Round Off:", `Rs. ${formatCurrency(quotation.round_off)}`);
   }
   renderSummaryRow("Grand Total (INR):", `Rs. ${formatCurrency(quotation.grand_total)}`, true);

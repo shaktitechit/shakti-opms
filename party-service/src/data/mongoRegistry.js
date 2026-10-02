@@ -2673,7 +2673,8 @@ function registerModels() {
 
   const leadFollowUpSchema = new mongoose.Schema(
     {
-      lead: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', required: true, index: true },
+      lead: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', default: null, index: true },
+      quotation: { type: mongoose.Schema.Types.ObjectId, ref: 'LeadQuotation', default: null, index: true },
       follow_up_date: { type: Date, required: true, index: true },
       follow_up_time: { type: String, trim: true },
       type: {
@@ -2735,6 +2736,8 @@ function registerModels() {
           quantity: { type: Number, required: true, default: 1 },
           unit: { type: String, default: 'Nos' },
           rate: { type: Number, required: true, default: 0 },
+          discount_percent: { type: Number, default: 0 },
+          discount_amount: { type: Number, default: 0 },
           taxable_amount: { type: Number, required: true, default: 0 },
           gst_rate: { type: Number, default: 0 },
           cgst_rate: { type: Number, default: 0 },
@@ -2747,6 +2750,7 @@ function registerModels() {
           line_total: { type: Number, required: true, default: 0 },
         },
       ],
+      total_discount: { type: Number, default: 0 },
       subtotal: { type: Number, default: 0 },
       total_gst: { type: Number, default: 0 },
       round_off: { type: Number, default: 0 },
@@ -2780,10 +2784,15 @@ function registerModels() {
       rejection_reason: { type: String, default: '' },
       status: {
         type: String,
-        enum: ['draft', 'pending_approval', 'approved', 'sent', 'accepted', 'rejected', 'expired'],
+        enum: ['draft', 'pending_approval', 'approved', 'sent', 'in_negotiation', 'accepted', 'rejected', 'expired', 'on_hold'],
         default: 'pending_approval',
         index: true,
       },
+      version: { type: Number, default: 1 },
+      revision_of: { type: mongoose.Schema.Types.ObjectId, ref: 'LeadQuotation', default: null, index: true },
+      lost_reason: { type: String, default: '' },
+      next_follow_up_at: { type: Date, default: null, index: true },
+      last_follow_up_at: { type: Date, default: null },
       created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
       updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
       deletedAt: { type: Date, default: null, index: true },

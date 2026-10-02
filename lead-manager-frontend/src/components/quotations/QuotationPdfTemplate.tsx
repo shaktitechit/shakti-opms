@@ -16,6 +16,7 @@ type Props = {
   quotation: LeadQuotationRecord;
   portalLabel?: string;
   downloadedBy?: string;
+  documentType?: "quotation" | "proforma";
 };
 
 const PAGE_WIDTH = 794;
@@ -61,6 +62,7 @@ export default function QuotationPdfTemplate({
   quotation,
   portalLabel = "Lead Manager",
   downloadedBy,
+  documentType = "quotation",
 }: Props) {
   const { data: companyData } = useGetCompanyInfoQuery();
   const company = companyData as Record<string, unknown> | undefined;
@@ -186,38 +188,42 @@ export default function QuotationPdfTemplate({
         style={pageStyle}
       >
         {/* 1. HEADER SECTION */}
-        <div style={{ marginBottom: "12px", width: "100%", boxSizing: "border-box" }}>
-          <div style={{ display: "flex", flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", width: "100%" }}>
+        <div style={{ marginBottom: "14px", width: "100%", boxSizing: "border-box" }}>
+          <div style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", width: "100%", paddingBottom: "10px", borderBottom: "2.5px solid #1e3a5f" }}>
             {/* Logo Left */}
-            <div style={{ width: "120px", flexShrink: 0 }}>
+            <div style={{ width: "135px", flexShrink: 0 }}>
               {logoUrl ? (
                 <img
                   src={logoUrl}
                   alt={companyName || "Logo"}
                   crossOrigin="anonymous"
                   style={{
-                    width: "115px",
-                    height: "44px",
+                    width: "130px",
+                    height: "48px",
                     objectFit: "contain",
-                    objectPosition: "left top",
+                    objectPosition: "left center",
                     display: "block",
                   }}
                 />
-              ) : null}
+              ) : (
+                <div style={{ width: "130px", height: "44px", border: "1px dashed #cbd5e1", borderRadius: "4px", display: "flex", alignItems: "center", justifyContent: "center", color: "#94a3b8", fontSize: "10px", fontWeight: 700 }}>
+                  {companyName.slice(0, 12)}
+                </div>
+              )}
             </div>
 
             {/* Company Info Center */}
-            <div style={{ flex: 1, textAlign: "center", padding: "0 10px", minWidth: 0 }}>
+            <div style={{ flex: 1, textAlign: "center", padding: "0 12px", minWidth: 0 }}>
               {companyName && (
                 <div
                   style={{
-                    fontSize: "16px",
+                    fontSize: "16.5px",
                     fontWeight: 800,
                     color: "#1e3a5f",
-                    letterSpacing: "0.03em",
+                    letterSpacing: "0.04em",
                     textTransform: "uppercase",
                     lineHeight: "20px",
-                    marginBottom: "2px",
+                    marginBottom: "3px",
                     textAlign: "center",
                   }}
                 >
@@ -229,12 +235,9 @@ export default function QuotationPdfTemplate({
                   style={{
                     fontSize: "8.5px",
                     color: "#334155",
-                    lineHeight: "12px",
-                    marginBottom: "2px",
+                    lineHeight: "13px",
+                    marginBottom: "3px",
                     textAlign: "center",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
                   }}
                 >
                   <strong style={{ color: "#1e3a5f" }}>Regd. Off:</strong> {companyRegdAddress}
@@ -245,25 +248,25 @@ export default function QuotationPdfTemplate({
                   style={{
                     fontSize: "8px",
                     color: "#475569",
-                    lineHeight: "12px",
-                    textAlign: "center",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
+                    fontWeight: 500,
+                    display: "flex",
+                    justifyContent: "center",
+                    flexWrap: "wrap",
+                    gap: "6px",
                   }}
                 >
                   {companyPhone && (
                     <span>
-                      <strong style={{ color: "#1e3a5f" }}>Tel:</strong> {companyPhone}
+                      <strong style={{ color: "#1e3a5f" }}>Phone:</strong> {companyPhone}
                     </span>
                   )}
-                  {companyPhone && companyEmail && <span> &nbsp;•&nbsp; </span>}
+                  {companyPhone && (companyEmail || companyGstin) && <span style={{ color: "#cbd5e1" }}>•</span>}
                   {companyEmail && (
                     <span>
                       <strong style={{ color: "#1e3a5f" }}>Email:</strong> {companyEmail}
                     </span>
                   )}
-                  {(companyPhone || companyEmail) && companyGstin && <span> &nbsp;•&nbsp; </span>}
+                  {companyEmail && companyGstin && <span style={{ color: "#cbd5e1" }}>•</span>}
                   {companyGstin && (
                     <span>
                       <strong style={{ color: "#1e3a5f" }}>GSTIN:</strong> {companyGstin}
@@ -273,19 +276,18 @@ export default function QuotationPdfTemplate({
               )}
             </div>
 
-            {/* Right Spacer */}
-            <div style={{ width: "120px", flexShrink: 0 }} />
+            {/* Right: Document Badge */}
+            <div style={{ width: "135px", flexShrink: 0, textAlign: "right" }}>
+              <div style={{ display: "inline-block", background: "#eff6ff", border: "1px solid #bfdbfe", padding: "4px 8px", borderRadius: "4px" }}>
+                <div style={{ fontSize: "9px", fontWeight: 800, color: "#1e3a5f", textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                  {documentType === "proforma" ? "PROFORMA INVOICE" : "QUOTATION"}
+                </div>
+                <div style={{ fontSize: "8px", fontWeight: 700, color: "#2563eb", marginTop: "1px" }}>
+                  {quotation.quotation_no || "DRAFT"}
+                </div>
+              </div>
+            </div>
           </div>
-
-          {/* Accent Divider Bar */}
-          <div
-            style={{
-              width: "100%",
-              height: "2px",
-              backgroundColor: "#1e3a5f",
-              marginTop: "8px",
-            }}
-          />
         </div>
 
         {/* 2. TITLE & REF BAR */}
@@ -313,14 +315,15 @@ export default function QuotationPdfTemplate({
                 lineHeight: "16px",
               }}
             >
-              QUOTATION
+              {documentType === "proforma" ? "PROFORMA INVOICE" : "QUOTATION"}
             </span>
           </div>
           <div style={{ textAlign: "right", fontSize: "8.5px", color: "#334155", lineHeight: "13px" }}>
             <div>
-              <strong>Ref. No. :</strong>{" "}
+              <strong>{documentType === "proforma" ? "PI Ref. No. :" : "Ref. No. :"}</strong>{" "}
               <span style={{ fontWeight: 700, color: "#1e40af" }}>
                 {quotation.ref_no || quotation.quotation_no || ""}
+                {quotation.version && quotation.version > 1 ? ` (Rev v${quotation.version})` : ""}
               </span>
             </div>
             {quotation.quotation_date && (
@@ -498,6 +501,18 @@ export default function QuotationPdfTemplate({
                 <div style={{ fontWeight: 700, color: "#0f172a", lineHeight: "12px" }}>
                   {item.product_name}
                 </div>
+                {item.discount_percent && item.discount_percent > 0 ? (
+                  <div
+                    style={{
+                      fontSize: "7px",
+                      fontWeight: 600,
+                      color: "#059669",
+                      marginTop: "1.5px",
+                    }}
+                  >
+                    Disc: {item.discount_percent}% (-₹{formatCurrency(item.discount_amount || 0)})
+                  </div>
+                ) : null}
                 {item.description && (
                   <div
                     style={{
@@ -578,10 +593,27 @@ export default function QuotationPdfTemplate({
 
           {/* Right Side: Calculation Totals */}
           <div style={{ width: "41%", boxSizing: "border-box" }}>
-            <div style={{ display: "flex", flexDirection: "row", justifyContent: "space-between", padding: "4px 6px", fontSize: "8.5px", borderBottom: "1px solid #cbd5e1", boxSizing: "border-box" }}>
-              <span style={{ color: "#475569", fontWeight: 600 }}>Sub Total (Taxable):</span>
-              <span style={{ fontWeight: 700 }}>Rs. {formatCurrency(quotation.subtotal)}</span>
-            </div>
+            {quotation.total_discount && quotation.total_discount > 0 ? (
+              <>
+                <div style={{ display: "flex", flexDirection: "row", justifyContent: "space-between", padding: "4px 6px", fontSize: "8.5px", borderBottom: "1px solid #cbd5e1", boxSizing: "border-box" }}>
+                  <span style={{ color: "#475569", fontWeight: 600 }}>Gross Total:</span>
+                  <span style={{ fontWeight: 700 }}>Rs. {formatCurrency((quotation.subtotal || 0) + (quotation.total_discount || 0))}</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "row", justifyContent: "space-between", padding: "4px 6px", fontSize: "8.5px", borderBottom: "1px solid #cbd5e1", boxSizing: "border-box" }}>
+                  <span style={{ color: "#059669", fontWeight: 600 }}>Total Discount:</span>
+                  <span style={{ fontWeight: 700, color: "#059669" }}>-Rs. {formatCurrency(quotation.total_discount)}</span>
+                </div>
+                <div style={{ display: "flex", flexDirection: "row", justifyContent: "space-between", padding: "4px 6px", fontSize: "8.5px", borderBottom: "1px solid #cbd5e1", boxSizing: "border-box" }}>
+                  <span style={{ color: "#475569", fontWeight: 600 }}>Taxable Sub Total:</span>
+                  <span style={{ fontWeight: 700 }}>Rs. {formatCurrency(quotation.subtotal)}</span>
+                </div>
+              </>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "row", justifyContent: "space-between", padding: "4px 6px", fontSize: "8.5px", borderBottom: "1px solid #cbd5e1", boxSizing: "border-box" }}>
+                <span style={{ color: "#475569", fontWeight: 600 }}>Sub Total (Taxable):</span>
+                <span style={{ fontWeight: 700 }}>Rs. {formatCurrency(quotation.subtotal)}</span>
+              </div>
+            )}
             <div style={{ display: "flex", flexDirection: "row", justifyContent: "space-between", padding: "4px 6px", fontSize: "8.5px", borderBottom: "1px solid #cbd5e1", boxSizing: "border-box" }}>
               <span style={{ color: "#475569", fontWeight: 600 }}>Total GST:</span>
               <span style={{ fontWeight: 700 }}>Rs. {formatCurrency(quotation.total_gst)}</span>

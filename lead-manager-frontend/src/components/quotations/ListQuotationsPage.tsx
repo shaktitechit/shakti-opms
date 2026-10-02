@@ -30,6 +30,8 @@ import {
   Send,
   XCircle,
   PauseCircle,
+  Calendar,
+  ShoppingCart,
 } from "lucide-react";
 import {
   useListQuotationsQuery,
@@ -55,9 +57,17 @@ import {
   canSubmitForApproval,
   isDraftVisible,
   isQuotationRosterVisible,
+  canConvertQuotation,
+  isQuotationExpired,
+  isQuotationExpiringSoon,
+  getQuotationExpiryInfo,
 } from "./quotationUtils";
 import { QuotationViewModal } from "./QuotationViewModal";
 import { SendQuotationEmailModal } from "./SendQuotationEmailModal";
+import { ConvertQuotationModal } from "./ConvertQuotationModal";
+import { ExtendQuotationValidityModal } from "./ExtendQuotationValidityModal";
+import { DownloadQuotationsPreviewModal } from "./DownloadQuotationsPreviewModal";
+import { FileSpreadsheet } from "lucide-react";
 
 type Props = {
   portalHome?: string;
@@ -66,14 +76,16 @@ type Props = {
 
 const STATUS_OPTIONS: Array<{ value: string; label: string; badgeClass: string }> = [
   { value: "all", label: "All Statuses", badgeClass: "" },
+  { value: "converted", label: "Converted to Order", badgeClass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300" },
   { value: "pending_approval", label: "Pending Approval", badgeClass: "bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300" },
   { value: "approved", label: "Approved", badgeClass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300" },
   { value: "draft", label: "Draft", badgeClass: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
-  { value: "sent", label: "Sent", badgeClass: "bg-primary/15 text-primary border border-primary/20" },
+  { value: "sent", label: "Sent", badgeClass: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300" },
+  { value: "in_negotiation", label: "In Negotiation", badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300" },
   { value: "accepted", label: "Accepted", badgeClass: "bg-teal-100 text-teal-700 dark:bg-teal-950/60 dark:text-teal-300" },
   { value: "rejected", label: "Rejected", badgeClass: "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300" },
   { value: "on_hold", label: "On Hold", badgeClass: "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300" },
-  { value: "expired", label: "Expired", badgeClass: "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300" },
+  { value: "expired", label: "Expired", badgeClass: "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
 ];
 
 export function ListQuotationsPage({
@@ -116,6 +128,9 @@ export function ListQuotationsPage({
   }, [rawQuotations, authUser]);
 
   // Modal States
+  const [downloadQuotationsModalOpen, setDownloadQuotationsModalOpen] = useState(false);
+  const [convertingQuotation, setConvertingQuotation] = useState<QuotationRecord | null>(null);
+  const [extendValidityTarget, setExtendValidityTarget] = useState<QuotationRecord | null>(null);
   const [viewQuotation, setViewQuotation] = useState<LeadQuotationRecord | null>(null);
   const [emailQuotation, setEmailQuotation] = useState<LeadQuotationRecord | null>(null);
   const [submitApprovalTarget, setSubmitApprovalTarget] = useState<QuotationRecord | null>(null);
@@ -260,6 +275,25 @@ export function ListQuotationsPage({
             <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
             Refresh
           </button>
+
+          <button
+            type="button"
+            onClick={() => setDownloadQuotationsModalOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 shadow-xs hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+          >
+            <FileSpreadsheet className="h-4 w-4 text-emerald-600" />
+            Export Excel (.xlsx)
+          </button>
+
+          {(isAdmin(authUser as any) || isManager(authUser as any)) && (
+            <Link
+              href={`${portalHome}/quotations/reports`}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 shadow-xs hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer"
+            >
+              <TrendingUp className="h-4 w-4 text-primary" />
+              Reports &amp; Analytics
+            </Link>
+          )}
 
           {(isAdmin(authUser as any) || isManager(authUser as any)) && (
             <Link
@@ -417,12 +451,19 @@ export function ListQuotationsPage({
                     >
                       {/* Quotation / Ref */}
                       <td className="px-5 py-4 font-medium text-slate-900 dark:text-white">
-                        <Link
-                          href={`${portalHome}/quotations/${q._id}`}
-                          className="font-bold text-primary hover:underline"
-                        >
-                          {q.quotation_no}
-                        </Link>
+                        <div className="flex items-center gap-1.5">
+                          <Link
+                            href={`${portalHome}/quotations/${q._id}`}
+                            className="font-bold text-primary hover:underline"
+                          >
+                            {q.quotation_no}
+                          </Link>
+                          {q.version && q.version > 1 ? (
+                            <span className="inline-flex items-center rounded-md bg-indigo-50 border border-indigo-200 px-1 py-0.2 text-[9px] font-extrabold text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                              v{q.version}
+                            </span>
+                          ) : null}
+                        </div>
                         {q.ref_no && (
                           <div className="text-xs text-slate-400 font-mono">Ref: {q.ref_no}</div>
                         )}
@@ -470,35 +511,77 @@ export function ListQuotationsPage({
                       </td>
 
                       {/* Grand Total */}
-                      <td className="px-5 py-4 text-right font-bold text-slate-900 dark:text-white">
-                        {formatCurrencyINR(q.grand_total || 0)}
+                      <td className="px-5 py-4 text-right">
+                        <div className="font-bold text-slate-900 dark:text-white">
+                          {formatCurrencyINR(q.grand_total || 0)}
+                        </div>
+                        {Boolean(q.total_discount && q.total_discount > 0) && (
+                          <div className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                            Disc: -{formatCurrencyINR(q.total_discount || 0)}
+                          </div>
+                        )}
                       </td>
 
                       {/* Status */}
                       <td className="px-5 py-4">
-                        <div className="flex flex-col gap-1">
-                          <span
-                            className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider ${
-                              q.approval_status === "pending_approval" || q.status === "pending_approval"
-                                ? "bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300"
-                                : q.approval_status === "approved"
-                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300"
-                                : statusOpt.badgeClass
-                            }`}
-                          >
-                            {(q.approval_status === "pending_approval" || q.status === "pending_approval") && (
-                              <Clock className="h-3 w-3" />
-                            )}
-                            {q.approval_status === "pending_approval" || q.status === "pending_approval"
-                              ? "Pending Approval"
-                              : q.status}
-                          </span>
-                          {q.approval_status === "rejected" && (
-                            <span className="text-[10px] text-rose-500 font-medium">
-                              Reason: {q.rejection_reason || "Rejected"}
-                            </span>
-                          )}
-                        </div>
+                        {(() => {
+                          const expiryInfo = getQuotationExpiryInfo(q);
+                          return (
+                            <div className="flex flex-col gap-1">
+                              <span
+                                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider ${
+                                  expiryInfo.isExpired
+                                    ? "bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300 border border-rose-300/40"
+                                    : q.approval_status === "pending_approval" || q.status === "pending_approval"
+                                    ? "bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300"
+                                    : q.approval_status === "approved"
+                                    ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-300"
+                                    : statusOpt.badgeClass
+                                }`}
+                              >
+                                {(q.approval_status === "pending_approval" || q.status === "pending_approval") && (
+                                  <Clock className="h-3 w-3" />
+                                )}
+                                {expiryInfo.isExpired
+                                  ? "Expired"
+                                  : q.approval_status === "pending_approval" || q.status === "pending_approval"
+                                  ? "Pending Approval"
+                                  : q.status === "in_negotiation"
+                                  ? "In Negotiation"
+                                  : q.status}
+                              </span>
+
+                              {/* Expiring Soon Indicator */}
+                              {expiryInfo.isExpiringSoon && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 dark:text-amber-400">
+                                  <AlertTriangle className="h-3 w-3" /> {expiryInfo.label}
+                                </span>
+                              )}
+
+                              {q.approval_status === "rejected" && (
+                                <span className="text-[10px] text-rose-500 font-medium">
+                                  Reason: {q.rejection_reason || "Rejected"}
+                                </span>
+                              )}
+                              {q.status === "rejected" && q.lost_reason && (
+                                <span className="text-[10px] text-rose-600 dark:text-rose-400 font-medium truncate max-w-[150px]">
+                                  Lost: {q.lost_reason}
+                                </span>
+                              )}
+                              {q.next_follow_up_at && q.status !== "accepted" && q.status !== "rejected" && (
+                                <div className="mt-0.5 flex items-center gap-1 text-[10px]">
+                                  <Calendar className="h-3 w-3 text-blue-500" />
+                                  <span className="font-semibold text-blue-600 dark:text-blue-400">
+                                    {new Date(q.next_follow_up_at).toLocaleDateString("en-IN", {
+                                      day: "2-digit",
+                                      month: "short",
+                                    })}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Signatory */}
@@ -571,6 +654,18 @@ export function ListQuotationsPage({
                                     <X className="h-3.5 w-3.5" /> Reject
                                   </button>
                                 </div>
+                              )}
+
+                              {/* Convert to Order Button - only active after client acceptance */}
+                              {q.status === "accepted" && canConvertQuotation(authUser) && (
+                                <button
+                                  type="button"
+                                  title="Convert Accepted Quotation to Confirmed Order"
+                                  onClick={() => setConvertingQuotation(q)}
+                                  className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 px-2 py-1 text-xs font-semibold text-white shadow-xs hover:opacity-95 cursor-pointer mr-1"
+                                >
+                                  <ShoppingCart className="h-3.5 w-3.5" /> Convert
+                                </button>
                               )}
 
                               {/* Approved / Sent / On Hold: Status Action Buttons (Accept / Hold / Reject) */}
@@ -672,6 +767,18 @@ export function ListQuotationsPage({
                               >
                                 <Mail className={`h-4 w-4 ${!canEmail ? "opacity-40" : ""}`} />
                               </button>
+
+                              {/* Extend Validity */}
+                              {q.status !== "converted" && (
+                                <button
+                                  type="button"
+                                  title="Extend Quotation Validity / Restore Expired"
+                                  onClick={() => setExtendValidityTarget(q)}
+                                  className="rounded-lg p-1.5 text-slate-500 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950 dark:hover:text-indigo-400 transition cursor-pointer"
+                                >
+                                  <Calendar className="h-4 w-4" />
+                                </button>
+                              )}
 
                               {/* Edit */}
                               {canEdit ? (
@@ -1065,6 +1172,35 @@ export function ListQuotationsPage({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Convert Quotation to Order Modal */}
+      {convertingQuotation && (
+        <ConvertQuotationModal
+          quotation={convertingQuotation as unknown as LeadQuotationRecord}
+          open={Boolean(convertingQuotation)}
+          onClose={() => setConvertingQuotation(null)}
+          onSuccess={() => refetch()}
+        />
+      )}
+
+      {/* Extend Quotation Validity Modal */}
+      {extendValidityTarget && (
+        <ExtendQuotationValidityModal
+          quotation={extendValidityTarget as unknown as LeadQuotationRecord}
+          open={Boolean(extendValidityTarget)}
+          onClose={() => setExtendValidityTarget(null)}
+          onSuccess={() => refetch()}
+        />
+      )}
+
+      {/* Download / Export Quotations Master Modal */}
+      {downloadQuotationsModalOpen && (
+        <DownloadQuotationsPreviewModal
+          open={downloadQuotationsModalOpen}
+          onClose={() => setDownloadQuotationsModalOpen(false)}
+          quotations={quotations}
+        />
       )}
 
     </div>

@@ -154,6 +154,14 @@ exports.getFollowUpCalendar = asyncHandler(async (req, res) => {
   });
 });
 
+exports.getUrgentFollowUpsSummary = asyncHandler(async (req, res) => {
+  const timeZone = req.query.tz || 'Asia/Kolkata';
+  res.json({
+    success: true,
+    data: await followUpService.getUrgentSummary(req.user, timeZone),
+  });
+});
+
 exports.runTodaysFollowUpReminders = asyncHandler(async (req, res) => {
   const { runTodaysFollowUpReminders } = require('../../jobs/followUpDailyReminder');
   const { isLeadAdmin } = require('./lead.service');
@@ -216,5 +224,26 @@ exports.getSourcePerformance = asyncHandler(async (req, res) => {
   res.json({
     success: true,
     data: await reportService.getSourcePerformance(req.query, req.user),
+  });
+});
+
+exports.getMonthlyTrends = asyncHandler(async (req, res) => {
+  res.json({
+    success: true,
+    data: await reportService.getLeadMonthlyTrends(req.query, req.user),
+  });
+});
+
+exports.getProductBreakdown = asyncHandler(async (req, res) => {
+  res.json({
+    success: true,
+    data: await reportService.getLeadProductBreakdown(req.query, req.user),
+  });
+});
+
+exports.getFollowUpReport = asyncHandler(async (req, res) => {
+  res.json({
+    success: true,
+    data: await reportService.getFollowUpAnalyticsReport(req.query, req.user),
   });
 });

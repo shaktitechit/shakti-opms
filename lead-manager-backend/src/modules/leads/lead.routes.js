@@ -25,9 +25,13 @@ router.get('/reports/dashboard', controller.getDashboardStats);
 router.get('/reports/funnel', controller.getSalesFunnel);
 router.get('/reports/sales-performance', controller.getSalesPerformance);
 router.get('/reports/source-performance', controller.getSourcePerformance);
+router.get('/reports/monthly-trends', controller.getMonthlyTrends);
+router.get('/reports/products', controller.getProductBreakdown);
+router.get('/reports/follow-ups', controller.getFollowUpReport);
 
-/* --- Follow-up Calendar --- */
+/* --- Follow-up Calendar & Reminders --- */
 router.get('/follow-ups/calendar', controller.getFollowUpCalendar);
+router.get('/follow-ups/urgent-summary', controller.getUrgentFollowUpsSummary);
 router.post('/follow-ups/reminders/run', controller.runAllFollowUpReminders);
 router.post('/follow-ups/reminders/today', controller.runTodaysFollowUpReminders);
 router.post('/follow-ups/reminders/overdue', controller.runOverdueFollowUpReminders);
@@ -40,6 +44,8 @@ router.patch('/quotations/:quotationId', requireLeadManagerRole('admin', 'manage
 router.post('/quotations/:quotationId/submit-for-approval', requireLeadManagerRole('admin', 'manager'), quotationController.submitForApproval);
 router.post('/quotations/:quotationId/approve', requireLeadManagerRole('admin', 'manager'), quotationController.approve);
 router.post('/quotations/:quotationId/reject', requireLeadManagerRole('admin', 'manager'), quotationController.reject);
+router.post('/quotations/:quotationId/convert', requireLeadManagerRole('admin', 'manager'), quotationController.convert);
+router.post('/quotations/:quotationId/extend-validity', requireLeadManagerRole('admin', 'manager'), quotationController.extendValidity);
 router.delete('/quotations/:quotationId', requireLeadManagerRole('admin', 'manager'), quotationController.remove);
 
 /* --- Leads CRUD --- */

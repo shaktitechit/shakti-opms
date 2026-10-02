@@ -33,6 +33,14 @@ exports.list = asyncHandler(async (req, res) => {
   });
 });
 
+exports.getDashboardStats = asyncHandler(async (req, res) => {
+  const data = await quotationService.getDashboardStats(req.query, req.user);
+  res.json({
+    success: true,
+    data,
+  });
+});
+
 exports.getById = asyncHandler(async (req, res) => {
   const quotationId = req.params.quotationId || req.params.id;
   const data = await quotationService.getById(quotationId, req.user);
@@ -100,3 +108,92 @@ exports.reject = asyncHandler(async (req, res) => {
     data,
   });
 });
+
+exports.scheduleFollowUp = asyncHandler(async (req, res) => {
+  const quotationId = req.params.quotationId || req.params.id;
+  const data = await quotationService.scheduleFollowUp(quotationId, req.body, req.user);
+  res.status(201).json({
+    success: true,
+    message: 'Follow-up scheduled successfully',
+    data,
+  });
+});
+
+exports.listFollowUps = asyncHandler(async (req, res) => {
+  const quotationId = req.params.quotationId || req.params.id;
+  const data = await quotationService.listFollowUps(quotationId, req.user);
+  res.json({
+    success: true,
+    data,
+  });
+});
+
+exports.completeFollowUp = asyncHandler(async (req, res) => {
+  const followUpId = req.params.followUpId || req.params.id;
+  const data = await quotationService.completeFollowUp(followUpId, req.body, req.user);
+  res.json({
+    success: true,
+    message: 'Follow-up completed successfully',
+    data,
+  });
+});
+
+exports.reviseQuotation = asyncHandler(async (req, res) => {
+  const quotationId = req.params.quotationId || req.params.id;
+  const data = await quotationService.reviseQuotation(quotationId, req.user);
+  res.status(201).json({
+    success: true,
+    message: 'Quotation revision created successfully',
+    data,
+  });
+});
+
+exports.convert = asyncHandler(async (req, res) => {
+  const quotationId = req.params.quotationId || req.params.id;
+  const data = await quotationService.convert(quotationId, req.body, req.user);
+  res.json({
+    success: true,
+    message: 'Quotation converted successfully',
+    data,
+  });
+});
+
+exports.markProformaIssued = asyncHandler(async (req, res) => {
+  const quotationId = req.params.quotationId || req.params.id;
+  const data = await quotationService.markProformaIssued(quotationId, req.user);
+  res.json({
+    success: true,
+    message: 'Proforma invoice marked as issued',
+    data,
+  });
+});
+
+exports.saveProforma = asyncHandler(async (req, res) => {
+  const quotationId = req.params.quotationId || req.params.id;
+  const data = await quotationService.saveProformaDetails(quotationId, req.body, req.user);
+  res.json({
+    success: true,
+    message: 'Proforma invoice saved successfully',
+    data,
+  });
+});
+
+exports.extendValidity = asyncHandler(async (req, res) => {
+  const quotationId = req.params.quotationId || req.params.id;
+  const data = await quotationService.extendValidity(quotationId, req.body, req.user);
+  res.json({
+    success: true,
+    message: 'Quotation validity extended successfully',
+    data,
+  });
+});
+
+exports.triggerAutoExpiry = asyncHandler(async (req, res) => {
+  const data = await quotationService.autoExpireQuotations();
+  res.json({
+    success: true,
+    message: `Auto-expiry check completed. Expired ${data.count} quotation(s).`,
+    data,
+  });
+});
+

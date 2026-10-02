@@ -322,6 +322,13 @@ export function isLeadExecutiveRole(user: AuthUserLike, _portalHome: string = ""
 }
 
 /**
+ * Checks if user can convert leads to customer / submit order (Admin or Manager).
+ */
+export function canConvertLead(user: AuthUserLike, portalHome: string = ""): boolean {
+  return isLeadAdmin(user, portalHome) || isLeadManagerRole(user, portalHome);
+}
+
+/**
  * Checks if user can assign / reassign leads to executives.
  */
 export function canAssignLead(user: AuthUserLike, portalHome: string = ""): boolean {

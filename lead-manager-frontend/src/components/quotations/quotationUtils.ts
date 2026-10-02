@@ -20,6 +20,16 @@ export function canManageQuotations(
   return isAdmin(user) || isManager(user);
 }
 
+export function canConvertQuotation(
+  user?: any
+): boolean {
+  if (!user) {
+    const s = readSessionFromStorage();
+    user = s?.user || null;
+  }
+  return isAdmin(user) || isManager(user);
+}
+
 export function canCreateQuotation(
   leadStatusOrUser?: string | { department?: string; role?: string } | null,
   leadStatus?: string
@@ -38,6 +48,12 @@ export type QuotationUserRef = {
   email?: string;
   department?: string;
   name?: string;
+  role?: string;
+  roles?: Array<any>;
+  phone?: string;
+  designation?: string;
+  portals?: Array<{ portal_code?: string; portal?: string; access_roles?: string[] }>;
+  is_active?: boolean;
 };
 
 export type QuotationLike = {
@@ -47,7 +63,57 @@ export type QuotationLike = {
   signatory_user?: string | QuotationUserRef | null;
   signatory_email?: string;
   signatory_name?: string;
+  signatory_phone?: string;
+  signatory_designation?: string;
+  sales_person_user?: string | QuotationUserRef | null;
+  sales_person_email?: string;
+  sales_person_name?: string;
+  sales_person_phone?: string;
+  sales_person_designation?: string;
 };
+
+/**
+ * Filter users who belong to the Sales department and have sales roles.
+ */
+export function isSalesDepartmentUser(user?: {
+  _id?: string;
+  name?: string;
+  department?: string;
+  role?: string;
+  roles?: Array<any>;
+  portals?: Array<{ portal_code?: string; portal?: string; access_roles?: string[] }>;
+  is_active?: boolean;
+} | null): boolean {
+  if (!user || user.is_active === false) return false;
+
+  const dept = String(user.department || "").toLowerCase().trim();
+  const role = String(user.role || "").toLowerCase().trim();
+
+  const isSalesDept = dept === "sales";
+  const isSalesRole =
+    role === "sales" ||
+    role.includes("sales") ||
+    role === "sales_executive" ||
+    role === "sales_manager" ||
+    role === "sales_rep" ||
+    role === "sales_officer";
+
+  const hasSalesInRoles =
+    Array.isArray(user.roles) &&
+    user.roles.some((r: any) => {
+      const rName = typeof r === "string" ? r : r?.name || r?.code || "";
+      return String(rName).toLowerCase().includes("sales");
+    });
+
+  const hasSalesPortal =
+    Array.isArray(user.portals) &&
+    user.portals.some((p) => {
+      const code = String(p?.portal_code || (p as any)?.portal || "").toLowerCase();
+      return code === "sales" || code === "lead_manager";
+    });
+
+  return isSalesDept || isSalesRole || hasSalesInRoles || (isSalesDept && hasSalesPortal);
+}
 
 export function isStrictSignatory(
   user?: QuotationUserRef | null,
@@ -120,6 +186,7 @@ export function canViewQuotationPdf(
 export function canEmailQuotation(quotation?: QuotationLike | null): boolean {
   if (!quotation) return false;
   if (
+    quotation.status === "converted" ||
     quotation.status === "accepted" ||
     quotation.status === "rejected" ||
     quotation.status === "expired" ||
@@ -136,6 +203,7 @@ export function canEditQuotation(
   quotation?: (QuotationLike & { created_by?: string | QuotationUserRef | null }) | null
 ): boolean {
   if (!user || !quotation) return false;
+  if (quotation.status === "converted") return false;
   return isAdmin(user as any) || isQuotationCreator(user, quotation);
 }
 
@@ -227,3 +295,103 @@ export function isQuotationRosterVisible(
 
   return false;
 }
+
+export function isQuotationExpired(
+  quotation?: (QuotationLike & { valid_until?: string | Date }) | null
+): boolean {
+  if (!quotation) return false;
+  if (quotation.status === "expired") return true;
+  if (quotation.status === "converted" || quotation.status === "rejected") return false;
+  if (!quotation.valid_until) return false;
+
+  const validUntilDate = new Date(quotation.valid_until);
+  if (isNaN(validUntilDate.getTime())) return false;
+
+  const now = new Date();
+  return validUntilDate.getTime() < now.getTime();
+}
+
+export function isQuotationExpiringSoon(
+  quotation?: (QuotationLike & { valid_until?: string | Date }) | null,
+  withinDays = 2
+): boolean {
+  if (!quotation) return false;
+  if (isQuotationExpired(quotation)) return false;
+  if (quotation.status === "converted" || quotation.status === "rejected" || quotation.status === "draft") return false;
+  if (!quotation.valid_until) return false;
+
+  const validUntilDate = new Date(quotation.valid_until);
+  if (isNaN(validUntilDate.getTime())) return false;
+
+  const now = new Date();
+  const diffMs = validUntilDate.getTime() - now.getTime();
+  const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+  return diffDays > 0 && diffDays <= withinDays;
+}
+
+export function getQuotationExpiryInfo(
+  quotation?: (QuotationLike & { valid_until?: string | Date }) | null
+): {
+  isExpired: boolean;
+  isExpiringSoon: boolean;
+  daysRemaining: number;
+  label: string;
+  badgeClass: string;
+} {
+  if (!quotation || !quotation.valid_until) {
+    return {
+      isExpired: false,
+      isExpiringSoon: false,
+      daysRemaining: 999,
+      label: "No validity date",
+      badgeClass: "",
+    };
+  }
+
+  const validUntilDate = new Date(quotation.valid_until);
+  if (isNaN(validUntilDate.getTime())) {
+    return {
+      isExpired: false,
+      isExpiringSoon: false,
+      daysRemaining: 999,
+      label: "Invalid date",
+      badgeClass: "",
+    };
+  }
+
+  const now = new Date();
+  const isExpired = quotation.status === "expired" || (validUntilDate.getTime() < now.getTime() && quotation.status !== "converted" && quotation.status !== "rejected");
+  const diffMs = validUntilDate.getTime() - now.getTime();
+  const daysRemaining = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  const isExpiringSoon = !isExpired && quotation.status !== "converted" && quotation.status !== "rejected" && daysRemaining <= 2 && daysRemaining >= 0;
+
+  if (isExpired) {
+    return {
+      isExpired: true,
+      isExpiringSoon: false,
+      daysRemaining,
+      label: "Expired",
+      badgeClass: "bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-300 border border-rose-300/60",
+    };
+  }
+
+  if (isExpiringSoon) {
+    return {
+      isExpired: false,
+      isExpiringSoon: true,
+      daysRemaining,
+      label: daysRemaining === 0 ? "Expires Today" : `Expires in ${daysRemaining}d`,
+      badgeClass: "bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 border border-amber-300/60 animate-pulse",
+    };
+  }
+
+  return {
+    isExpired: false,
+    isExpiringSoon: false,
+    daysRemaining,
+    label: `Valid (${daysRemaining}d left)`,
+    badgeClass: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  };
+}
+

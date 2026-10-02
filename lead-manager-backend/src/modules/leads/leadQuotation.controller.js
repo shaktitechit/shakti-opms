@@ -14,4 +14,6 @@ module.exports = {
   submitForApproval: quotationController.submitForApproval,
   approve: quotationController.approve,
   reject: quotationController.reject,
+  convert: quotationController.convert,
+  extendValidity: quotationController.extendValidity,
 };

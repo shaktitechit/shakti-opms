@@ -9,6 +9,7 @@ module.exports = {
     '',
   JWT_SECRET: process.env.JWT_SECRET || '',
   AUTH_SERVICE_URL: process.env.AUTH_SERVICE_URL || '',
+  OPMS_BACKEND_URL: process.env.OPMS_BACKEND_URL || 'http://opms-backend:7001',
   MESSAGE_SERVICE_URL: process.env.MESSAGE_SERVICE_URL || '',
   NOTIFICATION_SERVICE_URL: process.env.NOTIFICATION_SERVICE_URL || '',
   CORS_ORIGIN: process.env.CORS_ORIGIN || '*',

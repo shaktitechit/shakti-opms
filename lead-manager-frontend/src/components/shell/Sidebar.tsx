@@ -12,6 +12,7 @@ import {
   ChevronRight,
   FileText,
   LayoutGrid,
+  TrendingUp,
   Users,
   X,
 } from "lucide-react";
@@ -40,7 +41,8 @@ export function Sidebar({
   const isLeadsActive = pathname === "/dashboard/leads" || (pathname.startsWith("/dashboard/leads") && !pathname.includes("follow-ups") && !pathname.includes("reports"));
   const isFollowUpsActive = pathname.startsWith("/dashboard/leads/follow-ups");
   const isReportsActive = pathname.startsWith("/dashboard/leads/reports");
-  const isQuotationsActive = pathname.startsWith("/dashboard/quotations") && !pathname.includes("terms");
+  const isQuotationsActive = pathname.startsWith("/dashboard/quotations") && !pathname.includes("terms") && !pathname.includes("reports");
+  const isQuotationReportsActive = pathname.startsWith("/dashboard/quotations/reports");
   const isTermsActive = pathname.startsWith("/dashboard/quotations/terms");
 
   return (
@@ -193,6 +195,23 @@ export function Sidebar({
             >
               <FileText className={`h-4 w-4 shrink-0 ${isQuotationsActive ? "text-primary" : ""}`} />
               {!desktopCollapsed && <span>Quotations</span>}
+            </Link>
+          )}
+
+          {/* Quotation Reports & Analytics (Admin & Manager) */}
+          {(isAdmin || isManager) && (
+            <Link
+              href="/dashboard/quotations/reports"
+              onClick={() => setMobileNavOpen(false)}
+              className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+                isQuotationReportsActive
+                  ? "bg-primary/15 border border-primary/30 text-primary font-bold shadow-xs"
+                  : "text-muted hover:bg-surface-muted hover:text-foreground border border-transparent"
+              }`}
+              title="Quotation Reports & Analytics"
+            >
+              <TrendingUp className={`h-4 w-4 shrink-0 ${isQuotationReportsActive ? "text-primary" : ""}`} />
+              {!desktopCollapsed && <span>Quote Reports</span>}
             </Link>
           )}
 

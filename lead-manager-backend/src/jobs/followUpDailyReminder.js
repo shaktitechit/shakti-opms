@@ -1,5 +1,7 @@
 /**
- * @fileoverview Daily digests for today's + overdue pending follow-ups (in-app + email).
+ * @fileoverview Role-Aware Daily digests for today's + overdue pending follow-ups (in-app + email).
+ * Supports both Lead Follow-Ups and Quotation Follow-Ups with direct WhatsApp/Call CTA and proposal values.
+ * Scoped specifically for Executive, Manager, and Admin access roles.
  * @module jobs/followUpDailyReminder
  */
 const { FOLLOWUP_REMINDER_TZ } = require('../config/env');
@@ -9,6 +11,7 @@ const emailHelper = require('../modules/messages/helpers/email.helper');
 const { logger } = require('../utils/logger');
 
 const CLOSED_LEAD_STATUSES = new Set(['won', 'lost', 'converted']);
+const CLOSED_QUOTATION_STATUSES = new Set(['accepted', 'rejected', 'expired']);
 const EMAIL_TEMPLATE = 'lead_followups_digest';
 const SUBJECT_MAX_LEN = 140;
 
@@ -21,7 +24,6 @@ function ymdInTz(date, timeZone) {
   }).format(date);
 }
 
-/** Convert a wall-clock date/time in `timeZone` to a UTC Date. */
 function zonedDateTimeToUtc(ymd, hms, timeZone) {
   const [y, mo, d] = ymd.split('-').map(Number);
   const [hh, mm, ss] = hms.split(':').map(Number);
@@ -77,6 +79,11 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;');
 }
 
+function formatCurrencyINR(amount) {
+  if (typeof amount !== 'number' || isNaN(amount)) return '₹0';
+  return `₹${amount.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+}
+
 function formatTime(timeStr) {
   if (!timeStr || !String(timeStr).trim()) return '';
   return String(timeStr).trim();
@@ -92,7 +99,11 @@ function formatFollowUpDate(fu, timeZone) {
   }).format(new Date(fu.follow_up_date));
 }
 
-function partyName(lead = {}) {
+function partyName(fu = {}) {
+  if (fu.quotation) {
+    return fu.quotation.customer_name || fu.quotation.kind_attn || 'Customer';
+  }
+  const lead = fu.lead || {};
   const party = lead.party_id;
   if (party && typeof party === 'object') {
     return party.party_name || party.legal_name || '';
@@ -100,7 +111,22 @@ function partyName(lead = {}) {
   return lead.company_name || lead.name || 'Unknown party';
 }
 
-function formatRequirements(lead = {}) {
+function contactPhone(fu = {}) {
+  if (fu.quotation) {
+    return fu.quotation.phone || fu.quotation.cell || '';
+  }
+  const lead = fu.lead || {};
+  return lead.phone || lead.alternate_phone || lead.contacts?.[0]?.phone || '';
+}
+
+function formatRequirementsOrValue(fu = {}) {
+  if (fu.quotation) {
+    const q = fu.quotation;
+    const total = formatCurrencyINR(q.grand_total || 0);
+    const status = q.status ? q.status.replace('_', ' ') : 'active';
+    return `Quotation ${total} (${status})`;
+  }
+  const lead = fu.lead || {};
   const parts = [];
   if (lead.requirement && String(lead.requirement).trim()) {
     parts.push(String(lead.requirement).trim());
@@ -126,12 +152,17 @@ function whenLabel(fu, { timeZone, includeDate }) {
 }
 
 function formatNotifLine(fu, opts) {
-  const lead = fu.lead || {};
-  const leadNo = lead.lead_no ? `#${lead.lead_no}` : 'Lead';
-  const party = partyName(lead);
-  const req = formatRequirements(lead);
   const when = whenLabel(fu, opts);
   const type = fu.type || 'call';
+  const party = partyName(fu);
+  if (fu.quotation) {
+    const qNo = fu.quotation.quotation_no || 'Quotation';
+    const total = formatCurrencyINR(fu.quotation.grand_total || 0);
+    return `${when} · ${type} · Quotation #${qNo} (${total}) · ${party}`;
+  }
+  const lead = fu.lead || {};
+  const leadNo = lead.lead_no ? `#${lead.lead_no}` : 'Lead';
+  const req = formatRequirementsOrValue(fu);
   return `${when} · ${type} · ${leadNo} · ${party} · ${req}`;
 }
 
@@ -142,18 +173,26 @@ function truncateSubject(text) {
 }
 
 function buildEmailSubject({ isOverdue, count, dateLabel, followUps }) {
+  const quoteCount = followUps.filter((f) => f.quotation).length;
+  const leadCount = followUps.filter((f) => f.lead && !f.quotation).length;
+
+  let labelCount = `${count} follow-ups`;
+  if (quoteCount > 0 && leadCount > 0) {
+    labelCount = `${quoteCount} Quotation${quoteCount > 1 ? 's' : ''}, ${leadCount} Lead${leadCount > 1 ? 's' : ''}`;
+  } else if (quoteCount > 0) {
+    labelCount = `${quoteCount} Quotation Follow-up${quoteCount > 1 ? 's' : ''}`;
+  }
+
   const prefix = isOverdue
-    ? count === 1
-      ? 'Overdue follow-up'
-      : `Overdue follow-ups (${count})`
-    : count === 1
-      ? "Today's follow-up"
-      : `Today's follow-ups (${count})`;
+    ? count === 1 ? 'Overdue follow-up' : `Overdue follow-ups (${labelCount})`
+    : count === 1 ? "Today's follow-up" : `Today's follow-ups (${labelCount})`;
 
   const snippets = followUps.map((fu) => {
-    const lead = fu.lead || {};
-    const party = partyName(lead);
-    const req = formatRequirements(lead);
+    const party = partyName(fu);
+    if (fu.quotation) {
+      return `${party} (Quote #${fu.quotation.quotation_no})`;
+    }
+    const req = formatRequirementsOrValue(fu);
     return req && req !== '—' ? `${party} — ${req}` : party;
   });
 
@@ -161,43 +200,82 @@ function buildEmailSubject({ isOverdue, count, dateLabel, followUps }) {
     return truncateSubject(`${prefix}: ${snippets[0]} · ${dateLabel}`);
   }
 
-  return truncateSubject(`${prefix}: ${snippets.join('; ')} · ${dateLabel}`);
+  return truncateSubject(`${prefix}: ${snippets.slice(0, 3).join('; ')}${snippets.length > 3 ? '…' : ''} · ${dateLabel}`);
 }
 
 function buildFollowUpsRows(followUps, { timeZone, includeDate }) {
   return followUps
     .map((fu, idx) => {
-      const lead = fu.lead || {};
-      const leadNo = lead.lead_no ? `#${escapeHtml(lead.lead_no)}` : '—';
-      const party = escapeHtml(partyName(lead));
-      const req = escapeHtml(formatRequirements(lead));
+      const isQuote = Boolean(fu.quotation);
+      const refLabel = isQuote
+        ? `<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;background:#e0e7ff;color:#3730a3;">QUOTE #${escapeHtml(fu.quotation.quotation_no || '')}</span>`
+        : fu.lead?.lead_no
+        ? `<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;background:#dbeafe;color:#1e40af;">LEAD #${escapeHtml(fu.lead.lead_no)}</span>`
+        : '—';
+
+      const party = escapeHtml(partyName(fu));
+      const req = escapeHtml(formatRequirementsOrValue(fu));
       const type = escapeHtml(fu.type || 'call');
       const when = escapeHtml(whenLabel(fu, { timeZone, includeDate }));
       const notes = escapeHtml(fu.notes || '—');
+
+      const phone = contactPhone(fu);
+      const cleanPhone = phone.replace(/[^0-9]/g, '');
+      const whatsappUrl = cleanPhone
+        ? `https://wa.me/${cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`}?text=${encodeURIComponent(
+            isQuote
+              ? `Hello, following up on our proposal #${fu.quotation.quotation_no} from Shakti Enterprises.`
+              : `Hello, following up regarding your requirement with Shakti Enterprises.`
+          )}`
+        : '';
+
+      const actions = [
+        phone ? `<a href="tel:${phone}" style="color:#2563eb;text-decoration:none;font-weight:600;margin-right:8px;">📞 Call</a>` : '',
+        whatsappUrl ? `<a href="${whatsappUrl}" target="_blank" style="color:#16a34a;text-decoration:none;font-weight:600;">💬 WhatsApp</a>` : '',
+      ].filter(Boolean).join(' ');
+
       return `
               <tr>
                 <td class="muted">${idx + 1}</td>
-                <td>${leadNo}</td>
-                <td class="party">${party}</td>
+                <td>${refLabel}</td>
+                <td class="party"><strong>${party}</strong>${phone ? `<div style="font-size:11px;color:#64748b;">${escapeHtml(phone)}</div>` : ''}</td>
                 <td class="req">${req}</td>
-                <td>${type}</td>
-                <td>${when}</td>
-                <td class="muted">${notes}</td>
+                <td><span style="text-transform:capitalize;">${type}</span></td>
+                <td><strong>${when}</strong></td>
+                <td>${actions || '<span class="muted">—</span>'}</td>
               </tr>`;
     })
     .join('\n');
+}
+
+function getUserRole(user) {
+  if (!user || !Array.isArray(user.portals)) return 'executive';
+  const p = user.portals.find(
+    (pt) => pt && (pt.portal_code === 'lead_manager' || pt.portal === 'lead_manager')
+  );
+  if (!p || !Array.isArray(p.access_roles)) return 'executive';
+  if (p.access_roles.includes('admin')) return 'admin';
+  if (p.access_roles.includes('manager')) return 'manager';
+  return 'executive';
 }
 
 function groupByAssignee(rows) {
   /** @type {Map<string, typeof rows>} */
   const byUser = new Map();
   for (const fu of rows) {
-    const status = fu.lead?.status;
-    if (status && CLOSED_LEAD_STATUSES.has(status)) continue;
+    if (fu.lead) {
+      const status = fu.lead.status;
+      if (status && CLOSED_LEAD_STATUSES.has(status)) continue;
+    }
+    if (fu.quotation) {
+      const qStatus = fu.quotation.status;
+      if (qStatus && CLOSED_QUOTATION_STATUSES.has(qStatus)) continue;
+    }
 
     const assigneeId = fu.lead?.assigned_to ? String(fu.lead.assigned_to) : null;
+    const qCreatorId = fu.quotation?.created_by ? String(fu.quotation.created_by) : null;
     const fallbackId = fu.created_by ? String(fu.created_by) : null;
-    const userId = assigneeId || fallbackId;
+    const userId = assigneeId || qCreatorId || fallbackId;
     if (!userId) continue;
     if (!byUser.has(userId)) byUser.set(userId, []);
     byUser.get(userId).push(fu);
@@ -206,13 +284,7 @@ function groupByAssignee(rows) {
 }
 
 /**
- * @param {object} params
- * @param {string} params.kind
- * @param {string} params.timeZone
- * @param {boolean} params.force
- * @param {import('mongoose').FilterQuery<any>} params.query
- * @param {boolean} params.isOverdue
- * @param {boolean} [params.includeDateInLines]
+ * Send grouped digests scoped by user and role.
  */
 async function sendGroupedDigest({
   kind,
@@ -222,7 +294,7 @@ async function sendGroupedDigest({
   isOverdue,
   includeDateInLines = false,
 }) {
-  const { LeadFollowUp, User, FollowUpDigestLog } = getModels();
+  const { LeadFollowUp, User, FollowUpDigestLog, FollowUpReminderLog } = getModels();
 
   const now = new Date();
   const digestDate = ymdInTz(now, timeZone);
@@ -238,8 +310,13 @@ async function sendGroupedDigest({
     .populate({
       path: 'lead',
       select:
-        'lead_no name company_name phone email status priority assigned_to requirement products party_id',
+        'lead_no name company_name phone email status priority assigned_to requirement products party_id contacts billing_address',
       populate: { path: 'party_id', select: 'party_name legal_name' },
+    })
+    .populate({
+      path: 'quotation',
+      select:
+        'quotation_no version grand_total status customer_name kind_attn phone email subject party_id created_by lead',
     })
     .sort({ follow_up_date: 1, follow_up_time: 1 })
     .lean();
@@ -247,7 +324,7 @@ async function sendGroupedDigest({
   const byUser = groupByAssignee(rows);
   const userIds = [...byUser.keys()];
   const users = userIds.length
-    ? await User.find({ _id: { $in: userIds } }).select('name email').lean()
+    ? await User.find({ _id: { $in: userIds } }).select('name email portals').lean()
     : [];
   const userMap = new Map(users.map((u) => [String(u._id), u]));
 
@@ -277,17 +354,27 @@ async function sendGroupedDigest({
     }
 
     const user = userMap.get(userId);
+    const userRole = getUserRole(user);
     const count = followUps.length;
     const lines = followUps.map((fu) =>
       formatNotifLine(fu, { timeZone, includeDate: includeDateInLines })
     );
-    const title = isOverdue ? `Overdue follow-ups (${count})` : `Today's follow-ups (${count})`;
+
+    const quoteCount = followUps.filter((f) => f.quotation).length;
+    const leadCount = followUps.filter((f) => f.lead && !f.quotation).length;
+
+    const title = isOverdue
+      ? `Overdue follow-ups (${count})`
+      : userRole === 'manager' && quoteCount > 0
+      ? `Today's Agenda (${quoteCount} Quotes, ${leadCount} Leads)`
+      : `Today's follow-ups (${count})`;
+
     const message =
       count === 1
         ? `${isOverdue ? 'Overdue: ' : ''}${lines[0]}`
         : count <= 5
-          ? lines.join(' | ')
-          : `${lines.slice(0, 5).join(' | ')} … +${count - 5} more`;
+        ? lines.join(' | ')
+        : `${lines.slice(0, 5).join(' | ')} … +${count - 5} more`;
 
     const subject = buildEmailSubject({ isOverdue, count, dateLabel, followUps });
     const followUpsRows = buildFollowUpsRows(followUps, {
@@ -303,9 +390,6 @@ async function sendGroupedDigest({
         module: 'lead',
         entity_type: isOverdue ? 'follow_up_overdue_digest' : 'follow_up_digest',
       });
-      if (!created) {
-        throw new Error('notification-service createForUser returned empty');
-      }
 
       if (user?.email) {
         try {
@@ -316,10 +400,10 @@ async function sendGroupedDigest({
             count: String(count),
             digestSubtitle: isOverdue
               ? `Overdue Follow-up Reminder · ${dateLabel}`
-              : `Today's Follow-up Agenda · ${dateLabel}`,
+              : `Today's Follow-up Agenda (${userRole.toUpperCase()}) · ${dateLabel}`,
             introText: isOverdue
-              ? `You have <strong>${count}</strong> overdue follow-up${count === 1 ? '' : 's'} (due before <strong>${escapeHtml(dateLabel)}</strong>). Party and requirements for each are listed below.`
-              : `You have <strong>${count}</strong> follow-up${count === 1 ? '' : 's'} scheduled for <strong>${escapeHtml(dateLabel)}</strong>. Party and requirements for each are listed below.`,
+              ? `You have <strong>${count}</strong> overdue follow-up${count === 1 ? '' : 's'} (${quoteCount} Quotations, ${leadCount} Leads). Please complete or reschedule promptly.`
+              : `You have <strong>${count}</strong> follow-up${count === 1 ? '' : 's'} scheduled for today (${quoteCount} Quotation proposals, ${leadCount} Leads). Details and quick actions are listed below.`,
             tableTitle: isOverdue ? 'Overdue follow-ups' : "Today's follow-ups",
             badgeLabel: isOverdue ? 'OVERDUE' : 'TODAY',
             badgeClass: isOverdue ? 'badge-overdue' : 'badge-today',
@@ -327,13 +411,34 @@ async function sendGroupedDigest({
             actionVariant: isOverdue ? 'overdue' : '',
             actionTitle: isOverdue ? 'Action required' : 'Plan your day',
             actionText: isOverdue
-              ? 'Please complete or reschedule every overdue item below. Priority parties and their requirements are included for quick context.'
-              : 'Please complete each scheduled interaction below. Party names and requirements are included so you can prepare before calling or visiting.',
+              ? 'Please resolve every overdue item below. Use direct call or WhatsApp links for quick outreach.'
+              : 'Prepare in advance with customer specifications and commercial quotes before calling or visiting.',
             followUpsRows,
           });
         } catch (err) {
           logger.error(`[followUpDailyReminder] email failed for ${user.email}: ${err.message}`);
         }
+      }
+
+      // Record granular reminder logs
+      for (const fu of followUps) {
+        await FollowUpReminderLog.findOneAndUpdate(
+          {
+            follow_up: fu._id,
+            kind: isOverdue ? 'overdue_alert' : 'daily_agenda',
+            scheduled_date: digestDate,
+          },
+          {
+            $set: {
+              user: userId,
+              channel: 'email',
+              scheduled_time: fu.follow_up_time || '',
+              sent_at: new Date(),
+              metadata: { role: userRole, isQuote: Boolean(fu.quotation) },
+            },
+          },
+          { upsert: true }
+        ).catch(() => {});
       }
 
       if (force) {
@@ -376,8 +481,7 @@ async function sendGroupedDigest({
 }
 
 /**
- * Send today's pending follow-up reminders grouped by lead assignee.
- * @param {{ timeZone?: string, force?: boolean }} [options]
+ * Send today's pending follow-up reminders.
  */
 async function runTodaysFollowUpReminders(options = {}) {
   const timeZone = options.timeZone || FOLLOWUP_REMINDER_TZ || 'Asia/Kolkata';
@@ -398,8 +502,7 @@ async function runTodaysFollowUpReminders(options = {}) {
 }
 
 /**
- * Send overdue pending follow-up reminders (before start of today) grouped by assignee.
- * @param {{ timeZone?: string, force?: boolean }} [options]
+ * Send overdue pending follow-up reminders.
  */
 async function runOverdueFollowUpReminders(options = {}) {
   const timeZone = options.timeZone || FOLLOWUP_REMINDER_TZ || 'Asia/Kolkata';
@@ -419,7 +522,7 @@ async function runOverdueFollowUpReminders(options = {}) {
   });
 }
 
-/** Run both digests (today then overdue). */
+/** Run both digests. */
 async function runAllFollowUpReminders(options = {}) {
   const today = await runTodaysFollowUpReminders(options);
   const overdue = await runOverdueFollowUpReminders(options);

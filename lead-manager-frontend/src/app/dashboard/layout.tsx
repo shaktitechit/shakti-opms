@@ -12,7 +12,7 @@ import {
 import { useTheme } from "@/hooks/useTheme";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { Topbar } from "@/components/shell/Topbar";
-
+import { UrgentFollowUpBanner } from "@/components/leads/UrgentFollowUpBanner";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -140,6 +140,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           onOpenMobileNav={() => setMobileNavOpen(true)}
           onLogout={handleLogout}
         />
+
+        <UrgentFollowUpBanner portalHome="/dashboard" />
 
         <main className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-6">
           {children}

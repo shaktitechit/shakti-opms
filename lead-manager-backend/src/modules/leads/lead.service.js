@@ -838,8 +838,8 @@ async function convert(id, body = {}, user) {
   const lead = await Lead.findOne({ _id: id, deletedAt: null });
   if (!lead) throw new ApiError(404, 'Lead not found');
 
-  if (!isLeadManager(user)) {
-    throw new ApiError(403, 'Only administrators can convert leads to customers / orders');
+  if (!isLeadAdmin(user) && !isLeadManager(user)) {
+    throw new ApiError(403, 'Only administrators and managers can convert leads to customers / orders');
   }
 
   if (lead.status === 'converted') {
@@ -851,58 +851,84 @@ async function convert(id, body = {}, user) {
   }
 
   const conversionType = body.conversion_type || 'existing_customer';
-  let targetPartyId = lead.party_id || body.party_id;
+  let targetPartyId = body.party_id || lead.party_id;
   let createdOrder = null;
 
-  // 1. If New Customer, create Party record
-  if (conversionType === 'new_customer' || (!targetPartyId && conversionType !== 'existing_customer')) {
+  // Check if target party exists in database
+  let existingParty = null;
+  if (targetPartyId && mongoose.Types.ObjectId.isValid(targetPartyId)) {
+    existingParty = await Party.findOne({ _id: targetPartyId, deletedAt: null });
+  }
+
+  // 1. If New Customer or Party not yet linked, check if party already exists before creating
+  if (conversionType === 'new_customer' || (!existingParty && conversionType !== 'existing_customer')) {
     const partyData = body.party_data || {};
     const partyName = partyData.party_name || body.party_name || lead.company_name || lead.name;
+    const cleanGst = (partyData.gst_no || body.gst_no) ? String(partyData.gst_no || body.gst_no).toUpperCase().trim() : '';
+    const cleanPhone = lead.phone || (partyData.contacts && partyData.contacts[0] && partyData.contacts[0].phone) || '';
 
-    const contactsList = Array.isArray(partyData.contacts) && partyData.contacts.length > 0
-      ? partyData.contacts
-      : Array.isArray(lead.contacts) && lead.contacts.length > 0
-      ? lead.contacts
-      : [
-          {
-            name: lead.name,
-            phone: lead.phone || '',
-            email: lead.email || '',
-            designation: lead.designation || '',
-            is_primary: true,
-          },
-        ];
+    // Check if matching Party exists by GST or exact name/phone
+    if (cleanGst) {
+      existingParty = await Party.findOne({ gst_no: cleanGst, deletedAt: null });
+    }
+    if (!existingParty && partyName && cleanPhone) {
+      existingParty = await Party.findOne({
+        party_name: { $regex: new RegExp(`^${partyName.trim()}$`, 'i') },
+        mobile: cleanPhone.trim(),
+        deletedAt: null,
+      });
+    }
 
-    const billingAddr = partyData.billing_address || body.billing_address || lead.billing_address || {};
-    const shippingAddr = partyData.shipping_address || body.shipping_address || billingAddr;
+    if (existingParty) {
+      targetPartyId = existingParty._id;
+    } else {
+      const contactsList = Array.isArray(partyData.contacts) && partyData.contacts.length > 0
+        ? partyData.contacts
+        : Array.isArray(lead.contacts) && lead.contacts.length > 0
+        ? lead.contacts
+        : [
+            {
+              name: lead.name,
+              phone: lead.phone || '',
+              email: lead.email || '',
+              designation: lead.designation || '',
+              is_primary: true,
+            },
+          ];
 
-    const newParty = await Party.create({
-      company_id: lead.company_id || user.company_id,
-      party_type: partyData.party_type || 'customer',
-      party_name: partyName,
-      contact_person: lead.name,
-      mobile: lead.phone || (contactsList[0] && contactsList[0].phone) || '',
-      email: lead.email || (contactsList[0] && contactsList[0].email) || '',
-      contacts: contactsList,
-      gst_no: (partyData.gst_no || body.gst_no) ? String(partyData.gst_no || body.gst_no).toUpperCase().trim() : undefined,
-      drug_license_no: partyData.drug_license_no || body.drug_license_no || undefined,
-      district: partyData.district || billingAddr.city || '',
-      state: partyData.state || billingAddr.state || '',
-      payment_terms: partyData.payment_terms || body.payment_terms || 'Advance',
-      billing_address: billingAddr,
-      shipping_address: shippingAddr,
-      created_by: user._id,
-      is_active: true,
-    });
-    targetPartyId = newParty._id;
+      const billingAddr = partyData.billing_address || body.billing_address || lead.billing_address || {};
+      const shippingAddr = partyData.shipping_address || body.shipping_address || billingAddr;
 
-    await activityService.create({
-      actor: user._id,
-      entity_type: 'party',
-      entity_id: newParty._id,
-      action: 'created',
-      message: `Party '${newParty.party_name}' created from Lead #${lead.lead_no}`,
-    });
+      const newParty = await Party.create({
+        company_id: lead.company_id || user.company_id,
+        party_type: partyData.party_type || 'customer',
+        party_name: partyName,
+        contact_person: lead.name,
+        mobile: lead.phone || (contactsList[0] && contactsList[0].phone) || '',
+        email: lead.email || (contactsList[0] && contactsList[0].email) || '',
+        contacts: contactsList,
+        gst_no: cleanGst || undefined,
+        drug_license_no: partyData.drug_license_no || body.drug_license_no || undefined,
+        district: partyData.district || billingAddr.city || '',
+        state: partyData.state || billingAddr.state || '',
+        payment_terms: partyData.payment_terms || body.payment_terms || 'Advance',
+        billing_address: billingAddr,
+        shipping_address: shippingAddr,
+        created_by: user._id,
+        is_active: true,
+      });
+      targetPartyId = newParty._id;
+
+      await activityService.create({
+        actor: user._id,
+        entity_type: 'party',
+        entity_id: newParty._id,
+        action: 'created',
+        message: `Party '${newParty.party_name}' created from Lead #${lead.lead_no}`,
+      });
+    }
+  } else if (existingParty) {
+    targetPartyId = existingParty._id;
   }
 
   // 2. If Order creation requested alongside conversion
@@ -913,6 +939,8 @@ async function convert(id, body = {}, user) {
 
     const orderNo = await generateOrderNo(targetPartyId, new Date());
     const items = [];
+    let grossSubtotal = 0;
+    let totalDiscount = 0;
     let subtotal = 0;
     let totalTax = 0;
 
@@ -931,20 +959,19 @@ async function convert(id, body = {}, user) {
         let productId = prodItem.product || prodItem.productId;
         let pDoc = null;
 
-        if (productId) {
+        if (productId && mongoose.Types.ObjectId.isValid(productId)) {
           pDoc = await Product.findById(productId).lean();
         }
         if (!pDoc && pName) {
           pDoc = await Product.findOne({ product_name: pName, deletedAt: null }).lean();
         }
         if (!pDoc) {
-          // Fallback to any active product if not specified
           pDoc = await Product.findOne({ deletedAt: null }).lean();
         }
 
         if (pDoc) {
           productId = pDoc._id;
-          pName = pDoc.product_name || pName;
+          pName = prodItem.product_name || pDoc.product_name || pName;
           if (rateType === 'SR') {
             unitPrice = Number(pDoc.base_price || 0);
           } else if (rateType === 'SRA') {
@@ -975,14 +1002,37 @@ async function convert(id, body = {}, user) {
         }
 
         if (!productId) {
-          continue;
+          const createdProduct = await Product.create({
+            company_id: lead.company_id || user.company_id,
+            product_name: pName,
+            unit: prodItem.unit || 'pcs',
+            base_price: unitPrice,
+            minimum_sale_rate: unitPrice,
+            mrp: unitPrice,
+            gst_percent: gstPct,
+            created_by: user._id,
+          });
+          productId = createdProduct._id;
         }
 
         const gross = unitPrice * qty;
-        const taxable = gross;
-        const gst = (taxable * gstPct) / 100;
-        const total = taxable + gst;
+        let discPct = Number(prodItem.discount_percent) || 0;
+        let discAmt = Number(prodItem.discount_amount) || 0;
+        if (discPct > 0) {
+          discAmt = Math.round(((gross * discPct) / 100) * 100) / 100;
+        } else if (discAmt > 0 && gross > 0) {
+          discPct = Math.round(((discAmt / gross) * 100) * 100) / 100;
+        } else {
+          discPct = 0;
+          discAmt = 0;
+        }
+        discAmt = Math.min(gross, discAmt);
+        const taxable = Math.max(0, Math.round((gross - discAmt) * 100) / 100);
+        const gst = Math.round(((taxable * gstPct) / 100) * 100) / 100;
+        const total = Math.round((taxable + gst) * 100) / 100;
 
+        grossSubtotal += gross;
+        totalDiscount += discAmt;
         subtotal += taxable;
         totalTax += gst;
 
@@ -994,8 +1044,8 @@ async function convert(id, body = {}, user) {
           ordered_quantity: qty,
           unit_price: unitPrice,
           applied_rate_type: rateType,
-          discount_percent: 0,
-          discount_amount: 0,
+          discount_percent: discPct,
+          discount_amount: discAmt,
           gst_percent: gstPct,
           taxable_amount: taxable,
           gst_amount: gst,
@@ -1010,7 +1060,7 @@ async function convert(id, body = {}, user) {
       throw new ApiError(400, 'Order must contain at least one valid product from the catalog');
     }
 
-    const grandTotal = subtotal + totalTax;
+    const grandTotal = Math.round((subtotal + totalTax) * 100) / 100;
     const orderData = body.order_data || {};
 
     createdOrder = await Order.create({
@@ -1019,15 +1069,18 @@ async function convert(id, body = {}, user) {
       order_date: orderData.order_date ? new Date(orderData.order_date) : new Date(),
       expected_delivery_date: orderData.delivery_date ? new Date(orderData.delivery_date) : undefined,
       party: targetPartyId,
+      customer: targetPartyId,
       lead: lead._id,
       assigned_sales_user: lead.assigned_to || user._id,
       current_assignee: lead.assigned_to || user._id,
       current_department: 'sales',
       pending_with_role: 'sales',
       order_items: items,
-      subtotal,
+      subtotal: grossSubtotal,
+      discount_amount: totalDiscount,
       taxable_amount: subtotal,
       gst_amount: totalTax,
+      total_amount: grandTotal,
       grand_total: grandTotal,
       remarks: orderData.remarks || body.notes || undefined,
       status: 'submitted',
@@ -1061,6 +1114,22 @@ async function convert(id, body = {}, user) {
   lead.updated_by = user._id;
 
   await lead.save();
+
+  if (body.quotation_id && mongoose.Types.ObjectId.isValid(body.quotation_id)) {
+    const { LeadQuotation } = getModels();
+    await LeadQuotation.findByIdAndUpdate(body.quotation_id, {
+      status: 'converted',
+      party_id: targetPartyId,
+      conversion: {
+        converted_at: new Date(),
+        converted_by: user._id,
+        party_id: targetPartyId,
+        order_id: createdOrder ? createdOrder._id : undefined,
+        notes: body.notes ? String(body.notes).trim() : '',
+      },
+      updated_by: user._id,
+    });
+  }
 
   await activityService.create({
     actor: user._id,

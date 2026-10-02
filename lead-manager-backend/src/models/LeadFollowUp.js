@@ -6,7 +6,8 @@ import mongoose from "mongoose";
 
 const leadFollowUpSchema = new mongoose.Schema(
   {
-    lead: { type: mongoose.Schema.Types.ObjectId, ref: "Lead", required: true, index: true },
+    lead: { type: mongoose.Schema.Types.ObjectId, ref: "Lead", default: null, index: true },
+    quotation: { type: mongoose.Schema.Types.ObjectId, ref: "LeadQuotation", default: null, index: true },
     follow_up_date: { type: Date, required: true, index: true },
     follow_up_time: { type: String, trim: true },
     type: {
