@@ -286,6 +286,23 @@ function escapeHtml(value) {
     .replace(/"/g, '&quot;');
 }
 
+function stripHtml(html) {
+  if (!html) return '';
+  return String(html).replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function getUserRoleLabel(user) {
+  if (!user) return 'Senior Authority';
+  const roles = getWorkPlannerPortalRoles(user);
+  if (roles.includes('admin')) return 'Portal Admin';
+  if (roles.includes('coordinator')) return 'Coordinator';
+  if (roles.includes('manager')) return 'Senior Manager';
+  const r = String(user.role || '').toLowerCase();
+  if (r.includes('admin')) return 'Admin';
+  if (r.includes('manager')) return 'Manager';
+  return 'Senior Authority';
+}
+
 function renderVisitsTable(visitsList) {
   if (!Array.isArray(visitsList) || visitsList.length === 0) {
     return '<p style="font-size: 13px; color: #64748b; font-style: italic; margin: 8px 0;">No visits recorded for this plan.</p>';
@@ -770,6 +787,156 @@ async function notifyTaskCreated({ task, planDoc = null, actorUser = null }) {
 }
 
 /**
+ * 3.5. SENIOR DIRECTIVE / AUTHORITY REMARK ADDED AUTO NOTIFICATION (IN-APP + EMAIL TO JUNIOR)
+ */
+async function notifyAuthorityRemarkAdded({ planId, visitId = null, workId = null, remarkText, actorUser }) {
+  try {
+    if (!remarkText || !String(remarkText).trim()) return;
+    const { WorkPlan, WorkPlanVisit, WorkPlanWork, User } = getModels();
+
+    let plan = null;
+    let visit = null;
+    let task = null;
+
+    if (planId) {
+      plan = await WorkPlan.findOne({ _id: planId, deletedAt: null }).lean();
+    }
+    if (visitId) {
+      visit = await WorkPlanVisit.findOne({ _id: visitId, deletedAt: null }).lean();
+      if (!plan && visit?.work_plan) {
+        plan = await WorkPlan.findOne({ _id: visit.work_plan, deletedAt: null }).lean();
+      }
+    }
+    if (workId) {
+      task = await WorkPlanWork.findOne({ _id: workId, deletedAt: null }).lean();
+      if (!plan && task?.work_plan) {
+        plan = await WorkPlan.findOne({ _id: task.work_plan, deletedAt: null }).lean();
+      }
+    }
+
+    if (!plan) return;
+
+    const salesUserId = plan.sales_user;
+    if (!salesUserId) return;
+
+    const salesUser = await User.findById(salesUserId).lean();
+    if (!salesUser) return;
+
+    const actorId = String(actorUser?._id || actorUser?.id || '');
+    const juniorId = String(salesUser._id || salesUser.id || '');
+
+    // If junior is somehow acting on own, do not self-notify
+    if (actorId && juniorId && actorId === juniorId) {
+      return;
+    }
+
+    const seniorName = actorUser?.name || actorUser?.email?.split('@')[0] || 'Senior Authority';
+    const seniorRole = getUserRoleLabel(actorUser);
+    const planDateStr = formatDate(plan.plan_date);
+    const cleanRemarkText = stripHtml(remarkText);
+
+    let itemTypeLabel = 'Work Plan';
+    let itemTitle = `Work Plan (${planDateStr})`;
+    if (visit) {
+      itemTypeLabel = 'Field Visit';
+      itemTitle = visit.party_name || (typeof visit.party === 'object' ? visit.party?.party_name : '') || 'Field Visit';
+    } else if (task) {
+      itemTypeLabel = 'Task';
+      itemTitle = task.title || 'Task';
+    }
+
+    // 1. In-App Notification to the concerned junior
+    const notifTitle = `Senior Directive: ${itemTitle}`;
+    const notifMessage = `${seniorName} (${seniorRole}) added guidance on your ${itemTypeLabel.toLowerCase()}: "${cleanRemarkText.length > 120 ? cleanRemarkText.slice(0, 117) + '...' : cleanRemarkText}"`;
+
+    await sendInAppNotification(juniorId, {
+      title: notifTitle,
+      message: notifMessage,
+      type: 'warning',
+      entity_type: 'work_plan',
+      entity_id: plan._id,
+    });
+
+    // 2. Email Notification to the concerned junior
+    if (salesUser.email) {
+      const baseUrl = (FRONTEND_URL || process.env.FRONTEND_URL || '').replace(/\/$/, '');
+      const workPlanUrl = baseUrl ? `${baseUrl}/work-plans?planId=${plan._id}` : '';
+      const subject = `Senior Directive Added: ${itemTitle} (${planDateStr})`;
+
+      const emailHtml = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 650px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
+          <div style="background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%); color: #ffffff; padding: 24px; border-radius: 8px 8px 0 0;">
+            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.9; margin-bottom: 4px; font-weight: 700;">Work Planner &bull; Senior Guidance</div>
+            <h2 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #ffffff;">Senior Directive / Remark Added</h2>
+            <p style="margin: 0; font-size: 14px; opacity: 0.95;">Guidance from <strong>${escapeHtml(seniorName)}</strong> (${escapeHtml(seniorRole)})</p>
+          </div>
+          <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
+            <p style="font-size: 14px; margin-top: 0; color: #334155;">
+              Hi <strong>${escapeHtml(salesUser.name || 'Executive')}</strong>,
+            </p>
+            <p style="font-size: 13px; color: #475569; margin-bottom: 16px;">
+              A senior authority has recorded directives / feedback for your scheduled ${escapeHtml(itemTypeLabel.toLowerCase())}:
+            </p>
+
+            <table style="width: 100%; margin-bottom: 18px; font-size: 13px; border-collapse: collapse;">
+              <tr>
+                <td style="padding: 6px 0; color: #64748b; width: 130px;"><strong>Item Type:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a;"><span style="background: #f3e8ff; color: #7e22ce; padding: 2px 8px; border-radius: 4px; font-weight: 600; font-size: 12px;">${escapeHtml(itemTypeLabel)}</span></td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Item Target:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a; font-weight: 600;">${escapeHtml(itemTitle)}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Plan Date:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a;">${escapeHtml(planDateStr)}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Given By:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a;">${escapeHtml(seniorName)} (${escapeHtml(seniorRole)})</td>
+              </tr>
+            </table>
+
+            <div style="background-color: #faf5ff; border: 1px solid #e9d5ff; border-left: 4px solid #9333ea; border-radius: 6px; padding: 14px; margin: 18px 0;">
+              <div style="font-size: 11px; font-weight: 700; color: #7e22ce; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.05em;">Senior Directive / Instruction:</div>
+              <div style="font-size: 13px; color: #1e1b4b; line-height: 1.6;">${remarkText}</div>
+            </div>
+
+            ${
+              workPlanUrl
+                ? `
+            <div style="margin: 24px 0 12px 0; text-align: center;">
+              <a href="${workPlanUrl}" style="background-color: #7c3aed; color: #ffffff; padding: 10px 22px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 13px; display: inline-block;">
+                Open Work Plan
+              </a>
+            </div>
+            `
+                : ''
+            }
+            <p style="font-size: 11px; color: #94a3b8; margin-top: 24px; border-top: 1px solid #f1f5f9; padding-top: 12px;">
+              This is an automated notification from Work Planner. Please review and adhere to the guidance provided.
+            </p>
+          </div>
+        </div>
+      `;
+
+      await emailHelper.sendEmail(
+        salesUser.email,
+        subject,
+        cleanRemarkText,
+        emailHtml
+      ).catch((err) => {
+        logger.warn(`[AutoNotification] Failed sending senior remark email to ${salesUser.email}: ${err.message}`);
+      });
+    }
+
+    logger.info(`[AutoNotification] Dispatched senior remark in-app & email notices for ${itemTypeLabel} (Plan: ${plan._id}) to junior ${salesUser.email}`);
+  } catch (err) {
+    logger.error(`[AutoNotification] Failed to dispatch senior remark notification: ${err.message}`);
+  }
+}
+
+/**
  * 4. DAY END CREATED / WORK PLAN COMPLETED AUTO NOTIFICATION
  */
 async function notifyDayEndCompleted({ planId, actorUser, dayEndData = null }) {
@@ -1215,6 +1382,7 @@ module.exports = {
   notifyWorkPlanCreated,
   notifyVisitCreated,
   notifyTaskCreated,
+  notifyAuthorityRemarkAdded,
   notifyDayEndCompleted,
   sendPendingWorkPlanMorningReminder,
   sendPendingDayEndEveningReminder,

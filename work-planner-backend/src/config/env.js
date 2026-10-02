@@ -22,4 +22,7 @@ module.exports = {
   WORK_PLANNER_REMINDERS_ENABLED: process.env.WORK_PLANNER_REMINDERS_ENABLED || 'true',
   POWER_APP_BASE_URL: process.env.POWER_APP_BASE_URL || process.env.POWER_APP_SERVICE_URL || 'https://power.spspl.com',
   POWER_APP_API_KEY: process.env.POWER_APP_API_KEY || '',
+  OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
+  OPENAI_MODEL: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+  OPENAI_BASE_URL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
 };

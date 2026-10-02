@@ -117,6 +117,9 @@ export const baseApi = createApi({
     "PowerFacility",
     "PowerEnquiry",
     "Notifications",
+    "WorkPlanAnalytics",
+    "WorkPlanAiAnalysis",
+    "WorkPlanTeamAnalytics",
   ],
   endpoints: () => ({}),
 });

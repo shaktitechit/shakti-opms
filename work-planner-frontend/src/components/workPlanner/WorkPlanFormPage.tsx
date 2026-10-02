@@ -27,6 +27,8 @@ import {
   Lock,
   Sparkles,
   RotateCcw,
+  Loader2,
+  History,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useGetUsersQuery } from "@/store/api/authApiSlice";
@@ -63,6 +65,14 @@ import { VisitFormModal } from "./VisitFormModal";
 import { WorkFormModal } from "./WorkFormModal";
 import { WorkPlanCreateMailModal, type CreateEmailPayload } from "./WorkPlanCreateMailModal";
 import { SelectPreviousPendingItemsModal } from "./SelectPreviousPendingItemsModal";
+import {
+  saveWorkPlanDraft,
+  loadWorkPlanDraft,
+  clearWorkPlanDraft,
+  isDraftMeaningful,
+  formatDraftTime,
+  type WorkPlanFormDraft,
+} from "./workPlanDraftStorage";
 
 function extractErrorMessage(err: unknown, fallbackMsg: string): string {
   if (!err) return fallbackMsg;
@@ -291,6 +301,13 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   const [execSearch, setExecSearch] = useState("");
   const [execDropdownOpen, setExecDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Real-time Draft States
+  const [draftStatus, setDraftStatus] = useState<"idle" | "saving" | "saved" | "restored">("idle");
+  const [lastDraftSavedAt, setLastDraftSavedAt] = useState<string | null>(null);
+  const [availableDraft, setAvailableDraft] = useState<WorkPlanFormDraft | null>(null);
+  const isHydratedRef = useRef(false);
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Close dropdowns on click outside
   useEffect(() => {
@@ -1357,6 +1374,194 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     }
   }
 
+  // --- Real-Time Draft Engine ---
+  // Check for unsaved real-time draft when target user or planDate changes
+  useEffect(() => {
+    if (isPlanCompleted || !targetUserId || !planDate) {
+      setAvailableDraft(null);
+      return;
+    }
+    const savedDraft = loadWorkPlanDraft(targetUserId, planDate);
+    if (savedDraft && isDraftMeaningful(savedDraft)) {
+      setAvailableDraft(savedDraft);
+      setLastDraftSavedAt(savedDraft.lastSavedAt);
+    } else {
+      setAvailableDraft(null);
+    }
+  }, [targetUserId, planDate, isPlanCompleted]);
+
+  // Mark hydration settled once plan or existing check loading completes
+  useEffect(() => {
+    if (!loading && !checkingExisting) {
+      const t = setTimeout(() => {
+        isHydratedRef.current = true;
+      }, 350);
+      return () => clearTimeout(t);
+    }
+  }, [loading, checkingExisting]);
+
+  // Real-time Debounced Auto-Save
+  useEffect(() => {
+    if (!isHydratedRef.current || loading || checkingExisting || isPlanCompleted || !planDate || !targetUserId) {
+      return;
+    }
+
+    const draftPayload = {
+      salesUserId: targetUserId,
+      planDate,
+      planType,
+      location,
+      remarks,
+      isDiscussedWithManager,
+      discussedManagerId,
+      discussedManagerName,
+      discussionMethod,
+      visits,
+      works,
+    };
+
+    if (!isDraftMeaningful(draftPayload)) {
+      return;
+    }
+
+    setDraftStatus("saving");
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+
+    autoSaveTimerRef.current = setTimeout(() => {
+      const saved = saveWorkPlanDraft(draftPayload);
+      if (saved) {
+        setDraftStatus("saved");
+        setLastDraftSavedAt(new Date().toISOString());
+      } else {
+        setDraftStatus("idle");
+      }
+    }, 600);
+
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [
+    targetUserId,
+    planDate,
+    planType,
+    location,
+    remarks,
+    isDiscussedWithManager,
+    discussedManagerId,
+    discussedManagerName,
+    discussionMethod,
+    visits,
+    works,
+    loading,
+    checkingExisting,
+    isPlanCompleted,
+  ]);
+
+  // Flush unsaved draft synchronously before page unload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (isHydratedRef.current && !isPlanCompleted && planDate && targetUserId) {
+        const draftPayload = {
+          salesUserId: targetUserId,
+          planDate,
+          planType,
+          location,
+          remarks,
+          isDiscussedWithManager,
+          discussedManagerId,
+          discussedManagerName,
+          discussionMethod,
+          visits,
+          works,
+        };
+        if (isDraftMeaningful(draftPayload)) {
+          saveWorkPlanDraft(draftPayload);
+        }
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [
+    targetUserId,
+    planDate,
+    planType,
+    location,
+    remarks,
+    isDiscussedWithManager,
+    discussedManagerId,
+    discussedManagerName,
+    discussionMethod,
+    visits,
+    works,
+    isPlanCompleted,
+  ]);
+
+  const handleRestoreDraft = () => {
+    if (!availableDraft) return;
+    if (availableDraft.planType) setPlanType(availableDraft.planType);
+    if (availableDraft.location !== undefined) setLocation(availableDraft.location);
+    if (availableDraft.remarks !== undefined) setRemarks(availableDraft.remarks);
+    setIsDiscussedWithManager(Boolean(availableDraft.isDiscussedWithManager));
+    setDiscussedManagerId(availableDraft.discussedManagerId || "");
+    setDiscussedManagerName(availableDraft.discussedManagerName || "");
+    if (availableDraft.discussionMethod) setDiscussionMethod(availableDraft.discussionMethod);
+    if (Array.isArray(availableDraft.visits)) setVisits(availableDraft.visits);
+    if (Array.isArray(availableDraft.works)) setWorks(availableDraft.works);
+
+    setDraftStatus("restored");
+    setLastDraftSavedAt(availableDraft.lastSavedAt || new Date().toISOString());
+    setAvailableDraft(null);
+    toast.success("Real-time draft restored successfully!");
+  };
+
+  const handleDiscardDraft = () => {
+    if (targetUserId && planDate) {
+      clearWorkPlanDraft(targetUserId, planDate);
+    }
+    setAvailableDraft(null);
+    setDraftStatus("idle");
+    setLastDraftSavedAt(null);
+    toast.info("Draft discarded.");
+  };
+
+  const handleManualSaveDraft = () => {
+    if (isPlanCompleted) {
+      toast.error("Completed work plans cannot be saved as drafts.");
+      return;
+    }
+    if (!planDate || !targetUserId) {
+      toast.error("Plan date and executive are required to save draft.");
+      return;
+    }
+    const draftPayload = {
+      salesUserId: targetUserId,
+      planDate,
+      planType,
+      location,
+      remarks,
+      isDiscussedWithManager,
+      discussedManagerId,
+      discussedManagerName,
+      discussionMethod,
+      visits,
+      works,
+    };
+    const ok = saveWorkPlanDraft(draftPayload);
+    if (ok) {
+      const nowIso = new Date().toISOString();
+      setDraftStatus("saved");
+      setLastDraftSavedAt(nowIso);
+      setAvailableDraft(null);
+      toast.success("Work plan draft saved locally.");
+    } else {
+      toast.error("Failed to save draft to storage.");
+    }
+  };
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (isPlanCompleted) {
@@ -1621,6 +1826,14 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         throw submitErr;
       }
 
+      // Clear local storage draft upon successful submission
+      if (targetUserId && planDate) {
+        clearWorkPlanDraft(targetUserId, planDate);
+      }
+      setDraftStatus("idle");
+      setLastDraftSavedAt(null);
+      setAvailableDraft(null);
+
       toast.success(isEditing ? "Work plan updated and email dispatched successfully!" : "Work plan created and email dispatched successfully!");
       setCreateMailModalOpen(false);
       router.push("/dashboard/plans");
@@ -1648,20 +1861,44 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   return (
     <div className="mx-auto max-w-3xl space-y-6 font-sans">
       {/* Top Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <Link
             href="/dashboard/plans"
-            className="rounded-lg border border-border p-2 text-muted hover:bg-surface-muted hover:text-foreground transition inline-flex items-center justify-center cursor-pointer"
+            className="rounded-lg border border-border p-2 text-muted hover:bg-surface-muted hover:text-foreground transition inline-flex items-center justify-center cursor-pointer shrink-0"
             title="Back to Work Plans"
             aria-label="Back to Work Plans"
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
           <div>
-            <h1 className="text-xl font-bold text-foreground">
-              {isPlanCompleted ? "Work Plan (Completed)" : isEditing ? "Edit Work Plan" : isCopying ? "Copy Work Plan" : "Create Work Plan"}
-            </h1>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <h1 className="text-xl font-bold text-foreground">
+                {isPlanCompleted ? "Work Plan (Completed)" : isEditing ? "Edit Work Plan" : isCopying ? "Copy Work Plan" : "Create Work Plan"}
+              </h1>
+              {/* Draft Status Badges */}
+              {!isPlanCompleted && draftStatus === "saving" && (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  Saving draft…
+                </span>
+              )}
+              {!isPlanCompleted && draftStatus === "saved" && lastDraftSavedAt && (
+                <span
+                  className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400"
+                  title={`Draft persisted at ${lastDraftSavedAt}`}
+                >
+                  <Check className="h-3 w-3" />
+                  Draft auto-saved ({formatDraftTime(lastDraftSavedAt)})
+                </span>
+              )}
+              {!isPlanCompleted && draftStatus === "restored" && (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-500/20 bg-blue-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-blue-600 dark:text-blue-400">
+                  <RotateCcw className="h-3 w-3" />
+                  Draft restored
+                </span>
+              )}
+            </div>
             <p className="text-xs text-muted">
               {isPlanCompleted
                 ? `Work plan for ${planDate} is completed and locked. Creation and updating are disabled.`
@@ -1675,7 +1912,62 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
             </p>
           </div>
         </div>
+
+        {/* Header Right Actions */}
+        {!isPlanCompleted && (
+          <div className="flex items-center gap-2 self-end sm:self-center">
+            <button
+              type="button"
+              onClick={handleManualSaveDraft}
+              disabled={submitting || checkingExisting}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card hover:bg-surface-muted px-3 py-1.5 text-xs font-semibold text-foreground transition shadow-2xs cursor-pointer"
+              title="Save current work plan state as a local draft"
+            >
+              <Save className="h-3.5 w-3.5 text-muted" />
+              <span>Save Draft</span>
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* Unsaved Real-time Draft Recovery Alert Banner */}
+      {availableDraft && !isPlanCompleted && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 space-y-2 text-xs shadow-xs animate-in fade-in duration-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start sm:items-center gap-2.5 text-amber-700 dark:text-amber-300">
+              <History className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400 mt-0.5 sm:mt-0" />
+              <div>
+                <span className="font-bold">Unsaved Real-time Draft Found</span>
+                <span className="ml-1.5 text-muted font-normal text-[11px]">
+                  (Saved {formatDraftTime(availableDraft.lastSavedAt)})
+                </span>
+                <p className="text-muted text-[11px] mt-0.5">
+                  Contains {availableDraft.visits?.length || 0} visit{availableDraft.visits?.length === 1 ? "" : "s"} and {availableDraft.works?.length || 0} task{availableDraft.works?.length === 1 ? "" : "s"}
+                  {availableDraft.location ? ` • Location: "${availableDraft.location}"` : ""}.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+              <button
+                type="button"
+                onClick={handleRestoreDraft}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 px-3 py-1.5 text-xs font-bold text-white shadow-xs transition cursor-pointer"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Restore Draft
+              </button>
+              <button
+                type="button"
+                onClick={handleDiscardDraft}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card hover:bg-surface-muted px-2.5 py-1.5 text-xs font-semibold text-muted hover:text-foreground transition cursor-pointer"
+              >
+                <X className="h-3.5 w-3.5" />
+                Discard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Existing Plan Notice Banner / Completed Lock Banner */}
       {isPlanCompleted ? (
@@ -2651,39 +2943,60 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         )}
 
         {/* Action Buttons */}
-        <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
-          <Link
-            href="/dashboard/plans"
-            className="rounded-lg border border-border px-4 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition"
-          >
-            Cancel
-          </Link>
-          <button
-            type="submit"
-            disabled={submitting || checkingExisting || isPlanCompleted}
-            className={`inline-flex items-center gap-2 rounded-lg px-5 py-2 text-xs font-bold text-white shadow-xs transition ${
-              isPlanCompleted
-                ? "bg-gray-400 dark:bg-gray-700 cursor-not-allowed opacity-60"
-                : "bg-emerald-600 hover:bg-emerald-700 cursor-pointer"
-            }`}
-          >
-            {isPlanCompleted ? (
-              <>
-                <Lock className="h-4 w-4" />
-                Completed (Locked)
-              </>
-            ) : isEditing ? (
-              <>
-                <Mail className="h-4 w-4" />
-                {submitting ? "Updating…" : "Update & Mail"}
-              </>
-            ) : (
-              <>
-                <Mail className="h-4 w-4" />
-                {submitting ? "Processing…" : "Create & Mail"}
-              </>
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-border">
+          <div>
+            {!isPlanCompleted && lastDraftSavedAt && (
+              <span className="text-[11px] text-muted flex items-center gap-1.5">
+                <Check className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                Auto-saved in real time ({formatDraftTime(lastDraftSavedAt)})
+              </span>
             )}
-          </button>
+          </div>
+          <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+            <Link
+              href="/dashboard/plans"
+              className="rounded-lg border border-border px-4 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition"
+            >
+              Cancel
+            </Link>
+            {!isPlanCompleted && (
+              <button
+                type="button"
+                onClick={handleManualSaveDraft}
+                disabled={submitting || checkingExisting}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card hover:bg-surface-muted px-4 py-2 text-xs font-semibold text-foreground transition shadow-2xs cursor-pointer"
+              >
+                <Save className="h-3.5 w-3.5 text-muted" />
+                Save Draft
+              </button>
+            )}
+            <button
+              type="submit"
+              disabled={submitting || checkingExisting || isPlanCompleted}
+              className={`inline-flex items-center gap-2 rounded-lg px-5 py-2 text-xs font-bold text-white shadow-xs transition ${
+                isPlanCompleted
+                  ? "bg-gray-400 dark:bg-gray-700 cursor-not-allowed opacity-60"
+                  : "bg-emerald-600 hover:bg-emerald-700 cursor-pointer"
+              }`}
+            >
+              {isPlanCompleted ? (
+                <>
+                  <Lock className="h-4 w-4" />
+                  Completed (Locked)
+                </>
+              ) : isEditing ? (
+                <>
+                  <Mail className="h-4 w-4" />
+                  {submitting ? "Updating…" : "Update & Mail"}
+                </>
+              ) : (
+                <>
+                  <Mail className="h-4 w-4" />
+                  {submitting ? "Processing…" : "Create & Mail"}
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </form>
 

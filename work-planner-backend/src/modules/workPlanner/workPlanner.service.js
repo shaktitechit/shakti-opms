@@ -19,6 +19,7 @@ const {
 const {
   notifyWorkPlanCreated,
   notifyDayEndCompleted,
+  notifyAuthorityRemarkAdded,
 } = require('./workPlannerAutoNotification.service');
 const {
   EDITABLE_PLAN_STATUSES,
@@ -54,7 +55,7 @@ function getUserRole(user) {
 }
 
 function applyAuthorityRemarks(doc, body, user) {
-  if (!doc || !body) return;
+  if (!doc || !body) return null;
   const remarkText =
     (typeof body.manager_remarks === 'string' && body.manager_remarks.trim()) ||
     (typeof body.authority_remark === 'string' && body.authority_remark.trim()) ||
@@ -75,7 +76,9 @@ function applyAuthorityRemarks(doc, body, user) {
       role: uRole,
       created_at: new Date(),
     });
+    return remarkText;
   }
+  return null;
 }
 
 /** Aggregate $match needs ObjectId; req.user ids are strings (see toReqUser). */
@@ -914,7 +917,7 @@ async function update(id, body, user) {
     plan.status = body.status;
   }
 
-  applyAuthorityRemarks(plan, body, user);
+  const appliedRemark = applyAuthorityRemarks(plan, body, user);
 
   // Rejected plans return to draft when edited
   if (plan.status === 'rejected' && body.status === undefined) {
@@ -934,6 +937,12 @@ async function update(id, body, user) {
       throw new ApiError(409, 'A work plan already exists for this sales user on the selected date');
     }
     throw err;
+  }
+
+  if (appliedRemark) {
+    notifyAuthorityRemarkAdded({ planId: plan._id, remarkText: appliedRemark, actorUser: user }).catch((err) => {
+      console.error('[WorkPlanner] Error notifying authority remark added:', err);
+    });
   }
 
   await logActivity(user, plan._id, 'updated', 'Work plan updated');
@@ -1302,12 +1311,18 @@ async function updateStandaloneVisit(visitId, body, user) {
     visit.rescheduled_date = rescheduleDateStr ? toValidDate(rescheduleDateStr, rescheduleDateStr) : undefined;
   }
 
-  applyAuthorityRemarks(visit, body, user);
+  const appliedRemark = applyAuthorityRemarks(visit, body, user);
 
   visit.updated_by = userId(user);
   visit.updated_by_role = getUserRole(user);
 
   await visit.save();
+
+  if (appliedRemark) {
+    notifyAuthorityRemarkAdded({ planId: visit.work_plan, visitId: visit._id, remarkText: appliedRemark, actorUser: user }).catch((err) => {
+      console.error('[WorkPlanner] Error notifying authority remark added:', err);
+    });
+  }
 
   if (body.status === 'rescheduled' && rescheduleDateStr && body.auto_schedule !== false) {
     try {
@@ -1547,12 +1562,18 @@ async function updateVisit(planId, visitId, body, user) {
     visit.rescheduled_date = rescheduleDateStr ? toValidDate(rescheduleDateStr, rescheduleDateStr) : undefined;
   }
 
-  applyAuthorityRemarks(visit, body, user);
+  const appliedRemark = applyAuthorityRemarks(visit, body, user);
 
   visit.updated_by = userId(user);
   visit.updated_by_role = getUserRole(user);
 
   await visit.save();
+
+  if (appliedRemark) {
+    notifyAuthorityRemarkAdded({ planId: visit.work_plan, visitId: visit._id, remarkText: appliedRemark, actorUser: user }).catch((err) => {
+      console.error('[WorkPlanner] Error notifying authority remark added:', err);
+    });
+  }
 
   if (body.status === 'rescheduled' && rescheduleDateStr && body.auto_schedule !== false) {
     try {
@@ -1845,12 +1866,18 @@ async function completeVisit(planId, visitId, body, user) {
   if (!visit.actual_check_out) visit.actual_check_out = new Date();
   if (!visit.actual_check_in) visit.actual_check_in = visit.actual_check_out;
 
-  applyAuthorityRemarks(visit, body, user);
+  const appliedRemark = applyAuthorityRemarks(visit, body, user);
 
   visit.updated_by = userId(user);
   visit.updated_by_role = getUserRole(user);
 
   await visit.save();
+
+  if (appliedRemark) {
+    notifyAuthorityRemarkAdded({ planId, visitId: visit._id, remarkText: appliedRemark, actorUser: user }).catch((err) => {
+      console.error('[WorkPlanner] Error notifying authority remark added:', err);
+    });
+  }
 
   await logActivity(user, planId, 'status_changed', `Visit ${visit.sequence} completed`);
   await maybeCompletePlan(planId, user);
@@ -2926,12 +2953,18 @@ async function updateStandaloneWork(workId, body, user) {
     work.rescheduled_date = rescheduleDateStr ? toValidDate(rescheduleDateStr, rescheduleDateStr) : undefined;
   }
 
-  applyAuthorityRemarks(work, body, user);
+  const appliedRemark = applyAuthorityRemarks(work, body, user);
 
   work.updated_by = userId(user);
   work.updated_by_role = getUserRole(user);
 
   await work.save();
+
+  if (appliedRemark) {
+    notifyAuthorityRemarkAdded({ planId: work.work_plan, workId: work._id, remarkText: appliedRemark, actorUser: user }).catch((err) => {
+      console.error('[WorkPlanner] Error notifying authority remark added:', err);
+    });
+  }
 
   if (body.status === 'rescheduled' && rescheduleDateStr && body.auto_schedule !== false) {
     try {
@@ -3095,12 +3128,18 @@ async function updateWork(planId, workId, body, user) {
     work.rescheduled_date = rescheduleDateStr ? toValidDate(rescheduleDateStr, rescheduleDateStr) : undefined;
   }
 
-  applyAuthorityRemarks(work, body, user);
+  const appliedRemark = applyAuthorityRemarks(work, body, user);
 
   work.updated_by = userId(user);
   work.updated_by_role = getUserRole(user);
 
   await work.save();
+
+  if (appliedRemark) {
+    notifyAuthorityRemarkAdded({ planId: work.work_plan, workId: work._id, remarkText: appliedRemark, actorUser: user }).catch((err) => {
+      console.error('[WorkPlanner] Error notifying authority remark added:', err);
+    });
+  }
 
   if (body.status === 'rescheduled' && rescheduleDateStr && body.auto_schedule !== false) {
     try {

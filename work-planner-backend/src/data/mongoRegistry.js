@@ -521,6 +521,26 @@ function registerModels() {
     mongoose.model('WorkPlannerReportingEdge', reportingEdgeSchema);
   }
 
+  // WorkPlanAnalyticsCache schema (stores 360° AI assessment and aggregated metrics)
+  if (!mongoose.models.WorkPlanAnalyticsCache) {
+    const analyticsCacheSchema = new mongoose.Schema(
+      {
+        sales_user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+        plan_id: { type: mongoose.Schema.Types.ObjectId, ref: 'WorkPlan', default: null, index: true },
+        from_date: { type: Date, required: true },
+        to_date: { type: Date, required: true },
+        scope_key: { type: String, required: true, index: true },
+        metrics_snapshot: { type: mongoose.Schema.Types.Mixed, required: true },
+        ai_assessment: { type: mongoose.Schema.Types.Mixed, required: true },
+        generated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        expires_at: { type: Date, index: { expires: 0 } },
+      },
+      { timestamps: true }
+    );
+    analyticsCacheSchema.index({ sales_user: 1, scope_key: 1 });
+    mongoose.model('WorkPlanAnalyticsCache', analyticsCacheSchema);
+  }
+
   // Project management schemas
   if (!mongoose.models.Project) {
     require('../models/Project');
@@ -548,6 +568,7 @@ function registerModels() {
     WorkPlanExpense: mongoose.model('WorkPlanExpense'),
     UserWorkPlannerSettings: mongoose.model('UserWorkPlannerSettings'),
     WorkPlannerReportingEdge: mongoose.model('WorkPlannerReportingEdge'),
+    WorkPlanAnalyticsCache: mongoose.model('WorkPlanAnalyticsCache'),
     Project: mongoose.model('Project'),
     ProjectActionStep: mongoose.model('ProjectActionStep'),
     ProjectMessage: mongoose.model('ProjectMessage'),

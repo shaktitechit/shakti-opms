@@ -138,7 +138,6 @@ export function ItemStatusRemarksModal({
 
   const [selectedStatus, setSelectedStatus] = useState<WorkflowStatus>(defaultSelectedStatus);
   const [remarks, setRemarks] = useState("");
-  const [managerRemarks, setManagerRemarks] = useState("");
   const [rescheduledDate, setRescheduledDate] = useState("");
   const [selfieFile, setSelfieFile] = useState<File | null>(null);
   const [selfiePreview, setSelfiePreview] = useState<string | null>(null);
@@ -192,7 +191,6 @@ export function ItemStatusRemarksModal({
         setRemarks(initialOutcome || "");
       }
 
-      setManagerRemarks(initialManagerRemarks || "");
       setRescheduledDate(
         initialRescheduledDate
           ? initialRescheduledDate.slice(0, 10)
@@ -267,10 +265,8 @@ export function ItemStatusRemarksModal({
     }
 
     const cleanText = stripHtml(remarks).trim();
-    const cleanManagerText = stripHtml(managerRemarks).trim();
 
-    // If executive or regular status update, remarks are required unless higher authority is providing manager remarks
-    if (!cleanText && !cleanManagerText) {
+    if (!cleanText && !elevatedRole) {
       toast.error(
         selectedStatus === "completed"
           ? "Please provide outcome or completion remarks"
@@ -278,7 +274,7 @@ export function ItemStatusRemarksModal({
           ? "Please enter pending remarks / reason"
           : selectedStatus === "rescheduled"
           ? "Please enter reason for rescheduling"
-          : "Please enter status remarks or supervisory notes"
+          : "Please enter status remarks or execution notes"
       );
       return;
     }
@@ -310,8 +306,7 @@ export function ItemStatusRemarksModal({
 
       await onConfirm({
         status: selectedStatus,
-        remarks: remarks.trim() || (cleanManagerText ? `Status updated by ${currentRoleName}` : ""),
-        managerRemarks: cleanManagerText ? managerRemarks.trim() : undefined,
+        remarks: remarks.trim() || (elevatedRole ? `Status updated by ${currentRoleName}` : ""),
         rescheduledDate: selectedStatus === "rescheduled" ? rescheduledDate : undefined,
         visitAnswers: finalAnswers,
         selfieUrl: uploadedSelfieUrl,
@@ -903,52 +898,26 @@ export function ItemStatusRemarksModal({
               />
             </div>
 
-            {/* Read-only Senior Directive Callout for Executives / Plan Owners */}
-            {!isSeniorViewing && (initialManagerRemarks || managerRemarks) ? (
+            {/* Read-only Senior Directive Callout for Guidance */}
+            {initialManagerRemarks ? (
               <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 dark:bg-purple-950/20 p-4 space-y-1.5 animate-in fade-in duration-150">
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                   <span className="text-xs font-bold text-purple-800 dark:text-purple-200">
-                    Active Senior Directive / Instruction
+                    Active Senior Directive / Supervisory Instruction
                   </span>
                 </div>
                 <div className="text-xs text-foreground whitespace-pre-line">
-                  {stripHtml(initialManagerRemarks || managerRemarks)}
+                  {stripHtml(initialManagerRemarks)}
                 </div>
               </div>
             ) : null}
 
-            {/* Senior Remarks field — only for the plan owner's senior */}
-            {isSeniorViewing && (
-              <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 dark:bg-purple-950/20 p-4 space-y-2.5 animate-in fade-in duration-150">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                    <span className="text-xs font-bold text-foreground">
-                      Senior Remarks / Review Guidance
-                    </span>
-                  </div>
-                  <span className="rounded-full bg-purple-500/15 px-2 py-0.5 text-[10px] font-bold text-purple-700 dark:text-purple-300">
-                    Senior Note
-                  </span>
-                </div>
-                <p className="text-[11px] text-muted leading-tight">
-                  Add senior review remarks, directives, or feedback. This will be stamped with your role and name.
-                </p>
-                <DayEndRichEditor
-                  value={managerRemarks}
-                  onChange={setManagerRemarks}
-                  minHeight="90px"
-                  placeholder="Write senior review feedback, instructions, or follow-up directive..."
-                />
-              </div>
-            )}
-
-            {/* Senior Remarks History — visible to plan owners, executives, and seniors */}
+            {/* Senior Remarks History — read-only reference */}
             {Array.isArray(authorityRemarksHistory) && authorityRemarksHistory.length > 0 && (
               <div className="rounded-xl border border-border bg-surface-muted/40 p-4 space-y-3">
                 <div className="flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4 text-primary" />
+                  <MessageSquare className="h-4 w-4 text-purple-600 dark:text-purple-400" />
                   <h4 className="text-xs font-bold text-foreground">
                     Senior Remarks History ({authorityRemarksHistory.length})
                   </h4>

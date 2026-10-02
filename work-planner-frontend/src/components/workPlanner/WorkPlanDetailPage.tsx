@@ -29,6 +29,8 @@ import {
   Camera,
   RotateCcw,
   Users,
+  Layers,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -84,12 +86,15 @@ import {
 import { VisitFormModal } from "./VisitFormModal";
 import { WorkFormModal } from "./WorkFormModal";
 import { ItemStatusRemarksModal } from "./ItemStatusRemarksModal";
+import { SeniorRemarksModal } from "./SeniorRemarksModal";
 import { RejectWorkPlanModal } from "./RejectWorkPlanModal";
 import { ExpenseListSection } from "./ExpenseListSection";
 import { DayEndSection } from "./DayEndSection";
 import { DayEndMailModal } from "./DayEndMailModal";
 import { DayEndViewModal } from "./DayEndViewModal";
 import { CopyWorkPlanModal } from "./CopyWorkPlanModal";
+import { ChangePlanTypeModal } from "./ChangePlanTypeModal";
+import { PlanAiAnalysisModal } from "./PlanAiAnalysisModal";
 
 interface WorkPlanDetailPageProps {
   planId: string;
@@ -155,12 +160,22 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
     item: WorkPlanVisitRecord | WorkPlanWorkRecord;
   } | null>(null);
 
+  const [seniorRemarksTarget, setSeniorRemarksTarget] = useState<{
+    type: "plan" | "visit" | "task";
+    item?: any;
+    id?: string;
+    title: string;
+    currentStatus?: string;
+    remarks?: string;
+    history?: any[];
+  } | null>(null);
+
   const [rejectPlanModalOpen, setRejectPlanModalOpen] = useState(false);
-  const [planRemarksModalOpen, setPlanRemarksModalOpen] = useState(false);
-  const [planRemarkInput, setPlanRemarkInput] = useState("");
   const [dayEndMailModalOpen, setDayEndMailModalOpen] = useState(false);
   const [dayEndViewModalOpen, setDayEndViewModalOpen] = useState(false);
   const [copyModalOpen, setCopyModalOpen] = useState(false);
+  const [changePlanTypeModalOpen, setChangePlanTypeModalOpen] = useState(false);
+  const [planAiModalOpen, setPlanAiModalOpen] = useState(false);
 
   // Plan Actions
   async function handleSubmitPlan() {
@@ -315,10 +330,26 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
               </h1>
               {renderPlanStatusBadge(plan.status)}
             </div>
-            <p className="text-xs text-muted">
-              Executive: <span className="font-medium text-foreground">{salesUserLabel(plan.sales_user)}</span>
-              {plan.location ? ` • Location: ${plan.location}` : ""}
-              {plan.plan_type ? ` • Type: ${plan.plan_type}` : ""}
+            <p className="text-xs text-muted flex items-center flex-wrap gap-y-1">
+              <span>Executive: <span className="font-medium text-foreground">{salesUserLabel(plan.sales_user)}</span></span>
+              {plan.location ? <span> • Location: <span className="text-foreground">{plan.location}</span></span> : ""}
+              {plan.plan_type ? (
+                <button
+                  type="button"
+                  onClick={() => showStructureActions && setChangePlanTypeModalOpen(true)}
+                  disabled={!showStructureActions}
+                  className={`inline-flex items-center gap-1 font-semibold transition ml-1 px-2 py-0.5 rounded-md border text-[11px] ${
+                    showStructureActions
+                      ? "border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 cursor-pointer"
+                      : "border-border bg-surface-muted text-foreground cursor-default"
+                  }`}
+                  title={showStructureActions ? "Click to change work plan type" : `Plan Type: ${plan.plan_type}`}
+                >
+                  <Layers className="h-3 w-3" />
+                  <span>Type: {plan.plan_type}</span>
+                  {showStructureActions && <Edit3 className="h-2.5 w-2.5 text-primary/70 ml-0.5" />}
+                </button>
+              ) : null}
               {plan.is_discussed_with_manager ? (
                 <span className="inline-flex items-center gap-1 ml-2 text-emerald-600 dark:text-emerald-400 font-semibold">
                   • <MessageSquare className="h-3 w-3 inline" /> Discussed with Manager / Coordinator
@@ -368,6 +399,17 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
             </button>
           )}
 
+          {/* 360 AI Analysis Trigger */}
+          <button
+            type="button"
+            onClick={() => setPlanAiModalOpen(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-2 text-xs font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition cursor-pointer shadow-xs"
+            title="Generate 360° AI Analysis for this work plan, visits, and tasks"
+          >
+            <Sparkles className="h-4 w-4 text-purple-500" />
+            AI 360° Analysis
+          </button>
+
           <button
             type="button"
             onClick={() => setCopyModalOpen(true)}
@@ -376,6 +418,17 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
             <Copy className="h-4 w-4 text-muted" />
             Copy
           </button>
+          {showStructureActions && (
+            <button
+              type="button"
+              onClick={() => setChangePlanTypeModalOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition cursor-pointer"
+              title="Change the plan type / category"
+            >
+              <Layers className="h-4 w-4 text-muted" />
+              Change Type
+            </button>
+          )}
           {showStructureActions && (
             <Link
               href={`/dashboard/plans/new?edit=${planId}`}
@@ -503,10 +556,16 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                 <button
                   type="button"
                   onClick={() => {
-                    setPlanRemarkInput(plan.manager_remarks || "");
-                    setPlanRemarksModalOpen(true);
+                    setSeniorRemarksTarget({
+                      type: "plan",
+                      id: plan._id,
+                      title: `Work Plan (${formatPlanDate(plan.plan_date)})`,
+                      currentStatus: plan.status,
+                      remarks: plan.manager_remarks,
+                      history: plan.authority_remarks,
+                    });
                   }}
-                  className="inline-flex items-center gap-1 rounded bg-purple-500/10 px-2 py-0.5 text-[11px] font-semibold text-purple-700 dark:text-purple-300 hover:bg-purple-500/20 transition cursor-pointer"
+                  className="inline-flex items-center gap-1 rounded bg-purple-500/10 px-2.5 py-1 text-[11px] font-semibold text-purple-700 dark:text-purple-300 hover:bg-purple-500/20 transition cursor-pointer"
                 >
                   <Edit3 className="h-3 w-3" />
                   {plan.manager_remarks ? "Update Senior Remark" : "Add Senior Remark"}
@@ -818,67 +877,89 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                     {/* Visit actions */}
                     {(elevatedRole || showStructureActions) && (
                       <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border">
-                        {elevatedRole ? (
-                          <button
-                            type="button"
-                            onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20 px-3 py-1.5 text-xs font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition cursor-pointer"
-                          >
-                            <ShieldCheck className="h-3.5 w-3.5" />
-                            <span>Status &amp; Senior Remarks</span>
-                          </button>
-                        ) : v.status === "completed" ? (
-                          <button
-                            type="button"
-                            disabled={!canCompleteAction}
-                            onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition disabled:opacity-50 cursor-pointer"
-                          >
-                            <Edit3 className="h-3.5 w-3.5" />
-                            <span>Edit Outcome</span>
-                          </button>
-                        ) : v.status === "checked_in" ? (
-                          <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {elevatedRole && (
                             <button
                               type="button"
-                              disabled={!canCompleteAction}
-                              onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 text-white px-3 py-1.5 text-xs font-bold shadow-xs hover:bg-sky-700 transition disabled:opacity-50 cursor-pointer"
+                              onClick={() =>
+                                setSeniorRemarksTarget({
+                                  type: "visit",
+                                  item: v,
+                                  id: v._id || v.id,
+                                  title:
+                                    typeof v.party === "object"
+                                      ? (v.party as any)?.party_name || "Field Visit"
+                                      : v.party_name || "Field Visit",
+                                  currentStatus: v.status,
+                                  remarks: v.manager_remarks,
+                                  history: v.authority_remarks,
+                                })
+                              }
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20 px-3 py-1.5 text-xs font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition cursor-pointer"
                             >
-                              <UserCheck className="h-3.5 w-3.5" />
-                              <span>Check Out</span>
+                              <ShieldCheck className="h-3.5 w-3.5" />
+                              <span>Senior Remarks</span>
+                              {Array.isArray(v.authority_remarks) && v.authority_remarks.length > 0 && (
+                                <span className="ml-0.5 rounded-full bg-purple-500/20 px-1.5 py-0.2 text-[10px] font-bold">
+                                  {v.authority_remarks.length}
+                                </span>
+                              )}
                             </button>
+                          )}
+
+                          {v.status === "completed" ? (
                             <button
                               type="button"
-                              disabled={!canCompleteAction}
+                              disabled={!canCompleteAction && !elevatedRole}
+                              onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition disabled:opacity-50 cursor-pointer"
+                            >
+                              <Edit3 className="h-3.5 w-3.5" />
+                              <span>Edit Outcome</span>
+                            </button>
+                          ) : v.status === "checked_in" ? (
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                disabled={!canCompleteAction && !elevatedRole}
+                                onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 text-white px-3 py-1.5 text-xs font-bold shadow-xs hover:bg-sky-700 transition disabled:opacity-50 cursor-pointer"
+                              >
+                                <UserCheck className="h-3.5 w-3.5" />
+                                <span>Check Out</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={!canCompleteAction && !elevatedRole}
+                                onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 text-white px-3 py-1.5 text-xs font-bold shadow-xs hover:bg-emerald-700 transition disabled:opacity-50 cursor-pointer"
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                <span>Complete Outcome</span>
+                              </button>
+                            </div>
+                          ) : v.status === "checked_out" ? (
+                            <button
+                              type="button"
+                              disabled={!canCompleteAction && !elevatedRole}
                               onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
                               className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 text-white px-3 py-1.5 text-xs font-bold shadow-xs hover:bg-emerald-700 transition disabled:opacity-50 cursor-pointer"
                             >
                               <CheckCircle2 className="h-3.5 w-3.5" />
                               <span>Complete Outcome</span>
                             </button>
-                          </div>
-                        ) : v.status === "checked_out" ? (
-                          <button
-                            type="button"
-                            disabled={!canCompleteAction}
-                            onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 text-white px-3 py-1.5 text-xs font-bold shadow-xs hover:bg-emerald-700 transition disabled:opacity-50 cursor-pointer"
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                            <span>Complete Outcome</span>
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            disabled={!canCompleteAction}
-                            onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-xs font-bold shadow-xs hover:opacity-90 transition disabled:opacity-50 cursor-pointer"
-                          >
-                            <UserCheck className="h-3.5 w-3.5" />
-                            <span>Check In</span>
-                          </button>
-                        )}
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={!canCompleteAction && !elevatedRole}
+                              onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-xs font-bold shadow-xs hover:opacity-90 transition disabled:opacity-50 cursor-pointer"
+                            >
+                              <UserCheck className="h-3.5 w-3.5" />
+                              <span>{elevatedRole ? "Update Status" : "Check In"}</span>
+                            </button>
+                          )}
+                        </div>
 
                             <div className="flex items-center gap-1">
                               {showStructureActions && (
@@ -983,35 +1064,41 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                       {/* Work Task actions */}
                       {(elevatedRole || showStructureActions) && (
                         <div className="flex items-center gap-2">
-                          {w.status === "completed" && !elevatedRole ? (
+                          {elevatedRole && (
                             <button
                               type="button"
-                              disabled={!canCompleteAction && !elevatedRole}
-                              onClick={() => setStatusRemarksTarget({ type: "task", item: w })}
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition disabled:opacity-50 cursor-pointer"
+                              onClick={() =>
+                                setSeniorRemarksTarget({
+                                  type: "task",
+                                  item: w,
+                                  id: w._id || w.id,
+                                  title: w.title || "Work Task",
+                                  currentStatus: w.status,
+                                  remarks: w.manager_remarks,
+                                  history: w.authority_remarks,
+                                })
+                              }
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20 px-3 py-1 text-xs font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition cursor-pointer"
                             >
-                              <Edit3 className="h-3.5 w-3.5" />
-                              <span>Edit Remarks &amp; Outcome</span>
+                              <ShieldCheck className="h-3.5 w-3.5" />
+                              <span>Senior Remarks</span>
+                              {Array.isArray(w.authority_remarks) && w.authority_remarks.length > 0 && (
+                                <span className="ml-0.5 rounded-full bg-purple-500/20 px-1.5 py-0.2 text-[10px] font-bold">
+                                  {w.authority_remarks.length}
+                                </span>
+                              )}
                             </button>
-                          ) : (
-                            <>
-                              <button
-                                type="button"
-                                disabled={!canCompleteAction && !elevatedRole}
-                                onClick={() => setStatusRemarksTarget({ type: "task", item: w })}
-                                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-bold transition disabled:opacity-50 cursor-pointer ${
-                                  elevatedRole
-                                    ? "bg-purple-500/10 border-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20"
-                                    : "bg-primary/10 border-primary/20 text-primary hover:bg-primary/20"
-                                }`}
-                              >
-                                {elevatedRole ? (
-                                  <ShieldCheck className="h-3.5 w-3.5" />
-                                ) : (
-                                  <MessageSquare className="h-3.5 w-3.5" />
-                                )}
-                                <span>{elevatedRole ? "Status & Remarks" : "Remarks & Status"}</span>
-                              </button>
+                          )}
+
+                          <button
+                            type="button"
+                            disabled={!canCompleteAction && !elevatedRole}
+                            onClick={() => setStatusRemarksTarget({ type: "task", item: w })}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 text-primary px-3 py-1 text-xs font-bold hover:bg-primary/20 transition disabled:opacity-50 cursor-pointer"
+                          >
+                            <MessageSquare className="h-3.5 w-3.5" />
+                            <span>{w.status === "completed" ? "Edit Outcome" : "Update Status"}</span>
+                          </button>
                               {showStructureActions && (
                                 <button
                                   type="button"
@@ -1035,8 +1122,6 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                                   <Trash2 className="h-3.5 w-3.5" />
                                 </button>
                               ) : null}
-                            </>
-                          )}
                         </div>
                       )}
                     </div>
@@ -1375,66 +1460,24 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
         />
       )}
 
-      {/* Plan-level Supervisory Remarks Modal */}
-      {planRemarksModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="rounded-lg bg-purple-500/10 p-2 text-purple-600 dark:text-purple-400">
-                <ShieldCheck className="h-5 w-5" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-foreground">Plan Senior Remark</h3>
-                <p className="text-xs text-muted">Provide senior review guidance or directives for this entire plan</p>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-foreground">Remark / Instructions</label>
-              <textarea
-                value={planRemarkInput}
-                onChange={(e) => setPlanRemarkInput(e.target.value)}
-                placeholder="Enter senior review instructions or comments..."
-                rows={4}
-                className="w-full rounded-xl border border-border bg-surface-muted p-3 text-xs text-foreground placeholder:text-muted focus:outline-hidden focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
-              <button
-                type="button"
-                disabled={actionLoading}
-                onClick={() => setPlanRemarksModalOpen(false)}
-                className="rounded-lg border border-border bg-card px-4 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={actionLoading}
-                onClick={async () => {
-                  setActionLoading(true);
-                  try {
-                    await addPlanAuthorityRemarkMut({
-                      planId,
-                      body: { manager_remarks: planRemarkInput },
-                    }).unwrap();
-                    toast.success("Senior remark recorded");
-                    setPlanRemarksModalOpen(false);
-                  } catch (err: unknown) {
-                    const msg = err instanceof Error ? err.message : "Failed to record remark";
-                    toast.error(msg);
-                  } finally {
-                    setActionLoading(false);
-                  }
-                }}
-                className="rounded-lg bg-purple-600 px-4 py-2 text-xs font-semibold text-white hover:bg-purple-700 transition disabled:opacity-50 cursor-pointer"
-              >
-                {actionLoading ? "Saving..." : "Save Senior Remark"}
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Unified Senior Directives & Remarks Modal */}
+      {seniorRemarksTarget && (
+        <SeniorRemarksModal
+          open={Boolean(seniorRemarksTarget)}
+          itemType={seniorRemarksTarget.type}
+          title={seniorRemarksTarget.title}
+          planId={planId}
+          itemId={seniorRemarksTarget.id}
+          planDate={formatPlanDate(plan.plan_date)}
+          currentStatus={seniorRemarksTarget.currentStatus}
+          assigneeName={salesUserLabel(plan.sales_user)}
+          initialRemarks={seniorRemarksTarget.remarks}
+          authorityRemarksHistory={seniorRemarksTarget.history}
+          onClose={() => setSeniorRemarksTarget(null)}
+          onSuccess={() => {
+            loadPlan();
+          }}
+        />
       )}
 
       <DayEndMailModal
@@ -1470,6 +1513,28 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
               : String(plan.sales_user || "")
           }
           onClose={() => setCopyModalOpen(false)}
+        />
+      )}
+
+      {changePlanTypeModalOpen && (
+        <ChangePlanTypeModal
+          open={changePlanTypeModalOpen}
+          planId={planId}
+          currentPlanType={plan.plan_type}
+          planDate={plan.plan_date}
+          isCompleted={isCompleted}
+          onClose={() => setChangePlanTypeModalOpen(false)}
+          onSuccess={() => loadPlan()}
+        />
+      )}
+
+      {planAiModalOpen && (
+        <PlanAiAnalysisModal
+          open={planAiModalOpen}
+          planId={planId}
+          planDate={plan.plan_date}
+          executiveName={salesUserLabel(plan.sales_user)}
+          onClose={() => setPlanAiModalOpen(false)}
         />
       )}
     </div>

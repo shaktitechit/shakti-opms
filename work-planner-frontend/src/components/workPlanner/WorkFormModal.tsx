@@ -555,22 +555,6 @@ export function WorkFormModal({
               />
             </div>
           </div>
-
-          {isSeniorViewing && (
-            <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-3 space-y-1.5">
-              <label className="text-xs font-semibold text-purple-700 dark:text-purple-300">
-                Senior Remark (Optional)
-              </label>
-              <textarea
-                rows={2}
-                value={managerRemarks}
-                onChange={(e) => setManagerRemarks(e.target.value)}
-                placeholder="Add senior guidance or instructions for this task..."
-                disabled={isSaving}
-                className="w-full rounded-lg border border-purple-500/30 bg-card p-2.5 text-xs text-foreground placeholder:text-muted focus:outline-hidden focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-          )}
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3 bg-surface-muted/30">

@@ -504,6 +504,52 @@ export const workPlannerApiSlice = baseApi.injectEndpoints({
       }),
       invalidatesTags: (_result, _error, { planId }) => [{ type: "WorkPlan", id: planId }, "WorkPlannerStats"],
     }),
+    getCaliberAnalytics: builder.query<
+      any,
+      { sales_user?: string; user_id?: string; from?: string; to?: string; plan_id?: string; force?: boolean } | void
+    >({
+      query: (params) => {
+        const query = new URLSearchParams();
+        if (params) {
+          Object.entries(params).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== "") query.append(k, String(v));
+          });
+        }
+        return `${WORK_PLANNER_SERVICE_URL}/api/work-planner/analytics/caliber?${query.toString()}`;
+      },
+      transformResponse: (res: any) => res.data || res,
+      providesTags: ["WorkPlanAnalytics"],
+    }),
+    regenerateCaliberAnalytics: builder.mutation<
+      any,
+      { sales_user?: string; user_id?: string; from?: string; to?: string; plan_id?: string }
+    >({
+      query: (body) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/analytics/caliber/regenerate`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["WorkPlanAnalytics"],
+    }),
+    getSinglePlanAiAnalysis: builder.query<any, { planId: string; force?: boolean }>({
+      query: ({ planId, force }) =>
+        `${WORK_PLANNER_SERVICE_URL}/api/work-planner/analytics/plan/${planId}/ai-analysis${force ? "?force=true" : ""}`,
+      transformResponse: (res: any) => res.data || res,
+      providesTags: (_result, _error, { planId }) => [{ type: "WorkPlanAiAnalysis", id: planId }],
+    }),
+    getTeamAnalyticsOverview: builder.query<any[], { from?: string; to?: string } | void>({
+      query: (params) => {
+        const query = new URLSearchParams();
+        if (params) {
+          Object.entries(params).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== "") query.append(k, String(v));
+          });
+        }
+        return `${WORK_PLANNER_SERVICE_URL}/api/work-planner/analytics/team-overview?${query.toString()}`;
+      },
+      transformResponse: (res: any) => res.data || res,
+      providesTags: ["WorkPlanTeamAnalytics"],
+    }),
   }),
 });
 
@@ -562,4 +608,11 @@ export const {
   useAddWorkPlanAuthorityRemarkMutation,
   useAddVisitAuthorityRemarkMutation,
   useAddWorkAuthorityRemarkMutation,
+  useGetCaliberAnalyticsQuery,
+  useLazyGetCaliberAnalyticsQuery,
+  useRegenerateCaliberAnalyticsMutation,
+  useGetSinglePlanAiAnalysisQuery,
+  useLazyGetSinglePlanAiAnalysisQuery,
+  useGetTeamAnalyticsOverviewQuery,
+  useLazyGetTeamAnalyticsOverviewQuery,
 } = workPlannerApiSlice;

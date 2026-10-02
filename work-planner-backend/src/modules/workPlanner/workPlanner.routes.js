@@ -11,6 +11,7 @@ const {
 } = require('../../middlewares/workPlannerAuth.middleware');
 const controller = require('./workPlanner.controller');
 const teamController = require('./team.controller');
+const analyticsController = require('./workPlanAnalytics.controller');
 const multer = require('multer');
 
 const upload = multer({
@@ -23,6 +24,12 @@ const adminRole = requireWorkPlannerRole('admin');
 
 router.use(requireAuth);
 router.use(requireWorkPlannerAccess);
+
+// 360° AI Work Plan Analytics & Caliber Assessment (must be before /:id)
+router.get('/analytics/caliber', analyticsController.getCaliberAnalytics);
+router.post('/analytics/caliber/regenerate', analyticsController.regenerateCaliberAnalytics);
+router.get('/analytics/plan/:id/ai-analysis', analyticsController.getSinglePlanAiAnalysis);
+router.get('/analytics/team-overview', analyticsController.getTeamOverview);
 
 // Authenticated attachment streaming & previews (accepts Authorization header or ?token=)
 router.get('/attachments/:attachmentId/preview', controller.previewAttachment);

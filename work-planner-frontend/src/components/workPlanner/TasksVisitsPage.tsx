@@ -66,6 +66,7 @@ import {
 } from "./workPlanUtils";
 import { DownloadTasksVisitsReportModal } from "./DownloadTasksVisitsReportModal";
 import { ItemStatusRemarksModal } from "./ItemStatusRemarksModal";
+import { SeniorRemarksModal } from "./SeniorRemarksModal";
 import { VisitFormModal } from "./VisitFormModal";
 import { WorkFormModal } from "./WorkFormModal";
 
@@ -221,6 +222,7 @@ export function TasksVisitsPage() {
 
   // Action targets for remarks modal
   const [statusRemarksTarget, setStatusRemarksTarget] = useState<DisplayTaskVisitItem | null>(null);
+  const [seniorRemarksTarget, setSeniorRemarksTarget] = useState<DisplayTaskVisitItem | null>(null);
   const [actionSaving, setActionSaving] = useState(false);
 
   // User Roster and Team queries
@@ -1088,26 +1090,39 @@ export function TasksVisitsPage() {
                         </div>
 
                         <div className="flex items-center gap-1.5">
+                          {elevatedRole && (
+                            <button
+                              type="button"
+                              onClick={() => setSeniorRemarksTarget(item)}
+                              className="inline-flex items-center gap-1 rounded bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 text-[10px] font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition cursor-pointer"
+                              title="Add or view senior remarks"
+                            >
+                              <ShieldCheck className="h-3 w-3" />
+                              <span>Senior</span>
+                              {Array.isArray((item.raw as any)?.authority_remarks) &&
+                                (item.raw as any).authority_remarks.length > 0 && (
+                                  <span className="ml-0.5 rounded-full bg-purple-500/20 px-1 py-0.2 text-[8px] font-bold">
+                                    {(item.raw as any).authority_remarks.length}
+                                  </span>
+                                )}
+                            </button>
+                          )}
                           {(elevatedRole || (item.planStatus !== "completed" && !isPlanDate3DaysExpired(item.planDate))) && (
                             <button
                               type="button"
                               onClick={() => setStatusRemarksTarget(item)}
                               className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold transition cursor-pointer ${
-                                elevatedRole
-                                  ? "bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20"
-                                  : item.status === "completed"
+                                item.status === "completed"
                                   ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
                                   : "bg-sky-500/10 border border-sky-500/20 text-sky-600 dark:text-sky-400 hover:bg-sky-500/20"
                               }`}
                             >
-                              {elevatedRole ? (
-                                <ShieldCheck className="h-3 w-3" />
-                              ) : item.status === "completed" ? (
+                              {item.status === "completed" ? (
                                 <Edit3 className="h-3 w-3" />
                               ) : (
                                 <MessageSquare className="h-3 w-3" />
                               )}
-                              <span>{elevatedRole ? "Status & Remarks" : item.status === "completed" ? "Edit Remarks" : "Remarks"}</span>
+                              <span>{item.status === "completed" ? "Edit Outcome" : "Status"}</span>
                             </button>
                           )}
                           <Link
@@ -1369,26 +1384,39 @@ export function TasksVisitsPage() {
                         </div>
 
                         <div className="flex items-center gap-1.5">
+                          {elevatedRole && (
+                            <button
+                              type="button"
+                              onClick={() => setSeniorRemarksTarget(item)}
+                              className="inline-flex items-center gap-1 rounded bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 text-[10px] font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition cursor-pointer"
+                              title="Add or view senior remarks"
+                            >
+                              <ShieldCheck className="h-3 w-3" />
+                              <span>Senior</span>
+                              {Array.isArray((item.raw as any)?.authority_remarks) &&
+                                (item.raw as any).authority_remarks.length > 0 && (
+                                  <span className="ml-0.5 rounded-full bg-purple-500/20 px-1 py-0.2 text-[8px] font-bold">
+                                    {(item.raw as any).authority_remarks.length}
+                                  </span>
+                                )}
+                            </button>
+                          )}
                           {(elevatedRole || (item.planStatus !== "completed" && !isPlanDate3DaysExpired(item.planDate))) && (
                             <button
                               type="button"
                               onClick={() => setStatusRemarksTarget(item)}
                               className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold transition cursor-pointer ${
-                                elevatedRole
-                                  ? "bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20"
-                                  : item.status === "completed"
+                                item.status === "completed"
                                   ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
                                   : "bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
                               }`}
                             >
-                              {elevatedRole ? (
-                                <ShieldCheck className="h-3 w-3" />
-                              ) : item.status === "completed" ? (
+                              {item.status === "completed" ? (
                                 <Edit3 className="h-3 w-3" />
                               ) : (
                                 <MessageSquare className="h-3 w-3" />
                               )}
-                              <span>{elevatedRole ? "Status & Remarks" : item.status === "completed" ? "Edit Remarks" : "Remarks"}</span>
+                              <span>{item.status === "completed" ? "Edit Outcome" : "Status"}</span>
                             </button>
                           )}
                           <Link
@@ -1644,24 +1672,32 @@ export function TasksVisitsPage() {
                               : renderWorkStatusBadge(item.status)}
                           </td>
 
-                          {/* Direct Row Actions (Disabled when completed or > 3 days expired) */}
+                          {/* Direct Row Actions */}
                           <td className="px-4 py-3 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1.5">
-                              {elevatedRole ? (
+                              {elevatedRole && (
                                 <button
                                   type="button"
-                                  onClick={() => setStatusRemarksTarget(item)}
+                                  onClick={() => setSeniorRemarksTarget(item)}
                                   className="inline-flex items-center gap-1 rounded bg-purple-500/10 border border-purple-500/20 px-2.5 py-1 text-[11px] font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition cursor-pointer"
-                                  title="Update status & supervisory remarks"
+                                  title="Add or view senior directives & remarks"
                                 >
                                   <ShieldCheck className="h-3 w-3" />
-                                  <span>Status &amp; Remarks</span>
+                                  <span>Senior Remark</span>
+                                  {Array.isArray((item.raw as any)?.authority_remarks) &&
+                                    (item.raw as any).authority_remarks.length > 0 && (
+                                      <span className="ml-0.5 rounded-full bg-purple-500/20 px-1.5 py-0.2 text-[9px] font-bold">
+                                        {(item.raw as any).authority_remarks.length}
+                                      </span>
+                                    )}
                                 </button>
-                              ) : item.planStatus === "completed" ? (
+                              )}
+
+                              {item.planStatus === "completed" && !elevatedRole ? (
                                 <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                                   Completed
                                 </span>
-                              ) : isPlanDate3DaysExpired(item.planDate) ? (
+                              ) : isPlanDate3DaysExpired(item.planDate) && !elevatedRole ? (
                                 <span
                                   className="text-[10px] font-semibold text-rose-600 dark:text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded"
                                   title="Action period expired (> 3 days)"
@@ -1673,10 +1709,10 @@ export function TasksVisitsPage() {
                                   type="button"
                                   onClick={() => setStatusRemarksTarget(item)}
                                   className="inline-flex items-center gap-1 rounded bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition cursor-pointer"
-                                  title="Edit remarks & outcome before day end"
+                                  title="Edit outcome"
                                 >
                                   <Edit3 className="h-3 w-3" />
-                                  <span>Edit Remarks</span>
+                                  <span>Edit Outcome</span>
                                 </button>
                               ) : (
                                 <button
@@ -1685,7 +1721,7 @@ export function TasksVisitsPage() {
                                   className="inline-flex items-center gap-1 rounded bg-primary/10 border border-primary/20 px-2.5 py-1 text-[11px] font-bold text-primary hover:bg-primary/20 transition cursor-pointer"
                                 >
                                   <MessageSquare className="h-3 w-3" />
-                                  <span>Remarks &amp; Status</span>
+                                  <span>{elevatedRole ? "Status" : "Update Status"}</span>
                                 </button>
                               )}
 
@@ -1780,7 +1816,7 @@ export function TasksVisitsPage() {
           }
           isSaving={actionSaving}
           onClose={() => setStatusRemarksTarget(null)}
-          onConfirm={async ({ status, remarks, managerRemarks, rescheduledDate, visitAnswers }) => {
+          onConfirm={async ({ status, remarks, rescheduledDate, visitAnswers }) => {
             setActionSaving(true);
             try {
               const planId = statusRemarksTarget.planId;
@@ -1790,19 +1826,19 @@ export function TasksVisitsPage() {
                   await completeVisitMut({
                     planId,
                     visitId: itemId,
-                    body: { outcome: remarks, manager_remarks: managerRemarks, ...(visitAnswers || {}) },
+                    body: { outcome: remarks, ...(visitAnswers || {}) },
                   }).unwrap();
                 } else if (status === "pending") {
                   await updateVisitMut({
                     planId,
                     visitId: itemId,
-                    body: { status: "pending", pending_remarks: remarks, manager_remarks: managerRemarks },
+                    body: { status: "pending", pending_remarks: remarks },
                   }).unwrap();
                 } else if (status === "in_progress") {
                   await updateVisitMut({
                     planId,
                     visitId: itemId,
-                    body: { status: "in_progress", in_progress_remarks: remarks, manager_remarks: managerRemarks },
+                    body: { status: "in_progress", in_progress_remarks: remarks },
                   }).unwrap();
                 } else {
                   await updateVisitMut({
@@ -1811,7 +1847,6 @@ export function TasksVisitsPage() {
                     body: {
                       status,
                       notes: remarks,
-                      manager_remarks: managerRemarks,
                       rescheduled_date: status === "rescheduled" ? rescheduledDate : undefined,
                     },
                   }).unwrap();
@@ -1822,19 +1857,19 @@ export function TasksVisitsPage() {
                   await updateWorkMut({
                     planId,
                     workId: itemId,
-                    body: { status: "completed", completion_remarks: remarks, outcome: remarks, manager_remarks: managerRemarks },
+                    body: { status: "completed", completion_remarks: remarks, outcome: remarks },
                   }).unwrap();
                 } else if (status === "pending") {
                   await updateWorkMut({
                     planId,
                     workId: itemId,
-                    body: { status: "pending", pending_remarks: remarks, manager_remarks: managerRemarks },
+                    body: { status: "pending", pending_remarks: remarks },
                   }).unwrap();
                 } else if (status === "in_progress") {
                   await updateWorkMut({
                     planId,
                     workId: itemId,
-                    body: { status: "in_progress", in_progress_remarks: remarks, manager_remarks: managerRemarks },
+                    body: { status: "in_progress", in_progress_remarks: remarks },
                   }).unwrap();
                 } else {
                   await updateWorkMut({
@@ -1843,7 +1878,6 @@ export function TasksVisitsPage() {
                     body: {
                       status,
                       description: remarks,
-                      manager_remarks: managerRemarks,
                       rescheduled_date: status === "rescheduled" ? rescheduledDate : undefined,
                     },
                   }).unwrap();
@@ -1857,6 +1891,26 @@ export function TasksVisitsPage() {
             } finally {
               setActionSaving(false);
             }
+          }}
+        />
+      )}
+
+      {/* Unified Senior Directives & Remarks Modal */}
+      {seniorRemarksTarget && (
+        <SeniorRemarksModal
+          open={Boolean(seniorRemarksTarget)}
+          itemType={seniorRemarksTarget.itemType}
+          title={seniorRemarksTarget.titleOrParty}
+          planId={seniorRemarksTarget.planId}
+          itemId={seniorRemarksTarget.id}
+          planDate={seniorRemarksTarget.planDate}
+          currentStatus={seniorRemarksTarget.status}
+          assigneeName={seniorRemarksTarget.executiveName}
+          initialRemarks={(seniorRemarksTarget.raw as any)?.manager_remarks}
+          authorityRemarksHistory={(seniorRemarksTarget.raw as any)?.authority_remarks}
+          onClose={() => setSeniorRemarksTarget(null)}
+          onSuccess={() => {
+            loadData();
           }}
         />
       )}
