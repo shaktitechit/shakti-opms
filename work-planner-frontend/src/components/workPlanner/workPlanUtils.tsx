@@ -76,25 +76,31 @@ export function stripHtml(html?: string | null): string {
 }
 
 export function planTypeOf(planType?: string | null): string {
-  return (planType && String(planType).trim()) || "Visits";
+  return (planType && String(planType).trim()) || "";
 }
 
 export function isVisitsPlan(planType?: string | null): boolean {
   const t = planTypeOf(planType);
+  if (!t) return false;
   return t === "Visits" || t === "Field Visit" || t === "Tasks & Visits";
 }
 
 export function isWorkTaskPlan(planType?: string | null): boolean {
   const t = planTypeOf(planType);
+  if (!t) return false;
   return t === "Work From Home" || t === "Work From Office" || t === "Tasks & Visits";
 }
 
 export function isBothTasksAndVisitsPlan(planType?: string | null): boolean {
-  return planTypeOf(planType) === "Tasks & Visits";
+  const t = planTypeOf(planType);
+  if (!t) return false;
+  return t === "Tasks & Visits";
 }
 
 export function isLeavePlan(planType?: string | null): boolean {
-  return planTypeOf(planType) === "Leave";
+  const t = planTypeOf(planType);
+  if (!t) return false;
+  return t === "Leave";
 }
 
 export function isSunday(d?: Date | string | null): boolean {
@@ -133,6 +139,15 @@ export function planActivityLabel(plan: {
     return `${vCount} visit${vCount === 1 ? "" : "s"}, ${wCount} task${wCount === 1 ? "" : "s"}`;
   }
   if (isWorkTaskPlan(type)) {
+    return `${wCount} task${wCount === 1 ? "" : "s"}`;
+  }
+  if (isVisitsPlan(type)) {
+    return `${vCount} visit${vCount === 1 ? "" : "s"}`;
+  }
+  if (vCount > 0 && wCount > 0) {
+    return `${vCount} visit${vCount === 1 ? "" : "s"}, ${wCount} task${wCount === 1 ? "" : "s"}`;
+  }
+  if (wCount > 0) {
     return `${wCount} task${wCount === 1 ? "" : "s"}`;
   }
   return `${vCount} visit${vCount === 1 ? "" : "s"}`;

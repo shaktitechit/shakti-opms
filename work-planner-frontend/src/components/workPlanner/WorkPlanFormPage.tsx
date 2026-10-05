@@ -561,7 +561,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           if (plan.plan_date) {
             setPlanDate(new Date(plan.plan_date).toISOString().split("T")[0]);
           }
-          setPlanType(plan.plan_type || "Visits");
+          setPlanType(plan.plan_type || "");
           setLocation(plan.location || "");
           setRemarks(plan.remarks || "");
           if (plan.sales_user) {
@@ -628,7 +628,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         const plan = await fetchPlan(copyId!).unwrap();
         if (plan) {
           setPlanStatus(null);
-          setPlanType(plan.plan_type || "Visits");
+          setPlanType(plan.plan_type || "");
           setLocation(plan.location || "");
           setRemarks(plan.remarks || "");
           if (plan.sales_user) {
@@ -781,20 +781,13 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
               }
             });
 
-            const resolvedType =
-              fullPlan.plan_type === "Leave"
-                ? "Leave"
-                : planVisits.length > 0 && mergedWorksWithTemplates.length > 0
-                ? "Tasks & Visits"
-                : planVisits.length > 0
-                ? "Visits"
-                : mergedWorksWithTemplates.length > 0
-                ? fullPlan.plan_type === "Work From Home"
-                  ? "Work From Home"
-                  : "Work From Office"
-                : fullPlan.plan_type || "Visits";
-
-            setPlanType(resolvedType);
+            // If this is a real existing saved work plan, preserve its saved plan_type.
+            // If it is virtual standalone activities, do not auto-assign a plan type.
+            if (!isStandaloneVirtual && fullPlan.plan_type) {
+              setPlanType(fullPlan.plan_type);
+            } else {
+              setPlanType("");
+            }
             setLocation(fullPlan.location || "");
             setRemarks(fullPlan.remarks || "");
 
@@ -893,23 +886,8 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
             setWorks(copiedWorksRef.current);
           } else {
             setVisits([]);
-            const templates = effectiveSettings?.customWorkTemplates || [];
-            if (templates.length > 0) {
-              const loadedWorks = templates.map((t: any, idx: number) => ({
-                sequence: idx + 1,
-                title: t.title,
-                description: t.description || "",
-                planned_start_time: t.planned_start_time || "",
-                planned_end_time: t.planned_end_time || "",
-                work_type: t.work_type || "default",
-                is_template_task: true,
-                status: "created",
-              }));
-              setWorks(loadedWorks);
-              setPlanType("Tasks & Visits");
-            } else {
-              setWorks([]);
-            }
+            setWorks([]);
+            setPlanType("");
           }
 
           setIsDiscussedWithManager(null);
@@ -2337,6 +2315,11 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                 );
               })}
             </div>
+            {!planType && (
+              <div className="mt-2.5 rounded-lg border border-dashed border-primary/40 bg-primary/5 p-3 text-center text-xs text-muted">
+                <span className="font-semibold text-foreground">👉 Please select a Plan Type</span> above (Visits, Tasks &amp; Visits, Work From Office/Home, or Leave) to configure your activities for this day.
+              </div>
+            )}
           </div>
         </div>
 
