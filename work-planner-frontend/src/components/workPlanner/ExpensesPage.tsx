@@ -2,7 +2,21 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Download, RefreshCw, Search, FileSpreadsheet, Eye, Paperclip, Users } from "lucide-react";
+import Link from "next/link";
+import {
+  Download,
+  RefreshCw,
+  Search,
+  FileSpreadsheet,
+  Eye,
+  Paperclip,
+  Users,
+  ExternalLink,
+  MessageSquare,
+  ShieldCheck,
+  AlertTriangle,
+  Sparkles,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   useGetExpensesQuery,
@@ -13,11 +27,18 @@ import {
 } from "@/store/api/workPlannerApiSlice";
 import { isWpAdmin, isWpElevated, isWpManager, readSessionFromStorage } from "@/utils/authStorage";
 import { resolvePublicAssetUrl, withFileAccessToken } from "@/lib/env";
-import type { WorkPlanExpenseRecord, WorkPlanExpenseAttachment } from "@/types/workPlanner";
+import type {
+  WorkPlanExpenseRecord,
+  WorkPlanExpenseAttachment,
+  AuthorityRemarkItem,
+  SeniorRemarkFeedItem,
+} from "@/types/workPlanner";
 import { DownloadExpensesModal } from "./DownloadExpensesModal";
 import { DownloadWorkPlansModal } from "./DownloadWorkPlansModal";
 import { RejectExpenseModal } from "./RejectExpenseModal";
 import { FilePreviewModal, useFilePreview } from "./FilePreviewModal";
+import { SeniorRemarksModal } from "./SeniorRemarksModal";
+import { DirectiveThreadModal } from "./DirectiveThreadModal";
 import {
   EXPENSE_CATEGORY_LABELS,
   formatCurrency,
@@ -52,6 +73,19 @@ export function ExpensesPage() {
   const [downloadOpen, setDownloadOpen] = useState(false);
   const [workPlanReportOpen, setWorkPlanReportOpen] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<{ planId: string; expenseId: string } | null>(null);
+
+  // Senior remarks & directive threads state
+  const [threadModalOpen, setThreadModalOpen] = useState(false);
+  const [selectedThreadItem, setSelectedThreadItem] = useState<SeniorRemarkFeedItem | null>(null);
+  const [seniorRemarksTarget, setSeniorRemarksTarget] = useState<{
+    planId: string;
+    expenseId: string;
+    title: string;
+    currentStatus?: string;
+    assigneeName?: string;
+    remarks?: string;
+    history?: AuthorityRemarkItem[];
+  } | null>(null);
 
   const [approveExpenseMut] = useApproveExpenseMutation();
   const [rejectExpenseMut] = useRejectExpenseMutation();
@@ -143,6 +177,52 @@ export function ExpensesPage() {
     const userLabel = salesUserLabel(e.sales_user).toLowerCase();
     return cat.includes(q) || desc.includes(q) || userLabel.includes(q);
   });
+
+  function buildExpenseThreadItem(exp: WorkPlanExpenseRecord, pId: string): SeniorRemarkFeedItem {
+    const authRemarks = Array.isArray(exp.authority_remarks) ? exp.authority_remarks : [];
+    const r = authRemarks.length > 0 ? authRemarks[authRemarks.length - 1] : ({} as any);
+    const sUserId =
+      typeof exp.sales_user === "object" && exp.sales_user
+        ? String(exp.sales_user._id || (exp.sales_user as any).id || "")
+        : String(exp.sales_user || "");
+    const sUserName = salesUserLabel(exp.sales_user);
+    const expId = exp._id || exp.id || "";
+    const categoryName = EXPENSE_CATEGORY_LABELS[exp.category] || exp.category;
+    const amountStr = exp.amount != null ? `₹${exp.amount}` : "";
+    const expTitle = `${categoryName} Claim ${amountStr ? `(${amountStr})` : ""} - ${exp.description || "Expense"}`;
+
+    return {
+      id: String(r._id || `${expId}_expense`),
+      remark_id: String(r._id || "latest"),
+      target_type: "expense",
+      plan_id: String(pId || ""),
+      target_id: String(expId),
+      plan_date: exp.expense_date || undefined,
+      title: expTitle,
+      location: exp.vendor_name || exp.sub_category || exp.bill_number || "",
+      sales_user: {
+        _id: sUserId,
+        name: sUserName,
+        email: typeof exp.sales_user === "object" ? (exp.sales_user as any).email || "" : "",
+      },
+      senior_user: {
+        _id: String(r.user || ""),
+        name: r.user_name || "Senior Authority",
+        role: r.role || "Senior Authority",
+      },
+      remark: r.remark || exp.manager_remarks || "",
+      remark_type: r.remark_type || "instruction",
+      priority: r.priority || "medium",
+      expected_followup_date: r.expected_followup_date || null,
+      status: r.status || "pending_response",
+      followup_remarks: Array.isArray(r.followup_remarks) ? r.followup_remarks : [],
+      resolution_remarks: r.resolution_remarks || "",
+      resolved_at: r.resolved_at || null,
+      resolved_by: r.resolved_by || null,
+      resolved_by_name: r.resolved_by_name || "",
+      created_at: r.created_at || (exp as any).updatedAt || (exp as any).createdAt || new Date().toISOString(),
+    };
+  }
 
   return (
     <div className="space-y-4 font-sans">
@@ -295,9 +375,252 @@ export function ExpensesPage() {
         </button>
       </div>
 
-      {/* Table */}
+      {/* Mobile Card List (< md) & Desktop Table (>= md) */}
       <div className="overflow-hidden rounded-xl border border-border bg-card">
-        <div className="overflow-x-auto">
+        {/* Mobile View */}
+        <div className="md:hidden divide-y divide-border">
+          {loading ? (
+            <div className="p-8 text-center text-xs text-muted">
+              Loading expense claims…
+            </div>
+          ) : filteredExpenses.length === 0 ? (
+            <div className="p-8 text-center text-xs text-muted">
+              No expense claims found.
+            </div>
+          ) : (
+            filteredExpenses.map((exp, idx) => {
+              const expId = exp._id || exp.id || String(idx);
+              const planId =
+                exp.work_plan_id ||
+                (typeof exp.work_plan === "string"
+                  ? exp.work_plan
+                  : (exp.work_plan as { _id?: string; id?: string })?._id ||
+                    (exp.work_plan as { _id?: string; id?: string })?.id) ||
+                "";
+              const categoryName = EXPENSE_CATEGORY_LABELS[exp.category] || exp.category;
+              const isBike = exp.category === "Travel" && exp.sub_category === "Private Bike";
+
+              const attList: (WorkPlanExpenseAttachment | string)[] = [];
+              if (Array.isArray(exp.attachments) && exp.attachments.length > 0) {
+                attList.push(...exp.attachments);
+              } else if (exp.receipt_attachment) {
+                attList.push(exp.receipt_attachment);
+              }
+
+              const authRemarks = Array.isArray(exp.authority_remarks) ? exp.authority_remarks : [];
+              const hasSeniorRemarks = authRemarks.length > 0 || Boolean(exp.manager_remarks && exp.manager_remarks.trim());
+              const latestRemark = authRemarks.length > 0 ? authRemarks[authRemarks.length - 1] : null;
+
+              return (
+                <div key={expId} className="p-4 space-y-2.5 hover:bg-surface-muted/30 transition">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-bold text-foreground">
+                          {categoryName}
+                        </span>
+                        {exp.sub_category && (
+                          <span className="text-[11px] text-muted">
+                            • {exp.sub_category}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-muted flex items-center gap-1 mt-0.5">
+                        <span>{formatPlanDate(exp.expense_date)}</span>
+                        <span>•</span>
+                        <span className="font-medium text-foreground">{salesUserLabel(exp.sales_user)}</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-extrabold text-foreground">
+                        {formatCurrency(exp.amount)}
+                      </div>
+                      <div className="mt-0.5">{renderExpenseStatusBadge(exp.status)}</div>
+                    </div>
+                  </div>
+
+                  {/* Bike KM info */}
+                  {isBike && exp.start_reading != null && exp.closing_reading != null && (
+                    <div className="rounded-lg bg-surface-muted p-2 text-[11px] text-primary font-medium">
+                      🏍️ Bike Odometer: {exp.start_reading} → {exp.closing_reading} KM ({Math.max(0, exp.closing_reading - exp.start_reading)} KM @ ₹3.5/km)
+                    </div>
+                  )}
+
+                  {/* Description */}
+                  {exp.description && (
+                    <p className="text-xs text-muted leading-relaxed">
+                      {exp.description}
+                    </p>
+                  )}
+
+                  {/* Attachments / Receipts */}
+                  {attList.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      {attList.map((att, attIdx) => {
+                        const attObj = typeof att === "object" && att !== null ? (att as any) : null;
+                        const rawUrl =
+                          attObj
+                            ? attObj.url || (attObj._id ? `/api/work-planner/attachments/${attObj._id}/view` : "") || (attObj.id ? `/api/work-planner/attachments/${attObj.id}/view` : "") || (attObj.storage_path || "")
+                            : typeof att === "string"
+                            ? att
+                            : "";
+                        const docName =
+                          attObj
+                            ? attObj.original_name || attObj.file_name || `Receipt #${attIdx + 1}`
+                            : `Receipt #${attIdx + 1}`;
+                        const mimeType = attObj ? attObj.mime_type || "" : "";
+                        const baseUrl = rawUrl ? resolvePublicAssetUrl(rawUrl, sessionToken) : "#";
+                        const fullUrl = withFileAccessToken(baseUrl, sessionToken);
+                        return (
+                          <div key={attIdx} className="inline-flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openPreview({
+                                  name: docName,
+                                  url: fullUrl,
+                                  mime: mimeType,
+                                })
+                              }
+                              className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/20 transition cursor-pointer"
+                            >
+                              <Eye className="h-3 w-3" />
+                              <span>{docName}</span>
+                            </button>
+                            <a
+                              href={fullUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-1 text-muted hover:text-foreground"
+                            >
+                              <Paperclip className="h-3 w-3" />
+                            </a>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Senior Remarks Directive & Thread */}
+                  {hasSeniorRemarks && (
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 p-2.5 space-y-1.5">
+                      <div className="flex items-center justify-between gap-1">
+                        <div className="flex items-center gap-1">
+                          {latestRemark?.remark_type === "appreciation" ? (
+                            <span className="inline-flex items-center gap-1 rounded bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 dark:text-emerald-300">
+                              <Sparkles className="h-2.5 w-2.5" />
+                              <span>Appreciation</span>
+                            </span>
+                          ) : latestRemark?.remark_type === "objection" ? (
+                            <span className="inline-flex items-center gap-1 rounded bg-rose-500/15 border border-rose-500/30 px-1.5 py-0.5 text-[9px] font-bold text-rose-700 dark:text-rose-300">
+                              <AlertTriangle className="h-2.5 w-2.5" />
+                              <span>Objection</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded bg-primary/15 border border-primary/30 px-1.5 py-0.5 text-[9px] font-bold text-primary">
+                              <ShieldCheck className="h-2.5 w-2.5" />
+                              <span>Directive</span>
+                            </span>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const item = buildExpenseThreadItem(exp, planId);
+                            setSelectedThreadItem(item);
+                            setThreadModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1 rounded-md bg-primary/20 px-2 py-1 text-[11px] font-bold text-primary"
+                        >
+                          <MessageSquare className="h-3 w-3" />
+                          <span>Thread</span>
+                          {(latestRemark?.followup_remarks?.length || 0) > 0 && (
+                            <span className="rounded-full bg-primary/30 px-1 text-[9px]">
+                              {latestRemark?.followup_remarks?.length}
+                            </span>
+                          )}
+                        </button>
+                      </div>
+
+                      {latestRemark?.remark ? (
+                        <div
+                          className="text-[11px] text-foreground font-medium line-clamp-2"
+                          dangerouslySetInnerHTML={{ __html: latestRemark.remark }}
+                        />
+                      ) : exp.manager_remarks ? (
+                        <div
+                          className="text-[11px] text-foreground font-medium line-clamp-2"
+                          dangerouslySetInnerHTML={{ __html: exp.manager_remarks }}
+                        />
+                      ) : null}
+                    </div>
+                  )}
+
+                  {/* Mobile Actions Toolbar */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border">
+                    <div>
+                      {planId && !String(planId).startsWith("standalone") ? (
+                        <Link
+                          href={`/dashboard/plans/${planId}`}
+                          className="inline-flex items-center gap-1 text-[11px] font-medium text-primary hover:underline"
+                        >
+                          <span>View Plan</span>
+                          <ExternalLink className="h-3 w-3" />
+                        </Link>
+                      ) : null}
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      {elevatedRole && planId && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSeniorRemarksTarget({
+                              planId,
+                              expenseId: expId,
+                              title: `${categoryName} Claim (${formatCurrency(exp.amount)})`,
+                              currentStatus: exp.status,
+                              assigneeName: salesUserLabel(exp.sales_user),
+                              remarks: exp.manager_remarks || "",
+                              history: exp.authority_remarks || [],
+                            });
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 transition cursor-pointer"
+                        >
+                          <ShieldCheck className="h-3.5 w-3.5" />
+                          <span>Remark</span>
+                        </button>
+                      )}
+
+                      {elevatedRole && exp.status === "submitted" && planId ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleApproveExpense(planId, expId)}
+                            className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition"
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRejectTarget({ planId, expenseId: expId })}
+                            className="rounded-lg bg-rose-500/10 px-3 py-1.5 text-xs font-semibold text-rose-500 hover:bg-rose-500/20 transition"
+                          >
+                            Reject
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Desktop Table View (>= md) */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="border-b border-border bg-surface-muted font-semibold text-muted">
               <tr>
@@ -339,7 +662,19 @@ export function ExpensesPage() {
                   return (
                     <tr key={expId} className="hover:bg-surface-muted/50 transition">
                       <td className="px-4 py-3 font-semibold whitespace-nowrap">
-                        {formatPlanDate(exp.expense_date)}
+                        <div className="flex flex-col gap-0.5">
+                          <span>{formatPlanDate(exp.expense_date)}</span>
+                          {planId && !String(planId).startsWith("standalone") ? (
+                            <Link
+                              href={`/dashboard/plans/${planId}`}
+                              className="inline-flex items-center gap-1 text-[11px] font-normal text-primary hover:underline"
+                              title="View related Work Plan"
+                            >
+                              <span>View Plan</span>
+                              <ExternalLink className="h-3 w-3" />
+                            </Link>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-4 py-3 font-medium">
                         {salesUserLabel(exp.sales_user)}
@@ -419,32 +754,148 @@ export function ExpensesPage() {
                             </div>
                           );
                         })()}
+
+                        {/* Senior Remarks Directive & Thread */}
+                        {(() => {
+                          const authRemarks = Array.isArray(exp.authority_remarks) ? exp.authority_remarks : [];
+                          const hasSeniorRemarks = authRemarks.length > 0 || Boolean(exp.manager_remarks && exp.manager_remarks.trim());
+                          const latestRemark = authRemarks.length > 0 ? authRemarks[authRemarks.length - 1] : null;
+
+                          if (!hasSeniorRemarks) return null;
+
+                          return (
+                            <div className="mt-2 rounded-lg border border-primary/20 bg-primary/5 p-2 space-y-1">
+                              <div className="flex flex-wrap items-center justify-between gap-1">
+                                <div className="flex items-center gap-1">
+                                  {latestRemark?.remark_type === "appreciation" ? (
+                                    <span className="inline-flex items-center gap-1 rounded bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 dark:text-emerald-300">
+                                      <Sparkles className="h-2.5 w-2.5" />
+                                      <span>⭐ Appreciation</span>
+                                    </span>
+                                  ) : latestRemark?.remark_type === "objection" ? (
+                                    <span className="inline-flex items-center gap-1 rounded bg-rose-500/15 border border-rose-500/30 px-1.5 py-0.5 text-[9px] font-bold text-rose-700 dark:text-rose-300">
+                                      <AlertTriangle className="h-2.5 w-2.5" />
+                                      <span>⚠️ Objection</span>
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 rounded bg-primary/15 border border-primary/30 px-1.5 py-0.5 text-[9px] font-bold text-primary">
+                                      <ShieldCheck className="h-2.5 w-2.5" />
+                                      <span>📋 Directive</span>
+                                    </span>
+                                  )}
+
+                                  {latestRemark && (
+                                    <span
+                                      className={`rounded px-1.5 py-0.2 text-[9px] font-bold ${
+                                        latestRemark.status === "resolved"
+                                          ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+                                          : latestRemark.status === "responded"
+                                          ? "bg-sky-500/15 text-sky-700 dark:text-sky-300"
+                                          : "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+                                      }`}
+                                    >
+                                      {latestRemark.status === "resolved"
+                                        ? "✅ Resolved"
+                                        : latestRemark.status === "responded"
+                                        ? "💬 Responded"
+                                        : "⏳ Awaiting Reply"}
+                                    </span>
+                                  )}
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const item = buildExpenseThreadItem(exp, planId);
+                                    setSelectedThreadItem(item);
+                                    setThreadModalOpen(true);
+                                  }}
+                                  className="inline-flex items-center gap-1 rounded bg-primary/20 px-2 py-0.5 text-[11px] font-bold text-primary hover:bg-primary/30 transition cursor-pointer"
+                                  title="Open Directive Discussion Thread"
+                                >
+                                  <MessageSquare className="h-3 w-3" />
+                                  <span>Thread</span>
+                                  {(latestRemark?.followup_remarks?.length || 0) > 0 && (
+                                    <span className="rounded-full bg-primary/30 px-1 text-[9px]">
+                                      {latestRemark?.followup_remarks?.length}
+                                    </span>
+                                  )}
+                                </button>
+                              </div>
+
+                              {latestRemark?.remark ? (
+                                <div
+                                  className="text-[11px] text-foreground font-medium line-clamp-2"
+                                  dangerouslySetInnerHTML={{ __html: latestRemark.remark }}
+                                />
+                              ) : exp.manager_remarks ? (
+                                <div
+                                  className="text-[11px] text-foreground font-medium line-clamp-2"
+                                  dangerouslySetInnerHTML={{ __html: exp.manager_remarks }}
+                                />
+                              ) : null}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="px-4 py-3 font-bold text-foreground whitespace-nowrap">
                         {formatCurrency(exp.amount)}
                       </td>
                       <td className="px-4 py-3">{renderExpenseStatusBadge(exp.status)}</td>
                       <td className="px-4 py-3 text-right whitespace-nowrap">
-                        {elevatedRole && exp.status === "submitted" && planId ? (
-                          <div className="flex items-center justify-end gap-1.5">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {planId && !String(planId).startsWith("standalone") && (
+                            <Link
+                              href={`/dashboard/plans/${planId}`}
+                              className="inline-flex items-center gap-1 rounded border border-border bg-surface-muted px-2 py-1 text-[11px] font-medium text-foreground hover:bg-surface-muted/80 hover:border-primary/40 transition"
+                              title="Open Work Plan Detail"
+                            >
+                              <ExternalLink className="h-3 w-3 text-muted" />
+                              <span>Plan</span>
+                            </Link>
+                          )}
+                          {elevatedRole && planId && (
                             <button
                               type="button"
-                              onClick={() => handleApproveExpense(planId, expId)}
-                              className="rounded bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700 transition"
+                              onClick={() => {
+                                setSeniorRemarksTarget({
+                                  planId,
+                                  expenseId: expId,
+                                  title: `${categoryName} Claim (${formatCurrency(exp.amount)})`,
+                                  currentStatus: exp.status,
+                                  assigneeName: salesUserLabel(exp.sales_user),
+                                  remarks: exp.manager_remarks || "",
+                                  history: exp.authority_remarks || [],
+                                });
+                              }}
+                              className="inline-flex items-center gap-1 rounded border border-primary/30 bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/20 transition cursor-pointer"
+                              title="Add Senior Directive / Objection / Appreciation"
                             >
-                              Approve
+                              <ShieldCheck className="h-3 w-3" />
+                              <span>Remark</span>
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => setRejectTarget({ planId, expenseId: expId })}
-                              className="rounded bg-rose-500/10 px-2 py-1 text-[11px] font-semibold text-rose-500 hover:bg-rose-500/20 transition"
-                            >
-                              Reject
-                            </button>
-                          </div>
-                        ) : (
-                          <span className="text-muted">—</span>
-                        )}
+                          )}
+                          {elevatedRole && exp.status === "submitted" && planId ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleApproveExpense(planId, expId)}
+                                className="rounded bg-emerald-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700 transition cursor-pointer"
+                              >
+                                Approve
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setRejectTarget({ planId, expenseId: expId })}
+                                className="rounded bg-rose-500/10 px-2 py-1 text-[11px] font-semibold text-rose-500 hover:bg-rose-500/20 transition cursor-pointer"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          ) : !planId && !elevatedRole ? (
+                            <span className="text-muted">—</span>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -514,6 +965,38 @@ export function ExpensesPage() {
         onClose={closePreview}
         onDownload={downloadFile}
       />
+
+      {seniorRemarksTarget && (
+        <SeniorRemarksModal
+          open={Boolean(seniorRemarksTarget)}
+          itemType="expense"
+          title={seniorRemarksTarget.title}
+          planId={seniorRemarksTarget.planId}
+          itemId={seniorRemarksTarget.expenseId}
+          currentStatus={seniorRemarksTarget.currentStatus}
+          assigneeName={seniorRemarksTarget.assigneeName}
+          initialRemarks={seniorRemarksTarget.remarks}
+          authorityRemarksHistory={seniorRemarksTarget.history}
+          onClose={() => setSeniorRemarksTarget(null)}
+          onSuccess={() => {
+            loadExpenses();
+          }}
+        />
+      )}
+
+      {threadModalOpen && (
+        <DirectiveThreadModal
+          open={threadModalOpen}
+          item={selectedThreadItem}
+          onClose={() => {
+            setThreadModalOpen(false);
+            setSelectedThreadItem(null);
+          }}
+          onSuccess={() => {
+            loadExpenses();
+          }}
+        />
+      )}
     </div>
   );
 }

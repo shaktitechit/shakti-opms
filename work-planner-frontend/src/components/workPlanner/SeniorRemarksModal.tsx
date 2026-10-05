@@ -23,15 +23,16 @@ import {
   useAddWorkPlanAuthorityRemarkMutation,
   useAddVisitAuthorityRemarkMutation,
   useAddWorkAuthorityRemarkMutation,
+  useAddExpenseAuthorityRemarkMutation,
 } from "@/store/api/workPlannerApiSlice";
 import { toast } from "sonner";
 
 export interface SeniorRemarksModalProps {
   open: boolean;
-  itemType: "plan" | "visit" | "task";
+  itemType: "plan" | "visit" | "task" | "expense";
   title: string;
   planId: string;
-  itemId?: string; // visitId or workId
+  itemId?: string; // visitId, workId, or expenseId
   planDate?: string;
   currentStatus?: string;
   assigneeName?: string;
@@ -59,15 +60,23 @@ export function SeniorRemarksModal({
   const currentRoleName = roleLabel(sessionUser);
 
   const [remarks, setRemarks] = useState("");
+  const [remarkType, setRemarkType] = useState<"instruction" | "appreciation" | "objection">("instruction");
+  const [priority, setPriority] = useState<"low" | "medium" | "high" | "urgent">("medium");
+  const [expectedFollowupDate, setExpectedFollowupDate] = useState<string>("");
+
   const [addPlanRemark, { isLoading: isSavingPlan }] = useAddWorkPlanAuthorityRemarkMutation();
   const [addVisitRemark, { isLoading: isSavingVisit }] = useAddVisitAuthorityRemarkMutation();
   const [addWorkRemark, { isLoading: isSavingWork }] = useAddWorkAuthorityRemarkMutation();
+  const [addExpenseRemark, { isLoading: isSavingExpense }] = useAddExpenseAuthorityRemarkMutation();
 
-  const isSaving = isSavingPlan || isSavingVisit || isSavingWork;
+  const isSaving = isSavingPlan || isSavingVisit || isSavingWork || isSavingExpense;
 
   useEffect(() => {
     if (open) {
       setRemarks(initialRemarks || "");
+      setRemarkType("instruction");
+      setPriority("medium");
+      setExpectedFollowupDate("");
     }
   }, [open, initialRemarks]);
 
@@ -82,29 +91,50 @@ export function SeniorRemarksModal({
     }
 
     try {
+      const payload = {
+        manager_remarks: clean,
+        remark_type: remarkType,
+        priority,
+        expected_followup_date: expectedFollowupDate || undefined,
+      };
+
       if (itemType === "plan") {
         await addPlanRemark({
           planId,
-          body: { manager_remarks: clean },
+          body: payload,
         }).unwrap();
       } else if (itemType === "visit") {
         if (!itemId) throw new Error("Missing visit ID");
         await addVisitRemark({
           planId,
           visitId: itemId,
-          body: { manager_remarks: clean },
+          body: payload,
+        }).unwrap();
+      } else if (itemType === "expense") {
+        if (!itemId) throw new Error("Missing expense ID");
+        await addExpenseRemark({
+          planId,
+          expenseId: itemId,
+          body: payload,
         }).unwrap();
       } else {
         if (!itemId) throw new Error("Missing task ID");
         await addWorkRemark({
           planId,
           workId: itemId,
-          body: { manager_remarks: clean },
+          body: payload,
         }).unwrap();
       }
 
+      const typeMsg =
+        remarkType === "appreciation"
+          ? "Appreciation posted"
+          : remarkType === "objection"
+          ? "Objection recorded"
+          : "Senior directive saved";
+
       toast.success(
-        `Senior directive saved. Email & in-app notice dispatched to ${assigneeName || "executive"}.`
+        `${typeMsg}. Email & in-app notice dispatched to ${assigneeName || "executive"}.`
       );
       onSuccess?.();
       onClose();
@@ -114,7 +144,13 @@ export function SeniorRemarksModal({
   };
 
   const typeLabel =
-    itemType === "visit" ? "Field Visit" : itemType === "task" ? "Work Task" : "Work Plan";
+    itemType === "visit"
+      ? "Field Visit"
+      : itemType === "task"
+      ? "Work Task"
+      : itemType === "expense"
+      ? "Expense Claim"
+      : "Work Plan";
 
   return (
     <div
@@ -124,12 +160,12 @@ export function SeniorRemarksModal({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="relative flex flex-col w-full max-w-2xl max-h-[90vh] rounded-2xl border border-purple-500/30 bg-card shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+        className="relative flex flex-col w-full max-w-2xl max-h-[90vh] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-purple-950/40 via-purple-900/20 to-transparent px-6 py-4">
+        <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-primary/15 via-surface-muted/30 to-transparent px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/15 border border-purple-500/30 text-purple-600 dark:text-purple-400">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 border border-primary/30 text-primary">
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
@@ -137,7 +173,7 @@ export function SeniorRemarksModal({
                 <h3 className="text-base font-bold text-foreground">
                   Senior Directive &amp; Remarks
                 </h3>
-                <span className="rounded-full bg-purple-500/15 border border-purple-500/30 px-2.5 py-0.5 text-[11px] font-bold text-purple-700 dark:text-purple-300">
+                <span className="rounded-full bg-primary/15 border border-primary/30 px-2.5 py-0.5 text-[11px] font-bold text-primary">
                   {typeLabel}
                 </span>
               </div>
@@ -200,18 +236,103 @@ export function SeniorRemarksModal({
             <p className="leading-relaxed">
               Submitting will automatically record this directive under your name (
               <strong className="text-foreground">{sessionUser?.name || "Senior"}</strong> &bull;{" "}
-              <span className="text-purple-600 dark:text-purple-400 font-semibold">{currentRoleName}</span>
+              <span className="text-primary font-semibold">{currentRoleName}</span>
               ) and trigger an <strong className="text-foreground">instant Email</strong> and{" "}
               <strong className="text-foreground">In-App Alert</strong> to the concerned executive.
             </p>
+          </div>
+
+          {/* Remark Classification (Directive vs Appreciation vs Objection) */}
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-foreground flex items-center justify-between">
+              <span>Remark Intent &amp; Category <span className="text-rose-500">*</span></span>
+              <span className="text-[10px] text-muted">Select intent type</span>
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => setRemarkType("instruction")}
+                className={`flex items-center justify-center gap-2 rounded-xl border p-2.5 text-xs font-bold transition cursor-pointer ${
+                  remarkType === "instruction"
+                    ? "bg-primary/15 border-primary/40 text-primary shadow-xs"
+                    : "border-border bg-surface-muted/50 text-muted hover:bg-surface-muted hover:text-foreground"
+                }`}
+              >
+                <ShieldCheck className="h-4 w-4" />
+                <span>Directive / Guidance</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setRemarkType("appreciation")}
+                className={`flex items-center justify-center gap-2 rounded-xl border p-2.5 text-xs font-bold transition cursor-pointer ${
+                  remarkType === "appreciation"
+                    ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 shadow-xs ring-1 ring-emerald-500/30"
+                    : "border-border bg-surface-muted/50 text-muted hover:bg-surface-muted hover:text-foreground"
+                }`}
+              >
+                <Sparkles className="h-4 w-4 text-emerald-500" />
+                <span>⭐ Appreciation</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setRemarkType("objection")}
+                className={`flex items-center justify-center gap-2 rounded-xl border p-2.5 text-xs font-bold transition cursor-pointer ${
+                  remarkType === "objection"
+                    ? "bg-rose-500/15 border-rose-500/40 text-rose-600 dark:text-rose-400 shadow-xs ring-1 ring-rose-500/30"
+                    : "border-border bg-surface-muted/50 text-muted hover:bg-surface-muted hover:text-foreground"
+                }`}
+              >
+                <Info className="h-4 w-4 text-rose-500" />
+                <span>⚠️ Objection</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Priority & Expected Follow-up Date */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-foreground">Priority Level</label>
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as any)}
+                className="w-full rounded-xl border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary"
+              >
+                <option value="low">🟢 Low Priority</option>
+                <option value="medium">🔵 Medium Priority (Standard)</option>
+                <option value="high">🟠 High Priority</option>
+                <option value="urgent">🔴 Urgent / Critical Attention</option>
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-foreground flex items-center justify-between">
+                <span>Expected Follow-up Date</span>
+                <span className="text-[10px] text-muted">Optional</span>
+              </label>
+              <input
+                type="date"
+                value={expectedFollowupDate}
+                onChange={(e) => setExpectedFollowupDate(e.target.value)}
+                className="w-full rounded-xl border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary"
+              />
+            </div>
           </div>
 
           {/* Directive Input */}
           <div className="space-y-2">
             <label className="text-xs font-bold text-foreground flex items-center justify-between">
               <span className="flex items-center gap-1.5">
-                <MessageSquare className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
-                Senior Instruction / Guidance Note <span className="text-rose-500">*</span>
+                <MessageSquare className="h-3.5 w-3.5 text-primary" />
+                <span>
+                  {remarkType === "appreciation"
+                    ? "Appreciation & Praise Message"
+                    : remarkType === "objection"
+                    ? "Objection / Concern Details"
+                    : "Senior Instruction / Guidance Note"}{" "}
+                  <span className="text-rose-500">*</span>
+                </span>
               </span>
               <span className="text-[11px] font-normal text-muted">Rich Text Supported</span>
             </label>
@@ -219,7 +340,13 @@ export function SeniorRemarksModal({
               value={remarks}
               onChange={setRemarks}
               minHeight="140px"
-              placeholder="Type supervisory directives, review comments, follow-up instructions, or meeting guidance..."
+              placeholder={
+                remarkType === "appreciation"
+                  ? "Type words of commendation, deal congratulations, or appreciation for outstanding work..."
+                  : remarkType === "objection"
+                  ? "Describe the objection, route deviation, missing details, or required clarification from the executive..."
+                  : "Type supervisory directives, review comments, follow-up instructions, or meeting guidance..."
+              }
             />
           </div>
 
@@ -247,7 +374,7 @@ export function SeniorRemarksModal({
                     ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/20"
                     : roleLower.includes("coordinator")
                     ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20"
-                    : "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/20";
+                    : "bg-primary/15 text-primary border-primary/20";
 
                   return (
                     <div
@@ -291,7 +418,7 @@ export function SeniorRemarksModal({
             <button
               type="submit"
               disabled={isSaving}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 hover:bg-purple-700 px-5 py-2 text-xs font-bold text-white shadow-xs disabled:opacity-50 transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-primary hover:bg-primary-hover px-5 py-2 text-xs font-bold text-primary-foreground shadow-xs disabled:opacity-50 transition cursor-pointer"
             >
               {isSaving ? (
                 <>

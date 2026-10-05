@@ -97,6 +97,13 @@ export function isLeavePlan(planType?: string | null): boolean {
   return planTypeOf(planType) === "Leave";
 }
 
+export function isSunday(d?: Date | string | null): boolean {
+  if (!d) return false;
+  const target = typeof d === "string" ? new Date(d) : d;
+  if (isNaN(target.getTime())) return false;
+  return target.getDay() === 0;
+}
+
 export function planTypeShort(planType?: string | null): string {
   const t = planTypeOf(planType);
   if (t === "Work From Home") return "WFH";
@@ -150,15 +157,9 @@ export function formatPlanDate(dateVal: unknown): string {
   });
 }
 
-export function isPlanDate3DaysExpired(planDate?: string | Date | null): boolean {
-  if (!planDate) return false;
-  const target = new Date(planDate);
-  if (isNaN(target.getTime())) return false;
-  const targetDay = new Date(target.getFullYear(), target.getMonth(), target.getDate());
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 3);
-  const cutoffDay = new Date(cutoff.getFullYear(), cutoff.getMonth(), cutoff.getDate());
-  return targetDay < cutoffDay;
+export function isPlanDate3DaysExpired(_planDate?: string | Date | null): boolean {
+  // 3-day expiry provision removed for tasks and visits
+  return false;
 }
 
 export function formatDateTime(dateVal: unknown): string {

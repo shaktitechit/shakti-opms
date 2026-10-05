@@ -47,6 +47,56 @@ const workPlanWorkSchema = new mongoose.Schema(
         user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
         user_name: { type: String, trim: true },
         role: { type: String, trim: true },
+        remark_type: {
+          type: String,
+          enum: ["instruction", "appreciation", "objection"],
+          default: "instruction",
+        },
+        priority: {
+          type: String,
+          enum: ["low", "medium", "high", "urgent"],
+          default: "medium",
+        },
+        expected_followup_date: Date,
+        status: {
+          type: String,
+          enum: ["pending_response", "responded", "resolved"],
+          default: "pending_response",
+        },
+        followup_remarks: [
+          {
+            response: { type: String, required: true, trim: true },
+            user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+            user_name: { type: String, trim: true },
+            role: { type: String, trim: true },
+            action_status: {
+              type: String,
+              enum: ["in_progress", "completed", "clarification_provided", "need_help", "acknowledged"],
+              default: "completed",
+            },
+            attachments: [
+              {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "Attachment",
+              },
+            ],
+            attachment_details: [
+              {
+                attachment_id: { type: mongoose.Schema.Types.ObjectId, ref: "Attachment" },
+                filename: { type: String, trim: true },
+                original_name: { type: String, trim: true },
+                mime_type: { type: String, trim: true },
+                size: { type: Number },
+                url: { type: String, trim: true },
+              },
+            ],
+            created_at: { type: Date, default: Date.now },
+          },
+        ],
+        resolution_remarks: { type: String, trim: true },
+        resolved_at: Date,
+        resolved_by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        resolved_by_name: { type: String, trim: true },
         created_at: { type: Date, default: Date.now },
       },
     ],

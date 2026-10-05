@@ -76,7 +76,7 @@ export function PlanAiAnalysisModal({
       case "High Performer":
         return "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30";
       case "Consistent":
-        return "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/30";
+        return "bg-primary/15 text-primary border-primary/30";
       case "Needs Coaching":
         return "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30";
       default:
@@ -90,7 +90,7 @@ export function PlanAiAnalysisModal({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-surface-muted/40">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-xs">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-xs">
               <Sparkles className="h-5 w-5" />
             </div>
             <div>
@@ -168,14 +168,14 @@ export function PlanAiAnalysisModal({
             onClick={() => setActiveTab("tasks")}
             className={`flex items-center gap-2 py-3 px-3.5 text-xs font-bold border-b-2 transition whitespace-nowrap cursor-pointer ${
               activeTab === "tasks"
-                ? "border-purple-500 text-purple-600 dark:text-purple-400"
+                ? "border-primary text-primary"
                 : "border-transparent text-muted hover:text-foreground"
             }`}
           >
             <CheckSquare className="h-4 w-4" />
             Tasks Execution Report
             {tasks?.score !== undefined && (
-              <span className="ml-1 text-[10px] px-1.5 py-0.2 rounded-full bg-purple-500/10 border border-purple-500/20 font-bold">
+              <span className="ml-1 text-[10px] px-1.5 py-0.2 rounded-full bg-primary/10 border border-primary/20 font-bold">
                 {tasks.score}
               </span>
             )}
@@ -335,9 +335,9 @@ export function PlanAiAnalysisModal({
               {/* TAB 3: Dedicated Tasks Execution Report */}
               {activeTab === "tasks" && (
                 <div className="space-y-4 animate-in fade-in duration-150">
-                  <div className="flex items-center justify-between rounded-xl border border-purple-500/20 bg-purple-500/10 p-4">
+                  <div className="flex items-center justify-between rounded-xl border border-primary/20 bg-primary/10 p-4">
                     <div>
-                      <span className="text-xs font-bold text-purple-600 dark:text-purple-400">Task Velocity &amp; Operational Throughput Score</span>
+                      <span className="text-xs font-bold text-primary">Task Velocity &amp; Operational Throughput Score</span>
                       <p className="text-xs text-muted mt-0.5">{tasks?.operationalVelocitySummary}</p>
                     </div>
                     <div className="text-right shrink-0">

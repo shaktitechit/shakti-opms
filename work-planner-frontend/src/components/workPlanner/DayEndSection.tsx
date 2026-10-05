@@ -20,7 +20,6 @@ import {
 import type { WorkPlanRecord } from "@/types/workPlanner";
 import { WORK_PLANNER_SERVICE_URL, resolvePublicAssetUrl, withAccessToken } from "@/lib/env";
 import { readSessionFromStorage } from "@/utils/authStorage";
-import { workPlanWindowHint } from "./workPlanUtils";
 
 interface DayEndSectionProps {
   plan: WorkPlanRecord;
@@ -305,11 +304,6 @@ export function DayEndSection({
               <p className="text-xs text-muted max-w-xl">
                 Click <strong>Submit Day End Report</strong> to open the full-screen mail panel. You will be able to review summary tables, format remarks with rich text editor, attach receipts/documents, and email your manager.
               </p>
-              {!canCompletePlan && (
-                <p className="text-[11px] font-medium text-amber-600 dark:text-amber-400 pt-1">
-                  ⚠️ {workPlanWindowHint(plan.plan_date)}
-                </p>
-              )}
             </div>
 
             <button
@@ -318,9 +312,7 @@ export function DayEndSection({
               onClick={onOpenMailModal}
               title={
                 !canCompletePlan
-                  ? !canCompleteAction
-                    ? workPlanWindowHint(plan.plan_date)
-                    : "Complete all visits and tasks before submitting Day End"
+                  ? "Complete all visits and tasks before submitting Day End"
                   : "Submit Day End Report"
               }
               className={`inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-xs font-bold transition shadow-xs shrink-0 cursor-pointer ${

@@ -94,7 +94,7 @@ async function applySalesUserFilter(filter, user, query = {}) {
   const visible = await getVisibleSalesUserIds(user);
   const selfId = String(userId(user) || '');
   const selfOid = asObjectId(selfId);
-  const scope = String(query.scope || '').toLowerCase();
+  const scope = String(query.scope || query.ownership || '').toLowerCase();
 
   // 1. Explicit sales_user filter requested
   const userParam =

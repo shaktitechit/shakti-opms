@@ -15,6 +15,7 @@ import {
   Users,
   X,
   Sparkles,
+  ShieldCheck,
 } from "lucide-react";
 import type { UserSession } from "@/types/workPlanner";
 import { isWpAdmin, isWpManager, isWpCoordinator, readSessionFromStorage } from "@/utils/authStorage";
@@ -60,6 +61,7 @@ export function Sidebar({
   const isPlansActive = pathname === "/dashboard/plans";
   const isTasksVisitsActive = pathname.startsWith("/dashboard/tasks-visits");
   const isCalendarActive = pathname.startsWith("/dashboard/plans/calendar");
+  const isSeniorRemarksActive = pathname.startsWith("/dashboard/senior-remarks");
   const isExpensesActive = pathname.startsWith("/dashboard/expenses");
   const isAnalyticsActive = pathname.startsWith("/dashboard/analytics");
   const isAssignedUsersActive = pathname.startsWith("/dashboard/assigned-users");
@@ -209,22 +211,44 @@ export function Sidebar({
             {!desktopCollapsed && <span>Calendar View</span>}
           </Link>
 
+          {/* Directives & Objections Tracker */}
+          <Link
+            href="/dashboard/senior-remarks"
+            onClick={() => setMobileNavOpen(false)}
+            className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+              isSeniorRemarksActive
+                ? "bg-primary/15 border border-primary/30 text-primary font-bold shadow-xs"
+                : "text-muted hover:bg-surface-muted hover:text-foreground border border-transparent"
+            }`}
+            title="Directives, Objections & Follow-ups"
+          >
+            <ShieldCheck className={`h-4 w-4 shrink-0 ${isSeniorRemarksActive ? "text-primary" : ""}`} />
+            {!desktopCollapsed && (
+              <div className="flex items-center justify-between flex-1 min-w-0">
+                <span className="truncate">Directives &amp; Objections</span>
+                <span className="ml-1 text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30 shrink-0">
+                  Track
+                </span>
+              </div>
+            )}
+          </Link>
+
           {/* 360° AI Analytics */}
           <Link
             href="/dashboard/analytics"
             onClick={() => setMobileNavOpen(false)}
             className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
               isAnalyticsActive
-                ? "bg-gradient-to-r from-primary/20 via-purple-500/15 to-primary/20 border border-primary/40 text-primary font-bold shadow-xs"
+                ? "bg-primary/15 border border-primary/30 text-primary font-bold shadow-xs"
                 : "text-muted hover:bg-surface-muted hover:text-foreground border border-transparent"
             }`}
             title="360° AI Work Plan & Caliber Analytics"
           >
-            <Sparkles className={`h-4 w-4 shrink-0 ${isAnalyticsActive ? "text-primary animate-pulse" : "text-purple-500"}`} />
+            <Sparkles className={`h-4 w-4 shrink-0 ${isAnalyticsActive ? "text-primary animate-pulse" : "text-primary/70"}`} />
             {!desktopCollapsed && (
               <div className="flex items-center justify-between flex-1 min-w-0">
                 <span className="truncate">360° AI Analytics</span>
-                <span className="ml-1 text-[8px] font-extrabold uppercase px-1 py-0.2 rounded bg-gradient-to-r from-purple-500/20 to-pink-500/20 text-purple-600 dark:text-purple-400 border border-purple-500/30 shrink-0">
+                <span className="ml-1 text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30 shrink-0">
                   AI
                 </span>
               </div>

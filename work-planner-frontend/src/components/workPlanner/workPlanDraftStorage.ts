@@ -11,7 +11,7 @@ export interface WorkPlanFormDraft {
   planType: string;
   location: string;
   remarks: string;
-  isDiscussedWithManager: boolean;
+  isDiscussedWithManager: boolean | null;
   discussedManagerId: string;
   discussedManagerName: string;
   discussionMethod: "on_call" | "on_direct_meeting" | "on_email" | "other";

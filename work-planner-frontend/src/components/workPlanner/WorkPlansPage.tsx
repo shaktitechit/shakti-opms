@@ -281,8 +281,107 @@ export function WorkPlansPage() {
         </button>
       </div>
 
-      {/* Table view */}
-      <div className="overflow-hidden rounded-xl border border-border bg-card">
+      {/* Mobile Touch Cards View (< md) */}
+      <div className="md:hidden space-y-3">
+        {loading ? (
+          <div className="rounded-xl border border-border bg-card p-6 text-center text-xs text-muted">
+            Loading work plans…
+          </div>
+        ) : filteredPlans.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center text-xs text-muted">
+            No work plans found for selected filters.
+          </div>
+        ) : (
+          filteredPlans.map((r) => {
+            const id = planIdOf(r);
+            const canEdit = canEditPlan(r.status, { isAdmin: elevatedRole });
+
+            return (
+              <div
+                key={id}
+                className="rounded-2xl border border-border bg-card p-4 space-y-3 shadow-xs transition hover:border-primary/40 active:scale-[0.99]"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-foreground">
+                        {formatPlanDate(r.plan_date)}
+                      </span>
+                      <span className="inline-flex rounded-md bg-surface-muted px-2 py-0.5 text-[10px] font-bold text-foreground uppercase tracking-wider">
+                        {r.plan_type || "Visits"}
+                      </span>
+                    </div>
+                    <p className="text-xs font-medium text-muted">
+                      {salesUserLabel(r.sales_user)}
+                    </p>
+                  </div>
+                  {renderPlanStatusBadge(r.status)}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs text-muted pt-1 border-t border-border/50">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-muted/80 block">Activity</span>
+                    <span className="font-medium text-foreground">{planActivityLabel(r)}</span>
+                  </div>
+                  {r.location ? (
+                    <div>
+                      <span className="text-[10px] uppercase font-bold text-muted/80 block">Location</span>
+                      <span className="font-medium text-foreground truncate block">{r.location}</span>
+                    </div>
+                  ) : null}
+                </div>
+
+                {r.is_discussed_with_manager && (
+                  <div className="flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                    <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+                    <span>Discussed ({formatDiscussionMethod(r.discussion_method)})</span>
+                  </div>
+                )}
+
+                {/* Card Action Buttons */}
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/60">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setCopyTarget(r)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs font-semibold text-muted hover:text-foreground transition cursor-pointer"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                      <span>Copy</span>
+                    </button>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDeleteTarget({
+                            id,
+                            label: `Plan for ${formatPlanDate(r.plan_date)}`,
+                          })
+                        }
+                        className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-1.5 text-xs font-semibold text-rose-500 hover:bg-rose-500/20 transition cursor-pointer"
+                        title="Delete plan"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  <Link
+                    href={`/dashboard/plans/${id}`}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 transition shadow-xs"
+                  >
+                    <span>Open Plan</span>
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Desktop / Tablet Table View (≥ md) */}
+      <div className="hidden md:block overflow-hidden rounded-xl border border-border bg-card">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="border-b border-border bg-surface-muted font-semibold text-muted">

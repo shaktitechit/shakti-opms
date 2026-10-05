@@ -42,7 +42,7 @@ app.get('/api/files/:fileId/download', async (req, res) => {
   await streamFileToResponse(req.params.fileId, res, { disposition: 'attachment' });
 });
 
-app.use('/api/work-planner', workPlannerRoutes);
+app.use(['/api/work-planner', '/api/work-plans'], workPlannerRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/power-app', powerAppRoutes);
 app.use('/api/facilities', powerAppRoutes);

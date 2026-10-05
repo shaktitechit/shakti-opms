@@ -16,7 +16,6 @@ import {
   MapPin,
   CheckSquare,
   FileText,
-  MessageSquare,
   Calendar,
   CalendarDays,
   ChevronLeft,
@@ -26,8 +25,8 @@ import {
   Users,
   User,
   ShieldCheck,
+  Phone,
   X,
-  Edit3,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -36,11 +35,8 @@ import {
   useGetMyTeamQuery,
   useCreatePlanMutation,
   useAddVisitMutation,
-  useUpdateVisitMutation,
   useAddStandaloneVisitMutation,
-  useCompleteVisitMutation,
   useAddWorkMutation,
-  useUpdateWorkMutation,
   useAddStandaloneWorkMutation,
 } from "@/store/api/workPlannerApiSlice";
 import { useGetUsersQuery } from "@/store/api/authApiSlice";
@@ -62,10 +58,8 @@ import {
   renderVisitStatusBadge,
   renderWorkStatusBadge,
   planIdOf,
-  isPlanDate3DaysExpired,
 } from "./workPlanUtils";
 import { DownloadTasksVisitsReportModal } from "./DownloadTasksVisitsReportModal";
-import { ItemStatusRemarksModal } from "./ItemStatusRemarksModal";
 import { SeniorRemarksModal } from "./SeniorRemarksModal";
 import { VisitFormModal } from "./VisitFormModal";
 import { WorkFormModal } from "./WorkFormModal";
@@ -186,6 +180,7 @@ export function TasksVisitsPage() {
   const adminRole = isWpAdmin(user);
   const managerRole = isWpManager(user);
   const elevatedRole = isWpElevated(user);
+  const currentUserId = String(user?._id || (user as any)?.id || "");
 
   // View Mode: "list" | "visits_calendar" | "tasks_calendar"
   const [viewMode, setViewMode] = useState<ViewMode>("list");
@@ -221,9 +216,7 @@ export function TasksVisitsPage() {
   const [isPlanningSaving, setIsPlanningSaving] = useState(false);
 
   // Action targets for remarks modal
-  const [statusRemarksTarget, setStatusRemarksTarget] = useState<DisplayTaskVisitItem | null>(null);
   const [seniorRemarksTarget, setSeniorRemarksTarget] = useState<DisplayTaskVisitItem | null>(null);
-  const [actionSaving, setActionSaving] = useState(false);
 
   // User Roster and Team queries
   const { data: usersData } = useGetUsersQuery(undefined, { skip: !adminRole });
@@ -233,11 +226,8 @@ export function TasksVisitsPage() {
   const [lazyGetPlans] = useLazyGetPlansQuery();
   const [createPlanMut] = useCreatePlanMutation();
   const [addVisitMut] = useAddVisitMutation();
-  const [updateVisitMut] = useUpdateVisitMutation();
   const [addStandaloneVisitMut] = useAddStandaloneVisitMutation();
-  const [completeVisitMut] = useCompleteVisitMutation();
   const [addWorkMut] = useAddWorkMutation();
-  const [updateWorkMut] = useUpdateWorkMutation();
   const [addStandaloneWorkMut] = useAddStandaloneWorkMutation();
 
   const allUsers = useMemo<ExecutiveUser[]>(() => {
@@ -976,11 +966,15 @@ export function TasksVisitsPage() {
                           {cell.date.getDate()}
                         </span>
 
-                        {dayVisits.length > 0 && (
+                        {dayVisits.length > 0 ? (
                           <span className="rounded-full bg-sky-500/20 px-1.5 py-0.2 text-[10px] font-extrabold text-sky-600 dark:text-sky-400">
                             {dayVisits.length}
                           </span>
-                        )}
+                        ) : cell.date.getDay() === 0 ? (
+                          <span className="text-[9px] font-semibold text-purple-600/70 dark:text-purple-400/70">
+                            Off
+                          </span>
+                        ) : null}
                       </div>
 
                       {/* Day Visit Pills */}
@@ -1090,39 +1084,21 @@ export function TasksVisitsPage() {
                         </div>
 
                         <div className="flex items-center gap-1.5">
-                          {elevatedRole && (
+                          {elevatedRole && currentUserId !== item.salesUserId && (
                             <button
                               type="button"
                               onClick={() => setSeniorRemarksTarget(item)}
-                              className="inline-flex items-center gap-1 rounded bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 text-[10px] font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition cursor-pointer"
+                              className="inline-flex items-center gap-1 rounded bg-primary/10 border border-primary/20 px-2 py-0.5 text-[10px] font-bold text-primary hover:bg-primary/20 transition cursor-pointer"
                               title="Add or view senior remarks"
                             >
                               <ShieldCheck className="h-3 w-3" />
                               <span>Senior</span>
                               {Array.isArray((item.raw as any)?.authority_remarks) &&
                                 (item.raw as any).authority_remarks.length > 0 && (
-                                  <span className="ml-0.5 rounded-full bg-purple-500/20 px-1 py-0.2 text-[8px] font-bold">
+                                  <span className="ml-0.5 rounded-full bg-primary/20 px-1 py-0.2 text-[8px] font-bold">
                                     {(item.raw as any).authority_remarks.length}
                                   </span>
                                 )}
-                            </button>
-                          )}
-                          {(elevatedRole || (item.planStatus !== "completed" && !isPlanDate3DaysExpired(item.planDate))) && (
-                            <button
-                              type="button"
-                              onClick={() => setStatusRemarksTarget(item)}
-                              className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold transition cursor-pointer ${
-                                item.status === "completed"
-                                  ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
-                                  : "bg-sky-500/10 border border-sky-500/20 text-sky-600 dark:text-sky-400 hover:bg-sky-500/20"
-                              }`}
-                            >
-                              {item.status === "completed" ? (
-                                <Edit3 className="h-3 w-3" />
-                              ) : (
-                                <MessageSquare className="h-3 w-3" />
-                              )}
-                              <span>{item.status === "completed" ? "Edit Outcome" : "Status"}</span>
                             </button>
                           )}
                           <Link
@@ -1279,11 +1255,15 @@ export function TasksVisitsPage() {
                           {cell.date.getDate()}
                         </span>
 
-                        {dayTasks.length > 0 && (
+                        {dayTasks.length > 0 ? (
                           <span className="rounded-full bg-emerald-500/20 px-1.5 py-0.2 text-[10px] font-extrabold text-emerald-600 dark:text-emerald-400">
                             {dayTasks.length}
                           </span>
-                        )}
+                        ) : cell.date.getDay() === 0 ? (
+                          <span className="text-[9px] font-semibold text-purple-600/70 dark:text-purple-400/70">
+                            Off
+                          </span>
+                        ) : null}
                       </div>
 
                       {/* Day Task Pills */}
@@ -1384,39 +1364,21 @@ export function TasksVisitsPage() {
                         </div>
 
                         <div className="flex items-center gap-1.5">
-                          {elevatedRole && (
+                          {elevatedRole && currentUserId !== item.salesUserId && (
                             <button
                               type="button"
                               onClick={() => setSeniorRemarksTarget(item)}
-                              className="inline-flex items-center gap-1 rounded bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 text-[10px] font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition cursor-pointer"
+                              className="inline-flex items-center gap-1 rounded bg-primary/10 border border-primary/20 px-2 py-0.5 text-[10px] font-bold text-primary hover:bg-primary/20 transition cursor-pointer"
                               title="Add or view senior remarks"
                             >
                               <ShieldCheck className="h-3 w-3" />
                               <span>Senior</span>
                               {Array.isArray((item.raw as any)?.authority_remarks) &&
                                 (item.raw as any).authority_remarks.length > 0 && (
-                                  <span className="ml-0.5 rounded-full bg-purple-500/20 px-1 py-0.2 text-[8px] font-bold">
+                                  <span className="ml-0.5 rounded-full bg-primary/20 px-1 py-0.2 text-[8px] font-bold">
                                     {(item.raw as any).authority_remarks.length}
                                   </span>
                                 )}
-                            </button>
-                          )}
-                          {(elevatedRole || (item.planStatus !== "completed" && !isPlanDate3DaysExpired(item.planDate))) && (
-                            <button
-                              type="button"
-                              onClick={() => setStatusRemarksTarget(item)}
-                              className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold transition cursor-pointer ${
-                                item.status === "completed"
-                                  ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
-                                  : "bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
-                              }`}
-                            >
-                              {item.status === "completed" ? (
-                                <Edit3 className="h-3 w-3" />
-                              ) : (
-                                <MessageSquare className="h-3 w-3" />
-                              )}
-                              <span>{item.status === "completed" ? "Edit Outcome" : "Status"}</span>
                             </button>
                           )}
                           <Link
@@ -1563,8 +1525,127 @@ export function TasksVisitsPage() {
             </button>
           </div>
 
-          {/* Main Activity Table */}
-          <div className="overflow-hidden rounded-xl border border-border bg-card shadow-xs">
+          {/* Mobile Touch Cards View (< md) */}
+          <div className="md:hidden space-y-3">
+            {loading ? (
+              <div className="rounded-xl border border-border bg-card p-6 text-center text-xs text-muted">
+                Loading activity items…
+              </div>
+            ) : currentItems.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center text-xs text-muted">
+                No field visits or tasks found matching current filters.
+              </div>
+            ) : (
+              currentItems.map((item) => {
+                const isVisit = item.itemType === "visit";
+                const phone = item.contactNumber;
+
+                return (
+                  <div
+                    key={item.id}
+                    className="rounded-2xl border border-border bg-card p-4 space-y-3 shadow-xs transition hover:border-primary/40 active:scale-[0.99]"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {isVisit ? (
+                            <span className="inline-flex items-center gap-1 rounded-md bg-sky-500/10 px-2 py-0.5 text-[10px] font-bold text-sky-600 dark:text-sky-400">
+                              <Building2 className="h-3 w-3" />
+                              Field Visit
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                              <Briefcase className="h-3 w-3" />
+                              Work Task
+                            </span>
+                          )}
+                          <span className="text-xs font-bold text-foreground">
+                            {formatPlanDate(item.planDate)}
+                          </span>
+                        </div>
+                        <p className="text-xs font-medium text-muted">
+                          {item.executiveName}
+                        </p>
+                      </div>
+                      {isVisit
+                        ? renderVisitStatusBadge(item.status)
+                        : renderWorkStatusBadge(item.status)}
+                    </div>
+
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-bold text-foreground">
+                        {item.titleOrParty}
+                      </h4>
+                      {item.descriptionOrNotes && (
+                        <p className="text-xs text-muted line-clamp-2">
+                          {item.descriptionOrNotes}
+                        </p>
+                      )}
+                    </div>
+
+                    {(item.contactPerson || item.locationOrAddress || phone) && (
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted pt-1 border-t border-border/50">
+                        {item.contactPerson && (
+                          <span className="font-semibold text-foreground flex items-center gap-1">
+                            <UserCheck className="h-3 w-3 text-muted shrink-0" />
+                            {item.contactPerson}
+                          </span>
+                        )}
+                        {phone && (
+                          <a
+                            href={`tel:${phone}`}
+                            className="inline-flex items-center gap-1 rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary/20"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Phone className="h-3 w-3" />
+                            <span>Call</span>
+                          </a>
+                        )}
+                        {item.locationOrAddress && (
+                          <a
+                            href={`https://maps.google.com/?q=${encodeURIComponent(item.locationOrAddress)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="flex items-center gap-1 text-[11px] text-muted hover:text-primary transition truncate max-w-[200px]"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <MapPin className="h-3 w-3 text-rose-500 shrink-0" />
+                            <span className="truncate">{item.locationOrAddress}</span>
+                          </a>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/60">
+                      {elevatedRole && currentUserId !== item.salesUserId ? (
+                        <button
+                          type="button"
+                          onClick={() => setSeniorRemarksTarget(item)}
+                          className="inline-flex items-center gap-1 rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1.5 text-xs font-bold text-primary hover:bg-primary/20 transition cursor-pointer"
+                        >
+                          <ShieldCheck className="h-3.5 w-3.5" />
+                          <span>Senior Remark</span>
+                        </button>
+                      ) : (
+                        <span />
+                      )}
+
+                      <Link
+                        href={`/dashboard/plans/${item.planId}`}
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 transition shadow-xs"
+                      >
+                        <span>Open Plan</span>
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </Link>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Desktop / Tablet Main Activity Table (≥ md) */}
+          <div className="hidden md:block overflow-hidden rounded-xl border border-border bg-card shadow-xs">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="border-b border-border bg-surface-muted font-semibold text-muted">
@@ -1675,53 +1756,21 @@ export function TasksVisitsPage() {
                           {/* Direct Row Actions */}
                           <td className="px-4 py-3 text-right whitespace-nowrap">
                             <div className="flex items-center justify-end gap-1.5">
-                              {elevatedRole && (
+                              {elevatedRole && currentUserId !== item.salesUserId && (
                                 <button
                                   type="button"
                                   onClick={() => setSeniorRemarksTarget(item)}
-                                  className="inline-flex items-center gap-1 rounded bg-purple-500/10 border border-purple-500/20 px-2.5 py-1 text-[11px] font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition cursor-pointer"
+                                  className="inline-flex items-center gap-1 rounded bg-primary/10 border border-primary/20 px-2.5 py-1 text-[11px] font-bold text-primary hover:bg-primary/20 transition cursor-pointer"
                                   title="Add or view senior directives & remarks"
                                 >
                                   <ShieldCheck className="h-3 w-3" />
                                   <span>Senior Remark</span>
                                   {Array.isArray((item.raw as any)?.authority_remarks) &&
                                     (item.raw as any).authority_remarks.length > 0 && (
-                                      <span className="ml-0.5 rounded-full bg-purple-500/20 px-1.5 py-0.2 text-[9px] font-bold">
+                                      <span className="ml-0.5 rounded-full bg-primary/20 px-1.5 py-0.2 text-[9px] font-bold">
                                         {(item.raw as any).authority_remarks.length}
                                       </span>
                                     )}
-                                </button>
-                              )}
-
-                              {item.planStatus === "completed" && !elevatedRole ? (
-                                <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
-                                  Completed
-                                </span>
-                              ) : isPlanDate3DaysExpired(item.planDate) && !elevatedRole ? (
-                                <span
-                                  className="text-[10px] font-semibold text-rose-600 dark:text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-0.5 rounded"
-                                  title="Action period expired (> 3 days)"
-                                >
-                                  Expired (&gt;3 days)
-                                </span>
-                              ) : item.status === "completed" ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setStatusRemarksTarget(item)}
-                                  className="inline-flex items-center gap-1 rounded bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition cursor-pointer"
-                                  title="Edit outcome"
-                                >
-                                  <Edit3 className="h-3 w-3" />
-                                  <span>Edit Outcome</span>
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => setStatusRemarksTarget(item)}
-                                  className="inline-flex items-center gap-1 rounded bg-primary/10 border border-primary/20 px-2.5 py-1 text-[11px] font-bold text-primary hover:bg-primary/20 transition cursor-pointer"
-                                >
-                                  <MessageSquare className="h-3 w-3" />
-                                  <span>{elevatedRole ? "Status" : "Update Status"}</span>
                                 </button>
                               )}
 
@@ -1772,127 +1821,6 @@ export function TasksVisitsPage() {
             )}
           </div>
         </div>
-      )}
-
-      {/* Unified Item Status & Remarks Modal */}
-      {statusRemarksTarget && (
-        <ItemStatusRemarksModal
-          open={Boolean(statusRemarksTarget)}
-          itemType={statusRemarksTarget.itemType}
-          title={statusRemarksTarget.titleOrParty}
-          currentStatus={statusRemarksTarget.status || "created"}
-          initialPendingRemarks={(statusRemarksTarget.raw as any).pending_remarks}
-          initialInProgressRemarks={(statusRemarksTarget.raw as any).in_progress_remarks}
-          initialManagerRemarks={(statusRemarksTarget.raw as any).manager_remarks}
-          initialRescheduledDate={(statusRemarksTarget.raw as any).rescheduled_date}
-          authorityRemarksHistory={(statusRemarksTarget.raw as any).authority_remarks}
-          initialOutcome={
-            statusRemarksTarget.itemType === "visit"
-              ? (statusRemarksTarget.raw as WorkPlanVisitRecord).outcome
-              : (statusRemarksTarget.raw as WorkPlanWorkRecord).completion_remarks ||
-                (statusRemarksTarget.raw as WorkPlanWorkRecord).outcome
-          }
-          initialVisitAnswers={
-            statusRemarksTarget.itemType === "visit"
-              ? {
-                  meeting_with_doctor: (statusRemarksTarget.raw as WorkPlanVisitRecord)
-                    .meeting_with_doctor,
-                  meeting_with_purchase: (statusRemarksTarget.raw as WorkPlanVisitRecord)
-                    .meeting_with_purchase,
-                  meeting_with_finance: (statusRemarksTarget.raw as WorkPlanVisitRecord)
-                    .meeting_with_finance,
-                  meeting_with_engineer: (statusRemarksTarget.raw as WorkPlanVisitRecord)
-                    .meeting_with_engineer,
-                  new_product_introduced: (statusRemarksTarget.raw as WorkPlanVisitRecord)
-                    .new_product_introduced,
-                  order_received: (statusRemarksTarget.raw as WorkPlanVisitRecord).order_received,
-                }
-              : undefined
-          }
-          visitRecord={
-            statusRemarksTarget.itemType === "visit"
-              ? (statusRemarksTarget.raw as WorkPlanVisitRecord)
-              : undefined
-          }
-          isSaving={actionSaving}
-          onClose={() => setStatusRemarksTarget(null)}
-          onConfirm={async ({ status, remarks, rescheduledDate, visitAnswers }) => {
-            setActionSaving(true);
-            try {
-              const planId = statusRemarksTarget.planId;
-              const itemId = statusRemarksTarget.id;
-              if (statusRemarksTarget.itemType === "visit") {
-                if (status === "completed") {
-                  await completeVisitMut({
-                    planId,
-                    visitId: itemId,
-                    body: { outcome: remarks, ...(visitAnswers || {}) },
-                  }).unwrap();
-                } else if (status === "pending") {
-                  await updateVisitMut({
-                    planId,
-                    visitId: itemId,
-                    body: { status: "pending", pending_remarks: remarks },
-                  }).unwrap();
-                } else if (status === "in_progress") {
-                  await updateVisitMut({
-                    planId,
-                    visitId: itemId,
-                    body: { status: "in_progress", in_progress_remarks: remarks },
-                  }).unwrap();
-                } else {
-                  await updateVisitMut({
-                    planId,
-                    visitId: itemId,
-                    body: {
-                      status,
-                      notes: remarks,
-                      rescheduled_date: status === "rescheduled" ? rescheduledDate : undefined,
-                    },
-                  }).unwrap();
-                }
-                toast.success(`Visit status updated to ${status.replace("_", " ")}`);
-              } else {
-                if (status === "completed") {
-                  await updateWorkMut({
-                    planId,
-                    workId: itemId,
-                    body: { status: "completed", completion_remarks: remarks, outcome: remarks },
-                  }).unwrap();
-                } else if (status === "pending") {
-                  await updateWorkMut({
-                    planId,
-                    workId: itemId,
-                    body: { status: "pending", pending_remarks: remarks },
-                  }).unwrap();
-                } else if (status === "in_progress") {
-                  await updateWorkMut({
-                    planId,
-                    workId: itemId,
-                    body: { status: "in_progress", in_progress_remarks: remarks },
-                  }).unwrap();
-                } else {
-                  await updateWorkMut({
-                    planId,
-                    workId: itemId,
-                    body: {
-                      status,
-                      description: remarks,
-                      rescheduled_date: status === "rescheduled" ? rescheduledDate : undefined,
-                    },
-                  }).unwrap();
-                }
-                toast.success(`Task status updated to ${status.replace("_", " ")}`);
-              }
-              setStatusRemarksTarget(null);
-              loadData();
-            } catch (err: any) {
-              toast.error(err?.data?.message || err?.message || "Failed to update status");
-            } finally {
-              setActionSaving(false);
-            }
-          }}
-        />
       )}
 
       {/* Unified Senior Directives & Remarks Modal */}

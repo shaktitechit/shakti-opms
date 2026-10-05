@@ -38,48 +38,66 @@ export function Topbar({
   const getPageHeader = () => {
     if (pathname.startsWith("/dashboard/team-manager")) {
       return {
-        title: "Work Planner Portal / Team Manager",
+        title: "Team Manager",
         subtitle: "Map who reports to whom across teams",
       };
     }
     if (pathname.startsWith("/dashboard/assigned-teams")) {
       return {
-        title: "Work Planner Portal / Assigned Teams",
+        title: "Assigned Teams",
         subtitle: "Organisation-wide team activity & expenses",
       };
     }
     if (pathname.startsWith("/dashboard/my-team") || pathname.startsWith("/dashboard/assigned-users")) {
       return {
-        title: "Work Planner Portal / My Team",
+        title: "My Team",
         subtitle: "Your direct reports and team activity",
       };
     }
     if (pathname.startsWith("/dashboard/profile")) {
       return {
-        title: "Work Planner Portal / Profile",
+        title: "Profile & Settings",
         subtitle: "Your account details and portal access",
+      };
+    }
+    if (pathname.startsWith("/dashboard/senior-remarks")) {
+      return {
+        title: "Senior Directives",
+        subtitle: "Supervisory directives, guidance & objections",
+      };
+    }
+    if (pathname.startsWith("/dashboard/tasks-visits")) {
+      return {
+        title: "Tasks & Visits",
+        subtitle: "Field visits, activities & doctor meetings",
       };
     }
     if (pathname.startsWith("/dashboard/plans/calendar")) {
       return {
-        title: "Work Planner Portal / Calendar View",
+        title: "Calendar Schedule",
         subtitle: "Interactive schedule & planned visits calendar",
       };
     }
     if (pathname.startsWith("/dashboard/plans")) {
       return {
-        title: "Work Planner Portal / Work Plans",
+        title: "Work Plans",
         subtitle: "Daily visit itineraries, tasks & field logs",
       };
     }
     if (pathname.startsWith("/dashboard/expenses")) {
       return {
-        title: "Work Planner Portal / Expense Claims",
+        title: "Expense Claims",
         subtitle: "Reimbursements, receipts & travel claims",
       };
     }
+    if (pathname.startsWith("/dashboard/analytics")) {
+      return {
+        title: "Analytics & Caliber",
+        subtitle: "Performance metrics, AI score & execution stats",
+      };
+    }
     return {
-      title: "Work Planner Portal / Control Center",
+      title: "Control Center",
       subtitle: "Execution overview, stats & field activity",
     };
   };
@@ -95,21 +113,22 @@ export function Topbar({
     : "EXECUTIVE PORTAL";
 
   return (
-    <header className="relative z-30 flex shrink-0 items-center justify-between border-b border-border bg-card px-4 py-3 sm:px-6">
-      <div className="flex items-center gap-3">
+    <header className="relative z-30 flex shrink-0 items-center justify-between border-b border-border bg-card/95 backdrop-blur-md px-3.5 py-2.5 sm:px-6 sm:py-3">
+      <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
         <button
           type="button"
-          className="rounded-lg p-2 text-foreground hover:bg-surface-muted lg:hidden"
+          className="rounded-xl p-2 text-foreground hover:bg-surface-muted lg:hidden cursor-pointer"
           onClick={onOpenMobileNav}
+          aria-label="Open Navigation Drawer"
         >
           <Menu className="h-5 w-5" />
         </button>
 
-        <div>
-          <h2 className="text-sm sm:text-base font-bold text-foreground leading-tight">
+        <div className="min-w-0">
+          <h2 className="text-sm sm:text-base font-bold text-foreground leading-tight truncate">
             {header.title}
           </h2>
-          <p className="text-[11px] text-muted">{header.subtitle}</p>
+          <p className="hidden sm:block text-[11px] text-muted truncate">{header.subtitle}</p>
         </div>
       </div>
 

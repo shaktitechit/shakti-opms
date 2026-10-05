@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDispatch } from "react-redux";
+import { useRouter } from "next/navigation";
 
 import {
   useListNotificationsQuery,
@@ -123,6 +124,7 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [hasNewPulse, setHasNewPulse] = useState(false);
   const prevUnreadRef = useRef<number | null>(null);
+  const router = useRouter();
 
   const session = useMemo(() => readSessionFromStorage(), []);
   const token = session?.token;
@@ -163,19 +165,36 @@ export function NotificationBell() {
 
   const onNotificationActivate = useCallback(
     async (row: unknown) => {
+      const o = typeof row === "object" && row !== null ? (row as Record<string, unknown>) : {};
       const nid = notificationId(row);
-      if (!nid) return;
+      const entityType = typeof o.entity_type === "string" ? o.entity_type : "";
+      const entityId = o.entity_id ? String(o.entity_id) : "";
 
-      const unreadRow = isUnread(row);
-      if (!unreadRow) return;
+      if (nid && isUnread(row)) {
+        try {
+          await markRead(nid).unwrap();
+        } catch {
+          // best-effort
+        }
+      }
 
-      try {
-        await markRead(nid).unwrap();
-      } catch {
-        toast.error("Could not mark notification as read.");
+      setOpen(false);
+
+      if (entityType === "senior_remark") {
+        router.push("/dashboard/senior-remarks");
+      } else if (entityType === "expense") {
+        router.push("/dashboard/expenses");
+      } else if (entityType === "work_plan" || entityType === "day_end" || entityType === "day_end_reminder") {
+        if (entityId) {
+          router.push(`/dashboard/plans/${entityId}`);
+        } else {
+          router.push("/dashboard/plans");
+        }
+      } else if (entityType === "work_plan_reminder" || entityType === "manager_digest") {
+        router.push("/dashboard/plans");
       }
     },
-    [markRead]
+    [markRead, router]
   );
 
   const errorToastShown = useRef(false);
@@ -313,8 +332,8 @@ export function NotificationBell() {
                     "flex w-full gap-2 rounded-lg px-2 py-2 text-left transition",
                     tv.row,
                     unreadRow
-                      ? "bg-surface-muted"
-                      : "opacity-[0.97]",
+                      ? "bg-surface-muted hover:bg-surface-muted/80"
+                      : "opacity-[0.97] hover:bg-surface-muted/60",
                   ].join(" ");
 
                   const bodyBlock = (
@@ -362,32 +381,19 @@ export function NotificationBell() {
 
                   return (
                     <li key={nid} role="listitem">
-                      {unreadRow ? (
-                        <button
-                          type="button"
-                          disabled={Boolean(marking || !realId)}
-                          onClick={() => void onNotificationActivate(row)}
-                          className={[
-                            shellClassName,
-                            "w-full cursor-pointer hover:bg-surface-muted",
-                            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                          ].join(" ")}
-                          aria-label={`${title}. Unread — press to mark as read.`}
-                        >
-                          {bodyBlock}
-                        </button>
-                      ) : (
-                        <div
-                          className={[
-                            shellClassName,
-                            "cursor-default hover:bg-surface-muted/60",
-                          ].join(" ")}
-                          role="group"
-                          aria-label={`${title}. Read`}
-                        >
-                          {bodyBlock}
-                        </div>
-                      )}
+                      <button
+                        type="button"
+                        disabled={Boolean(marking && unreadRow)}
+                        onClick={() => void onNotificationActivate(row)}
+                        className={[
+                          shellClassName,
+                          "w-full cursor-pointer",
+                          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                        ].join(" ")}
+                        aria-label={`${title}.${unreadRow ? " Unread — press to view." : " Read — press to view."}`}
+                      >
+                        {bodyBlock}
+                      </button>
                     </li>
                   );
                 })}
@@ -399,3 +405,4 @@ export function NotificationBell() {
     </div>
   );
 }
+

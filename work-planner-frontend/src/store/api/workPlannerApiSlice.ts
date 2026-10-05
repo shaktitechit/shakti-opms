@@ -7,6 +7,8 @@ import type {
   WorkPlanExpenseRecord,
   WorkPlanRecord,
   WorkPlannerStats,
+  SeniorRemarkFeedItem,
+  SeniorRemarksStats,
 } from "@/types/workPlanner";
 
 function normalizePaginatedResponse<T>(res: any): {
@@ -504,6 +506,14 @@ export const workPlannerApiSlice = baseApi.injectEndpoints({
       }),
       invalidatesTags: (_result, _error, { planId }) => [{ type: "WorkPlan", id: planId }, "WorkPlannerStats"],
     }),
+    addExpenseAuthorityRemark: builder.mutation<any, { planId: string; expenseId: string; body: { manager_remarks: string; remark?: string; remark_type?: string; priority?: string; expected_followup_date?: string } }>({
+      query: ({ planId, expenseId, body }) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/${planId}/expenses/${expenseId}/authority-remarks`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: (_result, _error, { planId }) => [{ type: "WorkPlan", id: planId }, "Expense", "SeniorRemarks", "WorkPlannerStats"],
+    }),
     getCaliberAnalytics: builder.query<
       any,
       { sales_user?: string; user_id?: string; from?: string; to?: string; plan_id?: string; force?: boolean } | void
@@ -549,6 +559,99 @@ export const workPlannerApiSlice = baseApi.injectEndpoints({
       },
       transformResponse: (res: any) => res.data || res,
       providesTags: ["WorkPlanTeamAnalytics"],
+    }),
+    getWorkPlanDraft: builder.query<any, { sales_user?: string; plan_date: string }>({
+      query: ({ sales_user, plan_date }) => {
+        const query = new URLSearchParams();
+        if (sales_user) query.append("sales_user", sales_user);
+        if (plan_date) query.append("plan_date", plan_date);
+        return `${WORK_PLANNER_SERVICE_URL}/api/work-planner/drafts?${query.toString()}`;
+      },
+      transformResponse: (res: any) => res.data || res,
+      providesTags: ["WorkPlanDraft"],
+    }),
+    saveWorkPlanDraft: builder.mutation<any, Record<string, any>>({
+      query: (body) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/drafts`,
+        method: "PUT",
+        body,
+      }),
+      transformResponse: (res: any) => res.data || res,
+      invalidatesTags: ["WorkPlanDraft"],
+    }),
+    deleteWorkPlanDraft: builder.mutation<any, { sales_user?: string; plan_date: string }>({
+      query: ({ sales_user, plan_date }) => {
+        const query = new URLSearchParams();
+        if (sales_user) query.append("sales_user", sales_user);
+        if (plan_date) query.append("plan_date", plan_date);
+        return {
+          url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/drafts?${query.toString()}`,
+          method: "DELETE",
+        };
+      },
+      invalidatesTags: ["WorkPlanDraft"],
+    }),
+    getSeniorRemarksFeed: builder.query<
+      { items: SeniorRemarkFeedItem[]; stats: SeniorRemarksStats },
+      Record<string, any> | void
+    >({
+      query: (params) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/senior-remarks`,
+        params: params || {},
+      }),
+      transformResponse: (res: any) => {
+        const payload = res?.data !== undefined ? res.data : res;
+        const stats = res?.stats || {
+          total: Array.isArray(payload) ? payload.length : 0,
+          appreciation_count: 0,
+          objection_count: 0,
+          instruction_count: 0,
+          pending_response_count: 0,
+          responded_count: 0,
+          resolved_count: 0,
+        };
+        return {
+          items: Array.isArray(payload) ? payload : [],
+          stats,
+        };
+      },
+      providesTags: ["SeniorRemarks", "WorkPlan"],
+    }),
+    addJuniorFollowup: builder.mutation<
+      { success: boolean; remark: any },
+      {
+        target_type: "plan" | "visit" | "task" | "expense";
+        target_id: string;
+        remark_id?: string;
+        response: string;
+        action_status?: string;
+        attachments?: string[];
+        attachment_details?: any[];
+      }
+    >({
+      query: (body) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/senior-remarks/followup`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["SeniorRemarks", "WorkPlan", "Expense"],
+    }),
+    updateSeniorRemarkStatus: builder.mutation<
+      { success: boolean; remark: any },
+      {
+        target_type: "plan" | "visit" | "task" | "expense";
+        target_id: string;
+        remark_id?: string;
+        status: string;
+        resolution_remarks?: string;
+      }
+    >({
+      query: (body) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/senior-remarks/status`,
+        method: "PATCH",
+        body,
+      }),
+      invalidatesTags: ["SeniorRemarks", "WorkPlan", "Expense"],
     }),
   }),
 });
@@ -608,6 +711,7 @@ export const {
   useAddWorkPlanAuthorityRemarkMutation,
   useAddVisitAuthorityRemarkMutation,
   useAddWorkAuthorityRemarkMutation,
+  useAddExpenseAuthorityRemarkMutation,
   useGetCaliberAnalyticsQuery,
   useLazyGetCaliberAnalyticsQuery,
   useRegenerateCaliberAnalyticsMutation,
@@ -615,4 +719,12 @@ export const {
   useLazyGetSinglePlanAiAnalysisQuery,
   useGetTeamAnalyticsOverviewQuery,
   useLazyGetTeamAnalyticsOverviewQuery,
+  useGetWorkPlanDraftQuery,
+  useLazyGetWorkPlanDraftQuery,
+  useSaveWorkPlanDraftMutation,
+  useDeleteWorkPlanDraftMutation,
+  useGetSeniorRemarksFeedQuery,
+  useLazyGetSeniorRemarksFeedQuery,
+  useAddJuniorFollowupMutation,
+  useUpdateSeniorRemarkStatusMutation,
 } = workPlannerApiSlice;

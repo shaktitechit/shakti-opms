@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X, Download, ExternalLink, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { resolvePublicAssetUrl } from "@/lib/env";
 
 export type PreviewFile = {
   name: string;
@@ -158,7 +159,7 @@ export function FilePreviewModal({
   );
 }
 
-export function useFilePreview(token: string | null | undefined) {
+export function useFilePreview(token?: string | null) {
   const [previewDoc, setPreviewDoc] = useState<PreviewFile | null>(null);
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -195,7 +196,7 @@ export function useFilePreview(token: string | null | undefined) {
       }
 
       try {
-        let fetchUrl = doc.url;
+        let fetchUrl = resolvePublicAssetUrl(doc.url, token);
         if (token && !fetchUrl.includes("token=")) {
           fetchUrl +=
             (fetchUrl.includes("?") ? "&" : "?") +
@@ -224,7 +225,7 @@ export function useFilePreview(token: string | null | undefined) {
       } catch (err: unknown) {
         console.warn("Blob fetch failed, falling back to direct URL:", err);
         if (doc.url && doc.url !== "#") {
-          let fallbackUrl = doc.url;
+          let fallbackUrl = resolvePublicAssetUrl(doc.url, token);
           if (token && !fallbackUrl.includes("token=")) {
             fallbackUrl += (fallbackUrl.includes("?") ? "&" : "?") + `token=${encodeURIComponent(token)}`;
           }

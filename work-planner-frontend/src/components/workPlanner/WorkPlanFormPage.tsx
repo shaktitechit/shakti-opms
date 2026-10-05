@@ -47,6 +47,9 @@ import {
   useGetUserSettingsQuery,
   useGetMyTeamQuery,
   useGetEligibleManagersQuery,
+  useLazyGetWorkPlanDraftQuery,
+  useSaveWorkPlanDraftMutation,
+  useDeleteWorkPlanDraftMutation,
 } from "@/store/api/workPlannerApiSlice";
 import { isWpAdmin, isWpManager, isWpCoordinator, isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
 import { getUserWorkPlannerSettings, type CustomWorkTaskTemplate } from "@/utils/userWorkPlannerSettings";
@@ -56,7 +59,7 @@ import {
   isVisitsPlan,
   isWorkTaskPlan,
   isLeavePlan,
-  isPlanDate3DaysExpired,
+  isSunday,
   formatTime,
   renderVisitStatusBadge,
   renderWorkStatusBadge,
@@ -255,7 +258,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   const [submitting, setSubmitting] = useState(false);
 
   const [planDate, setPlanDate] = useState(() => initialDate || new Date().toISOString().split("T")[0]);
-  const [planType, setPlanType] = useState<string>("Visits");
+  const [planType, setPlanType] = useState<string>("");
   const [location, setLocation] = useState("");
   const [remarks, setRemarks] = useState("");
   const [salesUserId, setSalesUserId] = useState<string>(() => sessionUser?._id || "");
@@ -274,9 +277,8 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   // Modal state for selecting previous pending/in-progress items
   const [previousModalMode, setPreviousModalMode] = useState<"visits" | "tasks" | null>(null);
 
-  // Auto-rollover loading state and tracker
-  const [autoRolloverLoading, setAutoRolloverLoading] = useState(false);
-  const autoRolloverRanRef = useRef<string>("");
+  // Task rollover loading state
+  const [rolloverLoading, setRolloverLoading] = useState(false);
 
   // Creation Email Panel Modal state
   const [createMailModalOpen, setCreateMailModalOpen] = useState(false);
@@ -288,7 +290,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   } | null>(null);
 
   // Discussion with manager state
-  const [isDiscussedWithManager, setIsDiscussedWithManager] = useState(false);
+  const [isDiscussedWithManager, setIsDiscussedWithManager] = useState<boolean | null>(null);
   const [discussedManagerId, setDiscussedManagerId] = useState<string>("");
   const [discussedManagerName, setDiscussedManagerName] = useState<string>("");
   const [discussionMethod, setDiscussionMethod] = useState<"on_call" | "on_direct_meeting" | "on_email" | "other">("on_call");
@@ -337,6 +339,9 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   const [addWorkMut] = useAddWorkMutation();
   const [updateWorkMut] = useUpdateWorkMutation();
   const [removeWorkMut] = useRemoveWorkMutation();
+  const [lazyGetDraft] = useLazyGetWorkPlanDraftQuery();
+  const [saveDraftMut] = useSaveWorkPlanDraftMutation();
+  const [deleteDraftMut] = useDeleteWorkPlanDraftMutation();
 
   // Fetch Target User Work Planner Settings (Manager assignments & custom task templates)
   const targetUserId = salesUserId || sessionUser?._id || "";
@@ -660,18 +665,15 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
             }
           }
 
-          const isSourceExpired = isPlanDate3DaysExpired(plan.plan_date);
-
-          // When copying: if plan is within 3 days and item is uncompleted, reassign it; if plan > 3 days old or item is completed, create new
+          // When copying: if item is completed, create new; if item is uncompleted, reassign it
           if (Array.isArray(plan.visits)) {
             const copiedVisits = plan.visits
-              .filter((v: any) => !isSourceExpired || v.status === "completed")
               .map((v: any, idx: number) => ({
                 ...v,
                 sequence: idx + 1,
-                _id: isSourceExpired || v.status === "completed" ? undefined : v._id,
-                id: isSourceExpired || v.status === "completed" ? undefined : v.id,
-                status: isSourceExpired || v.status === "completed" ? "created" : v.status,
+                _id: v.status === "completed" ? undefined : v._id,
+                id: v.status === "completed" ? undefined : v.id,
+                status: v.status === "completed" ? "created" : v.status,
                 is_from_previous_plan: true,
                 previous_plan_date: plan.plan_date,
               }));
@@ -680,13 +682,12 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           }
           if (Array.isArray(plan.works)) {
             const copiedWorks = plan.works
-              .filter((w: any) => !isSourceExpired || w.status === "completed")
               .map((w: any, idx: number) => ({
                 ...w,
                 sequence: idx + 1,
-                _id: isSourceExpired || w.status === "completed" ? undefined : w._id,
-                id: isSourceExpired || w.status === "completed" ? undefined : w.id,
-                status: isSourceExpired || w.status === "completed" ? "created" : w.status,
+                _id: w.status === "completed" ? undefined : w._id,
+                id: w.status === "completed" ? undefined : w.id,
+                status: w.status === "completed" ? "created" : w.status,
                 is_from_previous_plan: true,
                 previous_plan_date: plan.plan_date,
               }));
@@ -908,19 +909,12 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
               setPlanType("Tasks & Visits");
             } else {
               setWorks([]);
-              setPlanType("Visits");
             }
           }
 
-          if (assignedPlanTypeManager) {
-            setIsDiscussedWithManager(true);
-            setDiscussedManagerId(assignedPlanTypeManager._id || "");
-            setDiscussedManagerName(assignedPlanTypeManager.name || "");
-          } else {
-            setIsDiscussedWithManager(false);
-            setDiscussedManagerId("");
-            setDiscussedManagerName("");
-          }
+          setIsDiscussedWithManager(null);
+          setDiscussedManagerId("");
+          setDiscussedManagerName("");
           setDiscussionMethod("on_call");
 
           if (!isInitialMount) {
@@ -968,13 +962,16 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     }
   }, [planType, dbUserSettings, isEditing, isCopying]);
 
-  // Handle Auto-Rollover of uncompleted tasks from previous valid plans
-  const handleAutoRollover = async (isManual = false) => {
+  // Handle manual rollover of uncompleted tasks from previous valid plans
+  const handleManualRollover = async () => {
     if (isPlanCompleted) return;
-    if (!planDate || !targetUserId) return;
+    if (!planDate || !targetUserId) {
+      toast.error("Please select a valid work plan date and executive.");
+      return;
+    }
 
     try {
-      setAutoRolloverLoading(true);
+      setRolloverLoading(true);
       const res = await lazyGetPlans({
         sales_user: targetUserId,
         sales_user_id: targetUserId,
@@ -987,21 +984,18 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       const allPlans: WorkPlanRecord[] = res?.data || [];
       const currentPlanDateNormalized = planDate.split("T")[0];
 
-      // Filter previous plans strictly prior to current plan date and not expired (> 3 days)
+      // Filter previous plans strictly prior to current plan date
       const previousPlans = allPlans
         .filter((p) => {
           if (!p.plan_date) return false;
           const pDateNormalized = p.plan_date.split("T")[0];
           if (pDateNormalized >= currentPlanDateNormalized) return false;
-          if (isPlanDate3DaysExpired(p.plan_date)) return false;
           return true;
         })
         .sort((a, b) => new Date(b.plan_date).getTime() - new Date(a.plan_date).getTime());
 
       if (previousPlans.length === 0) {
-        if (isManual) {
-          toast.info("No eligible previous plans within the 3-day window found for auto-rollover.");
-        }
+        toast.info("No eligible previous plans found for task rollover.");
         return;
       }
 
@@ -1029,9 +1023,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       const tasksCount = newWorksToAdd.length;
 
       if (tasksCount === 0) {
-        if (isManual) {
-          toast.info("No uncompleted tasks found to roll over.");
-        }
+        toast.info("No uncompleted tasks found to roll over.");
         return;
       }
 
@@ -1044,39 +1036,16 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       }
 
       toast.success(
-        `Auto-rollover completed: ${tasksCount} task${tasksCount === 1 ? "" : "s"} rolled over.`
+        `Task rollover completed: ${tasksCount} task${tasksCount === 1 ? "" : "s"} rolled over.`
       );
     } catch (err: unknown) {
-      if (isManual) {
-        toast.error(extractErrorMessage(err, "Auto-rollover failed."));
-      }
+      toast.error(extractErrorMessage(err, "Task rollover failed."));
     } finally {
-      setAutoRolloverLoading(false);
+      setRolloverLoading(false);
     }
   };
 
-  // Auto-trigger rollover on create mode when date & user are loaded and no existing plan is detected
-  useEffect(() => {
-    if (isEditing || planId || copyId || checkingExisting || existingPlanId || !planDate || !targetUserId) return;
-    if (isPlanDate3DaysExpired(planDate)) return;
 
-    const currentKey = `${targetUserId}_${planDate}`;
-    if (autoRolloverRanRef.current === currentKey) return;
-    autoRolloverRanRef.current = currentKey;
-
-    handleAutoRollover(false);
-  }, [isEditing, planId, copyId, checkingExisting, existingPlanId, planDate, targetUserId]);
-
-  // Effect 2: Default "Discussed with Manager" to the plan type manager (or global default manager)
-  useEffect(() => {
-    if (isEditing) return;
-    if (assignedPlanTypeManager?._id || assignedPlanTypeManager?.name) {
-      setIsDiscussedWithManager(true);
-      setDiscussedManagerId(assignedPlanTypeManager._id || "");
-      setDiscussedManagerName(assignedPlanTypeManager.name || "");
-      setShowManagerPicker(false);
-    }
-  }, [assignedPlanTypeManager?._id, assignedPlanTypeManager?.name, isEditing]);
 
   // Filter eligible managers for discussion dropdown: strictly reporting manager, portal admins, and portal managers
   const eligibleManagers = useMemo(() => {
@@ -1374,21 +1343,61 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     }
   }
 
-  // --- Real-Time Draft Engine ---
-  // Check for unsaved real-time draft when target user or planDate changes
+  // --- Real-Time Draft Engine (Cloud Database + Local Fallback) ---
+  // Check for unsaved real-time draft in database when target user or planDate changes
   useEffect(() => {
     if (isPlanCompleted || !targetUserId || !planDate) {
       setAvailableDraft(null);
       return;
     }
-    const savedDraft = loadWorkPlanDraft(targetUserId, planDate);
-    if (savedDraft && isDraftMeaningful(savedDraft)) {
-      setAvailableDraft(savedDraft);
-      setLastDraftSavedAt(savedDraft.lastSavedAt);
-    } else {
-      setAvailableDraft(null);
-    }
-  }, [targetUserId, planDate, isPlanCompleted]);
+
+    let isMounted = true;
+    (async () => {
+      try {
+        const cloudRes = await lazyGetDraft({ sales_user: targetUserId, plan_date: planDate }, true).unwrap();
+        const cloudDraft = cloudRes?.data || cloudRes;
+        if (cloudDraft && isMounted) {
+          const formattedCloudDraft: WorkPlanFormDraft = {
+            version: 1,
+            salesUserId: String(cloudDraft.sales_user?._id || cloudDraft.sales_user || targetUserId),
+            planDate: String(cloudDraft.plan_date).slice(0, 10),
+            planType: cloudDraft.plan_type || "",
+            location: cloudDraft.location || "",
+            remarks: cloudDraft.remarks || "",
+            isDiscussedWithManager: cloudDraft.is_discussed_with_manager !== undefined ? cloudDraft.is_discussed_with_manager : null,
+            discussedManagerId: String(cloudDraft.discussed_manager_id?._id || cloudDraft.discussed_manager_id || ""),
+            discussedManagerName: cloudDraft.discussed_manager_name || "",
+            discussionMethod: cloudDraft.discussion_method || "on_call",
+            visits: Array.isArray(cloudDraft.visits) ? cloudDraft.visits : [],
+            works: Array.isArray(cloudDraft.works) ? cloudDraft.works : [],
+            lastSavedAt: cloudDraft.last_saved_at || cloudDraft.updatedAt || new Date().toISOString(),
+          };
+
+          if (isDraftMeaningful(formattedCloudDraft)) {
+            setAvailableDraft(formattedCloudDraft);
+            setLastDraftSavedAt(formattedCloudDraft.lastSavedAt);
+            return;
+          }
+        }
+      } catch {
+        // Fallback to local draft if offline or network error
+      }
+
+      if (isMounted) {
+        const savedDraft = loadWorkPlanDraft(targetUserId, planDate);
+        if (savedDraft && isDraftMeaningful(savedDraft)) {
+          setAvailableDraft(savedDraft);
+          setLastDraftSavedAt(savedDraft.lastSavedAt);
+        } else {
+          setAvailableDraft(null);
+        }
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [targetUserId, planDate, isPlanCompleted, lazyGetDraft]);
 
   // Mark hydration settled once plan or existing check loading completes
   useEffect(() => {
@@ -1400,13 +1409,27 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     }
   }, [loading, checkingExisting]);
 
-  // Real-time Debounced Auto-Save
+  // Real-time Debounced Cloud & Device Auto-Save
   useEffect(() => {
     if (!isHydratedRef.current || loading || checkingExisting || isPlanCompleted || !planDate || !targetUserId) {
       return;
     }
 
-    const draftPayload = {
+    const cloudPayload = {
+      sales_user: targetUserId,
+      plan_date: planDate,
+      plan_type: planType,
+      location,
+      remarks,
+      is_discussed_with_manager: isDiscussedWithManager,
+      discussed_manager_id: discussedManagerId || undefined,
+      discussed_manager_name: discussedManagerName || undefined,
+      discussion_method: discussionMethod || undefined,
+      visits,
+      works,
+    };
+
+    const localPayload = {
       salesUserId: targetUserId,
       planDate,
       planType,
@@ -1420,7 +1443,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       works,
     };
 
-    if (!isDraftMeaningful(draftPayload)) {
+    if (!isDraftMeaningful(localPayload)) {
       return;
     }
 
@@ -1429,15 +1452,17 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       clearTimeout(autoSaveTimerRef.current);
     }
 
-    autoSaveTimerRef.current = setTimeout(() => {
-      const saved = saveWorkPlanDraft(draftPayload);
-      if (saved) {
+    autoSaveTimerRef.current = setTimeout(async () => {
+      try {
+        saveWorkPlanDraft(localPayload); // fast local backup
+        await saveDraftMut(cloudPayload).unwrap(); // primary database sync
         setDraftStatus("saved");
         setLastDraftSavedAt(new Date().toISOString());
-      } else {
-        setDraftStatus("idle");
+      } catch (err) {
+        console.warn("Cloud draft sync notice:", err);
+        setDraftStatus("saved");
       }
-    }, 600);
+    }, 1200);
 
     return () => {
       if (autoSaveTimerRef.current) {
@@ -1459,13 +1484,14 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     loading,
     checkingExisting,
     isPlanCompleted,
+    saveDraftMut,
   ]);
 
   // Flush unsaved draft synchronously before page unload
   useEffect(() => {
     const handleBeforeUnload = () => {
       if (isHydratedRef.current && !isPlanCompleted && planDate && targetUserId) {
-        const draftPayload = {
+        const localPayload = {
           salesUserId: targetUserId,
           planDate,
           planType,
@@ -1478,8 +1504,8 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           visits,
           works,
         };
-        if (isDraftMeaningful(draftPayload)) {
-          saveWorkPlanDraft(draftPayload);
+        if (isDraftMeaningful(localPayload)) {
+          saveWorkPlanDraft(localPayload);
         }
       }
     };
@@ -1505,7 +1531,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     if (availableDraft.planType) setPlanType(availableDraft.planType);
     if (availableDraft.location !== undefined) setLocation(availableDraft.location);
     if (availableDraft.remarks !== undefined) setRemarks(availableDraft.remarks);
-    setIsDiscussedWithManager(Boolean(availableDraft.isDiscussedWithManager));
+    setIsDiscussedWithManager(availableDraft.isDiscussedWithManager !== undefined ? availableDraft.isDiscussedWithManager : null);
     setDiscussedManagerId(availableDraft.discussedManagerId || "");
     setDiscussedManagerName(availableDraft.discussedManagerName || "");
     if (availableDraft.discussionMethod) setDiscussionMethod(availableDraft.discussionMethod);
@@ -1515,20 +1541,25 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     setDraftStatus("restored");
     setLastDraftSavedAt(availableDraft.lastSavedAt || new Date().toISOString());
     setAvailableDraft(null);
-    toast.success("Real-time draft restored successfully!");
+    toast.success("Cloud database running draft restored successfully!");
   };
 
-  const handleDiscardDraft = () => {
+  const handleDiscardDraft = async () => {
     if (targetUserId && planDate) {
       clearWorkPlanDraft(targetUserId, planDate);
+      try {
+        await deleteDraftMut({ sales_user: targetUserId, plan_date: planDate }).unwrap();
+      } catch {
+        // ignore delete error
+      }
     }
     setAvailableDraft(null);
     setDraftStatus("idle");
     setLastDraftSavedAt(null);
-    toast.info("Draft discarded.");
+    toast.info("Draft discarded from cloud and device.");
   };
 
-  const handleManualSaveDraft = () => {
+  const handleManualSaveDraft = async () => {
     if (isPlanCompleted) {
       toast.error("Completed work plans cannot be saved as drafts.");
       return;
@@ -1537,7 +1568,20 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       toast.error("Plan date and executive are required to save draft.");
       return;
     }
-    const draftPayload = {
+    const cloudPayload = {
+      sales_user: targetUserId,
+      plan_date: planDate,
+      plan_type: planType,
+      location,
+      remarks,
+      is_discussed_with_manager: isDiscussedWithManager,
+      discussed_manager_id: discussedManagerId || undefined,
+      discussed_manager_name: discussedManagerName || undefined,
+      discussion_method: discussionMethod || undefined,
+      visits,
+      works,
+    };
+    const localPayload = {
       salesUserId: targetUserId,
       planDate,
       planType,
@@ -1550,15 +1594,16 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       visits,
       works,
     };
-    const ok = saveWorkPlanDraft(draftPayload);
-    if (ok) {
+    try {
+      saveWorkPlanDraft(localPayload);
+      await saveDraftMut(cloudPayload).unwrap();
       const nowIso = new Date().toISOString();
       setDraftStatus("saved");
       setLastDraftSavedAt(nowIso);
       setAvailableDraft(null);
-      toast.success("Work plan draft saved locally.");
-    } else {
-      toast.error("Failed to save draft to storage.");
+      toast.success("Running draft saved to database successfully.");
+    } catch {
+      toast.error("Failed to save draft to database.");
     }
   };
 
@@ -1573,6 +1618,25 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       return;
     }
 
+    if (!planType) {
+      toast.error("Please select a plan type");
+      return;
+    }
+
+    if (!leaveType && !location.trim()) {
+      toast.error("Work location / city is required");
+      return;
+    }
+
+    if (!remarks.trim()) {
+      toast.error(
+        leaveType
+          ? "Leave reason & remarks are required"
+          : "Remarks & objectives are required"
+      );
+      return;
+    }
+
     if (minPlanDate && planDate < minPlanDate) {
       toast.error(
         `Work plans cannot be created or edited for dates earlier than 2 days before today (${minPlanDate}).`
@@ -1580,7 +1644,12 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       return;
     }
 
-    if (isDiscussedWithManager) {
+    if (isDiscussedWithManager === null) {
+      toast.error("Please indicate whether this plan was discussed with the manager");
+      return;
+    }
+
+    if (isDiscussedWithManager === true) {
       if (!discussedManagerId && !discussedManagerName.trim()) {
         toast.error("Please select a manager from the list");
         return;
@@ -1594,7 +1663,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         plan_type: planType as WorkPlanRecord["plan_type"],
         location: location.trim(),
         remarks: remarks.trim(),
-        is_discussed_with_manager: isDiscussedWithManager,
+        is_discussed_with_manager: Boolean(isDiscussedWithManager),
         discussed_manager_id:
           isDiscussedWithManager && discussedManagerId
             ? discussedManagerId
@@ -1616,7 +1685,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         plan_type: planType as WorkPlanRecord["plan_type"],
         location: location.trim(),
         remarks: remarks.trim(),
-        is_discussed_with_manager: isDiscussedWithManager,
+        is_discussed_with_manager: Boolean(isDiscussedWithManager),
         discussed_manager_id:
           isDiscussedWithManager && selectedManager
             ? ({ _id: selectedManager._id, name: selectedManager.name, email: selectedManager.email } as any)
@@ -1626,7 +1695,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           : undefined,
         discussion_method: isDiscussedWithManager ? discussionMethod : undefined,
         sales_user: selectedExec as any,
-        status: "planned",
+        status: planType === "Leave" ? "completed" : "planned",
         visits: visits.map((v, idx) => ({
           sequence: idx + 1,
           party_name: v.party_name || (typeof v.party === "object" ? v.party?.party_name : undefined) || "Client Visit",
@@ -1826,9 +1895,10 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         throw submitErr;
       }
 
-      // Clear local storage draft upon successful submission
+      // Clear cloud and local storage draft upon successful submission
       if (targetUserId && planDate) {
         clearWorkPlanDraft(targetUserId, planDate);
+        deleteDraftMut({ sales_user: targetUserId, plan_date: planDate }).catch(() => {});
       }
       setDraftStatus("idle");
       setLastDraftSavedAt(null);
@@ -2218,6 +2288,12 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                 className="w-full rounded-lg border border-border bg-surface-muted pl-9 pr-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
               />
             </div>
+            {isSunday(planDate) && (
+              <div className="mt-2 flex items-center gap-1.5 rounded-lg border border-purple-500/20 bg-purple-500/10 px-2.5 py-1.5 text-[11px] font-medium text-purple-600 dark:text-purple-400">
+                <Calendar className="h-3.5 w-3.5 shrink-0" />
+                <span>ℹ️ <strong>Sunday (Weekly Off)</strong> — Creating a work plan for Sunday is optional (only required if working).</span>
+              </div>
+            )}
             {minPlanDate && (
               <p className="mt-1 text-[11px] text-muted font-medium">
                 ℹ️ Work plans can be scheduled from {minPlanDate} onwards (up to 2 days prior to today).
@@ -2268,7 +2344,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         {!leaveType && (
           <div>
             <label className="mb-1.5 block text-xs font-semibold text-foreground">
-              Target Location / City
+              Work Location / City <span className="text-rose-500">*</span>
             </label>
             <div className="relative">
               <MapPin className="absolute left-3 top-2.5 h-4 w-4 text-muted" />
@@ -2293,7 +2369,8 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         {/* Remarks / Objectives */}
         <div>
           <label className="mb-1.5 block text-xs font-semibold text-foreground">
-            {leaveType ? "Leave Reason & Remarks" : "Remarks & Objectives"}
+            {leaveType ? "Leave Reason & Remarks" : "Remarks & Objectives"}{" "}
+            <span className="text-rose-500">*</span>
           </label>
           <div className="relative">
             <FileText className="absolute left-3 top-3 h-4 w-4 text-muted" />
@@ -2321,49 +2398,47 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
               <div className="flex items-center gap-1.5">
                 <MessageSquare className="h-4 w-4 text-primary" />
                 <span className="text-xs font-semibold text-foreground">
-                  Is this Plan discussed with the Manager?
+                  Is this Plan discussed with the Manager? <span className="text-rose-500">*</span>
                 </span>
               </div>
               <div className="flex items-center gap-5 pt-0.5">
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input
-                    type="checkbox"
+                    type="radio"
+                    name="is_discussed_with_manager"
                     disabled={isPlanCompleted}
-                    checked={isDiscussedWithManager}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setIsDiscussedWithManager(true);
-                        if (assignedPlanTypeManager) {
-                          setDiscussedManagerId(assignedPlanTypeManager._id || "");
-                          setDiscussedManagerName(assignedPlanTypeManager.name || "");
-                          setShowManagerPicker(false);
-                        }
+                    checked={isDiscussedWithManager === true}
+                    onChange={() => {
+                      setIsDiscussedWithManager(true);
+                      if (assignedPlanTypeManager) {
+                        setDiscussedManagerId(assignedPlanTypeManager._id || "");
+                        setDiscussedManagerName(assignedPlanTypeManager.name || "");
+                        setShowManagerPicker(false);
                       }
                     }}
-                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20 accent-primary cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="h-4 w-4 border-border text-primary focus:ring-primary/20 accent-primary cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                   <span className="text-xs font-medium text-foreground">Yes</span>
                 </label>
 
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input
-                    type="checkbox"
+                    type="radio"
+                    name="is_discussed_with_manager"
                     disabled={isPlanCompleted}
-                    checked={!isDiscussedWithManager}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setIsDiscussedWithManager(false);
-                        setDiscussedManagerId("");
-                        setDiscussedManagerName("");
-                      }
+                    checked={isDiscussedWithManager === false}
+                    onChange={() => {
+                      setIsDiscussedWithManager(false);
+                      setDiscussedManagerId("");
+                      setDiscussedManagerName("");
                     }}
-                    className="h-4 w-4 rounded border-border text-primary focus:ring-primary/20 accent-primary cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="h-4 w-4 border-border text-primary focus:ring-primary/20 accent-primary cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                   <span className="text-xs font-medium text-foreground">No</span>
                 </label>
               </div>
             </div>
-            {isDiscussedWithManager && (
+            {isDiscussedWithManager === true && (
               <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                 <Check className="h-3 w-3" />
                 Discussion Logged
@@ -2371,7 +2446,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
             )}
           </div>
 
-          {isDiscussedWithManager && (
+          {isDiscussedWithManager === true && (
             <div className="pt-2 border-t border-border/60 space-y-3">
               <div className="grid gap-3 sm:grid-cols-2">
                 {/* Manager Selection Display */}
@@ -2701,13 +2776,13 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => handleAutoRollover(true)}
-                    disabled={autoRolloverLoading}
+                    onClick={handleManualRollover}
+                    disabled={rolloverLoading}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition shadow-xs cursor-pointer disabled:opacity-50"
-                    title="Auto rollover uncompleted tasks from last 3 days"
+                    title="Rollover uncompleted tasks from previous plans"
                   >
-                    <RotateCcw className={`h-3.5 w-3.5 ${autoRolloverLoading ? "animate-spin" : ""}`} />
-                    Auto Rollover
+                    <RotateCcw className={`h-3.5 w-3.5 ${rolloverLoading ? "animate-spin" : ""}`} />
+                    Rollover Tasks
                   </button>
                   <button
                     type="button"

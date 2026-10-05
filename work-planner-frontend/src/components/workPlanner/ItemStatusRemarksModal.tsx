@@ -12,9 +12,6 @@ import {
   Send,
   ClipboardCheck,
   Check,
-  XCircle,
-  SkipForward,
-  CalendarClock,
   ShieldCheck,
   Sparkles,
   UserCheck,
@@ -35,10 +32,7 @@ export type WorkflowStatus =
   | "in_progress"
   | "checked_in"
   | "checked_out"
-  | "completed"
-  | "cancelled"
-  | "skipped"
-  | "rescheduled";
+  | "completed";
 
 export type CompleteVisitAnswers = {
   meeting_with_doctor: boolean;
@@ -132,13 +126,12 @@ export function ItemStatusRemarksModal({
     if (isVisit && s === "checked_in") return "completed";
     if (s === "created" || s === "pending") return "in_progress";
     if (s === "in_progress") return "completed";
-    if (["completed", "cancelled", "skipped", "rescheduled"].includes(s)) return s;
+    if (s === "completed") return "completed";
     return "completed";
   };
 
   const [selectedStatus, setSelectedStatus] = useState<WorkflowStatus>(defaultSelectedStatus);
   const [remarks, setRemarks] = useState("");
-  const [rescheduledDate, setRescheduledDate] = useState("");
   const [selfieFile, setSelfieFile] = useState<File | null>(null);
   const [selfiePreview, setSelfiePreview] = useState<string | null>(null);
   const [geoLat, setGeoLat] = useState<number | null>(null);
@@ -190,12 +183,6 @@ export function ItemStatusRemarksModal({
       } else {
         setRemarks(initialOutcome || "");
       }
-
-      setRescheduledDate(
-        initialRescheduledDate
-          ? initialRescheduledDate.slice(0, 10)
-          : new Date(Date.now() + 86400000).toISOString().slice(0, 10)
-      );
 
       setVisitAnswers({
         meeting_with_doctor:
@@ -258,12 +245,6 @@ export function ItemStatusRemarksModal({
       }
     }
 
-    // If rescheduled, require the target date
-    if (selectedStatus === "rescheduled" && !rescheduledDate.trim()) {
-      toast.error("Please select a target date for rescheduling");
-      return;
-    }
-
     const cleanText = stripHtml(remarks).trim();
 
     if (!cleanText && !elevatedRole) {
@@ -272,8 +253,6 @@ export function ItemStatusRemarksModal({
           ? "Please provide outcome or completion remarks"
           : selectedStatus === "pending"
           ? "Please enter pending remarks / reason"
-          : selectedStatus === "rescheduled"
-          ? "Please enter reason for rescheduling"
           : "Please enter status remarks or execution notes"
       );
       return;
@@ -307,7 +286,6 @@ export function ItemStatusRemarksModal({
       await onConfirm({
         status: selectedStatus,
         remarks: remarks.trim() || (elevatedRole ? `Status updated by ${currentRoleName}` : ""),
-        rescheduledDate: selectedStatus === "rescheduled" ? rescheduledDate : undefined,
         visitAnswers: finalAnswers,
         selfieUrl: uploadedSelfieUrl,
         lat: geoLat || undefined,
@@ -354,24 +332,6 @@ export function ItemStatusRemarksModal({
             description: "Mark visit completed with outcome checklist & notes",
             icon: <CheckCircle2 className="h-4 w-4 text-emerald-500" />,
           },
-          {
-            id: "cancelled",
-            label: "Cancelled",
-            description: "Call off or mark visit as cancelled",
-            icon: <XCircle className="h-4 w-4 text-rose-500" />,
-          },
-          {
-            id: "rescheduled",
-            label: "Rescheduled",
-            description: "Rescheduled to a different date or time",
-            icon: <CalendarClock className="h-4 w-4 text-purple-500" />,
-          },
-          {
-            id: "skipped",
-            label: "Skipped",
-            description: "Bypassed or skipped in today's sequence",
-            icon: <SkipForward className="h-4 w-4 text-muted" />,
-          },
         ]
       : [
           {
@@ -413,24 +373,6 @@ export function ItemStatusRemarksModal({
           description: "Successfully finished with final outcome & notes",
           icon: <CheckCircle2 className="h-4 w-4 text-emerald-500" />,
         },
-        {
-          id: "cancelled",
-          label: "Cancelled",
-          description: "Mark task as cancelled or dropped",
-          icon: <XCircle className="h-4 w-4 text-rose-500" />,
-        },
-        {
-          id: "rescheduled",
-          label: "Rescheduled",
-          description: "Rescheduled to a different date & plan across",
-          icon: <CalendarClock className="h-4 w-4 text-purple-500" />,
-        },
-        {
-          id: "skipped",
-          label: "Skipped",
-          description: "Bypassed or skipped for today",
-          icon: <SkipForward className="h-4 w-4 text-muted" />,
-        },
       ]
     : [
         {
@@ -450,12 +392,6 @@ export function ItemStatusRemarksModal({
           label: "Completed",
           description: "Successfully finished with final outcome & notes",
           icon: <CheckCircle2 className="h-4 w-4 text-emerald-500" />,
-        },
-        {
-          id: "rescheduled",
-          label: "Rescheduled",
-          description: "Reschedule to another target date & plan",
-          icon: <CalendarClock className="h-4 w-4 text-purple-500" />,
         },
       ];
 
@@ -822,35 +758,6 @@ export function ItemStatusRemarksModal({
               </div>
             )}
 
-            {/* Reschedule Target Date Picker */}
-            {selectedStatus === "rescheduled" && (
-              <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-4 space-y-2.5 animate-in fade-in duration-200">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <CalendarClock className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-                    <span className="text-xs font-bold text-foreground">
-                      Reschedule Target Date <span className="text-rose-500">*</span>
-                    </span>
-                  </div>
-                  <span className="rounded bg-indigo-500/15 px-2 py-0.5 text-[10px] font-bold text-indigo-700 dark:text-indigo-300">
-                    Required for Rescheduling
-                  </span>
-                </div>
-                <p className="text-[11px] text-muted leading-tight">
-                  Select the new date for this {isVisit ? "visit" : "task"}. It will automatically be scheduled on that date&apos;s plan across the system.
-                </p>
-                <div>
-                  <input
-                    type="date"
-                    required
-                    value={rescheduledDate}
-                    onChange={(e) => setRescheduledDate(e.target.value)}
-                    className="w-full rounded-xl border border-indigo-500/30 bg-card p-3 text-xs text-foreground font-semibold focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-              </div>
-            )}
-
             {/* Dynamic Remarks Input */}
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-foreground flex items-center justify-between">
@@ -861,12 +768,6 @@ export function ItemStatusRemarksModal({
                       : "Outcome & Final Completion Remarks"
                     : selectedStatus === "pending"
                     ? "Pending Remarks / Delay Reason"
-                    : selectedStatus === "cancelled"
-                    ? "Cancellation Reason / Remarks"
-                    : selectedStatus === "rescheduled"
-                    ? "Reschedule Details & Remarks"
-                    : selectedStatus === "skipped"
-                    ? "Reason for Skipping"
                     : selectedStatus === "created"
                     ? "Initial Notes / Objectives"
                     : "In-Progress Status Remarks"}
@@ -889,10 +790,6 @@ export function ItemStatusRemarksModal({
                       : "Describe the outcome, meeting takeaways, key decisions, or task output..."
                     : selectedStatus === "pending"
                     ? "State reason for keeping this item pending / on hold..."
-                    : selectedStatus === "cancelled"
-                    ? "Reason for cancelling this item..."
-                    : selectedStatus === "rescheduled"
-                    ? "Provide reschedule explanation and planned target..."
                     : "Provide status update, meeting details, or notes..."
                 }
               />
@@ -900,10 +797,10 @@ export function ItemStatusRemarksModal({
 
             {/* Read-only Senior Directive Callout for Guidance */}
             {initialManagerRemarks ? (
-              <div className="rounded-xl border border-purple-500/30 bg-purple-500/5 dark:bg-purple-950/20 p-4 space-y-1.5 animate-in fade-in duration-150">
+              <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-1.5 animate-in fade-in duration-150">
                 <div className="flex items-center gap-2">
-                  <ShieldCheck className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                  <span className="text-xs font-bold text-purple-800 dark:text-purple-200">
+                  <ShieldCheck className="h-4 w-4 text-primary" />
+                  <span className="text-xs font-bold text-primary">
                     Active Senior Directive / Supervisory Instruction
                   </span>
                 </div>
@@ -917,7 +814,7 @@ export function ItemStatusRemarksModal({
             {Array.isArray(authorityRemarksHistory) && authorityRemarksHistory.length > 0 && (
               <div className="rounded-xl border border-border bg-surface-muted/40 p-4 space-y-3">
                 <div className="flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                  <MessageSquare className="h-4 w-4 text-primary" />
                   <h4 className="text-xs font-bold text-foreground">
                     Senior Remarks History ({authorityRemarksHistory.length})
                   </h4>
@@ -932,7 +829,7 @@ export function ItemStatusRemarksModal({
                         ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border-rose-500/20"
                         : roleLower.includes("coordinator")
                         ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/20"
-                        : "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/20";
+                        : "bg-primary/15 text-primary border-primary/20";
 
                     return (
                       <div

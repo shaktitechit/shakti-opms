@@ -79,13 +79,29 @@ function dayBoundsInTz(date, timeZone) {
   };
 }
 
+function isSundayInTz(date, timeZone) {
+  try {
+    const weekday = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'short' }).format(date);
+    return weekday === 'Sun';
+  } catch {
+    return new Date(date).getDay() === 0;
+  }
+}
+
 /**
- * 10:00 AM Morning Job: Check for executives who have not created a work plan for today.
+ * 11:30 AM Morning Job: Check for executives who have not submitted a work plan for today.
+ * If already submitted, approved, completed, or on Leave, do not flag.
  */
 async function runPendingWorkPlanCheck({ timeZone = WORK_PLANNER_TZ || 'Asia/Kolkata' } = {}) {
   try {
     const { ymd, start, endExclusive } = dayBoundsInTz(new Date(), timeZone);
-    logger.info(`[workPlannerScheduler] Running 10 AM Work Plan Pending check for ${ymd} (tz: ${timeZone})`);
+    logger.info(`[workPlannerScheduler] Running 11:30 AM Work Plan Pending check for ${ymd} (tz: ${timeZone})`);
+
+    // Sunday (Weekly Off): executives are not required to create plans
+    if (isSundayInTz(new Date(), timeZone)) {
+      logger.info(`[workPlannerScheduler] Sunday (Weekly Off) detected for ${ymd} (tz: ${timeZone}) — skipping morning reminder.`);
+      return;
+    }
 
     const { WorkPlan } = getModels();
 
@@ -96,24 +112,33 @@ async function runPendingWorkPlanCheck({ timeZone = WORK_PLANNER_TZ || 'Asia/Kol
       return;
     }
 
-    // 2. Query today's work plans
-    const todayPlans = await WorkPlan.find({
+    // 2. Query today's work plans that are submitted, approved, completed, or on Leave
+    const submittedOrLeavePlans = await WorkPlan.find({
       plan_date: { $gte: start, $lt: endExclusive },
+      $or: [
+        { status: { $in: ['submitted', 'approved', 'completed'] } },
+        { plan_type: 'Leave' },
+      ],
       deletedAt: null,
-    }).select('sales_user status').lean();
+    }).select('sales_user status plan_type').lean();
 
-    const usersWithPlan = new Set(
-      todayPlans.map((p) => String(p.sales_user)).filter(Boolean)
+    const usersSubmittedOrLeave = new Set(
+      submittedOrLeavePlans.map((p) => String(p.sales_user)).filter(Boolean)
     );
 
-    // 3. Find executives with no plan for today
-    const pendingExecutives = executives.filter((e) => !usersWithPlan.has(String(e._id)));
+    // 3. Find executives with no submitted/approved/leave plan for today
+    const pendingExecutives = executives.filter((e) => !usersSubmittedOrLeave.has(String(e._id)));
 
     logger.info(
-      `[workPlannerScheduler] Found ${pendingExecutives.length}/${executives.length} executives without Work Plan for ${ymd}`
+      `[workPlannerScheduler] Found ${pendingExecutives.length}/${executives.length} executives with pending Work Plan for ${ymd}`
     );
 
-    // 4. Dispatch in-app notifications and emails
+    if (pendingExecutives.length === 0) {
+      logger.info(`[workPlannerScheduler] All executives have submitted/approved work plans for ${ymd}. No reminders needed.`);
+      return;
+    }
+
+    // 4. Dispatch in-app notifications, executive reminders, and manager digests (with Portal Admins in CC)
     await sendPendingWorkPlanMorningReminder(pendingExecutives, ymd, timeZone);
   } catch (err) {
     logger.error(`[workPlannerScheduler] Error in runPendingWorkPlanCheck: ${err.message}`);
@@ -121,19 +146,28 @@ async function runPendingWorkPlanCheck({ timeZone = WORK_PLANNER_TZ || 'Asia/Kol
 }
 
 /**
- * 6:00 PM Evening Job: Check for executives whose today's work plan is still incomplete (Day End pending).
+ * 6:30 PM Evening Job: Check for executives whose today's work plan is still incomplete (Day End pending).
+ * If already completed or on Leave, do not flag.
  */
 async function runPendingDayEndCheck({ timeZone = WORK_PLANNER_TZ || 'Asia/Kolkata' } = {}) {
   try {
     const { ymd, start, endExclusive } = dayBoundsInTz(new Date(), timeZone);
-    logger.info(`[workPlannerScheduler] Running 6 PM Day End Pending check for ${ymd} (tz: ${timeZone})`);
+    logger.info(`[workPlannerScheduler] Running 6:30 PM Day End Pending check for ${ymd} (tz: ${timeZone})`);
 
-    const { WorkPlan, User } = getModels();
+    // Sunday (Weekly Off): skip default Day End reminder
+    if (isSundayInTz(new Date(), timeZone)) {
+      logger.info(`[workPlannerScheduler] Sunday (Weekly Off) detected for ${ymd} (tz: ${timeZone}) — skipping evening Day End reminder.`);
+      return;
+    }
 
-    // 1. Query today's work plans that are NOT completed
+    const { WorkPlan } = getModels();
+
+    // 1. Query today's work plans that are NOT completed, NOT a Leave day, and have no day_end completed_at
     const incompletePlans = await WorkPlan.find({
       plan_date: { $gte: start, $lt: endExclusive },
       status: { $ne: 'completed' },
+      plan_type: { $ne: 'Leave' },
+      'day_end.completed_at': { $exists: false },
       deletedAt: null,
     }).populate('sales_user', 'name email portals is_active').lean();
 
@@ -147,10 +181,15 @@ async function runPendingDayEndCheck({ timeZone = WORK_PLANNER_TZ || 'Asia/Kolka
     }
 
     logger.info(
-      `[workPlannerScheduler] Found ${pendingPlansWithUsers.length} incomplete work plans for ${ymd}`
+      `[workPlannerScheduler] Found ${pendingPlansWithUsers.length} incomplete work plans (Day End pending) for ${ymd}`
     );
 
-    // 2. Dispatch in-app notifications and emails
+    if (pendingPlansWithUsers.length === 0) {
+      logger.info(`[workPlannerScheduler] All work plans completed for ${ymd}. No evening Day End reminders needed.`);
+      return;
+    }
+
+    // 2. Dispatch in-app notifications, executive reminders, and manager digests (with Portal Admins in CC)
     await sendPendingDayEndEveningReminder(pendingPlansWithUsers, ymd, timeZone);
   } catch (err) {
     logger.error(`[workPlannerScheduler] Error in runPendingDayEndCheck: ${err.message}`);
@@ -168,37 +207,37 @@ function startSchedulers() {
   }
 
   const timeZone = WORK_PLANNER_TZ || 'Asia/Kolkata';
-  const morningCron = WORK_PLAN_PENDING_CRON || '0 10 * * *';
-  const eveningCron = DAY_END_PENDING_CRON || '0 18 * * *';
+  const morningCron = WORK_PLAN_PENDING_CRON || '30 11 * * *';
+  const eveningCron = DAY_END_PENDING_CRON || '30 18 * * *';
 
-  // 1. Morning 10 AM Scheduler
+  // 1. Morning 11:30 AM Scheduler
   if (cron.validate(morningCron)) {
     cron.schedule(
       morningCron,
       () => {
         runPendingWorkPlanCheck({ timeZone }).catch((err) => {
-          logger.error(`[workPlannerScheduler] 10 AM morning check failed: ${err.message}`);
+          logger.error(`[workPlannerScheduler] 11:30 AM morning check failed: ${err.message}`);
         });
       },
       { timezone: timeZone }
     );
-    logger.info(`[workPlannerScheduler] Scheduled Morning 10 AM Pending Work Plan check at cron="${morningCron}" tz="${timeZone}"`);
+    logger.info(`[workPlannerScheduler] Scheduled Morning 11:30 AM Pending Work Plan check at cron="${morningCron}" tz="${timeZone}"`);
   } else {
     logger.error(`[workPlannerScheduler] Invalid WORK_PLAN_PENDING_CRON="${morningCron}"`);
   }
 
-  // 2. Evening 6 PM Scheduler
+  // 2. Evening 6:30 PM Scheduler
   if (cron.validate(eveningCron)) {
     cron.schedule(
       eveningCron,
       () => {
         runPendingDayEndCheck({ timeZone }).catch((err) => {
-          logger.error(`[workPlannerScheduler] 6 PM evening check failed: ${err.message}`);
+          logger.error(`[workPlannerScheduler] 6:30 PM evening check failed: ${err.message}`);
         });
       },
       { timezone: timeZone }
     );
-    logger.info(`[workPlannerScheduler] Scheduled Evening 6 PM Pending Day End check at cron="${eveningCron}" tz="${timeZone}"`);
+    logger.info(`[workPlannerScheduler] Scheduled Evening 6:30 PM Pending Day End check at cron="${eveningCron}" tz="${timeZone}"`);
   } else {
     logger.error(`[workPlannerScheduler] Invalid DAY_END_PENDING_CRON="${eveningCron}"`);
   }

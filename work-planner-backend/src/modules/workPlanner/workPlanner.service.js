@@ -18,8 +18,18 @@ const {
 } = require('./workPlanNotification.service');
 const {
   notifyWorkPlanCreated,
-  notifyDayEndCompleted,
+  notifyWorkPlanSubmitted,
+  notifyWorkPlanApproved,
+  notifyWorkPlanRejected,
+  notifyVisitCreated,
+  notifyTaskCreated,
   notifyAuthorityRemarkAdded,
+  notifyJuniorFollowupAdded,
+  notifyDirectiveResolved,
+  notifyExpenseSubmitted,
+  notifyExpenseApproved,
+  notifyExpenseRejected,
+  notifyDayEndCompleted,
 } = require('./workPlannerAutoNotification.service');
 const {
   EDITABLE_PLAN_STATUSES,
@@ -29,7 +39,11 @@ const {
   startOfDay,
   endOfDay,
   isAdminDept,
+  isWpAdmin,
+  isWpManager,
+  isWpCoordinator,
   isWpElevated,
+  isExecutive,
   isExpenseAddWindowOpen,
   isExpenseAddWindowEnded,
   isExpenseReceiptRequired,
@@ -37,6 +51,7 @@ const {
 const {
   canAccessSalesUser,
   applySalesUserFilter,
+  getVisibleSalesUserIds,
 } = require('./teamVisibility.service');
 
 function userId(user) {
@@ -44,14 +59,28 @@ function userId(user) {
 }
 
 function getUserRole(user) {
-  if (!user) return 'Senior Authority';
-  const rawRole = user.role || user.user_role || (Array.isArray(user.roles) ? user.roles[0] : null) || (Array.isArray(user.role_codes) ? user.role_codes[0] : null);
-  if (!rawRole) return 'Senior Authority';
-  const r = String(rawRole).toLowerCase();
-  if (r.includes('admin')) return 'Portal Admin';
-  if (r.includes('coord')) return 'Coordinator';
-  if (r.includes('manager') || r.includes('mgmt') || r.includes('lead')) return 'Senior Manager';
-  return 'Senior Authority';
+  if (!user) return 'Executive';
+  if (isWpAdmin(user)) return 'Portal Admin';
+  if (isWpManager(user)) return 'Senior Manager';
+  if (isWpCoordinator(user)) return 'Coordinator';
+  if (isExecutive(user)) return 'Executive';
+
+  const rawRole =
+    user.role ||
+    user.user_role ||
+    (Array.isArray(user.roles) ? user.roles[0] : null) ||
+    (Array.isArray(user.role_codes) ? user.role_codes[0] : null) ||
+    user.department;
+
+  if (rawRole) {
+    const r = String(rawRole).toLowerCase();
+    if (r.includes('admin') || r.includes('root') || r.includes('director')) return 'Portal Admin';
+    if (r.includes('coord')) return 'Coordinator';
+    if (r.includes('manager') || r.includes('mgmt') || r.includes('lead') || r.includes('head')) return 'Senior Manager';
+    if (r.includes('sales') || r.includes('exec') || r.includes('officer') || r.includes('rep') || r.includes('user')) return 'Executive';
+  }
+
+  return 'Executive';
 }
 
 function applyAuthorityRemarks(doc, body, user) {
@@ -59,7 +88,8 @@ function applyAuthorityRemarks(doc, body, user) {
   const remarkText =
     (typeof body.manager_remarks === 'string' && body.manager_remarks.trim()) ||
     (typeof body.authority_remark === 'string' && body.authority_remark.trim()) ||
-    (typeof body.authority_remarks === 'string' && body.authority_remarks.trim());
+    (typeof body.authority_remarks === 'string' && body.authority_remarks.trim()) ||
+    (typeof body.remark === 'string' && body.remark.trim());
 
   if (remarkText) {
     doc.manager_remarks = remarkText;
@@ -68,12 +98,30 @@ function applyAuthorityRemarks(doc, body, user) {
     }
     const uid = userId(user);
     const uName = user?.name || user?.email || 'Senior Authority';
-    const uRole = getUserRole(user);
+    let uRole = getUserRole(user);
+    if (uRole === 'Executive' && isWpElevated(user)) {
+      uRole = 'Senior Authority';
+    }
+
+    const remarkType = ['instruction', 'appreciation', 'objection'].includes(body.remark_type)
+      ? body.remark_type
+      : 'instruction';
+    const priority = ['low', 'medium', 'high', 'urgent'].includes(body.priority)
+      ? body.priority
+      : 'medium';
+    const expectedFollowupDate = body.expected_followup_date ? new Date(body.expected_followup_date) : undefined;
+    const initialStatus = remarkType === 'appreciation' ? 'responded' : 'pending_response';
+
     doc.authority_remarks.push({
       remark: remarkText,
       user: uid,
       user_name: uName,
       role: uRole,
+      remark_type: remarkType,
+      priority,
+      expected_followup_date: expectedFollowupDate,
+      status: initialStatus,
+      followup_remarks: [],
       created_at: new Date(),
     });
     return remarkText;
@@ -426,12 +474,6 @@ async function completePlan(id, user, dayEndData = null) {
   }
   if (!['planned', 'approved'].includes(plan.status)) {
     throw new ApiError(400, 'Only active planned work plans can be completed');
-  }
-  if (!isAdminDept(user) && !isExpenseAddWindowOpen(plan.plan_date)) {
-    throw new ApiError(
-      400,
-      'Work plans can only be completed within the 3-day window from the work plan date',
-    );
   }
 
   plan.status = 'completed';
@@ -836,7 +878,7 @@ async function create(body, user) {
     const doc = await WorkPlan.create({
       plan_date: planDate,
       sales_user: salesUserId,
-      status: 'planned',
+      status: body.plan_type === 'Leave' ? 'completed' : 'planned',
       remarks: body.remarks?.trim() || undefined,
       location: body.location?.trim() || undefined,
       plan_type: body.plan_type?.trim() || 'Visits',
@@ -861,6 +903,15 @@ async function create(body, user) {
     await renumberWorks(doc._id);
 
     await logActivity(user, doc._id, 'created', `Work plan created for ${planDate.toISOString().slice(0, 10)}`);
+
+    // Clean up any cloud running draft for this user & plan date
+    const { WorkPlanDraft } = getModels();
+    if (WorkPlanDraft) {
+      await WorkPlanDraft.deleteMany({
+        sales_user: salesUserId,
+        plan_date: { $gte: planDate, $lte: endOfDay(body.plan_date) },
+      }).catch(() => {});
+    }
 
     // Plan mail is sent only from submit(), after visits and tasks have been saved.
 
@@ -1049,13 +1100,8 @@ async function approve(id, user) {
   await plan.save();
 
   await logActivity(user, plan._id, 'approved', 'Work plan approved');
-  await notificationService.createForUser(plan.sales_user, {
-    title: 'Work plan approved',
-    message: `Your work plan for ${plan.plan_date.toISOString().slice(0, 10)} was approved.`,
-    type: 'success',
-    module: 'work_planner',
-    entity_type: 'work_plan',
-    entity_id: plan._id,
+  notifyWorkPlanApproved({ planId: plan._id, actorUser: user }).catch((err) => {
+    console.error('[WorkPlanner] Error notifying plan approved:', err);
   });
 
   return get(plan._id, user);
@@ -1084,13 +1130,8 @@ async function reject(id, body, user) {
   await plan.save();
 
   await logActivity(user, plan._id, 'rejected', `Work plan rejected: ${plan.rejection_reason}`);
-  await notificationService.createForUser(plan.sales_user, {
-    title: 'Work plan rejected',
-    message: `Your work plan for ${plan.plan_date.toISOString().slice(0, 10)} was rejected. Reason: ${plan.rejection_reason}`,
-    type: 'warning',
-    module: 'work_planner',
-    entity_type: 'work_plan',
-    entity_id: plan._id,
+  notifyWorkPlanRejected({ planId: plan._id, actorUser: user, reason: plan.rejection_reason }).catch((err) => {
+    console.error('[WorkPlanner] Error notifying plan rejected:', err);
   });
 
   return get(plan._id, user);
@@ -1357,11 +1398,16 @@ async function removeStandaloneVisit(visitId, user) {
   if (!visit) throw new ApiError(404, 'Visit not found');
 
   const admin = isAdminDept(user);
+  const elevated = isWpElevated(user);
   const isManagerCreated = ['Manager', 'Admin', 'Super Admin', 'manager', 'admin', 'super_admin'].includes(
     String(visit.created_by_role || '').trim()
   );
-  if (!admin && isManagerCreated) {
+  if (!admin && !elevated && isManagerCreated) {
     throw new ApiError(403, 'Visits created by a Manager cannot be removed by an Executive');
+  }
+
+  if (!admin && !elevated && !['created', 'pending', 'rescheduled', 'skipped', 'cancelled'].includes(visit.status)) {
+    throw new ApiError(400, `Cannot delete a visit in status "${visit.status}"`);
   }
 
   visit.deletedAt = new Date();
@@ -1625,14 +1671,15 @@ async function removeVisit(planId, visitId, user) {
   if (!visit) throw new ApiError(404, 'Visit not found');
 
   const admin = isAdminDept(user);
+  const elevated = isWpElevated(user);
   const isManagerCreated = ['Manager', 'Admin', 'Super Admin', 'manager', 'admin', 'super_admin'].includes(
     String(visit.created_by_role || '').trim()
   );
-  if (!admin && isManagerCreated) {
+  if (!admin && !elevated && isManagerCreated) {
     throw new ApiError(403, 'Visits created by a Manager cannot be removed by an Executive');
   }
 
-  if (!admin && !['pending', 'rescheduled'].includes(visit.status)) {
+  if (!admin && !elevated && !['created', 'pending', 'rescheduled', 'skipped', 'cancelled'].includes(visit.status)) {
     throw new ApiError(400, `Cannot delete a visit in status "${visit.status}"`);
   }
 
@@ -1705,12 +1752,6 @@ async function checkIn(planId, visitId, body = {}, user) {
   if (!['planned', 'approved', 'draft'].includes(plan.status)) {
     throw new ApiError(400, 'Visits can only be executed on planned work plans');
   }
-  if (!isAdminDept(user) && !isExpenseAddWindowOpen(plan.plan_date)) {
-    throw new ApiError(
-      400,
-      'Visits can only be executed within the 3-day window from the work plan date',
-    );
-  }
 
   const visit = await WorkPlanVisit.findOne({ _id: visitId, work_plan: planId, deletedAt: null });
   if (!visit) throw new ApiError(404, 'Visit not found');
@@ -1764,12 +1805,6 @@ async function checkOut(planId, visitId, body = {}, user) {
   }
   if (!['planned', 'approved', 'draft'].includes(plan.status)) {
     throw new ApiError(400, 'Visits can only be executed on planned work plans');
-  }
-  if (!isAdminDept(user) && !isExpenseAddWindowOpen(plan.plan_date)) {
-    throw new ApiError(
-      400,
-      'Visits can only be executed within the 3-day window from the work plan date',
-    );
   }
 
   const visit = await WorkPlanVisit.findOne({ _id: visitId, work_plan: planId, deletedAt: null });
@@ -1829,13 +1864,6 @@ async function completeVisit(planId, visitId, body, user) {
   const plan = await WorkPlan.findOne({ _id: planId, deletedAt: null });
   if (!plan) throw new ApiError(404, 'Work plan not found');
   await assertCanView(plan, user);
-
-  if (!isAdminDept(user) && !isWpElevated(user) && !isExpenseAddWindowOpen(plan.plan_date)) {
-    throw new ApiError(
-      400,
-      'Visits can only be completed within the 3-day window from the work plan date',
-    );
-  }
 
   const visit = await WorkPlanVisit.findOne({ _id: visitId, work_plan: planId, deletedAt: null });
   if (!visit) throw new ApiError(404, 'Visit not found');
@@ -2427,6 +2455,7 @@ async function addExpense(planId, body, user) {
 
   const expense = new WorkPlanExpense({
     work_plan: planId,
+    sales_user: plan.sales_user || userId(user),
     work_plan_visit: visitId,
     status: 'draft',
     created_by: userId(user),
@@ -2543,6 +2572,14 @@ async function submitExpense(planId, expenseId, user) {
     'submitted',
     `Expense submitted for approval (${expense.category}, ${expense.amount})`,
   );
+  notifyExpenseSubmitted({
+    planId,
+    count: 1,
+    totalAmount: expense.amount,
+    actorUser: user,
+  }).catch((err) => {
+    console.error('[WorkPlanner] Error notifying expense submitted:', err);
+  });
   return getWithVisits(planId);
 }
 
@@ -2577,13 +2614,13 @@ async function approveExpense(planId, expenseId, user) {
     'approved',
     `Expense approved (${expense.category}, ${expense.amount})`,
   );
-  await notificationService.createForUser(plan.sales_user, {
-    title: 'Expense approved',
-    message: `Your expense of ${expense.amount} (${expense.category}) was approved.`,
-    type: 'success',
-    module: 'work_planner',
-    entity_type: 'work_plan',
-    entity_id: plan._id,
+  notifyExpenseApproved({
+    planId,
+    count: 1,
+    totalAmount: expense.amount,
+    actorUser: user,
+  }).catch((err) => {
+    console.error('[WorkPlanner] Error notifying expense approved:', err);
   });
 
   return getWithVisits(planId);
@@ -2620,13 +2657,14 @@ async function rejectExpense(planId, expenseId, body, user) {
     'rejected',
     `Expense rejected: ${expense.rejection_reason}`,
   );
-  await notificationService.createForUser(plan.sales_user, {
-    title: 'Expense rejected',
-    message: `Your expense of ${expense.amount} (${expense.category}) was rejected. Reason: ${expense.rejection_reason}`,
-    type: 'warning',
-    module: 'work_planner',
-    entity_type: 'work_plan',
-    entity_id: plan._id,
+  notifyExpenseRejected({
+    planId,
+    count: 1,
+    totalAmount: expense.amount,
+    reason: expense.rejection_reason,
+    actorUser: user,
+  }).catch((err) => {
+    console.error('[WorkPlanner] Error notifying expense rejected:', err);
   });
 
   return getWithVisits(planId);
@@ -2637,6 +2675,14 @@ async function submitAllExpenses(planId, user) {
   const plan = await WorkPlan.findOne({ _id: planId, deletedAt: null });
   if (!plan) throw new ApiError(404, 'Work plan not found');
   await assertCanManageExpense(plan, user);
+
+  const pendingExpenses = await WorkPlanExpense.find({
+    work_plan: planId,
+    deletedAt: null,
+    status: { $in: [...EDITABLE_EXPENSE_STATUSES] },
+  }).select('amount').lean();
+
+  const totalAmount = pendingExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
 
   const result = await WorkPlanExpense.updateMany(
     {
@@ -2664,6 +2710,14 @@ async function submitAllExpenses(planId, user) {
     'submitted',
     `All day expenses submitted for approval (${count})`,
   );
+  notifyExpenseSubmitted({
+    planId,
+    count,
+    totalAmount,
+    actorUser: user,
+  }).catch((err) => {
+    console.error('[WorkPlanner] Error notifying all expenses submitted:', err);
+  });
   return getWithVisits(planId);
 }
 
@@ -2674,6 +2728,14 @@ async function approveAllExpenses(planId, user) {
   const { WorkPlan, WorkPlanExpense } = getModels();
   const plan = await WorkPlan.findOne({ _id: planId, deletedAt: null });
   if (!plan) throw new ApiError(404, 'Work plan not found');
+
+  const submittedExpenses = await WorkPlanExpense.find({
+    work_plan: planId,
+    deletedAt: null,
+    status: 'submitted',
+  }).select('amount').lean();
+
+  const totalAmount = submittedExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
 
   const now = new Date();
   const result = await WorkPlanExpense.updateMany(
@@ -2704,13 +2766,13 @@ async function approveAllExpenses(planId, user) {
     'approved',
     `All day expenses approved (${count})`,
   );
-  await notificationService.createForUser(plan.sales_user, {
-    title: 'Expenses approved',
-    message: `${count} expense(s) on your work plan for ${plan.plan_date.toISOString().slice(0, 10)} were approved.`,
-    type: 'success',
-    module: 'work_planner',
-    entity_type: 'work_plan',
-    entity_id: plan._id,
+  notifyExpenseApproved({
+    planId,
+    count,
+    totalAmount,
+    actorUser: user,
+  }).catch((err) => {
+    console.error('[WorkPlanner] Error notifying all expenses approved:', err);
   });
 
   return getWithVisits(planId);
@@ -2725,6 +2787,14 @@ async function rejectAllExpenses(planId, body, user) {
   if (!plan) throw new ApiError(404, 'Work plan not found');
 
   const reason = body.rejection_reason.trim();
+  const submittedExpenses = await WorkPlanExpense.find({
+    work_plan: planId,
+    deletedAt: null,
+    status: 'submitted',
+  }).select('amount').lean();
+
+  const totalAmount = submittedExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0);
+
   const result = await WorkPlanExpense.updateMany(
     {
       work_plan: planId,
@@ -2753,13 +2823,14 @@ async function rejectAllExpenses(planId, body, user) {
     'rejected',
     `All day expenses rejected (${count}): ${reason}`,
   );
-  await notificationService.createForUser(plan.sales_user, {
-    title: 'Expenses rejected',
-    message: `${count} expense(s) on your work plan for ${plan.plan_date.toISOString().slice(0, 10)} were rejected. Reason: ${reason}`,
-    type: 'warning',
-    module: 'work_planner',
-    entity_type: 'work_plan',
-    entity_id: plan._id,
+  notifyExpenseRejected({
+    planId,
+    count,
+    totalAmount,
+    reason,
+    actorUser: user,
+  }).catch((err) => {
+    console.error('[WorkPlanner] Error notifying all expenses rejected:', err);
   });
 
   return getWithVisits(planId);
@@ -2990,10 +3061,11 @@ async function removeStandaloneWork(workId, user) {
   if (!work) throw new ApiError(404, 'Work task not found');
 
   const admin = isAdminDept(user);
+  const elevated = isWpElevated(user);
   const isManagerCreated = ['Manager', 'Admin', 'Super Admin', 'manager', 'admin', 'super_admin'].includes(
     String(work.created_by_role || '').trim()
   );
-  if (!admin && isManagerCreated) {
+  if (!admin && !elevated && isManagerCreated) {
     throw new ApiError(403, 'Tasks created by a Manager cannot be removed by an Executive');
   }
 
@@ -3184,10 +3256,11 @@ async function removeWork(planId, workId, user) {
   if (!work) throw new ApiError(404, 'Work task not found');
 
   const admin = isAdminDept(user);
+  const elevated = isWpElevated(user);
   const isManagerCreated = ['Manager', 'Admin', 'Super Admin', 'manager', 'admin', 'super_admin'].includes(
     String(work.created_by_role || '').trim()
   );
-  if (!admin && isManagerCreated) {
+  if (!admin && !elevated && isManagerCreated) {
     throw new ApiError(403, 'Tasks created by a Manager cannot be removed by an Executive');
   }
 
@@ -3446,6 +3519,827 @@ async function addWorkAuthorityRemark(planId, workId, body, user) {
   return updateWork(planId, workId, body, user);
 }
 
+async function addExpenseAuthorityRemark(planId, expenseId, body, user) {
+  if (!isWpElevated(user)) {
+    throw new ApiError(403, 'Only higher authorities can add authority remarks');
+  }
+  const { WorkPlan, WorkPlanExpense } = getModels();
+  const plan = await WorkPlan.findOne({ _id: planId, deletedAt: null });
+  if (!plan) throw new ApiError(404, 'Work plan not found');
+
+  const expense = await WorkPlanExpense.findOne({
+    _id: expenseId,
+    work_plan: planId,
+    deletedAt: null,
+  });
+  if (!expense) throw new ApiError(404, 'Expense claim not found');
+
+  const appliedRemark = applyAuthorityRemarks(expense, body, user);
+  expense.updated_by = userId(user);
+  await expense.save();
+
+  if (appliedRemark) {
+    notifyAuthorityRemarkAdded({
+      planId: plan._id,
+      expenseId: expense._id,
+      remarkText: appliedRemark,
+      actorUser: user,
+    }).catch((err) => {
+      console.warn('[workPlannerAutoNotification] Error in notifyAuthorityRemarkAdded (expense):', err.message);
+    });
+  }
+
+  await logActivity(
+    user,
+    planId,
+    'updated',
+    `Senior remark added to expense (${expense.category}, ₹${expense.amount || 0})`
+  );
+
+  return getWithVisits(planId);
+}
+
+async function getWorkPlanDraft(query, user) {
+  const { WorkPlanDraft } = getModels();
+  let salesUserId = userId(user);
+  if (query.sales_user && String(query.sales_user) !== String(userId(user))) {
+    if (isWpElevated(user)) {
+      salesUserId = query.sales_user;
+    }
+  }
+  if (!query.plan_date) return null;
+  const planDate = startOfDay(query.plan_date);
+  const draft = await WorkPlanDraft.findOne({
+    sales_user: salesUserId,
+    plan_date: { $gte: planDate, $lte: endOfDay(query.plan_date) },
+  }).lean();
+  return draft;
+}
+
+async function saveWorkPlanDraft(body, user) {
+  const { WorkPlanDraft } = getModels();
+  let salesUserId = userId(user);
+  if (body.sales_user && String(body.sales_user) !== String(userId(user))) {
+    if (isWpElevated(user)) {
+      salesUserId = body.sales_user;
+    }
+  }
+  if (!body.plan_date) {
+    throw new ApiError(400, 'plan_date is required to save a draft');
+  }
+  const planDate = startOfDay(body.plan_date);
+
+  const updateDoc = {
+    sales_user: salesUserId,
+    plan_date: planDate,
+    plan_type: body.plan_type || undefined,
+    remarks: body.remarks !== undefined ? body.remarks : undefined,
+    location: body.location !== undefined ? body.location : undefined,
+    is_discussed_with_manager: body.is_discussed_with_manager !== undefined ? body.is_discussed_with_manager : null,
+    discussed_manager_id: body.discussed_manager_id || undefined,
+    discussed_manager_name: body.discussed_manager_name || undefined,
+    discussion_method: body.discussion_method || undefined,
+    visits: Array.isArray(body.visits) ? body.visits : [],
+    works: Array.isArray(body.works) ? body.works : [],
+    last_saved_at: new Date(),
+  };
+
+  const draft = await WorkPlanDraft.findOneAndUpdate(
+    { sales_user: salesUserId, plan_date: { $gte: planDate, $lte: endOfDay(body.plan_date) } },
+    { $set: updateDoc },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  ).lean();
+
+  return draft;
+}
+
+async function deleteWorkPlanDraft(query, user) {
+  const { WorkPlanDraft } = getModels();
+  let salesUserId = userId(user);
+  if (query.sales_user && String(query.sales_user) !== String(userId(user))) {
+    if (isWpElevated(user)) {
+      salesUserId = query.sales_user;
+    }
+  }
+  if (!query.plan_date) return { success: true };
+  const planDate = startOfDay(query.plan_date);
+  await WorkPlanDraft.deleteMany({
+    sales_user: salesUserId,
+    plan_date: { $gte: planDate, $lte: endOfDay(query.plan_date) },
+  });
+  return { success: true };
+}
+
+async function getSeniorRemarksFeed(query = {}, user) {
+  const { WorkPlan, WorkPlanVisit, WorkPlanWork, WorkPlanExpense, User } = getModels();
+  const selfId = String(userId(user) || '');
+  const selfOid = asObjectId(selfId);
+  const isAdmin = isWpAdmin(user);
+  const isManagerOrCoord = isWpManager(user) || isWpCoordinator(user);
+  const isElevated = isWpElevated(user);
+
+  const scope = String(query.scope || query.ownership || '').toLowerCase();
+
+  const remarksCondition = {
+    $or: [
+      { 'authority_remarks.0': { $exists: true } },
+      { manager_remarks: { $exists: true, $ne: '', $ne: null } },
+    ],
+  };
+
+  // Subordinates list for manager / coordinator
+  const visibleIds = (await getVisibleSalesUserIds(user)) || [selfId];
+  const subordinateIds = visibleIds.filter((id) => id !== selfId);
+  const subordinateIdSet = new Set(subordinateIds.map(String));
+
+  // Base sales filter (WITHOUT remarks condition) to find all parent plans for planMap
+  let baseSalesFilter = { deletedAt: null };
+
+  if (!isElevated) {
+    // 1. Executive: strictly concerned only with their own plans/visits/tasks
+    baseSalesFilter.sales_user = selfOid || selfId;
+  } else if (isAdmin) {
+    // 2. Admin: sees all portal-wide by default, or 'mine' if explicitly chosen
+    if (scope === 'mine') {
+      baseSalesFilter.sales_user = selfOid || selfId;
+    } else if (query.sales_user && query.sales_user !== 'all') {
+      const targetOid = asObjectId(query.sales_user) || query.sales_user;
+      baseSalesFilter.sales_user = targetOid;
+    }
+  } else if (isManagerOrCoord) {
+    // 3. Coordinator & Manager
+    if (scope === 'mine') {
+      baseSalesFilter.sales_user = selfOid || selfId;
+    } else if (query.sales_user && query.sales_user !== 'all') {
+      const requested = String(query.sales_user);
+      if (visibleIds.includes(requested)) {
+        baseSalesFilter.sales_user = asObjectId(requested) || requested;
+      } else {
+        baseSalesFilter.sales_user = { $in: [] };
+      }
+    } else {
+      const visibleOids = visibleIds.map(asObjectId).filter(Boolean);
+      baseSalesFilter.sales_user = { $in: visibleOids };
+    }
+  }
+
+  // 1. Fetch all parent plans matching base sales filter to build planMap and get matchingPlanIds
+  const matchingPlans = await WorkPlan.find(baseSalesFilter)
+    .select('_id sales_user plan_date')
+    .populate('sales_user', 'name email department')
+    .lean();
+
+  const matchingPlanIds = matchingPlans.map((p) => p._id);
+  const planMap = new Map();
+  matchingPlans.forEach((p) => {
+    planMap.set(String(p._id), p);
+  });
+
+  // 2. Plan filter for plans with remarks
+  let planFilter = {
+    ...baseSalesFilter,
+    ...remarksCondition,
+  };
+
+  if (isManagerOrCoord && scope !== 'mine' && (!query.sales_user || query.sales_user === 'all')) {
+    const visibleOids = visibleIds.map(asObjectId).filter(Boolean);
+    planFilter = {
+      deletedAt: null,
+      ...remarksCondition,
+      $or: [
+        { sales_user: { $in: visibleOids } },
+        { 'authority_remarks.user': selfOid || selfId },
+      ],
+    };
+  }
+
+  // 3. SubItem filter for visits & works
+  let subItemFilter = {
+    deletedAt: null,
+    ...remarksCondition,
+  };
+
+  if (!isElevated) {
+    const orConditions = [{ sales_user: selfOid || selfId }];
+    if (matchingPlanIds.length > 0) {
+      orConditions.push({ work_plan: { $in: matchingPlanIds } });
+    }
+    subItemFilter.$or = orConditions;
+  } else if (isAdmin) {
+    if (scope === 'mine') {
+      const orConditions = [{ sales_user: selfOid || selfId }];
+      if (matchingPlanIds.length > 0) orConditions.push({ work_plan: { $in: matchingPlanIds } });
+      subItemFilter.$or = orConditions;
+    } else if (query.sales_user && query.sales_user !== 'all') {
+      const targetOid = asObjectId(query.sales_user) || query.sales_user;
+      const orConditions = [{ sales_user: targetOid }];
+      if (matchingPlanIds.length > 0) orConditions.push({ work_plan: { $in: matchingPlanIds } });
+      subItemFilter.$or = orConditions;
+    }
+  } else if (isManagerOrCoord) {
+    if (scope === 'mine') {
+      const orConditions = [{ sales_user: selfOid || selfId }];
+      if (matchingPlanIds.length > 0) orConditions.push({ work_plan: { $in: matchingPlanIds } });
+      subItemFilter.$or = orConditions;
+    } else if (query.sales_user && query.sales_user !== 'all') {
+      const requested = String(query.sales_user);
+      if (visibleIds.includes(requested)) {
+        const targetOid = asObjectId(requested) || requested;
+        const orConditions = [{ sales_user: targetOid }];
+        if (matchingPlanIds.length > 0) orConditions.push({ work_plan: { $in: matchingPlanIds } });
+        subItemFilter.$or = orConditions;
+      } else {
+        subItemFilter.sales_user = { $in: [] };
+      }
+    } else {
+      const visibleOids = visibleIds.map(asObjectId).filter(Boolean);
+      const orConditions = [
+        { sales_user: { $in: visibleOids } },
+        { 'authority_remarks.user': selfOid || selfId },
+      ];
+      if (matchingPlanIds.length > 0) {
+        orConditions.push({ work_plan: { $in: matchingPlanIds } });
+      }
+      subItemFilter.$or = orConditions;
+    }
+  }
+
+  const [plans, visits, works, expenses] = await Promise.all([
+    WorkPlan.find(planFilter)
+      .populate('sales_user', 'name email department')
+      .lean(),
+    WorkPlanVisit.find(subItemFilter)
+      .populate('sales_user', 'name email department')
+      .populate('party', 'party_name mobile email contact_person')
+      .lean(),
+    WorkPlanWork.find(subItemFilter)
+      .populate('sales_user', 'name email department')
+      .lean(),
+    WorkPlanExpense.find(subItemFilter)
+      .populate('sales_user', 'name email department')
+      .populate('created_by', 'name email department')
+      .lean(),
+  ]);
+
+  const items = [];
+
+  // Helper to push remark
+  const pushRemarkItem = (doc, r, idx, targetType, title, location, sUser, fallbackDate) => {
+    const sUserId = String(sUser._id || sUser.id || sUser || '');
+    let sUserName = sUser.name || sUser.email || '';
+    if (!sUserName && sUserId && String(sUserId) === String(selfId)) {
+      sUserName = user?.name || user?.email || 'Executive';
+    } else if (!sUserName) {
+      sUserName = 'Executive';
+    }
+
+    // Sanitize senior author role
+    let seniorRole = r.role || 'Senior Authority';
+    if (seniorRole === 'Executive') {
+      seniorRole = 'Senior Authority';
+    }
+
+    // Sanitize junior follow-up responses
+    const followups = Array.isArray(r.followup_remarks)
+      ? r.followup_remarks.map((f) => {
+          const isFollowupOwner =
+            String(f.user || '') === sUserId ||
+            String(f.user_name || '').toLowerCase() === sUserName.toLowerCase();
+          let fRole = f.role;
+          if (isFollowupOwner && (!fRole || fRole === 'Senior Authority')) {
+            fRole = 'Executive';
+          }
+
+          const rawDetails = Array.isArray(f.attachment_details) && f.attachment_details.length > 0
+            ? f.attachment_details.map((d) => {
+                const attId = String(d.attachment_id || d._id || d.id || '');
+                return {
+                  _id: attId,
+                  attachment_id: attId,
+                  filename: d.filename || d.original_name || 'attachment',
+                  original_name: d.original_name || d.filename || 'attachment',
+                  mime_type: d.mime_type || 'application/octet-stream',
+                  size: d.size || 0,
+                  url: d.url || (attId ? `/api/work-planner/attachments/${attId}/preview` : ''),
+                };
+              })
+            : Array.isArray(f.attachments)
+            ? f.attachments.map((att) => {
+                const attId = typeof att === 'object' ? String(att._id || att.id || '') : String(att);
+                return {
+                  _id: attId,
+                  attachment_id: attId,
+                  filename: (typeof att === 'object' && (att.original_name || att.filename)) || 'attachment',
+                  original_name: (typeof att === 'object' && (att.original_name || att.filename)) || 'attachment',
+                  mime_type: (typeof att === 'object' && (att.mime_type || att.mimetype)) || 'application/octet-stream',
+                  size: (typeof att === 'object' && (att.file_size || att.size)) || 0,
+                  url: `/api/work-planner/attachments/${attId}/preview`,
+                };
+              })
+            : [];
+
+          return {
+            ...f,
+            _id: f._id ? String(f._id) : undefined,
+            user_name: f.user_name || (isFollowupOwner ? sUserName : 'Executive'),
+            role: fRole || 'Executive',
+            attachments: rawDetails,
+            attachment_details: rawDetails,
+          };
+        })
+      : [];
+
+    items.push({
+      id: String(r._id || `${doc._id}_${targetType}_${idx}`),
+      remark_id: String(r._id || idx),
+      target_type: targetType,
+      plan_id: String(doc.work_plan?._id || doc.work_plan || doc._id),
+      target_id: String(doc._id),
+      plan_date: doc.plan_date || fallbackDate || null,
+      title: title || 'Day Plan',
+      location: location || '',
+      sales_user: {
+        _id: sUserId,
+        name: sUserName,
+        email: sUser.email || '',
+      },
+      senior_user: {
+        _id: String(r.user || ''),
+        name: r.user_name || 'Senior Authority',
+        role: seniorRole,
+      },
+      remark: r.remark,
+      remark_type: r.remark_type || 'instruction',
+      priority: r.priority || 'medium',
+      expected_followup_date: r.expected_followup_date || null,
+      status: r.status || 'pending_response',
+      followup_remarks: followups,
+      resolution_remarks: r.resolution_remarks || '',
+      resolved_at: r.resolved_at || null,
+      resolved_by: r.resolved_by || null,
+      resolved_by_name: r.resolved_by_name || '',
+      created_at: r.created_at || doc.updatedAt || doc.createdAt || new Date(),
+    });
+  };
+
+  // 1. Process Plan remarks
+  for (const doc of plans) {
+    const sUser = doc.sales_user || {};
+    const authRemarks = Array.isArray(doc.authority_remarks) ? doc.authority_remarks : [];
+    if (authRemarks.length > 0) {
+      authRemarks.forEach((r, idx) => {
+        pushRemarkItem(
+          doc,
+          r,
+          idx,
+          'plan',
+          doc.remarks || doc.location || 'Full Day Plan',
+          doc.location || '',
+          sUser,
+          doc.plan_date
+        );
+      });
+    } else if (doc.manager_remarks && doc.manager_remarks.trim()) {
+      pushRemarkItem(
+        doc,
+        {
+          _id: 'legacy',
+          remark: doc.manager_remarks.trim(),
+          user_name: 'Senior Manager',
+          role: 'Manager',
+          remark_type: 'instruction',
+          priority: 'medium',
+          status: 'pending_response',
+          created_at: doc.updatedAt || doc.createdAt,
+        },
+        'legacy',
+        'plan',
+        doc.remarks || doc.location || 'Full Day Plan',
+        doc.location || '',
+        sUser,
+        doc.plan_date
+      );
+    }
+  }
+
+  // 2. Process Visit remarks
+  for (const doc of visits) {
+    const parentPlan = doc.work_plan ? planMap.get(String(doc.work_plan)) : null;
+    const sUser = doc.sales_user || parentPlan?.sales_user || {};
+    const partyObj = doc.party || {};
+    const pTitle = doc.party_name || partyObj.party_name || 'Field Visit';
+    const authRemarks = Array.isArray(doc.authority_remarks) ? doc.authority_remarks : [];
+    const fallbackDate = doc.plan_date || parentPlan?.plan_date;
+
+    if (authRemarks.length > 0) {
+      authRemarks.forEach((r, idx) => {
+        pushRemarkItem(
+          doc,
+          r,
+          idx,
+          'visit',
+          pTitle,
+          doc.address || '',
+          sUser,
+          fallbackDate
+        );
+      });
+    } else if (doc.manager_remarks && doc.manager_remarks.trim()) {
+      pushRemarkItem(
+        doc,
+        {
+          _id: 'legacy',
+          remark: doc.manager_remarks.trim(),
+          user_name: 'Senior Manager',
+          role: 'Manager',
+          remark_type: 'instruction',
+          priority: 'medium',
+          status: 'pending_response',
+          created_at: doc.updatedAt || doc.createdAt,
+        },
+        'legacy',
+        'visit',
+        pTitle,
+        doc.address || '',
+        sUser,
+        fallbackDate
+      );
+    }
+  }
+
+  // 3. Process Work remarks
+  for (const doc of works) {
+    const parentPlan = doc.work_plan ? planMap.get(String(doc.work_plan)) : null;
+    const sUser = doc.sales_user || parentPlan?.sales_user || {};
+    const authRemarks = Array.isArray(doc.authority_remarks) ? doc.authority_remarks : [];
+    const fallbackDate = doc.plan_date || parentPlan?.plan_date;
+
+    if (authRemarks.length > 0) {
+      authRemarks.forEach((r, idx) => {
+        pushRemarkItem(
+          doc,
+          r,
+          idx,
+          'task',
+          doc.title || 'Work Task',
+          doc.description || '',
+          sUser,
+          fallbackDate
+        );
+      });
+    } else if (doc.manager_remarks && doc.manager_remarks.trim()) {
+      pushRemarkItem(
+        doc,
+        {
+          _id: 'legacy',
+          remark: doc.manager_remarks.trim(),
+          user_name: 'Senior Manager',
+          role: 'Manager',
+          remark_type: 'instruction',
+          priority: 'medium',
+          status: 'pending_response',
+          created_at: doc.updatedAt || doc.createdAt,
+        },
+        'legacy',
+        'task',
+        doc.title || 'Work Task',
+        doc.description || '',
+        sUser,
+        fallbackDate
+      );
+    }
+  }
+
+  // 4. Process Expense remarks
+  for (const doc of expenses) {
+    const parentPlan = doc.work_plan ? planMap.get(String(doc.work_plan)) : null;
+    const sUser = doc.sales_user || parentPlan?.sales_user || {};
+    const authRemarks = Array.isArray(doc.authority_remarks) ? doc.authority_remarks : [];
+    const fallbackDate = doc.expense_date || parentPlan?.plan_date;
+    const categoryName = doc.category || 'Expense';
+    const amountStr = doc.amount != null ? `₹${doc.amount}` : '';
+    const expTitle = `${categoryName} Claim ${amountStr ? `(${amountStr})` : ''} - ${doc.description || 'Expense'}`;
+    const expLocation = doc.vendor_name || doc.sub_category || doc.bill_number || '';
+
+    if (authRemarks.length > 0) {
+      authRemarks.forEach((r, idx) => {
+        pushRemarkItem(
+          doc,
+          r,
+          idx,
+          'expense',
+          expTitle,
+          expLocation,
+          sUser,
+          fallbackDate
+        );
+      });
+    } else if (doc.manager_remarks && doc.manager_remarks.trim()) {
+      pushRemarkItem(
+        doc,
+        {
+          _id: 'legacy',
+          remark: doc.manager_remarks.trim(),
+          user_name: 'Senior Manager',
+          role: 'Manager',
+          remark_type: 'instruction',
+          priority: 'medium',
+          status: 'pending_response',
+          created_at: doc.updatedAt || doc.createdAt,
+        },
+        'legacy',
+        'expense',
+        expTitle,
+        expLocation,
+        sUser,
+        fallbackDate
+      );
+    }
+  }
+
+  // 5. Security Gate: Only access directives created for the user, by the user, or for reporting subordinates
+  const canAccessItem = (item) => {
+    if (isAdmin) return true;
+
+    const targetUserId = String(item.sales_user?._id || '');
+    const authorUserId = String(item.senior_user?._id || '');
+
+    // 1. Created for me (I am the target executive/user)
+    if (targetUserId && targetUserId === selfId) return true;
+
+    // 2. Created by me (I issued this directive)
+    if (authorUserId && authorUserId === selfId) return true;
+
+    // 3. For Manager / Coordinator: Created for one of my reporting junior subordinates
+    if (isElevated && targetUserId && subordinateIdSet.has(targetUserId)) {
+      return true;
+    }
+
+    return false;
+  };
+
+  let filtered = items.filter(canAccessItem);
+
+  // Scope filter
+  if (scope === 'mine') {
+    filtered = filtered.filter((i) => String(i.sales_user?._id || '') === selfId);
+  } else if (scope === 'team' && isElevated && !isAdmin) {
+    filtered = filtered.filter((i) => {
+      const targetUserId = String(i.sales_user?._id || '');
+      const authorUserId = String(i.senior_user?._id || '');
+      return authorUserId === selfId || (targetUserId !== selfId && subordinateIdSet.has(targetUserId));
+    });
+  }
+
+  // Additional query filters
+
+  if (query.remark_type && query.remark_type !== 'all') {
+    filtered = filtered.filter((i) => i.remark_type === query.remark_type);
+  }
+  if (query.status && query.status !== 'all') {
+    filtered = filtered.filter((i) => i.status === query.status);
+  }
+  if (query.priority && query.priority !== 'all') {
+    filtered = filtered.filter((i) => i.priority === query.priority);
+  }
+  if (query.target_type && query.target_type !== 'all') {
+    filtered = filtered.filter((i) => i.target_type === query.target_type);
+  }
+  if (query.sales_user && query.sales_user !== 'all') {
+    filtered = filtered.filter((i) => String(i.sales_user._id) === String(query.sales_user));
+  }
+  if (query.date_from) {
+    const fDate = new Date(query.date_from).getTime();
+    filtered = filtered.filter((i) => {
+      const d = i.plan_date ? new Date(i.plan_date).getTime() : new Date(i.created_at).getTime();
+      return d >= fDate;
+    });
+  }
+  if (query.date_to) {
+    const tDate = new Date(query.date_to).getTime() + 86400000;
+    filtered = filtered.filter((i) => {
+      const d = i.plan_date ? new Date(i.plan_date).getTime() : new Date(i.created_at).getTime();
+      return d <= tDate;
+    });
+  }
+  if (query.search && query.search.trim()) {
+    const q = query.search.trim().toLowerCase();
+    filtered = filtered.filter(
+      (i) =>
+        i.title.toLowerCase().includes(q) ||
+        i.remark.toLowerCase().includes(q) ||
+        i.sales_user.name.toLowerCase().includes(q) ||
+        i.senior_user.name.toLowerCase().includes(q)
+    );
+  }
+
+  // Sort descending by created_at
+  filtered.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  const stats = {
+    total: filtered.length,
+    appreciation_count: filtered.filter((i) => i.remark_type === 'appreciation').length,
+    objection_count: filtered.filter((i) => i.remark_type === 'objection' && i.status !== 'resolved').length,
+    total_objections_count: filtered.filter((i) => i.remark_type === 'objection').length,
+    instruction_count: filtered.filter((i) => i.remark_type === 'instruction' && i.status !== 'resolved').length,
+    total_instructions_count: filtered.filter((i) => i.remark_type === 'instruction').length,
+    pending_response_count: filtered.filter((i) => i.status === 'pending_response').length,
+    responded_count: filtered.filter((i) => i.status === 'responded').length,
+    resolved_count: filtered.filter((i) => i.status === 'resolved').length,
+  };
+
+  return { items: filtered, stats };
+}
+
+async function addJuniorFollowup(body, user) {
+  const { WorkPlan, WorkPlanVisit, WorkPlanWork, WorkPlanExpense } = getModels();
+  const { target_type, target_id, remark_id, response, action_status, attachments, attachment_details } = body;
+  if (!target_type || !target_id || !response || !response.trim()) {
+    throw new ApiError(400, 'target_type, target_id, and response are required');
+  }
+
+  let doc = null;
+  if (target_type === 'plan') {
+    doc = await WorkPlan.findById(target_id);
+  } else if (target_type === 'visit') {
+    doc = await WorkPlanVisit.findById(target_id);
+  } else if (target_type === 'task') {
+    doc = await WorkPlanWork.findById(target_id);
+  } else if (target_type === 'expense') {
+    doc = await WorkPlanExpense.findById(target_id);
+  } else {
+    throw new ApiError(400, `Invalid target_type: ${target_type}`);
+  }
+
+  if (!doc) {
+    throw new ApiError(404, `${target_type} not found`);
+  }
+
+  if (!Array.isArray(doc.authority_remarks) || doc.authority_remarks.length === 0) {
+    throw new ApiError(404, 'No authority remarks found on this target');
+  }
+
+  let remark = null;
+  if (remark_id) {
+    remark = doc.authority_remarks.find(
+      (r) => String(r._id) === String(remark_id)
+    );
+  }
+  if (!remark) {
+    remark = doc.authority_remarks[doc.authority_remarks.length - 1];
+  }
+
+  if (!Array.isArray(remark.followup_remarks)) {
+    remark.followup_remarks = [];
+  }
+
+  // Parse and resolve multiple attachments
+  let parsedAttachments = [];
+  let parsedDetails = [];
+
+  const rawAttList = Array.isArray(attachments) ? attachments : [];
+  const rawIdList = rawAttList
+    .map((a) => (typeof a === 'string' ? a : a._id || a.id || a.attachment_id))
+    .filter(Boolean);
+
+  if (rawIdList.length > 0) {
+    const { Attachment } = getModels();
+    if (Attachment) {
+      const attDocs = await Attachment.find({ _id: { $in: rawIdList } }).lean();
+      parsedAttachments = attDocs.map((a) => a._id);
+      parsedDetails = attDocs.map((a) => ({
+        attachment_id: a._id,
+        filename: a.filename || a.file_name || a.original_name || 'document',
+        original_name: a.original_name || a.filename || a.file_name || 'document',
+        mime_type: a.mime_type || a.mimetype || a.contentType || 'application/octet-stream',
+        size: a.file_size || a.size || 0,
+        url: `/api/work-planner/attachments/${a._id}/preview`,
+      }));
+    }
+  }
+
+  if (Array.isArray(attachment_details) && attachment_details.length > 0) {
+    attachment_details.forEach((d) => {
+      const existing = parsedDetails.find(
+        (pd) => String(pd.attachment_id || '') === String(d.attachment_id || d._id || d.id || '')
+      );
+      if (!existing) {
+        const attId = d.attachment_id || d._id || d.id;
+        if (attId) parsedAttachments.push(attId);
+        parsedDetails.push({
+          attachment_id: attId || undefined,
+          filename: d.filename || d.original_name || 'document',
+          original_name: d.original_name || d.filename || 'document',
+          mime_type: d.mime_type || 'application/octet-stream',
+          size: d.size || 0,
+          url: d.url || (attId ? `/api/work-planner/attachments/${attId}/preview` : ''),
+        });
+      }
+    });
+  }
+
+  const uRole = getUserRole(user);
+  const respondentRole = uRole === 'Senior Authority' ? 'Executive' : uRole;
+  remark.followup_remarks.push({
+    response: response.trim(),
+    user: userId(user),
+    user_name: user?.name || user?.email || 'Executive',
+    role: respondentRole,
+    action_status: action_status || 'completed',
+    attachments: parsedAttachments,
+    attachment_details: parsedDetails,
+    created_at: new Date(),
+  });
+
+  if (remark.status === 'pending_response') {
+    remark.status = 'responded';
+  }
+
+  await doc.save();
+
+  notifyJuniorFollowupAdded({
+    targetType: target_type,
+    targetId: target_id,
+    remark,
+    followup: remark.followup_remarks[remark.followup_remarks.length - 1],
+    actorUser: user,
+  }).catch((err) => {
+    console.error('[WorkPlanner] Error notifying junior followup:', err);
+  });
+
+  return { success: true, remark };
+}
+
+async function updateSeniorRemarkStatus(body, user) {
+  if (!isWpElevated(user)) {
+    throw new ApiError(403, 'Only higher authorities can update directive status');
+  }
+  const { WorkPlan, WorkPlanVisit, WorkPlanWork, WorkPlanExpense } = getModels();
+  const { target_type, target_id, remark_id, status, resolution_remarks } = body;
+  if (!target_type || !target_id || !status) {
+    throw new ApiError(400, 'target_type, target_id, and status are required');
+  }
+
+  let doc = null;
+  if (target_type === 'plan') {
+    doc = await WorkPlan.findById(target_id);
+  } else if (target_type === 'visit') {
+    doc = await WorkPlanVisit.findById(target_id);
+  } else if (target_type === 'task') {
+    doc = await WorkPlanWork.findById(target_id);
+  } else if (target_type === 'expense') {
+    doc = await WorkPlanExpense.findById(target_id);
+  } else {
+    throw new ApiError(400, `Invalid target_type: ${target_type}`);
+  }
+
+  if (!doc) {
+    throw new ApiError(404, `${target_type} not found`);
+  }
+
+  let remark = null;
+  if (remark_id) {
+    remark = doc.authority_remarks?.find(
+      (r) => String(r._id) === String(remark_id)
+    );
+  }
+  if (!remark && Array.isArray(doc.authority_remarks) && doc.authority_remarks.length > 0) {
+    remark = doc.authority_remarks[doc.authority_remarks.length - 1];
+  }
+
+  if (!remark) {
+    throw new ApiError(404, 'Authority remark not found');
+  }
+
+  remark.status = status;
+  if (status === 'resolved') {
+    remark.resolution_remarks = (resolution_remarks && resolution_remarks.trim()) || undefined;
+    remark.resolved_at = new Date();
+    remark.resolved_by = userId(user);
+    remark.resolved_by_name = user?.name || user?.email || 'Senior Authority';
+  } else if (status === 'pending_response') {
+    remark.resolved_at = undefined;
+    remark.resolved_by = undefined;
+    remark.resolved_by_name = undefined;
+  }
+
+  await doc.save();
+
+  if (status === 'resolved') {
+    notifyDirectiveResolved({
+      targetType: target_type,
+      targetId: target_id,
+      doc,
+      remark,
+      actorUser: user,
+    }).catch((err) => {
+      console.error('[WorkPlanner] Error notifying directive resolved:', err);
+    });
+  }
+
+  return { success: true, remark };
+}
+
 module.exports = {
   list,
   get,
@@ -3492,4 +4386,11 @@ module.exports = {
   addWorkPlanAuthorityRemark,
   addVisitAuthorityRemark,
   addWorkAuthorityRemark,
+  addExpenseAuthorityRemark,
+  getWorkPlanDraft,
+  saveWorkPlanDraft,
+  deleteWorkPlanDraft,
+  getSeniorRemarksFeed,
+  addJuniorFollowup,
+  updateSeniorRemarkStatus,
 };

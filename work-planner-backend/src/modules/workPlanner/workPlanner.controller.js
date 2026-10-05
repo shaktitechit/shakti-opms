@@ -334,3 +334,57 @@ exports.addWorkAuthorityRemark = asyncHandler(async (req, res) => {
     data: await service.addWorkAuthorityRemark(req.params.id, req.params.workId, req.body || {}, req.user),
   });
 });
+
+exports.addExpenseAuthorityRemark = asyncHandler(async (req, res) => {
+  res.json({
+    success: true,
+    data: await service.addExpenseAuthorityRemark(req.params.id, req.params.expenseId, req.body || {}, req.user),
+  });
+});
+
+exports.getDraft = asyncHandler(async (req, res) => {
+  res.json({
+    success: true,
+    data: await service.getWorkPlanDraft(req.query || {}, req.user),
+  });
+});
+
+exports.saveDraft = asyncHandler(async (req, res) => {
+  res.json({
+    success: true,
+    data: await service.saveWorkPlanDraft(req.body || {}, req.user),
+  });
+});
+
+exports.deleteDraft = asyncHandler(async (req, res) => {
+  res.json({
+    success: true,
+    data: await service.deleteWorkPlanDraft(req.query || {}, req.user),
+  });
+});
+
+exports.getSeniorRemarks = asyncHandler(async (req, res) => {
+  const result = await service.getSeniorRemarksFeed(req.query || {}, req.user);
+  res.json({
+    success: true,
+    data: result.items,
+    stats: result.stats,
+  });
+});
+
+exports.addJuniorFollowup = asyncHandler(async (req, res) => {
+  const result = await service.addJuniorFollowup(req.body || {}, req.user);
+  res.json({
+    success: true,
+    data: result.remark,
+  });
+});
+
+exports.updateSeniorRemarkStatus = asyncHandler(async (req, res) => {
+  const result = await service.updateSeniorRemarkStatus(req.body || {}, req.user);
+  res.json({
+    success: true,
+    data: result.remark,
+  });
+});
+

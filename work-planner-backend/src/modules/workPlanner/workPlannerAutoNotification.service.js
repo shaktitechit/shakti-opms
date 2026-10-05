@@ -789,14 +789,15 @@ async function notifyTaskCreated({ task, planDoc = null, actorUser = null }) {
 /**
  * 3.5. SENIOR DIRECTIVE / AUTHORITY REMARK ADDED AUTO NOTIFICATION (IN-APP + EMAIL TO JUNIOR)
  */
-async function notifyAuthorityRemarkAdded({ planId, visitId = null, workId = null, remarkText, actorUser }) {
+async function notifyAuthorityRemarkAdded({ planId, visitId = null, workId = null, expenseId = null, remarkText, actorUser }) {
   try {
     if (!remarkText || !String(remarkText).trim()) return;
-    const { WorkPlan, WorkPlanVisit, WorkPlanWork, User } = getModels();
+    const { WorkPlan, WorkPlanVisit, WorkPlanWork, WorkPlanExpense, User } = getModels();
 
     let plan = null;
     let visit = null;
     let task = null;
+    let expense = null;
 
     if (planId) {
       plan = await WorkPlan.findOne({ _id: planId, deletedAt: null }).lean();
@@ -811,6 +812,12 @@ async function notifyAuthorityRemarkAdded({ planId, visitId = null, workId = nul
       task = await WorkPlanWork.findOne({ _id: workId, deletedAt: null }).lean();
       if (!plan && task?.work_plan) {
         plan = await WorkPlan.findOne({ _id: task.work_plan, deletedAt: null }).lean();
+      }
+    }
+    if (expenseId) {
+      expense = await WorkPlanExpense.findOne({ _id: expenseId, deletedAt: null }).lean();
+      if (!plan && expense?.work_plan) {
+        plan = await WorkPlan.findOne({ _id: expense.work_plan, deletedAt: null }).lean();
       }
     }
 
@@ -843,6 +850,9 @@ async function notifyAuthorityRemarkAdded({ planId, visitId = null, workId = nul
     } else if (task) {
       itemTypeLabel = 'Task';
       itemTitle = task.title || 'Task';
+    } else if (expense) {
+      itemTypeLabel = 'Expense Claim';
+      itemTitle = `${expense.category || 'Expense'} Claim (₹${expense.amount || 0})`;
     }
 
     // 1. In-App Notification to the concerned junior
@@ -1066,23 +1076,502 @@ async function notifyDayEndCompleted({ planId, actorUser, dayEndData = null }) {
 }
 
 /**
- * 5. MORNING 10:00 AM PENDING WORK PLAN REMINDER DISPATCHER
+ * 5. WORK PLAN APPROVED AUTO NOTIFICATION
+ */
+async function notifyWorkPlanApproved({ planId, actorUser }) {
+  try {
+    const { WorkPlan, User } = getModels();
+    const plan = await WorkPlan.findOne({ _id: planId, deletedAt: null }).lean();
+    if (!plan) return;
+
+    const salesUserId = plan.sales_user;
+    const salesUser = await User.findById(salesUserId).lean();
+    if (!salesUser) return;
+
+    const planDateStr = formatDate(plan.plan_date);
+    const actorName = actorUser?.name || actorUser?.email?.split('@')[0] || 'Manager';
+    const actorRole = getUserRoleLabel(actorUser);
+
+    // In-App Notification to Executive
+    await sendInAppNotification(salesUserId, {
+      title: 'Work Plan Approved',
+      message: `Your Work Plan for ${planDateStr} has been approved by ${actorName} (${actorRole}).`,
+      type: 'success',
+      entity_type: 'work_plan',
+      entity_id: plan._id,
+    });
+
+    // Email to Executive
+    if (salesUser.email) {
+      const baseUrl = (FRONTEND_URL || process.env.FRONTEND_URL || '').replace(/\/$/, '');
+      const workPlanUrl = baseUrl ? `${baseUrl}/work-plans?planId=${plan._id}` : '';
+      const subject = `Work Plan Approved — ${planDateStr}`;
+      const emailHtml = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
+          <div style="background: linear-gradient(135deg, #059669 0%, #10b981 100%); color: #ffffff; padding: 24px; border-radius: 8px 8px 0 0;">
+            <h2 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #ffffff;">Work Plan Approved</h2>
+            <p style="margin: 0; font-size: 14px; opacity: 0.95;">Approved for <strong>${escapeHtml(planDateStr)}</strong></p>
+          </div>
+          <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
+            <p style="font-size: 14px; margin-top: 0; color: #334155;">
+              Hi <strong>${escapeHtml(salesUser.name || 'Executive')}</strong>,
+            </p>
+            <p style="font-size: 13px; color: #475569;">
+              Your daily Work Plan for <strong>${escapeHtml(planDateStr)}</strong> (${escapeHtml(plan.plan_type || 'Visits')}) has been approved by <strong>${escapeHtml(actorName)}</strong> (${escapeHtml(actorRole)}).
+            </p>
+            ${
+              workPlanUrl
+                ? `
+              <div style="margin: 24px 0 12px 0; text-align: center;">
+                <a href="${workPlanUrl}" style="background-color: #059669; color: #ffffff; padding: 10px 22px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 13px; display: inline-block;">
+                  View Approved Plan
+                </a>
+              </div>
+            `
+                : ''
+            }
+          </div>
+        </div>
+      `;
+
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+        logger.warn(`[AutoNotification] Failed sending approval email to ${salesUser.email}: ${err.message}`);
+      });
+    }
+  } catch (err) {
+    logger.error(`[AutoNotification] Error in notifyWorkPlanApproved: ${err.message}`);
+  }
+}
+
+/**
+ * 6. WORK PLAN REJECTED AUTO NOTIFICATION
+ */
+async function notifyWorkPlanRejected({ planId, actorUser, reason }) {
+  try {
+    const { WorkPlan, User } = getModels();
+    const plan = await WorkPlan.findOne({ _id: planId, deletedAt: null }).lean();
+    if (!plan) return;
+
+    const salesUserId = plan.sales_user;
+    const salesUser = await User.findById(salesUserId).lean();
+    if (!salesUser) return;
+
+    const planDateStr = formatDate(plan.plan_date);
+    const actorName = actorUser?.name || actorUser?.email?.split('@')[0] || 'Manager';
+    const actorRole = getUserRoleLabel(actorUser);
+
+    // In-App Notification to Executive
+    await sendInAppNotification(salesUserId, {
+      title: 'Work Plan Rejected',
+      message: `Your Work Plan for ${planDateStr} was rejected by ${actorName}. Reason: ${reason || 'Revision required'}`,
+      type: 'warning',
+      entity_type: 'work_plan',
+      entity_id: plan._id,
+    });
+
+    // Email to Executive
+    if (salesUser.email) {
+      const baseUrl = (FRONTEND_URL || process.env.FRONTEND_URL || '').replace(/\/$/, '');
+      const workPlanUrl = baseUrl ? `${baseUrl}/work-plans?planId=${plan._id}` : '';
+      const subject = `Work Plan Revision Needed / Rejected — ${planDateStr}`;
+      const emailHtml = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
+          <div style="background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%); color: #ffffff; padding: 24px; border-radius: 8px 8px 0 0;">
+            <h2 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #ffffff;">Work Plan Revision Needed</h2>
+            <p style="margin: 0; font-size: 14px; opacity: 0.95;">Plan Date: <strong>${escapeHtml(planDateStr)}</strong></p>
+          </div>
+          <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
+            <p style="font-size: 14px; margin-top: 0; color: #334155;">
+              Hi <strong>${escapeHtml(salesUser.name || 'Executive')}</strong>,
+            </p>
+            <p style="font-size: 13px; color: #475569;">
+              Your daily Work Plan for <strong>${escapeHtml(planDateStr)}</strong> has been marked for revision by <strong>${escapeHtml(actorName)}</strong> (${escapeHtml(actorRole)}).
+            </p>
+            <div style="background-color: #fef2f2; border: 1px solid #fee2e2; border-left: 4px solid #ef4444; border-radius: 6px; padding: 14px; margin: 18px 0;">
+              <div style="font-size: 11px; font-weight: 700; color: #b91c1c; text-transform: uppercase; margin-bottom: 4px;">Reason for Rejection / Revision:</div>
+              <div style="font-size: 13px; color: #7f1d1d; font-weight: 500;">${escapeHtml(reason || 'Please update your visits/tasks as discussed.')}</div>
+            </div>
+            ${
+              workPlanUrl
+                ? `
+              <div style="margin: 24px 0 12px 0; text-align: center;">
+                <a href="${workPlanUrl}" style="background-color: #dc2626; color: #ffffff; padding: 10px 22px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 13px; display: inline-block;">
+                  Edit & Re-submit Plan
+                </a>
+              </div>
+            `
+                : ''
+            }
+          </div>
+        </div>
+      `;
+
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+        logger.warn(`[AutoNotification] Failed sending rejection email to ${salesUser.email}: ${err.message}`);
+      });
+    }
+  } catch (err) {
+    logger.error(`[AutoNotification] Error in notifyWorkPlanRejected: ${err.message}`);
+  }
+}
+
+/**
+ * 7. JUNIOR FOLLOW-UP / RESPONSE ADDED AUTO NOTIFICATION
+ */
+async function notifyJuniorFollowupAdded({ targetType, targetId, remark, followup, actorUser }) {
+  try {
+    const { User } = getModels();
+    const actorName = actorUser?.name || actorUser?.email?.split('@')[0] || 'Executive';
+    const seniorUserId = remark?.user || remark?.created_by;
+    if (!seniorUserId) return;
+
+    const seniorUser = await User.findById(seniorUserId).lean();
+    if (!seniorUser) return;
+
+    // Do not notify self
+    if (String(actorUser?._id || actorUser?.id) === String(seniorUser._id)) return;
+
+    const targetLabel = targetType === 'plan' ? 'Work Plan' : targetType === 'visit' ? 'Field Visit' : targetType === 'task' ? 'Task' : 'Expense Claim';
+    const cleanResponse = stripHtml(followup?.response || '');
+
+    const attCount = (Array.isArray(followup?.attachments) ? followup.attachments.length : 0) ||
+      (Array.isArray(followup?.attachment_details) ? followup.attachment_details.length : 0);
+    const attSuffix = attCount > 0 ? ` [📎 ${attCount} file${attCount > 1 ? 's' : ''} attached]` : '';
+
+    // In-App Notification to Senior
+    await sendInAppNotification(seniorUser._id, {
+      title: `Reply to Directive: ${targetLabel}`,
+      message: `${actorName} responded: "${cleanResponse.length > 100 ? cleanResponse.slice(0, 97) + '...' : cleanResponse}"${attSuffix}`,
+      type: 'info',
+      entity_type: 'senior_remark',
+      entity_id: targetId,
+    });
+
+    // Email to Senior
+    if (seniorUser.email) {
+      const baseUrl = (FRONTEND_URL || process.env.FRONTEND_URL || '').replace(/\/$/, '');
+      const feedUrl = baseUrl ? `${baseUrl}/dashboard/senior-remarks` : '';
+      const subject = `Reply to Directive on ${targetLabel} — from ${actorName}${attSuffix}`;
+      const emailHtml = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
+          <div style="background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%); color: #ffffff; padding: 24px; border-radius: 8px 8px 0 0;">
+            <h2 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #ffffff;">Executive Responded to Directive</h2>
+            <p style="margin: 0; font-size: 14px; opacity: 0.95;">Target: <strong>${escapeHtml(targetLabel)}</strong></p>
+          </div>
+          <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
+            <p style="font-size: 14px; margin-top: 0; color: #334155;">
+              Hi <strong>${escapeHtml(seniorUser.name || 'Senior Authority')}</strong>,
+            </p>
+            <p style="font-size: 13px; color: #475569;">
+              <strong>${escapeHtml(actorName)}</strong> has responded to your directive on ${escapeHtml(targetLabel.toLowerCase())}:
+            </p>
+            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 4px solid #6366f1; border-radius: 6px; padding: 14px; margin: 18px 0;">
+              <div style="font-size: 11px; font-weight: 700; color: #4f46e5; text-transform: uppercase; margin-bottom: 4px;">Executive Response:</div>
+              <div style="font-size: 13px; color: #1e293b; line-height: 1.5;">${escapeHtml(cleanResponse)}</div>
+              ${
+                attCount > 0
+                  ? `<div style="margin-top: 10px; font-size: 12px; color: #4f46e5; font-weight: 600;">📎 ${attCount} attachment${attCount > 1 ? 's' : ''} provided</div>`
+                  : ''
+              }
+            </div>
+            ${
+              feedUrl
+                ? `
+              <div style="margin: 24px 0 12px 0; text-align: center;">
+                <a href="${feedUrl}" style="background-color: #4f46e5; color: #ffffff; padding: 10px 22px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 13px; display: inline-block;">
+                  View Directives Feed
+                </a>
+              </div>
+            `
+                : ''
+            }
+          </div>
+        </div>
+      `;
+
+      await emailHelper.sendEmail(seniorUser.email, subject, '', emailHtml).catch((err) => {
+        logger.warn(`[AutoNotification] Failed sending followup email to ${seniorUser.email}: ${err.message}`);
+      });
+    }
+  } catch (err) {
+    logger.error(`[AutoNotification] Error in notifyJuniorFollowupAdded: ${err.message}`);
+  }
+}
+
+/**
+ * 8. DIRECTIVE RESOLVED AUTO NOTIFICATION
+ */
+async function notifyDirectiveResolved({ targetType, targetId, doc, remark, actorUser }) {
+  try {
+    const { User } = getModels();
+    const actorName = actorUser?.name || actorUser?.email?.split('@')[0] || 'Senior Authority';
+    const actorRole = getUserRoleLabel(actorUser);
+
+    const salesUserId = doc?.sales_user || (typeof doc?.user === 'object' ? doc?.user?._id : doc?.user);
+    if (!salesUserId) return;
+
+    const salesUser = await User.findById(salesUserId).lean();
+    if (!salesUser) return;
+
+    // Do not notify self
+    if (String(actorUser?._id || actorUser?.id) === String(salesUser._id)) return;
+
+    const targetLabel = targetType === 'plan' ? 'Work Plan' : targetType === 'visit' ? 'Field Visit' : targetType === 'task' ? 'Task' : 'Expense Claim';
+
+    // In-App Notification to Junior
+    await sendInAppNotification(salesUser._id, {
+      title: `Directive Resolved: ${targetLabel}`,
+      message: `${actorName} marked the directive on your ${targetLabel.toLowerCase()} as Resolved.`,
+      type: 'success',
+      entity_type: 'senior_remark',
+      entity_id: targetId,
+    });
+
+    // Email to Junior
+    if (salesUser.email) {
+      const subject = `Directive Resolved: ${targetLabel}`;
+      const emailHtml = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
+          <div style="background: linear-gradient(135deg, #059669 0%, #10b981 100%); color: #ffffff; padding: 24px; border-radius: 8px 8px 0 0;">
+            <h2 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #ffffff;">Directive Resolved & Closed</h2>
+            <p style="margin: 0; font-size: 14px; opacity: 0.95;">Target: <strong>${escapeHtml(targetLabel)}</strong></p>
+          </div>
+          <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
+            <p style="font-size: 14px; margin-top: 0; color: #334155;">
+              Hi <strong>${escapeHtml(salesUser.name || 'Executive')}</strong>,
+            </p>
+            <p style="font-size: 13px; color: #475569;">
+              <strong>${escapeHtml(actorName)}</strong> (${escapeHtml(actorRole)}) has reviewed your response and marked the directive on your ${escapeHtml(targetLabel.toLowerCase())} as <strong>Resolved</strong>.
+            </p>
+            ${
+              remark.resolution_remarks
+                ? `
+              <div style="background-color: #f0fdf4; border: 1px solid #dcfce7; border-left: 4px solid #16a34a; border-radius: 6px; padding: 14px; margin: 18px 0;">
+                <div style="font-size: 11px; font-weight: 700; color: #15803d; text-transform: uppercase; margin-bottom: 4px;">Resolution Notes:</div>
+                <div style="font-size: 13px; color: #14532d;">${escapeHtml(remark.resolution_remarks)}</div>
+              </div>
+            `
+                : ''
+            }
+          </div>
+        </div>
+      `;
+
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+        logger.warn(`[AutoNotification] Failed sending resolution email to ${salesUser.email}: ${err.message}`);
+      });
+    }
+  } catch (err) {
+    logger.error(`[AutoNotification] Error in notifyDirectiveResolved: ${err.message}`);
+  }
+}
+
+/**
+ * 9. EXPENSE SUBMITTED AUTO NOTIFICATION
+ */
+async function notifyExpenseSubmitted({ planId, count = 1, totalAmount = 0, actorUser, selectedCcEmails = [] }) {
+  try {
+    const { WorkPlan } = getModels();
+    const plan = await WorkPlan.findOne({ _id: planId, deletedAt: null }).lean();
+    if (!plan) return;
+
+    const salesUserId = plan.sales_user;
+    const { salesUser, directManager, allManagers, primaryRecipientEmail } = await resolveStakeholders(salesUserId, plan);
+    const actorName = actorUser?.name || actorUser?.email?.split('@')[0] || 'Executive';
+    const planDateStr = formatDate(plan.plan_date);
+
+    // In-App Notification to Managers
+    for (const m of allManagers) {
+      await sendInAppNotification(m._id, {
+        title: `Expense Claim Submitted: ${actorName}`,
+        message: `${actorName} submitted ${count} expense claim(s) totaling ₹${Number(totalAmount).toLocaleString('en-IN')} for ${planDateStr}.`,
+        type: 'info',
+        entity_type: 'expense',
+        entity_id: plan._id,
+      });
+    }
+
+    // Email to Direct Manager (with CC to selected CCs only)
+    if (primaryRecipientEmail) {
+      const baseUrl = (FRONTEND_URL || process.env.FRONTEND_URL || '').replace(/\/$/, '');
+      const expenseUrl = baseUrl ? `${baseUrl}/dashboard/expenses` : '';
+      const subject = `Expense Claim Submitted — ${actorName} (${planDateStr})`;
+      const emailHtml = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
+          <div style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #ffffff; padding: 24px; border-radius: 8px 8px 0 0;">
+            <h2 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #ffffff;">Expense Claim Submitted</h2>
+            <p style="margin: 0; font-size: 14px; opacity: 0.95;">For Plan Date: <strong>${escapeHtml(planDateStr)}</strong></p>
+          </div>
+          <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
+            <table style="width: 100%; margin-bottom: 20px; font-size: 13px;">
+              <tr>
+                <td style="padding: 6px 0; color: #64748b; width: 140px;"><strong>Executive:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a;">${escapeHtml(actorName)} (${escapeHtml(salesUser?.email || '')})</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Total Amount:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a; font-weight: 700; font-size: 15px;">₹${Number(totalAmount).toLocaleString('en-IN')}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Claims Count:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a;">${count} item(s)</td>
+              </tr>
+            </table>
+            ${
+              expenseUrl
+                ? `
+              <div style="margin: 24px 0 12px 0; text-align: center;">
+                <a href="${expenseUrl}" style="background-color: #0284c7; color: #ffffff; padding: 10px 22px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 13px; display: inline-block;">
+                  Review Expenses in Portal
+                </a>
+              </div>
+            `
+                : ''
+            }
+          </div>
+        </div>
+      `;
+
+      const mailCc = Array.isArray(selectedCcEmails) ? selectedCcEmails.map((e) => String(e).trim()).filter(Boolean) : [];
+      await emailHelper.sendEmail(primaryRecipientEmail, subject, '', emailHtml, [], mailCc).catch((err) => {
+        logger.warn(`[AutoNotification] Failed sending expense submission email: ${err.message}`);
+      });
+    }
+  } catch (err) {
+    logger.error(`[AutoNotification] Error in notifyExpenseSubmitted: ${err.message}`);
+  }
+}
+
+/**
+ * 10. EXPENSE APPROVED AUTO NOTIFICATION
+ */
+async function notifyExpenseApproved({ planId, count = 1, totalAmount = 0, actorUser }) {
+  try {
+    const { WorkPlan, User } = getModels();
+    const plan = await WorkPlan.findOne({ _id: planId, deletedAt: null }).lean();
+    if (!plan) return;
+
+    const salesUserId = plan.sales_user;
+    const salesUser = await User.findById(salesUserId).lean();
+    if (!salesUser) return;
+
+    const actorName = actorUser?.name || actorUser?.email?.split('@')[0] || 'Manager';
+    const planDateStr = formatDate(plan.plan_date);
+
+    // In-App Notification to Executive
+    await sendInAppNotification(salesUserId, {
+      title: 'Expense Claim Approved',
+      message: `Your ${count} expense claim(s) totaling ₹${Number(totalAmount).toLocaleString('en-IN')} for ${planDateStr} were approved by ${actorName}.`,
+      type: 'success',
+      entity_type: 'expense',
+      entity_id: plan._id,
+    });
+
+    // Email to Executive
+    if (salesUser.email) {
+      const subject = `Expense Approved — ₹${Number(totalAmount).toLocaleString('en-IN')} (${planDateStr})`;
+      const emailHtml = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
+          <div style="background: linear-gradient(135deg, #059669 0%, #10b981 100%); color: #ffffff; padding: 24px; border-radius: 8px 8px 0 0;">
+            <h2 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #ffffff;">Expense Approved</h2>
+            <p style="margin: 0; font-size: 14px; opacity: 0.95;">Plan Date: <strong>${escapeHtml(planDateStr)}</strong></p>
+          </div>
+          <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
+            <p style="font-size: 14px; margin-top: 0; color: #334155;">
+              Hi <strong>${escapeHtml(salesUser.name || 'Executive')}</strong>,
+            </p>
+            <p style="font-size: 13px; color: #475569;">
+              Your expense claim (${count} item(s)) totaling <strong>₹${Number(totalAmount).toLocaleString('en-IN')}</strong> has been approved by <strong>${escapeHtml(actorName)}</strong>.
+            </p>
+          </div>
+        </div>
+      `;
+
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+        logger.warn(`[AutoNotification] Failed sending expense approval email: ${err.message}`);
+      });
+    }
+  } catch (err) {
+    logger.error(`[AutoNotification] Error in notifyExpenseApproved: ${err.message}`);
+  }
+}
+
+/**
+ * 11. EXPENSE REJECTED AUTO NOTIFICATION
+ */
+async function notifyExpenseRejected({ planId, count = 1, totalAmount = 0, reason, actorUser }) {
+  try {
+    const { WorkPlan, User } = getModels();
+    const plan = await WorkPlan.findOne({ _id: planId, deletedAt: null }).lean();
+    if (!plan) return;
+
+    const salesUserId = plan.sales_user;
+    const salesUser = await User.findById(salesUserId).lean();
+    if (!salesUser) return;
+
+    const actorName = actorUser?.name || actorUser?.email?.split('@')[0] || 'Manager';
+    const planDateStr = formatDate(plan.plan_date);
+
+    // In-App Notification to Executive
+    await sendInAppNotification(salesUserId, {
+      title: 'Expense Claim Rejected',
+      message: `Your expense claim (${count} item(s), ₹${Number(totalAmount).toLocaleString('en-IN')}) for ${planDateStr} was rejected by ${actorName}. Reason: ${reason}`,
+      type: 'warning',
+      entity_type: 'expense',
+      entity_id: plan._id,
+    });
+
+    // Email to Executive
+    if (salesUser.email) {
+      const subject = `Expense Claim Rejected — ₹${Number(totalAmount).toLocaleString('en-IN')} (${planDateStr})`;
+      const emailHtml = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
+          <div style="background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%); color: #ffffff; padding: 24px; border-radius: 8px 8px 0 0;">
+            <h2 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #ffffff;">Expense Claim Rejected</h2>
+            <p style="margin: 0; font-size: 14px; opacity: 0.95;">Plan Date: <strong>${escapeHtml(planDateStr)}</strong></p>
+          </div>
+          <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
+            <p style="font-size: 14px; margin-top: 0; color: #334155;">
+              Hi <strong>${escapeHtml(salesUser.name || 'Executive')}</strong>,
+            </p>
+            <p style="font-size: 13px; color: #475569;">
+              Your expense claim (${count} item(s)) totaling <strong>₹${Number(totalAmount).toLocaleString('en-IN')}</strong> was rejected by <strong>${escapeHtml(actorName)}</strong>.
+            </p>
+            <div style="background-color: #fef2f2; border: 1px solid #fee2e2; border-left: 4px solid #ef4444; border-radius: 6px; padding: 14px; margin: 18px 0;">
+              <div style="font-size: 11px; font-weight: 700; color: #b91c1c; text-transform: uppercase; margin-bottom: 4px;">Rejection Reason:</div>
+              <div style="font-size: 13px; color: #7f1d1d; font-weight: 500;">${escapeHtml(reason || 'Clarification required on expense amounts/receipts.')}</div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+        logger.warn(`[AutoNotification] Failed sending expense rejection email: ${err.message}`);
+      });
+    }
+  } catch (err) {
+    logger.error(`[AutoNotification] Error in notifyExpenseRejected: ${err.message}`);
+  }
+}
+
+/**
+ * 12. MORNING 11:30 AM PENDING WORK PLAN REMINDER DISPATCHER
  */
 async function sendPendingWorkPlanMorningReminder(pendingUsers, dateStr, timeZone) {
   try {
     if (!Array.isArray(pendingUsers) || pendingUsers.length === 0) {
-      logger.info(`[AutoNotification] Morning 10 AM reminder: No pending work plans for ${dateStr}.`);
+      logger.info(`[AutoNotification] Morning 11:30 AM reminder: No pending work plans for ${dateStr}.`);
       return;
     }
 
-    logger.info(`[AutoNotification] Morning 10 AM reminder: Sending alerts for ${pendingUsers.length} pending executives.`);
+    logger.info(`[AutoNotification] Morning 11:30 AM reminder: Sending alerts for ${pendingUsers.length} pending executives.`);
 
     // Group pending users by direct manager for manager digest
     const managerDigestMap = new Map();
 
     for (const exec of pendingUsers) {
       const execName = exec.name || exec.email.split('@')[0];
-      const { directManager, allManagers, ccList } = await resolveStakeholders(exec._id);
+      const { directManager, allManagers } = await resolveStakeholders(exec._id);
 
       // In-App Notification to Executive
       await sendInAppNotification(exec._id, {
@@ -1095,12 +1584,12 @@ async function sendPendingWorkPlanMorningReminder(pendingUsers, dateStr, timeZon
       // Individual Email to Executive
       if (exec.email) {
         const mgrCc = [];
-        const subject = `Morning Reminder: Work Plan Pending for Today (${dateStr})`;
+        const subject = `Morning 11:30 AM Reminder: Work Plan Pending for Today (${dateStr})`;
         const emailHtml = `
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 550px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
             <div style="background-color: #d97706; color: #ffffff; padding: 20px 24px; border-radius: 8px 8px 0 0;">
               <h2 style="margin: 0 0 4px 0; font-size: 18px; font-weight: 700; color: #ffffff;">Work Plan Pending</h2>
-              <p style="margin: 0; font-size: 13px; opacity: 0.95;">Morning 10:00 AM Alert • <strong>${dateStr}</strong></p>
+              <p style="margin: 0; font-size: 13px; opacity: 0.95;">Morning 11:30 AM Alert • <strong>${dateStr}</strong></p>
             </div>
             <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
               <p style="font-size: 14px; margin-top: 0;">Hi <strong>${escapeHtml(execName)}</strong>,</p>
@@ -1127,7 +1616,7 @@ async function sendPendingWorkPlanMorningReminder(pendingUsers, dateStr, timeZon
           [],
           mgrCc
         ).catch((err) => {
-          logger.warn(`[AutoNotification] Failed sending 10 AM email to ${exec.email}: ${err.message}`);
+          logger.warn(`[AutoNotification] Failed sending 11:30 AM email to ${exec.email}: ${err.message}`);
         });
       }
 
@@ -1142,9 +1631,13 @@ async function sendPendingWorkPlanMorningReminder(pendingUsers, dateStr, timeZon
       }
     }
 
+    // Portal Admins to CC on all manager digests
+    const portalAdmins = await getActiveUsersByWpRole('admin');
+
     // Send Manager Digests
     for (const [mgrId, data] of managerDigestMap.entries()) {
       const { manager, pendingExecs } = data;
+      if (pendingExecs.length === 0) continue;
       const mgrName = manager.name || manager.email.split('@')[0];
 
       // In-App Notification to Manager
@@ -1155,7 +1648,7 @@ async function sendPendingWorkPlanMorningReminder(pendingUsers, dateStr, timeZon
         entity_type: 'manager_digest',
       });
 
-      // Digest Email to Manager
+      // Digest Email to Manager (CC Portal Admins)
       if (manager.email) {
         const execRows = pendingExecs
           .map(
@@ -1173,7 +1666,7 @@ async function sendPendingWorkPlanMorningReminder(pendingUsers, dateStr, timeZon
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
             <div style="background-color: #1e293b; color: #ffffff; padding: 20px 24px; border-radius: 8px 8px 0 0;">
               <h2 style="margin: 0 0 4px 0; font-size: 18px; font-weight: 700; color: #ffffff;">Team Work Plan Pending Digest</h2>
-              <p style="margin: 0; font-size: 13px; opacity: 0.85;">Morning 10:00 AM Check • <strong>${dateStr}</strong></p>
+              <p style="margin: 0; font-size: 13px; opacity: 0.85;">Morning 11:30 AM Check • <strong>${dateStr}</strong></p>
             </div>
             <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
               <p style="font-size: 14px; margin-top: 0;">Hi <strong>${escapeHtml(mgrName)}</strong>,</p>
@@ -1201,13 +1694,19 @@ async function sendPendingWorkPlanMorningReminder(pendingUsers, dateStr, timeZon
           </div>
         `;
 
+        const adminCcEmails = portalAdmins
+          .map((a) => a.email)
+          .filter((e) => e && e.toLowerCase() !== String(manager.email || '').toLowerCase());
+
         await emailHelper.sendEmail(
           manager.email,
           `Team Work Plan Pending Digest — ${dateStr} (${pendingExecs.length} Pending)`,
           '',
-          digestHtml
+          digestHtml,
+          [],
+          adminCcEmails
         ).catch((err) => {
-          logger.warn(`[AutoNotification] Failed sending 10 AM digest to manager ${manager.email}: ${err.message}`);
+          logger.warn(`[AutoNotification] Failed sending 11:30 AM digest to manager ${manager.email}: ${err.message}`);
         });
       }
     }
@@ -1217,16 +1716,16 @@ async function sendPendingWorkPlanMorningReminder(pendingUsers, dateStr, timeZon
 }
 
 /**
- * 6. EVENING 6:00 PM PENDING DAY END REMINDER DISPATCHER
+ * 13. EVENING 6:30 PM PENDING DAY END REMINDER DISPATCHER
  */
 async function sendPendingDayEndEveningReminder(pendingPlansWithUsers, dateStr, timeZone) {
   try {
     if (!Array.isArray(pendingPlansWithUsers) || pendingPlansWithUsers.length === 0) {
-      logger.info(`[AutoNotification] Evening 6 PM reminder: No pending Day End reports for ${dateStr}.`);
+      logger.info(`[AutoNotification] Evening 6:30 PM reminder: No pending Day End reports for ${dateStr}.`);
       return;
     }
 
-    logger.info(`[AutoNotification] Evening 6 PM reminder: Sending alerts for ${pendingPlansWithUsers.length} pending Day End reports.`);
+    logger.info(`[AutoNotification] Evening 6:30 PM reminder: Sending alerts for ${pendingPlansWithUsers.length} pending Day End reports.`);
 
     const managerDigestMap = new Map();
 
@@ -1248,12 +1747,12 @@ async function sendPendingDayEndEveningReminder(pendingPlansWithUsers, dateStr, 
       // Individual Email to Executive
       if (exec.email) {
         const mgrCc = [];
-        const subject = `Evening Reminder: Day End Report Pending for Today (${dateStr})`;
+        const subject = `Evening 6:30 PM Reminder: Day End Report Pending for Today (${dateStr})`;
         const emailHtml = `
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 550px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
             <div style="background-color: #0284c7; color: #ffffff; padding: 20px 24px; border-radius: 8px 8px 0 0;">
               <h2 style="margin: 0 0 4px 0; font-size: 18px; font-weight: 700; color: #ffffff;">Day End Submission Pending</h2>
-              <p style="margin: 0; font-size: 13px; opacity: 0.95;">Evening 6:00 PM Alert • <strong>${dateStr}</strong></p>
+              <p style="margin: 0; font-size: 13px; opacity: 0.95;">Evening 6:30 PM Alert • <strong>${dateStr}</strong></p>
             </div>
             <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
               <p style="font-size: 14px; margin-top: 0;">Hi <strong>${escapeHtml(execName)}</strong>,</p>
@@ -1280,7 +1779,7 @@ async function sendPendingDayEndEveningReminder(pendingPlansWithUsers, dateStr, 
           [],
           mgrCc
         ).catch((err) => {
-          logger.warn(`[AutoNotification] Failed sending 6 PM email to ${exec.email}: ${err.message}`);
+          logger.warn(`[AutoNotification] Failed sending 6:30 PM email to ${exec.email}: ${err.message}`);
         });
       }
 
@@ -1295,9 +1794,13 @@ async function sendPendingDayEndEveningReminder(pendingPlansWithUsers, dateStr, 
       }
     }
 
+    // Portal Admins to CC on all manager digests
+    const portalAdmins = await getActiveUsersByWpRole('admin');
+
     // Send Manager Digests
     for (const [mgrId, data] of managerDigestMap.entries()) {
       const { manager, pendingItems } = data;
+      if (pendingItems.length === 0) continue;
       const mgrName = manager.name || manager.email.split('@')[0];
 
       // In-App Notification to Manager
@@ -1308,7 +1811,7 @@ async function sendPendingDayEndEveningReminder(pendingPlansWithUsers, dateStr, 
         entity_type: 'manager_digest',
       });
 
-      // Digest Email to Manager
+      // Digest Email to Manager (CC Portal Admins)
       if (manager.email) {
         const execRows = pendingItems
           .map(
@@ -1326,7 +1829,7 @@ async function sendPendingDayEndEveningReminder(pendingPlansWithUsers, dateStr, 
           <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
             <div style="background-color: #1e293b; color: #ffffff; padding: 20px 24px; border-radius: 8px 8px 0 0;">
               <h2 style="margin: 0 0 4px 0; font-size: 18px; font-weight: 700; color: #ffffff;">Team Day End Pending Digest</h2>
-              <p style="margin: 0; font-size: 13px; opacity: 0.85;">Evening 6:00 PM Check • <strong>${dateStr}</strong></p>
+              <p style="margin: 0; font-size: 13px; opacity: 0.85;">Evening 6:30 PM Check • <strong>${dateStr}</strong></p>
             </div>
             <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
               <p style="font-size: 14px; margin-top: 0;">Hi <strong>${escapeHtml(mgrName)}</strong>,</p>
@@ -1354,13 +1857,19 @@ async function sendPendingDayEndEveningReminder(pendingPlansWithUsers, dateStr, 
           </div>
         `;
 
+        const adminCcEmails = portalAdmins
+          .map((a) => a.email)
+          .filter((e) => e && e.toLowerCase() !== String(manager.email || '').toLowerCase());
+
         await emailHelper.sendEmail(
           manager.email,
           `Team Day End Pending Digest — ${dateStr} (${pendingItems.length} Pending)`,
           '',
-          digestHtml
+          digestHtml,
+          [],
+          adminCcEmails
         ).catch((err) => {
-          logger.warn(`[AutoNotification] Failed sending 6 PM digest to manager ${manager.email}: ${err.message}`);
+          logger.warn(`[AutoNotification] Failed sending 6:30 PM digest to manager ${manager.email}: ${err.message}`);
         });
       }
     }
@@ -1380,12 +1889,21 @@ module.exports = {
   resolveStakeholders,
   sendInAppNotification,
   notifyWorkPlanCreated,
+  notifyWorkPlanSubmitted: notifyWorkPlanCreated,
+  notifyWorkPlanApproved,
+  notifyWorkPlanRejected,
   notifyVisitCreated,
   notifyTaskCreated,
   notifyAuthorityRemarkAdded,
+  notifyJuniorFollowupAdded,
+  notifyDirectiveResolved,
+  notifyExpenseSubmitted,
+  notifyExpenseApproved,
+  notifyExpenseRejected,
   notifyDayEndCompleted,
   sendPendingWorkPlanMorningReminder,
   sendPendingDayEndEveningReminder,
   renderVisitsTable,
   renderTasksTable,
 };
+

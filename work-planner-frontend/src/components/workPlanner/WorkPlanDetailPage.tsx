@@ -29,7 +29,6 @@ import {
   Camera,
   RotateCcw,
   Users,
-  Layers,
   Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -71,16 +70,11 @@ import {
   isDayEndEligible,
   isLeavePlan,
   isVisitsPlan,
-  isWindowEnded,
   isWorkTaskPlan,
-  isPlanDate3DaysExpired,
   renderPlanStatusBadge,
   renderVisitStatusBadge,
   renderWorkStatusBadge,
   salesUserLabel,
-  taskWindowHint,
-  visitWindowHint,
-  workPlanWindowHint,
 } from "./workPlanUtils";
 
 import { VisitFormModal } from "./VisitFormModal";
@@ -93,8 +87,10 @@ import { DayEndSection } from "./DayEndSection";
 import { DayEndMailModal } from "./DayEndMailModal";
 import { DayEndViewModal } from "./DayEndViewModal";
 import { CopyWorkPlanModal } from "./CopyWorkPlanModal";
-import { ChangePlanTypeModal } from "./ChangePlanTypeModal";
 import { PlanAiAnalysisModal } from "./PlanAiAnalysisModal";
+import { DirectiveThreadModal } from "./DirectiveThreadModal";
+import { FilePreviewModal, useFilePreview } from "./FilePreviewModal";
+import type { SeniorRemarkFeedItem } from "@/types/workPlanner";
 
 interface WorkPlanDetailPageProps {
   planId: string;
@@ -106,12 +102,12 @@ function RichTextDisplay({ content, className = "" }: { content?: string; classN
   if (isHtml) {
     return (
       <div
-        className={`prose prose-xs dark:prose-invert max-w-none break-words ${className}`}
+        className={`prose prose-xs dark:prose-invert max-w-none break-words [overflow-wrap:anywhere] ${className}`}
         dangerouslySetInnerHTML={{ __html: content }}
       />
     );
   }
-  return <div className={`whitespace-pre-line ${className}`}>{content}</div>;
+  return <div className={`whitespace-pre-line break-words [overflow-wrap:anywhere] ${className}`}>{content}</div>;
 }
 
 export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
@@ -174,8 +170,119 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   const [dayEndMailModalOpen, setDayEndMailModalOpen] = useState(false);
   const [dayEndViewModalOpen, setDayEndViewModalOpen] = useState(false);
   const [copyModalOpen, setCopyModalOpen] = useState(false);
-  const [changePlanTypeModalOpen, setChangePlanTypeModalOpen] = useState(false);
   const [planAiModalOpen, setPlanAiModalOpen] = useState(false);
+  const [threadModalOpen, setThreadModalOpen] = useState(false);
+  const [selectedThreadItem, setSelectedThreadItem] = useState<SeniorRemarkFeedItem | null>(null);
+
+  const {
+    previewDoc,
+    previewBlobUrl,
+    previewLoading,
+    openPreview,
+    closePreview,
+    downloadFile,
+  } = useFilePreview(sessionToken);
+
+  const isAnyModalOpen =
+    visitModalOpen ||
+    workModalOpen ||
+    Boolean(statusRemarksTarget) ||
+    Boolean(seniorRemarksTarget) ||
+    dayEndMailModalOpen ||
+    dayEndViewModalOpen ||
+    copyModalOpen ||
+    threadModalOpen ||
+    planAiModalOpen ||
+    rejectPlanModalOpen ||
+    Boolean(previewDoc);
+
+  function buildDirectiveThreadItem(
+    targetType: "plan" | "visit" | "task",
+    targetDoc: any,
+    remarkItem?: any
+  ): SeniorRemarkFeedItem {
+    const planSalesUser = plan && typeof plan.sales_user === "object" ? plan.sales_user : null;
+    const sUserId = String(
+      targetDoc.sales_user?._id ||
+      targetDoc.sales_user?.id ||
+      targetDoc.sales_user ||
+      planSalesUser?._id ||
+      (plan as any)?.sales_user ||
+      ""
+    );
+    const sUserName =
+      targetDoc.sales_user?.name ||
+      planSalesUser?.name ||
+      planSalesUser?.email ||
+      "Executive";
+    const sUserEmail = targetDoc.sales_user?.email || planSalesUser?.email || "";
+
+    const title =
+      targetType === "visit"
+        ? (typeof targetDoc.party === "object" ? targetDoc.party?.party_name : null) ||
+          targetDoc.party_name ||
+          "Field Visit"
+        : targetType === "task"
+        ? targetDoc.title || "Work Task"
+        : `Work Plan (${formatPlanDate(plan?.plan_date)})`;
+
+    const r =
+      remarkItem ||
+      (Array.isArray(targetDoc.authority_remarks) && targetDoc.authority_remarks.length > 0
+        ? targetDoc.authority_remarks[targetDoc.authority_remarks.length - 1]
+        : {
+            _id: "legacy",
+            remark: targetDoc.manager_remarks || "",
+            user_name: "Senior Manager",
+            role: "Manager",
+            remark_type: "instruction",
+            priority: "medium",
+            status: "pending_response",
+            created_at: targetDoc.updatedAt || targetDoc.createdAt,
+          });
+
+    return {
+      id: String(r._id || `${targetDoc._id || targetDoc.id}_${targetType}`),
+      remark_id: String(r._id || "0"),
+      target_type: targetType,
+      plan_id: String(plan?._id || plan?.id || planId),
+      target_id: String(targetDoc._id || targetDoc.id),
+      plan_date: targetDoc.plan_date || plan?.plan_date || null,
+      title,
+      location: targetDoc.address || targetDoc.location || plan?.location || "",
+      sales_user: {
+        _id: sUserId,
+        name: sUserName,
+        email: sUserEmail,
+      },
+      senior_user: {
+        _id: String(r.user?._id || r.user || ""),
+        name: r.user_name || (typeof r.user === "object" ? r.user?.name : "Senior Authority"),
+        role: r.role || "Senior Authority",
+      },
+      remark: r.remark || targetDoc.manager_remarks || "",
+      remark_type: r.remark_type || "instruction",
+      priority: r.priority || "medium",
+      expected_followup_date: r.expected_followup_date || null,
+      status: r.status || "pending_response",
+      followup_remarks: Array.isArray(r.followup_remarks) ? r.followup_remarks : [],
+      resolution_remarks: r.resolution_remarks || "",
+      resolved_at: r.resolved_at || null,
+      resolved_by: r.resolved_by || null,
+      resolved_by_name: r.resolved_by_name || "",
+      created_at: r.created_at || targetDoc.updatedAt || targetDoc.createdAt || new Date().toISOString(),
+    };
+  }
+
+  const openDirectiveThread = (
+    targetType: "plan" | "visit" | "task",
+    targetDoc: any,
+    remarkItem?: any
+  ) => {
+    const threadItem = buildDirectiveThreadItem(targetType, targetDoc, remarkItem);
+    setSelectedThreadItem(threadItem);
+    setThreadModalOpen(true);
+  };
 
   // Plan Actions
   async function handleSubmitPlan() {
@@ -291,11 +398,8 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   const taskPlan = isWorkTaskPlan(plan.plan_type);
   const leavePlan = isLeavePlan(plan.plan_type);
 
-  const is3DaysExpired = isPlanDate3DaysExpired(plan.plan_date);
-  const isWindowOpen = canAddExpenseForPlanDate(plan.plan_date);
-  const windowEnded = isWindowEnded(plan.plan_date);
-  const canCompleteAction = isWindowOpen && !is3DaysExpired;
-  const showStructureActions = !isCompleted && !windowEnded && !is3DaysExpired;
+  const canCompleteAction = true;
+  const showStructureActions = !isCompleted;
 
   const allowedStatuses = new Set(["pending", "in_progress", "completed"]);
 
@@ -309,49 +413,36 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
 
   const canCompletePlan =
     isPlanned &&
-    canCompleteAction &&
     (visitsPlan ? allVisitsFinished : taskPlan ? allTasksFinished : isDayEndEligible(visits, works));
 
   return (
     <div className="space-y-6 font-sans">
       {/* Top Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-4 bg-card p-4 rounded-xl border border-border">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-card p-4 rounded-xl border border-border">
+        <div className="flex items-start sm:items-center gap-3">
           <Link
             href="/dashboard/plans"
-            className="rounded-lg border border-border p-2 text-muted hover:bg-surface-muted hover:text-foreground transition"
+            className="rounded-lg border border-border p-2 text-muted hover:bg-surface-muted hover:text-foreground transition shrink-0 mt-0.5 sm:mt-0"
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-foreground">
+          <div className="min-w-0">
+            <div className="flex items-center flex-wrap gap-2">
+              <h1 className="text-lg sm:text-xl font-bold text-foreground">
                 Work Plan ({formatPlanDate(plan.plan_date)})
               </h1>
               {renderPlanStatusBadge(plan.status)}
             </div>
-            <p className="text-xs text-muted flex items-center flex-wrap gap-y-1">
+            <p className="text-xs text-muted flex items-center flex-wrap gap-x-2 gap-y-1 mt-0.5">
               <span>Executive: <span className="font-medium text-foreground">{salesUserLabel(plan.sales_user)}</span></span>
               {plan.location ? <span> • Location: <span className="text-foreground">{plan.location}</span></span> : ""}
               {plan.plan_type ? (
-                <button
-                  type="button"
-                  onClick={() => showStructureActions && setChangePlanTypeModalOpen(true)}
-                  disabled={!showStructureActions}
-                  className={`inline-flex items-center gap-1 font-semibold transition ml-1 px-2 py-0.5 rounded-md border text-[11px] ${
-                    showStructureActions
-                      ? "border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 cursor-pointer"
-                      : "border-border bg-surface-muted text-foreground cursor-default"
-                  }`}
-                  title={showStructureActions ? "Click to change work plan type" : `Plan Type: ${plan.plan_type}`}
-                >
-                  <Layers className="h-3 w-3" />
-                  <span>Type: {plan.plan_type}</span>
-                  {showStructureActions && <Edit3 className="h-2.5 w-2.5 text-primary/70 ml-0.5" />}
-                </button>
+                <span className="inline-flex items-center font-semibold px-2 py-0.5 rounded-md border text-[11px] border-border bg-surface-muted text-foreground">
+                  Type: {plan.plan_type}
+                </span>
               ) : null}
               {plan.is_discussed_with_manager ? (
-                <span className="inline-flex items-center gap-1 ml-2 text-emerald-600 dark:text-emerald-400 font-semibold">
+                <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold">
                   • <MessageSquare className="h-3 w-3 inline" /> Discussed with Manager / Coordinator
                 </span>
               ) : null}
@@ -360,7 +451,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
         </div>
 
         {/* Action Controls */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-border/60">
           {!isCompleted && !leavePlan && (
             <button
               type="button"
@@ -368,13 +459,11 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
               onClick={() => setDayEndMailModalOpen(true)}
               title={
                 !canCompletePlan
-                  ? !canCompleteAction
-                    ? workPlanWindowHint(plan.plan_date)
-                    : visitsPlan
+                  ? visitsPlan
                     ? "Complete all visits before submitting Day End"
                     : taskPlan
                     ? "Complete all tasks before submitting Day End"
-                    : ""
+                    : "Complete all visits and tasks before submitting Day End"
                   : "Submit Day End and complete work plan"
               }
               className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-semibold transition shadow-xs ${
@@ -403,10 +492,10 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
           <button
             type="button"
             onClick={() => setPlanAiModalOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-2 text-xs font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition cursor-pointer shadow-xs"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-xs font-bold text-primary hover:bg-primary/20 transition cursor-pointer shadow-xs"
             title="Generate 360° AI Analysis for this work plan, visits, and tasks"
           >
-            <Sparkles className="h-4 w-4 text-purple-500" />
+            <Sparkles className="h-4 w-4 text-primary" />
             AI 360° Analysis
           </button>
 
@@ -418,17 +507,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
             <Copy className="h-4 w-4 text-muted" />
             Copy
           </button>
-          {showStructureActions && (
-            <button
-              type="button"
-              onClick={() => setChangePlanTypeModalOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition cursor-pointer"
-              title="Change the plan type / category"
-            >
-              <Layers className="h-4 w-4 text-muted" />
-              Change Type
-            </button>
-          )}
+
           {showStructureActions && (
             <Link
               href={`/dashboard/plans/new?edit=${planId}`}
@@ -449,10 +528,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
             <span>Important Notice Before Day End Submission</span>
           </div>
           <p className="text-muted">
-            Please make sure all field visits/tasks for this day are added and completed before clicking <strong>Day End</strong>. Completing visits, tasks, and work plans must be done within their allowed 3-day window. Once Day End is submitted, an email report is sent to managers and visits/tasks cannot be added or edited.
-          </p>
-          <p className="text-muted font-medium pt-0.5">
-            ℹ️ {workPlanWindowHint(plan.plan_date)}
+            Please make sure all field visits/tasks for this day are added and completed before clicking <strong>Day End</strong>. Once Day End is submitted, an email report is sent to managers and visits/tasks cannot be added or edited.
           </p>
         </div>
       )}
@@ -536,7 +612,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
           </div>
         ) : null}
 
-        {/* Plan Senior Remarks Card — visible to plan owners, executives, and seniors */}
+        {/* Plan Senior Remarks Card — visible to both Senior Authority and Concerned Executive */}
         {(() => {
           const planOwnerId = plan.sales_user
             ? typeof plan.sales_user === "object"
@@ -544,71 +620,139 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
               : String(plan.sales_user)
             : "";
           const isSeniorViewing = elevatedRole && currentUserId !== planOwnerId;
-          const hasSeniorRemarks = Boolean(plan.manager_remarks) || (Array.isArray(plan.authority_remarks) && plan.authority_remarks.length > 0);
-          return isSeniorViewing || hasSeniorRemarks ? (
-          <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-4 space-y-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-purple-700 dark:text-purple-300">
-                <ShieldCheck className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                <span>Senior Directives & Remarks</span>
-              </div>
-              {isSeniorViewing && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSeniorRemarksTarget({
-                      type: "plan",
-                      id: plan._id,
-                      title: `Work Plan (${formatPlanDate(plan.plan_date)})`,
-                      currentStatus: plan.status,
-                      remarks: plan.manager_remarks,
-                      history: plan.authority_remarks,
-                    });
-                  }}
-                  className="inline-flex items-center gap-1 rounded bg-purple-500/10 px-2.5 py-1 text-[11px] font-semibold text-purple-700 dark:text-purple-300 hover:bg-purple-500/20 transition cursor-pointer"
-                >
-                  <Edit3 className="h-3 w-3" />
-                  {plan.manager_remarks ? "Update Senior Remark" : "Add Senior Remark"}
-                </button>
-              )}
-            </div>
-            {plan.manager_remarks ? (
-              <RichTextDisplay content={plan.manager_remarks} className="text-xs text-foreground" />
-            ) : (
-              <p className="text-xs text-muted italic">No senior remarks recorded yet.</p>
-            )}
-            {plan.authority_remarks && plan.authority_remarks.length > 0 && (
-              <div className="pt-2 border-t border-purple-500/10 space-y-1">
-                <span className="text-[10px] font-bold text-purple-600 dark:text-purple-400 uppercase tracking-wider">
-                  Senior Remarks History ({plan.authority_remarks.length})
-                </span>
-                <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                  {plan.authority_remarks.map((item, idx) => (
-                    <div key={idx} className="rounded bg-card/70 p-2 text-[11px] border border-border/50">
-                      <div className="flex items-center justify-between text-[10px] text-muted mb-0.5">
-                        <span className="font-semibold text-foreground">
-                          {item.user_name || "Senior Authority"} ({item.role || "Senior Authority"})
+          const hasRemarks =
+            Boolean(plan.manager_remarks) ||
+            (Array.isArray(plan.authority_remarks) && plan.authority_remarks.length > 0);
+
+          if (!isSeniorViewing && !hasRemarks) return null;
+
+          const latestRemark =
+            Array.isArray(plan.authority_remarks) && plan.authority_remarks.length > 0
+              ? plan.authority_remarks[plan.authority_remarks.length - 1]
+              : null;
+          const isObjection = latestRemark?.remark_type === "objection";
+          const isAppreciation = latestRemark?.remark_type === "appreciation";
+          const isResolved = latestRemark?.status === "resolved";
+
+          return (
+            <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-primary">
+                    <ShieldCheck className="h-4 w-4 text-primary" />
+                    <span>Senior Directives &amp; Supervisory Remarks</span>
+                  </div>
+
+                  {latestRemark?.remark_type && (
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold border ${
+                        isAppreciation
+                          ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
+                          : isObjection
+                          ? "bg-rose-500/15 border-rose-500/30 text-rose-600 dark:text-rose-400"
+                          : "bg-primary/15 border-primary/30 text-primary"
+                      }`}
+                    >
+                      {isAppreciation ? "⭐ Appreciation" : isObjection ? "⚠️ Objection" : "📋 Guidance"}
+                    </span>
+                  )}
+
+                  {latestRemark?.status && (
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold border ${
+                        isResolved
+                          ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
+                          : latestRemark.status === "responded"
+                          ? "bg-sky-500/15 border-sky-500/30 text-sky-600 dark:text-sky-400"
+                          : "bg-amber-500/15 border-amber-500/30 text-amber-600 dark:text-amber-400"
+                      }`}
+                    >
+                      {isResolved
+                        ? "✅ Resolved"
+                        : latestRemark.status === "responded"
+                        ? "💬 Responded"
+                        : "⏳ Awaiting Reply"}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {hasRemarks && (
+                    <button
+                      type="button"
+                      onClick={() => openDirectiveThread("plan", plan)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-2.5 py-1 text-xs font-bold text-primary hover:bg-primary/20 transition cursor-pointer"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      <span>Directive Thread</span>
+                      {(latestRemark?.followup_remarks?.length || 0) > 0 && (
+                        <span className="rounded-full bg-primary/20 px-1.5 py-0.2 text-[10px] font-bold">
+                          {latestRemark?.followup_remarks?.length}
                         </span>
-                        <span>{item.created_at ? new Date(item.created_at).toLocaleString() : ""}</span>
-                      </div>
-                      <RichTextDisplay content={item.remark} className="text-xs text-foreground" />
-                    </div>
-                  ))}
+                      )}
+                    </button>
+                  )}
+
+                  {isSeniorViewing && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSeniorRemarksTarget({
+                          type: "plan",
+                          id: plan._id,
+                          title: `Work Plan (${formatPlanDate(plan.plan_date)})`,
+                          currentStatus: plan.status,
+                          remarks: plan.manager_remarks,
+                          history: plan.authority_remarks,
+                        });
+                      }}
+                      className="inline-flex items-center gap-1 rounded bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary hover:bg-primary/20 transition cursor-pointer"
+                    >
+                      <Edit3 className="h-3 w-3" />
+                      {plan.manager_remarks ? "Edit Senior Directive" : "Add Senior Directive"}
+                    </button>
+                  )}
                 </div>
               </div>
-            )}
-          </div>
-          ) : null;
+
+              {plan.manager_remarks ? (
+                <RichTextDisplay content={plan.manager_remarks} className="text-xs text-foreground" />
+              ) : (
+                <p className="text-xs text-muted italic">No senior remarks recorded yet.</p>
+              )}
+
+              {plan.authority_remarks && plan.authority_remarks.length > 0 && (
+                <div className="pt-2 border-t border-primary/10 space-y-1">
+                  <span className="text-[10px] font-bold text-primary uppercase tracking-wider">
+                    Directive History ({plan.authority_remarks.length})
+                  </span>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                    {plan.authority_remarks.map((item, idx) => (
+                      <div key={idx} className="rounded bg-card/70 p-2 text-[11px] border border-border/50">
+                        <div className="flex items-center justify-between text-[10px] text-muted mb-0.5">
+                          <span className="font-semibold text-foreground">
+                            {item.user_name || "Senior Authority"} ({item.role || "Senior Authority"})
+                          </span>
+                          <span>{item.created_at ? new Date(item.created_at).toLocaleString() : ""}</span>
+                        </div>
+                        <RichTextDisplay content={item.remark} className="text-xs text-foreground" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
         })()}
       </div>
 
       {/* Section 1: Field Visits */}
       {visitsPlan && (
-        <div className="rounded-xl border border-border bg-card p-5 shadow-xs space-y-4">
-          <div className="flex items-center justify-between border-b border-border pb-3">
-            <div className="flex items-center gap-2">
-              <MapPin className="h-5 w-5 text-primary" />
-              <h2 className="text-base font-bold text-foreground">
+        <div className="rounded-xl border border-border bg-card p-4 sm:p-5 shadow-xs space-y-4 min-w-0 overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <MapPin className="h-5 w-5 text-primary shrink-0" />
+              <h2 className="text-base font-bold text-foreground truncate">
                 Field Visits ({visits.length})
               </h2>
             </div>
@@ -619,7 +763,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                   setEditingVisit(null);
                   setVisitModalOpen(true);
                 }}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer shrink-0"
               >
                 <Plus className="h-3.5 w-3.5" />
                 Add Visit
@@ -627,258 +771,331 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
             )}
           </div>
 
-          {!canCompleteAction && !isCompleted && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-2 font-medium">
-              <span>ℹ️ {visitWindowHint(plan.plan_date)}</span>
-            </div>
-          )}
-
           {visits.length === 0 ? (
             <p className="text-xs text-muted py-4 text-center">
               No field visits logged for this plan yet.
             </p>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 grid-cols-1 lg:grid-cols-2 min-w-0">
               {visits.map((v, idx) => {
                 const vId = v._id || v.id || String(idx);
                 const partyName = typeof v.party === "object" && v.party ? (v.party as { party_name?: string }).party_name || "Party" : "Party";
                 return (
                   <div
                     key={vId}
-                    className="rounded-xl border border-border bg-surface-muted/50 p-4 space-y-3"
+                    className="rounded-xl border border-border bg-surface-muted/50 p-3.5 sm:p-4 space-y-3 min-w-0 overflow-hidden flex flex-col justify-between"
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <Building2 className="h-4 w-4 text-muted" />
-                          <h3 className="text-sm font-bold text-foreground">
-                            {partyName}
-                          </h3>
+                    <div className="space-y-3 min-w-0">
+                      <div className="flex items-start justify-between gap-2 min-w-0">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <Building2 className="h-4 w-4 text-muted shrink-0" />
+                            <h3 className="text-sm font-bold text-foreground truncate">
+                              {partyName}
+                            </h3>
+                          </div>
+                          {v.purpose ? (
+                            <p className="text-xs text-muted mt-0.5 break-words">
+                              Purpose: {v.purpose}
+                            </p>
+                          ) : null}
                         </div>
-                        {v.purpose ? (
-                          <p className="text-xs text-muted mt-0.5">
-                            Purpose: {v.purpose}
-                          </p>
-                        ) : null}
+                        <div className="shrink-0">{renderVisitStatusBadge(v.status)}</div>
                       </div>
-                      {renderVisitStatusBadge(v.status)}
+
+                      {(() => {
+                        const visitContacts = Array.isArray(v.contacts) && v.contacts.length > 0
+                          ? v.contacts
+                          : (v.contact_person || v.contact_number || v.phone || v.contact_email)
+                            ? [
+                                {
+                                  contact_person: v.contact_person,
+                                  contact_number: v.contact_number || v.phone,
+                                  contact_email: v.contact_email,
+                                },
+                              ]
+                            : [];
+
+                        if (visitContacts.length === 0) return null;
+
+                        return (
+                          <div className="space-y-1.5 rounded-lg border border-border/60 bg-surface-muted/30 p-2.5 min-w-0 overflow-hidden">
+                            <div className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
+                              <Users className="h-3.5 w-3.5 text-primary shrink-0" />
+                              <span>Contacts ({visitContacts.length})</span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 min-w-0">
+                              {visitContacts.map((c, cIdx) => (
+                                <div
+                                  key={cIdx}
+                                  className="flex flex-col gap-0.5 rounded-md border border-border/50 bg-card p-2 text-xs min-w-0 overflow-hidden"
+                                >
+                                  <div className="flex items-center justify-between gap-1 min-w-0">
+                                    <span className="font-semibold text-foreground flex items-center gap-1 truncate min-w-0">
+                                      <UserCheck className="h-3.5 w-3.5 text-muted shrink-0" />
+                                      <span className="truncate">{c.contact_person || "Contact"}</span>
+                                    </span>
+                                    {cIdx === 0 && visitContacts.length > 1 && (
+                                      <span className="text-[9px] font-bold uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5 rounded shrink-0">
+                                        Primary
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted mt-0.5 min-w-0">
+                                    {c.contact_number && (
+                                      <a
+                                        href={`tel:${c.contact_number}`}
+                                        className="flex items-center gap-1 text-foreground/80 hover:text-primary transition truncate"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <Phone className="h-3 w-3 text-muted shrink-0" />
+                                        <span className="truncate">{c.contact_number}</span>
+                                      </a>
+                                    )}
+                                    {c.contact_email && (
+                                      <a
+                                        href={`mailto:${c.contact_email}`}
+                                        className="flex items-center gap-1 text-foreground/80 hover:text-primary transition truncate max-w-full"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <Mail className="h-3 w-3 text-muted shrink-0" />
+                                        <span className="truncate">{c.contact_email}</span>
+                                      </a>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {v.pending_remarks ? (
+                        <div className="rounded-lg bg-slate-500/10 p-2 text-xs text-slate-600 dark:text-slate-400 min-w-0 overflow-hidden">
+                          <span className="font-semibold block mb-1">Pending Remarks:</span>
+                          <RichTextDisplay content={v.pending_remarks} />
+                        </div>
+                      ) : null}
+
+                      {v.in_progress_remarks ? (
+                        <div className="rounded-lg bg-amber-500/10 p-2 text-xs text-amber-600 dark:text-amber-400 min-w-0 overflow-hidden">
+                          <span className="font-semibold block mb-1">In-Progress Remarks:</span>
+                          <RichTextDisplay content={v.in_progress_remarks} />
+                        </div>
+                      ) : null}
+
+                      {v.actual_check_in ? (
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted min-w-0">
+                          <span className="font-semibold text-foreground">Check-in:</span>
+                          <span>{new Date(v.actual_check_in).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                          {v.actual_check_out && (
+                            <>
+                              <span className="font-semibold text-foreground ml-1">Check-out:</span>
+                              <span>{new Date(v.actual_check_out).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+                            </>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {(v.check_in_selfie_url || v.check_out_selfie_url || v.outcome_selfie_url) ? (
+                        <div className="space-y-2 pt-1 min-w-0">
+                          <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                            <Camera className="h-3.5 w-3.5 text-primary shrink-0" />
+                            Verified Client Selfies
+                          </span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 min-w-0">
+                            {v.check_in_selfie_url ? (() => {
+                              const checkInUrl = withFileAccessToken(resolvePublicAssetUrl(v.check_in_selfie_url), sessionToken);
+                              return (
+                              <div className="space-y-1 min-w-0">
+                                <span className="text-[10px] font-semibold text-muted">Check-In Selfie</span>
+                                <div
+                                  className="relative group w-full h-40 rounded-xl overflow-hidden border border-border shadow-xs bg-black cursor-pointer"
+                                  onClick={() =>
+                                    openPreview({
+                                      url: v.check_in_selfie_url || "",
+                                      name: `Check-In Selfie - ${partyName}`,
+                                      mime: "image/jpeg",
+                                    })
+                                  }
+                                >
+                                  <img
+                                    src={checkInUrl}
+                                    alt="Check In Selfie"
+                                    className="w-full h-full object-cover group-hover:scale-105 transition duration-200"
+                                  />
+                                  <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/75 to-transparent p-2 text-[10px] text-white flex flex-col gap-0.5">
+                                    <div className="flex items-center gap-1 text-amber-300 font-bold truncate">
+                                      <Clock className="h-3 w-3 shrink-0" />
+                                      <span className="truncate">{v.actual_check_in ? new Date(v.actual_check_in).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Timestamp"}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1 text-sky-300 font-semibold truncate">
+                                      <MapPin className="h-3 w-3 shrink-0" />
+                                      <span className="truncate">{getVisitLocationDisplay(v.check_in_address || v.check_out_address || v.address, v.check_in_lat ?? v.check_out_lat, v.check_in_lng ?? v.check_out_lng)}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                              );
+                            })() : null}
+                            {(v.check_out_selfie_url || (v.outcome_selfie_url && v.outcome_selfie_url !== v.check_in_selfie_url)) ? (() => {
+                              const checkOutRaw = v.check_out_selfie_url || v.outcome_selfie_url || "";
+                              const checkOutUrl = withFileAccessToken(resolvePublicAssetUrl(checkOutRaw), sessionToken);
+                              return (
+                              <div className="space-y-1 min-w-0">
+                                <span className="text-[10px] font-semibold text-muted">Check-Out Selfie</span>
+                                <div
+                                  className="relative group w-full h-40 rounded-xl overflow-hidden border border-border shadow-xs bg-black cursor-pointer"
+                                  onClick={() =>
+                                    openPreview({
+                                      url: checkOutRaw,
+                                      name: `Check-Out Selfie - ${partyName}`,
+                                      mime: "image/jpeg",
+                                    })
+                                  }
+                                >
+                                  <img
+                                    src={checkOutUrl}
+                                    alt="Check Out Selfie"
+                                    className="w-full h-full object-cover group-hover:scale-105 transition duration-200"
+                                  />
+                                  <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/75 to-transparent p-2 text-[10px] text-white flex flex-col gap-0.5">
+                                    <div className="flex items-center gap-1 text-amber-300 font-bold truncate">
+                                      <Clock className="h-3 w-3 shrink-0" />
+                                      <span className="truncate">{v.actual_check_out ? new Date(v.actual_check_out).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Timestamp"}</span>
+                                    </div>
+                                    <div className="flex items-center gap-1 text-sky-300 font-semibold truncate">
+                                      <MapPin className="h-3 w-3 shrink-0" />
+                                      <span className="truncate">{getVisitLocationDisplay(v.check_out_address || v.check_in_address || v.address, v.check_out_lat ?? v.check_in_lat, v.check_out_lng ?? v.check_out_lng)}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                              );
+                            })() : null}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {v.outcome ? (
+                        <div className="rounded-lg bg-emerald-500/10 p-2.5 text-xs text-emerald-600 dark:text-emerald-400 min-w-0 overflow-hidden">
+                          <span className="font-semibold block mb-1">Outcome:</span>
+                          <RichTextDisplay content={v.outcome} />
+                        </div>
+                      ) : null}
+
+                      {(() => {
+                        const hasRemarks =
+                          Boolean(v.manager_remarks) ||
+                          (Array.isArray(v.authority_remarks) && v.authority_remarks.length > 0);
+                        if (!hasRemarks) return null;
+
+                        const vLatestRemark =
+                          Array.isArray(v.authority_remarks) && v.authority_remarks.length > 0
+                            ? v.authority_remarks[v.authority_remarks.length - 1]
+                            : null;
+                        const isObjection = vLatestRemark?.remark_type === "objection";
+                        const isAppreciation = vLatestRemark?.remark_type === "appreciation";
+                        const isResolved = vLatestRemark?.status === "resolved";
+
+                        return (
+                          <div className="rounded-lg bg-primary/10 border border-primary/20 p-2.5 text-xs text-primary space-y-1.5 min-w-0 overflow-hidden">
+                            <div className="flex flex-wrap items-center justify-between gap-1.5">
+                              <div className="flex flex-wrap items-center gap-1.5 font-bold min-w-0">
+                                <ShieldCheck className="h-3.5 w-3.5 text-primary shrink-0" />
+                                <span>Senior Directive</span>
+
+                                {vLatestRemark?.remark_type && (
+                                  <span
+                                    className={`rounded-full px-2 py-0.2 text-[9px] font-bold border shrink-0 ${
+                                      isAppreciation
+                                        ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
+                                        : isObjection
+                                        ? "bg-rose-500/15 border-rose-500/30 text-rose-600 dark:text-rose-400"
+                                        : "bg-primary/15 border-primary/30 text-primary"
+                                    }`}
+                                  >
+                                    {isAppreciation ? "⭐ Appreciation" : isObjection ? "⚠️ Objection" : "📋 Guidance"}
+                                  </span>
+                                )}
+
+                                {vLatestRemark?.status && (
+                                  <span
+                                    className={`rounded-full px-2 py-0.2 text-[9px] font-bold border shrink-0 ${
+                                      isResolved
+                                        ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
+                                        : vLatestRemark.status === "responded"
+                                        ? "bg-sky-500/15 border-sky-500/30 text-sky-600 dark:text-sky-400"
+                                        : "bg-amber-500/15 border-amber-500/30 text-amber-600 dark:text-amber-400"
+                                    }`}
+                                  >
+                                    {isResolved
+                                      ? "✅ Resolved"
+                                      : vLatestRemark.status === "responded"
+                                      ? "💬 Responded"
+                                      : "⏳ Awaiting Reply"}
+                                  </span>
+                                )}
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => openDirectiveThread("visit", v)}
+                                className="inline-flex items-center gap-1 rounded bg-primary/20 px-2 py-0.5 text-[11px] font-bold text-primary hover:bg-primary/30 transition cursor-pointer shrink-0"
+                              >
+                                <MessageSquare className="h-3 w-3" />
+                                <span>Thread</span>
+                                {(vLatestRemark?.followup_remarks?.length || 0) > 0 && (
+                                  <span className="rounded-full bg-primary/30 px-1 text-[9px]">
+                                    {vLatestRemark?.followup_remarks?.length}
+                                  </span>
+                                )}
+                              </button>
+                            </div>
+
+                            {v.manager_remarks ? <RichTextDisplay content={v.manager_remarks} /> : null}
+                            {v.authority_remarks && v.authority_remarks.length > 0 && (
+                              <div className="pt-1 border-t border-primary/20 space-y-1 text-[11px] min-w-0">
+                                {v.authority_remarks.map((r: any, idx: number) => (
+                                  <div key={r._id || idx} className="flex flex-col sm:flex-row sm:items-start justify-between gap-1 min-w-0">
+                                    <span className="font-semibold text-primary shrink-0">
+                                      {r.user_name || "Senior Authority"} ({r.role || "Senior"}):
+                                    </span>
+                                    <span className="flex-1 break-words sm:text-right">{r.remark}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {v.rescheduled_date ? (
+                        <div className="rounded-lg bg-indigo-500/10 border border-indigo-500/20 p-2 text-xs text-indigo-700 dark:text-indigo-300 min-w-0">
+                          <div className="flex items-center gap-1 font-bold">
+                            <CalendarClock className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                            <span className="truncate">Rescheduled to: {formatPlanDate(v.rescheduled_date)}</span>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {(v.created_by || v.updated_by) && (
+                        <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted pt-1 min-w-0">
+                          {v.created_by && (
+                            <span className="truncate">Created by: {formatAuditUser(v.created_by, v.created_by_role)}</span>
+                          )}
+                          {v.updated_by && (
+                            <span className="truncate">Updated by: {formatAuditUser(v.updated_by, v.updated_by_role)}</span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {(() => {
-                      const visitContacts = Array.isArray(v.contacts) && v.contacts.length > 0
-                        ? v.contacts
-                        : (v.contact_person || v.contact_number || v.phone || v.contact_email)
-                          ? [
-                              {
-                                contact_person: v.contact_person,
-                                contact_number: v.contact_number || v.phone,
-                                contact_email: v.contact_email,
-                              },
-                            ]
-                          : [];
-
-                      if (visitContacts.length === 0) return null;
-
-                      return (
-                        <div className="space-y-1.5 rounded-lg border border-border/60 bg-surface-muted/30 p-2.5">
-                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-muted">
-                            <Users className="h-3.5 w-3.5 text-primary" />
-                            <span>Contacts ({visitContacts.length})</span>
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {visitContacts.map((c, cIdx) => (
-                              <div
-                                key={cIdx}
-                                className="flex flex-col gap-0.5 rounded-md border border-border/50 bg-card p-2 text-xs"
-                              >
-                                <div className="flex items-center justify-between gap-1">
-                                  <span className="font-semibold text-foreground flex items-center gap-1 truncate">
-                                    <UserCheck className="h-3.5 w-3.5 text-muted shrink-0" />
-                                    {c.contact_person || "Contact"}
-                                  </span>
-                                  {cIdx === 0 && visitContacts.length > 1 && (
-                                    <span className="text-[9px] font-bold uppercase tracking-wider text-primary bg-primary/10 px-1.5 py-0.5 rounded">
-                                      Primary
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted mt-0.5">
-                                  {c.contact_number && (
-                                    <a
-                                      href={`tel:${c.contact_number}`}
-                                      className="flex items-center gap-1 text-foreground/80 hover:text-primary transition"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <Phone className="h-3 w-3 text-muted" />
-                                      <span>{c.contact_number}</span>
-                                    </a>
-                                  )}
-                                  {c.contact_email && (
-                                    <a
-                                      href={`mailto:${c.contact_email}`}
-                                      className="flex items-center gap-1 text-foreground/80 hover:text-primary transition truncate max-w-[180px]"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <Mail className="h-3 w-3 text-muted shrink-0" />
-                                      <span className="truncate">{c.contact_email}</span>
-                                    </a>
-                                  )}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })()}
-
-                    {v.pending_remarks ? (
-                      <div className="rounded-lg bg-slate-500/10 p-2 text-xs text-slate-600 dark:text-slate-400">
-                        <span className="font-semibold block mb-1">Pending Remarks:</span>
-                        <RichTextDisplay content={v.pending_remarks} />
-                      </div>
-                    ) : null}
-
-                    {v.in_progress_remarks ? (
-                      <div className="rounded-lg bg-amber-500/10 p-2 text-xs text-amber-600 dark:text-amber-400">
-                        <span className="font-semibold block mb-1">In-Progress Remarks:</span>
-                        <RichTextDisplay content={v.in_progress_remarks} />
-                      </div>
-                    ) : null}
-
-                    {v.actual_check_in ? (
-                      <div className="flex items-center gap-3 text-xs text-muted">
-                        <span className="font-semibold text-foreground">Check-in:</span>
-                        <span>{new Date(v.actual_check_in).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                        {v.actual_check_out && (
-                          <>
-                            <span className="font-semibold text-foreground">Check-out:</span>
-                            <span>{new Date(v.actual_check_out).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
-                          </>
-                        )}
-                      </div>
-                    ) : null}
-
-                    {(v.check_in_selfie_url || v.check_out_selfie_url || v.outcome_selfie_url) ? (
-                      <div className="space-y-2 pt-1">
-                        <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                          <Camera className="h-3.5 w-3.5 text-primary" />
-                          Verified Client Selfies
-                        </span>
-                        <div className="flex flex-wrap items-center gap-3">
-                          {v.check_in_selfie_url ? (() => {
-                            const checkInUrl = withFileAccessToken(resolvePublicAssetUrl(v.check_in_selfie_url), sessionToken);
-                            return (
-                            <div className="space-y-1">
-                              <span className="text-[10px] font-semibold text-muted">Check-In Selfie</span>
-                              <div className="relative group w-44 h-40 rounded-xl overflow-hidden border border-border shadow-xs bg-black">
-                                <img
-                                  src={checkInUrl}
-                                  alt="Check In Selfie"
-                                  className="w-full h-full object-cover group-hover:scale-105 transition duration-200 cursor-pointer"
-                                  onClick={() => window.open(checkInUrl, "_blank")}
-                                />
-                                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/75 to-transparent p-2 text-[10px] text-white flex flex-col gap-0.5">
-                                  <div className="flex items-center gap-1 text-amber-300 font-bold">
-                                    <Clock className="h-3 w-3 shrink-0" />
-                                    <span>{v.actual_check_in ? new Date(v.actual_check_in).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Timestamp"}</span>
-                                  </div>
-                                  <div className="flex items-center gap-1 text-sky-300 font-semibold truncate">
-                                    <MapPin className="h-3 w-3 shrink-0" />
-                                    <span className="truncate">{getVisitLocationDisplay(v.check_in_address || v.check_out_address || v.address, v.check_in_lat ?? v.check_out_lat, v.check_in_lng ?? v.check_out_lng)}</span>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                            );
-                          })() : null}
-                          {(v.check_out_selfie_url || (v.outcome_selfie_url && v.outcome_selfie_url !== v.check_in_selfie_url)) ? (() => {
-                            const checkOutRaw = v.check_out_selfie_url || v.outcome_selfie_url || "";
-                            const checkOutUrl = withFileAccessToken(resolvePublicAssetUrl(checkOutRaw), sessionToken);
-                            return (
-                            <div className="space-y-1">
-                              <span className="text-[10px] font-semibold text-muted">Check-Out Selfie</span>
-                              <div className="relative group w-44 h-40 rounded-xl overflow-hidden border border-border shadow-xs bg-black">
-                                <img
-                                  src={checkOutUrl}
-                                  alt="Check Out Selfie"
-                                  className="w-full h-full object-cover group-hover:scale-105 transition duration-200 cursor-pointer"
-                                  onClick={() => window.open(checkOutUrl, "_blank")}
-                                />
-                                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/90 via-black/75 to-transparent p-2 text-[10px] text-white flex flex-col gap-0.5">
-                                  <div className="flex items-center gap-1 text-amber-300 font-bold">
-                                    <Clock className="h-3 w-3 shrink-0" />
-                                    <span>{v.actual_check_out ? new Date(v.actual_check_out).toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "Timestamp"}</span>
-                                  </div>
-                                  <div className="flex items-center gap-1 text-sky-300 font-semibold truncate">
-                                    <MapPin className="h-3 w-3 shrink-0" />
-                                    <span className="truncate">{getVisitLocationDisplay(v.check_out_address || v.check_in_address || v.address, v.check_out_lat ?? v.check_in_lat, v.check_out_lng ?? v.check_in_lng)}</span>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                            );
-                          })() : null}
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {v.outcome ? (
-                      <div className="rounded-lg bg-emerald-500/10 p-2 text-xs text-emerald-600 dark:text-emerald-400">
-                        <span className="font-semibold block mb-1">Outcome:</span>
-                        <RichTextDisplay content={v.outcome} />
-                      </div>
-                    ) : null}
-
-                    {(() => {
-                      const hasRemarks = Boolean(v.manager_remarks) || (Array.isArray(v.authority_remarks) && v.authority_remarks.length > 0);
-                      return hasRemarks ? (
-                      <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-2 text-xs text-purple-700 dark:text-purple-300 space-y-1">
-                        <div className="flex items-center gap-1 font-bold">
-                          <ShieldCheck className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
-                          <span>Senior Directive / Remark:</span>
-                        </div>
-                        {v.manager_remarks ? <RichTextDisplay content={v.manager_remarks} /> : null}
-                        {v.authority_remarks && v.authority_remarks.length > 0 && (
-                          <div className="pt-1 border-t border-purple-500/20 space-y-1 text-[11px]">
-                            {v.authority_remarks.map((r: any, idx: number) => (
-                              <div key={r._id || idx} className="flex items-start justify-between gap-1">
-                                <span className="font-semibold text-purple-800 dark:text-purple-200">
-                                  {r.user_name || "Senior Authority"} ({r.role || "Manager"}):
-                                </span>
-                                <span className="flex-1 text-right">{r.remark}</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      ) : null;
-                    })()}
-
-                    {v.rescheduled_date ? (
-                      <div className="rounded-lg bg-indigo-500/10 border border-indigo-500/20 p-2 text-xs text-indigo-700 dark:text-indigo-300">
-                        <div className="flex items-center gap-1 font-bold">
-                          <CalendarClock className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
-                          <span>Rescheduled to: {formatPlanDate(v.rescheduled_date)}</span>
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {(v.created_by || v.updated_by) && (
-                      <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted pt-1">
-                        {v.created_by && (
-                          <span>Created by: {formatAuditUser(v.created_by, v.created_by_role)}</span>
-                        )}
-                        {v.updated_by && (
-                          <span>Updated by: {formatAuditUser(v.updated_by, v.updated_by_role)}</span>
-                        )}
-                      </div>
-                    )}
-
                     {/* Visit actions */}
-                    {(elevatedRole || showStructureActions) && (
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-border">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {elevatedRole && (
+                    {((elevatedRole && currentUserId !== (plan.sales_user ? (typeof plan.sales_user === "object" ? String((plan.sales_user as any)._id || (plan.sales_user as any).id || "") : String(plan.sales_user)) : "")) || showStructureActions || (Array.isArray(v.authority_remarks) && v.authority_remarks.length > 0)) && (
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-border mt-3 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 min-w-0">
+                          {elevatedRole && currentUserId !== (plan.sales_user ? (typeof plan.sales_user === "object" ? String((plan.sales_user as any)._id || (plan.sales_user as any).id || "") : String(plan.sales_user)) : "") && (
                             <button
                               type="button"
                               onClick={() =>
@@ -895,12 +1112,12 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                                   history: v.authority_remarks,
                                 })
                               }
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20 px-3 py-1.5 text-xs font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition cursor-pointer"
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs font-bold text-primary hover:bg-primary/20 transition cursor-pointer shrink-0"
                             >
-                              <ShieldCheck className="h-3.5 w-3.5" />
+                              <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
                               <span>Senior Remarks</span>
                               {Array.isArray(v.authority_remarks) && v.authority_remarks.length > 0 && (
-                                <span className="ml-0.5 rounded-full bg-purple-500/20 px-1.5 py-0.2 text-[10px] font-bold">
+                                <span className="ml-0.5 rounded-full bg-primary/20 px-1.5 py-0.2 text-[10px] font-bold">
                                   {v.authority_remarks.length}
                                 </span>
                               )}
@@ -912,29 +1129,29 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                               type="button"
                               disabled={!canCompleteAction && !elevatedRole}
                               onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition disabled:opacity-50 cursor-pointer"
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition disabled:opacity-50 cursor-pointer shrink-0"
                             >
-                              <Edit3 className="h-3.5 w-3.5" />
+                              <Edit3 className="h-3.5 w-3.5 shrink-0" />
                               <span>Edit Outcome</span>
                             </button>
                           ) : v.status === "checked_in" ? (
-                            <div className="flex items-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
                               <button
                                 type="button"
                                 disabled={!canCompleteAction && !elevatedRole}
                                 onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
-                                className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 text-white px-3 py-1.5 text-xs font-bold shadow-xs hover:bg-sky-700 transition disabled:opacity-50 cursor-pointer"
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 text-white px-3 py-1.5 text-xs font-bold shadow-xs hover:bg-sky-700 transition disabled:opacity-50 cursor-pointer shrink-0"
                               >
-                                <UserCheck className="h-3.5 w-3.5" />
+                                <UserCheck className="h-3.5 w-3.5 shrink-0" />
                                 <span>Check Out</span>
                               </button>
                               <button
                                 type="button"
                                 disabled={!canCompleteAction && !elevatedRole}
                                 onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
-                                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 text-white px-3 py-1.5 text-xs font-bold shadow-xs hover:bg-emerald-700 transition disabled:opacity-50 cursor-pointer"
+                                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 text-white px-3 py-1.5 text-xs font-bold shadow-xs hover:bg-emerald-700 transition disabled:opacity-50 cursor-pointer shrink-0"
                               >
-                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                                 <span>Complete Outcome</span>
                               </button>
                             </div>
@@ -943,9 +1160,9 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                               type="button"
                               disabled={!canCompleteAction && !elevatedRole}
                               onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 text-white px-3 py-1.5 text-xs font-bold shadow-xs hover:bg-emerald-700 transition disabled:opacity-50 cursor-pointer"
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 text-white px-3 py-1.5 text-xs font-bold shadow-xs hover:bg-emerald-700 transition disabled:opacity-50 cursor-pointer shrink-0"
                             >
-                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                               <span>Complete Outcome</span>
                             </button>
                           ) : (
@@ -953,40 +1170,40 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                               type="button"
                               disabled={!canCompleteAction && !elevatedRole}
                               onClick={() => setStatusRemarksTarget({ type: "visit", item: v })}
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-xs font-bold shadow-xs hover:opacity-90 transition disabled:opacity-50 cursor-pointer"
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-xs font-bold shadow-xs hover:opacity-90 transition disabled:opacity-50 cursor-pointer shrink-0"
                             >
-                              <UserCheck className="h-3.5 w-3.5" />
+                              <UserCheck className="h-3.5 w-3.5 shrink-0" />
                               <span>{elevatedRole ? "Update Status" : "Check In"}</span>
                             </button>
                           )}
                         </div>
 
-                            <div className="flex items-center gap-1">
-                              {showStructureActions && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setEditingVisit(v);
-                                    setVisitModalOpen(true);
-                                  }}
-                                  className="rounded p-1 text-muted hover:bg-card hover:text-foreground transition cursor-pointer"
-                                  title="Edit visit"
-                                >
-                                  <Edit3 className="h-3.5 w-3.5" />
-                                </button>
-                              )}
+                        <div className="flex items-center gap-1 shrink-0">
+                          {showStructureActions && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingVisit(v);
+                                setVisitModalOpen(true);
+                              }}
+                              className="rounded p-1 text-muted hover:bg-card hover:text-foreground transition cursor-pointer"
+                              title="Edit visit"
+                            >
+                              <Edit3 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
 
-                              {showStructureActions && (elevatedRole || !isManagerOrAdminCreatedItem(v)) ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveVisit(vId, v)}
-                                  className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition cursor-pointer"
-                                  title="Remove visit"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              ) : null}
-                            </div>
+                          {showStructureActions && (elevatedRole || !isManagerOrAdminCreatedItem(v)) ? (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveVisit(vId, v)}
+                              className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition cursor-pointer"
+                              title="Remove visit"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -999,11 +1216,11 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
 
       {/* Section 2: Tasks / Work Entries */}
       {taskPlan && (
-        <div className="rounded-xl border border-border bg-card p-5 shadow-xs space-y-4">
-          <div className="flex items-center justify-between border-b border-border pb-3">
-            <div className="flex items-center gap-2">
-              <CheckSquare className="h-5 w-5 text-primary" />
-              <h2 className="text-base font-bold text-foreground">
+        <div className="rounded-xl border border-border bg-card p-4 sm:p-5 shadow-xs space-y-4 min-w-0 overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <CheckSquare className="h-5 w-5 text-primary shrink-0" />
+              <h2 className="text-base font-bold text-foreground truncate">
                 Work Tasks ({works.length})
               </h2>
             </div>
@@ -1014,7 +1231,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                   setEditingWork(null);
                   setWorkModalOpen(true);
                 }}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer shrink-0"
               >
                 <Plus className="h-3.5 w-3.5" />
                 Add Task
@@ -1022,18 +1239,12 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
             )}
           </div>
 
-          {!canCompleteAction && !isCompleted && (
-            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-600 dark:text-amber-400 flex items-center gap-2 font-medium">
-              <span>ℹ️ {taskWindowHint(plan.plan_date)}</span>
-            </div>
-          )}
-
           {works.length === 0 ? (
             <p className="text-xs text-muted py-4 text-center">
               No work tasks added to this plan.
             </p>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-3 min-w-0">
               {works.map((w, idx) => {
                 const wId = w._id || w.id || String(idx);
                 const isDefaultTask = w.work_type === "default" || (w as any).is_default_task;
@@ -1041,20 +1252,20 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                 return (
                   <div
                     key={wId}
-                    className="flex flex-col gap-2 rounded-lg border border-border bg-surface-muted/50 p-3"
+                    className="flex flex-col gap-2.5 rounded-xl border border-border bg-surface-muted/50 p-3.5 sm:p-4 min-w-0 overflow-hidden"
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <Briefcase className="h-4 w-4 text-muted" />
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-bold text-foreground">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0">
+                      <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+                        <Briefcase className="h-4 w-4 text-muted shrink-0 mt-0.5 sm:mt-0" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center flex-wrap gap-2 min-w-0">
+                            <span className="text-xs font-bold text-foreground break-words">
                               {w.title}
                             </span>
-                            {renderWorkStatusBadge(w.status)}
+                            <div className="shrink-0">{renderWorkStatusBadge(w.status)}</div>
                           </div>
                           {w.description && (
-                            <p className="text-xs text-muted">
+                            <p className="text-xs text-muted mt-0.5 break-words">
                               {w.description}
                             </p>
                           )}
@@ -1062,9 +1273,9 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                       </div>
 
                       {/* Work Task actions */}
-                      {(elevatedRole || showStructureActions) && (
-                        <div className="flex items-center gap-2">
-                          {elevatedRole && (
+                      {((elevatedRole && currentUserId !== (plan.sales_user ? (typeof plan.sales_user === "object" ? String((plan.sales_user as any)._id || (plan.sales_user as any).id || "") : String(plan.sales_user)) : "")) || showStructureActions) && (
+                        <div className="flex flex-wrap items-center gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-border/50">
+                          {elevatedRole && currentUserId !== (plan.sales_user ? (typeof plan.sales_user === "object" ? String((plan.sales_user as any)._id || (plan.sales_user as any).id || "") : String(plan.sales_user)) : "") && (
                             <button
                               type="button"
                               onClick={() =>
@@ -1078,12 +1289,12 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                                   history: w.authority_remarks,
                                 })
                               }
-                              className="inline-flex items-center gap-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20 px-3 py-1 text-xs font-bold text-purple-600 dark:text-purple-400 hover:bg-purple-500/20 transition cursor-pointer"
+                              className="inline-flex items-center gap-1.5 rounded-lg bg-primary/10 border border-primary/20 px-3 py-1 text-xs font-bold text-primary hover:bg-primary/20 transition cursor-pointer shrink-0"
                             >
-                              <ShieldCheck className="h-3.5 w-3.5" />
+                              <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
                               <span>Senior Remarks</span>
                               {Array.isArray(w.authority_remarks) && w.authority_remarks.length > 0 && (
-                                <span className="ml-0.5 rounded-full bg-purple-500/20 px-1.5 py-0.2 text-[10px] font-bold">
+                                <span className="ml-0.5 rounded-full bg-primary/20 px-1.5 py-0.2 text-[10px] font-bold">
                                   {w.authority_remarks.length}
                                 </span>
                               )}
@@ -1094,100 +1305,161 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                             type="button"
                             disabled={!canCompleteAction && !elevatedRole}
                             onClick={() => setStatusRemarksTarget({ type: "task", item: w })}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 text-primary px-3 py-1 text-xs font-bold hover:bg-primary/20 transition disabled:opacity-50 cursor-pointer"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-primary/20 bg-primary/10 text-primary px-3 py-1 text-xs font-bold hover:bg-primary/20 transition disabled:opacity-50 cursor-pointer shrink-0"
                           >
-                            <MessageSquare className="h-3.5 w-3.5" />
+                            <MessageSquare className="h-3.5 w-3.5 shrink-0" />
                             <span>{w.status === "completed" ? "Edit Outcome" : "Update Status"}</span>
                           </button>
-                              {showStructureActions && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setEditingWork(w);
-                                    setWorkModalOpen(true);
-                                  }}
-                                  className="rounded p-1 text-muted hover:bg-card hover:text-foreground transition cursor-pointer"
-                                  title="Edit task"
-                                >
-                                  <Edit3 className="h-3.5 w-3.5" />
-                                </button>
-                              )}
-                              {showStructureActions && canRemoveWork ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveWork(wId, w)}
-                                  className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition cursor-pointer"
-                                  title="Remove task"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              ) : null}
+                          {showStructureActions && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingWork(w);
+                                setWorkModalOpen(true);
+                              }}
+                              className="rounded p-1 text-muted hover:bg-card hover:text-foreground transition cursor-pointer"
+                              title="Edit task"
+                            >
+                              <Edit3 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                          {showStructureActions && canRemoveWork ? (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveWork(wId, w)}
+                              className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition cursor-pointer"
+                              title="Remove task"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          ) : null}
                         </div>
                       )}
                     </div>
 
                     {w.pending_remarks ? (
-                      <div className="text-xs text-slate-600 dark:text-slate-400 font-medium pl-7">
+                      <div className="text-xs text-slate-600 dark:text-slate-400 font-medium sm:pl-7 min-w-0 overflow-hidden">
                         <span className="font-semibold">Pending Remarks: </span>
                         <RichTextDisplay content={w.pending_remarks} className="inline-block" />
                       </div>
                     ) : null}
 
                     {w.in_progress_remarks ? (
-                      <div className="text-xs text-amber-600 dark:text-amber-400 font-medium pl-7">
+                      <div className="text-xs text-amber-600 dark:text-amber-400 font-medium sm:pl-7 min-w-0 overflow-hidden">
                         <span className="font-semibold">In-Progress Remarks: </span>
                         <RichTextDisplay content={w.in_progress_remarks} className="inline-block" />
                       </div>
                     ) : null}
 
                     {(w.completion_remarks || w.outcome) ? (
-                      <div className="text-xs text-emerald-600 dark:text-emerald-400 font-medium pl-7">
+                      <div className="text-xs text-emerald-600 dark:text-emerald-400 font-medium sm:pl-7 min-w-0 overflow-hidden">
                         <span className="font-semibold">Outcome: </span>
                         <RichTextDisplay content={w.completion_remarks || w.outcome} className="inline-block" />
                       </div>
                     ) : null}
 
                     {(() => {
-                      const hasRemarks = Boolean(w.manager_remarks) || (Array.isArray(w.authority_remarks) && w.authority_remarks.length > 0);
-                      return hasRemarks ? (
-                      <div className="rounded-lg bg-purple-500/10 border border-purple-500/20 p-2 text-xs text-purple-700 dark:text-purple-300 ml-7 space-y-1">
-                        <div className="flex items-center gap-1 font-bold">
-                          <ShieldCheck className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
-                          <span>Senior Directive / Remark:</span>
-                        </div>
-                        {w.manager_remarks ? <RichTextDisplay content={w.manager_remarks} /> : null}
-                        {w.authority_remarks && w.authority_remarks.length > 0 && (
-                          <div className="pt-1 border-t border-purple-500/20 space-y-1 text-[11px]">
-                            {w.authority_remarks.map((r: any, idx: number) => (
-                              <div key={r._id || idx} className="flex items-start justify-between gap-1">
-                                <span className="font-semibold text-purple-800 dark:text-purple-200">
-                                  {r.user_name || "Senior Authority"} ({r.role || "Manager"}):
+                      const hasRemarks =
+                        Boolean(w.manager_remarks) ||
+                        (Array.isArray(w.authority_remarks) && w.authority_remarks.length > 0);
+                      if (!hasRemarks) return null;
+
+                      const wLatestRemark =
+                        Array.isArray(w.authority_remarks) && w.authority_remarks.length > 0
+                          ? w.authority_remarks[w.authority_remarks.length - 1]
+                          : null;
+                      const isObjection = wLatestRemark?.remark_type === "objection";
+                      const isAppreciation = wLatestRemark?.remark_type === "appreciation";
+                      const isResolved = wLatestRemark?.status === "resolved";
+
+                      return (
+                        <div className="rounded-lg bg-primary/10 border border-primary/20 p-2.5 text-xs text-primary sm:ml-7 space-y-1.5 min-w-0 overflow-hidden">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-1.5 font-bold min-w-0">
+                              <ShieldCheck className="h-3.5 w-3.5 text-primary shrink-0" />
+                              <span>Senior Directive</span>
+
+                              {wLatestRemark?.remark_type && (
+                                <span
+                                  className={`rounded-full px-2 py-0.2 text-[9px] font-bold border shrink-0 ${
+                                    isAppreciation
+                                      ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
+                                      : isObjection
+                                      ? "bg-rose-500/15 border-rose-500/30 text-rose-600 dark:text-rose-400"
+                                      : "bg-primary/15 border-primary/30 text-primary"
+                                  }`}
+                                >
+                                  {isAppreciation ? "⭐ Appreciation" : isObjection ? "⚠️ Objection" : "📋 Guidance"}
                                 </span>
-                                <span className="flex-1 text-right">{r.remark}</span>
-                              </div>
-                            ))}
+                              )}
+
+                              {wLatestRemark?.status && (
+                                <span
+                                  className={`rounded-full px-2 py-0.2 text-[9px] font-bold border shrink-0 ${
+                                    isResolved
+                                      ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
+                                      : wLatestRemark.status === "responded"
+                                      ? "bg-sky-500/15 border-sky-500/30 text-sky-600 dark:text-sky-400"
+                                      : "bg-amber-500/15 border-amber-500/30 text-amber-600 dark:text-amber-400"
+                                  }`}
+                                >
+                                  {isResolved
+                                    ? "✅ Resolved"
+                                    : wLatestRemark.status === "responded"
+                                    ? "💬 Responded"
+                                    : "⏳ Awaiting Reply"}
+                                </span>
+                              )}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => openDirectiveThread("task", w)}
+                              className="inline-flex items-center gap-1 rounded bg-primary/20 px-2 py-0.5 text-[11px] font-bold text-primary hover:bg-primary/30 transition cursor-pointer shrink-0"
+                            >
+                              <MessageSquare className="h-3 w-3" />
+                              <span>Thread</span>
+                              {(wLatestRemark?.followup_remarks?.length || 0) > 0 && (
+                                <span className="rounded-full bg-primary/30 px-1 text-[9px]">
+                                  {wLatestRemark?.followup_remarks?.length}
+                                </span>
+                              )}
+                            </button>
                           </div>
-                        )}
-                      </div>
-                      ) : null;
+
+                          {w.manager_remarks ? <RichTextDisplay content={w.manager_remarks} /> : null}
+                          {w.authority_remarks && w.authority_remarks.length > 0 && (
+                            <div className="pt-1 border-t border-primary/20 space-y-1 text-[11px] min-w-0">
+                              {w.authority_remarks.map((r: any, idx: number) => (
+                                <div key={r._id || idx} className="flex flex-col sm:flex-row sm:items-start justify-between gap-1 min-w-0">
+                                  <span className="font-semibold text-primary shrink-0">
+                                    {r.user_name || "Senior Authority"} ({r.role || "Senior"}):
+                                  </span>
+                                  <span className="flex-1 break-words sm:text-right">{r.remark}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
                     })()}
 
                     {w.rescheduled_date ? (
-                      <div className="rounded-lg bg-indigo-500/10 border border-indigo-500/20 p-2 text-xs text-indigo-700 dark:text-indigo-300 ml-7">
+                      <div className="rounded-lg bg-indigo-500/10 border border-indigo-500/20 p-2 text-xs text-indigo-700 dark:text-indigo-300 sm:ml-7 min-w-0">
                         <div className="flex items-center gap-1 font-bold">
-                          <CalendarClock className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400" />
-                          <span>Rescheduled to: {formatPlanDate(w.rescheduled_date)}</span>
+                          <CalendarClock className="h-3.5 w-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                          <span className="truncate">Rescheduled to: {formatPlanDate(w.rescheduled_date)}</span>
                         </div>
                       </div>
                     ) : null}
 
                     {(w.created_by || w.updated_by) && (
-                      <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted pl-7">
+                      <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted sm:pl-7 min-w-0">
                         {w.created_by && (
-                          <span>Created by: {formatAuditUser(w.created_by, w.created_by_role)}</span>
+                          <span className="truncate">Created by: {formatAuditUser(w.created_by, w.created_by_role)}</span>
                         )}
                         {w.updated_by && (
-                          <span>Updated by: {formatAuditUser(w.updated_by, w.updated_by_role)}</span>
+                          <span className="truncate">Updated by: {formatAuditUser(w.updated_by, w.updated_by_role)}</span>
                         )}
                       </div>
                     )}
@@ -1226,6 +1498,63 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
         />
       )}
 
+      {/* Sticky Mobile Quick Action Dock (< md) */}
+      {!leavePlan && !isCompleted && !isAnyModalOpen && (
+        <div className="fixed bottom-20 inset-x-3 z-30 md:hidden pointer-events-none">
+          <div className="mx-auto max-w-lg rounded-2xl border border-border/80 bg-card/90 p-2 shadow-2xl backdrop-blur-xl pointer-events-auto flex items-center justify-between gap-2">
+            {visitsPlan && showStructureActions && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingVisit(null);
+                  setVisitModalOpen(true);
+                }}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border border-primary/20 bg-primary/10 px-3 py-2.5 text-xs font-bold text-primary active:scale-95 transition"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Add Visit</span>
+              </button>
+            )}
+
+            {taskPlan && showStructureActions && (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingWork(null);
+                  setWorkModalOpen(true);
+                }}
+                className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl border border-primary/20 bg-primary/10 px-3 py-2.5 text-xs font-bold text-primary active:scale-95 transition"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Add Task</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              disabled={!canCompletePlan || actionLoading}
+              onClick={() => setDayEndMailModalOpen(true)}
+              className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-xs font-bold transition shadow-xs active:scale-95 ${
+                canCompletePlan
+                  ? "bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 cursor-pointer"
+                  : "bg-surface-muted border border-border text-muted cursor-not-allowed opacity-60"
+              }`}
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              <span>Day End</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPlanAiModalOpen(true)}
+              className="inline-flex items-center justify-center rounded-xl border border-primary/30 bg-primary/15 p-2.5 text-primary active:scale-95 transition"
+              title="AI 360° Analysis"
+            >
+              <Sparkles className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       {visitModalOpen && (
@@ -1362,7 +1691,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
           }
           isSaving={actionLoading}
           onClose={() => setStatusRemarksTarget(null)}
-          onConfirm={async ({ status, remarks, managerRemarks, rescheduledDate, visitAnswers, selfieUrl, lat, lng }) => {
+          onConfirm={async ({ status, remarks, managerRemarks, visitAnswers, selfieUrl, lat, lng }) => {
             setActionLoading(true);
             try {
               if (statusRemarksTarget.type === "visit") {
@@ -1371,7 +1700,6 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                 const body: Record<string, any> = {
                   status,
                   manager_remarks: managerRemarks !== undefined ? managerRemarks : undefined,
-                  rescheduled_date: status === "rescheduled" ? rescheduledDate : undefined,
                   selfie_url: selfieUrl || undefined,
                   lat: lat || undefined,
                   lng: lng || undefined,
@@ -1415,7 +1743,6 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                 const body: Record<string, any> = {
                   status,
                   manager_remarks: managerRemarks !== undefined ? managerRemarks : undefined,
-                  rescheduled_date: status === "rescheduled" ? rescheduledDate : undefined,
                 };
                 if (status === "completed") {
                   body.completion_remarks = remarks;
@@ -1516,15 +1843,17 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
         />
       )}
 
-      {changePlanTypeModalOpen && (
-        <ChangePlanTypeModal
-          open={changePlanTypeModalOpen}
-          planId={planId}
-          currentPlanType={plan.plan_type}
-          planDate={plan.plan_date}
-          isCompleted={isCompleted}
-          onClose={() => setChangePlanTypeModalOpen(false)}
-          onSuccess={() => loadPlan()}
+      {threadModalOpen && (
+        <DirectiveThreadModal
+          open={threadModalOpen}
+          item={selectedThreadItem}
+          onClose={() => {
+            setThreadModalOpen(false);
+            setSelectedThreadItem(null);
+          }}
+          onSuccess={() => {
+            loadPlan();
+          }}
         />
       )}
 
@@ -1537,6 +1866,14 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
           onClose={() => setPlanAiModalOpen(false)}
         />
       )}
+
+      <FilePreviewModal
+        doc={previewDoc}
+        blobUrl={previewBlobUrl}
+        loading={previewLoading}
+        onClose={closePreview}
+        onDownload={downloadFile}
+      />
     </div>
   );
 }

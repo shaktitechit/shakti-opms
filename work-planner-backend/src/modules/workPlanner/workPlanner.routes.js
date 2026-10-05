@@ -53,6 +53,15 @@ router.get('/team/edges', elevatedRoles, teamController.listEdges);
 router.put('/team/edges', adminRole, teamController.upsertEdge);
 router.delete('/team/edges/:subordinateId', adminRole, teamController.removeEdge);
 
+router.get('/drafts', controller.getDraft);
+router.put('/drafts', controller.saveDraft);
+router.delete('/drafts', controller.deleteDraft);
+
+// Senior Remarks, Objections & Junior Follow-ups
+router.get('/senior-remarks', controller.getSeniorRemarks);
+router.post('/senior-remarks/followup', controller.addJuniorFollowup);
+router.patch('/senior-remarks/status', elevatedRoles, controller.updateSeniorRemarkStatus);
+
 router.get('/', controller.list);
 router.get('/stats', controller.stats);
 router.get('/expenses', controller.listAllExpenses);
@@ -102,5 +111,6 @@ router.delete('/:id/expenses/:expenseId', controller.removeExpense);
 router.post('/:id/expenses/:expenseId/submit', controller.submitExpense);
 router.post('/:id/expenses/:expenseId/approve', elevatedRoles, controller.approveExpense);
 router.post('/:id/expenses/:expenseId/reject', elevatedRoles, controller.rejectExpense);
+router.post('/:id/expenses/:expenseId/authority-remarks', elevatedRoles, controller.addExpenseAuthorityRemark);
 
 module.exports = router;

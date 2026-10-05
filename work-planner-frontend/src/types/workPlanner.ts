@@ -150,9 +150,43 @@ export type WorkPlanExpenseRecord = {
   approved_by?: { _id?: string; name?: string; email?: string } | string;
   approved_at?: string;
   rejection_reason?: string;
+  manager_remarks?: string;
+  authority_remarks?: AuthorityRemarkItem[];
   created_by?: { _id?: string; name?: string; email?: string } | string;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type AuthorityRemarkType = "instruction" | "appreciation" | "objection";
+export type AuthorityRemarkPriority = "low" | "medium" | "high" | "urgent";
+export type AuthorityRemarkStatus = "pending_response" | "responded" | "resolved";
+export type FollowupActionStatus =
+  | "in_progress"
+  | "completed"
+  | "clarification_provided"
+  | "need_help"
+  | "acknowledged";
+
+export type FollowupAttachmentItem = {
+  _id?: string;
+  attachment_id?: string;
+  filename?: string;
+  original_name?: string;
+  mime_type?: string;
+  size?: number;
+  url?: string;
+};
+
+export type FollowupRemarkItem = {
+  _id?: string;
+  response: string;
+  user?: string | { _id: string; name?: string; email?: string; department?: string };
+  user_name?: string;
+  role?: string;
+  action_status?: FollowupActionStatus;
+  attachments?: (FollowupAttachmentItem | string)[];
+  attachment_details?: FollowupAttachmentItem[];
+  created_at?: string;
 };
 
 export type AuthorityRemarkItem = {
@@ -161,7 +195,58 @@ export type AuthorityRemarkItem = {
   user?: string | { _id: string; name?: string; email?: string; department?: string };
   user_name?: string;
   role?: string;
+  remark_type?: AuthorityRemarkType;
+  priority?: AuthorityRemarkPriority;
+  expected_followup_date?: string;
+  status?: AuthorityRemarkStatus;
+  followup_remarks?: FollowupRemarkItem[];
+  resolution_remarks?: string;
+  resolved_at?: string;
+  resolved_by?: string | { _id: string; name?: string; email?: string };
+  resolved_by_name?: string;
   created_at?: string;
+};
+
+export type SeniorRemarkFeedItem = {
+  id: string;
+  remark_id: string;
+  target_type: "plan" | "visit" | "task" | "expense";
+  plan_id: string;
+  target_id: string;
+  plan_date?: string;
+  title: string;
+  location?: string;
+  sales_user: {
+    _id: string;
+    name: string;
+    email?: string;
+  };
+  senior_user: {
+    _id: string;
+    name: string;
+    role?: string;
+  };
+  remark: string;
+  remark_type: AuthorityRemarkType;
+  priority: AuthorityRemarkPriority;
+  expected_followup_date?: string | null;
+  status: AuthorityRemarkStatus;
+  followup_remarks: FollowupRemarkItem[];
+  resolution_remarks?: string;
+  resolved_at?: string | null;
+  resolved_by?: string | null;
+  resolved_by_name?: string;
+  created_at: string;
+};
+
+export type SeniorRemarksStats = {
+  total: number;
+  appreciation_count: number;
+  objection_count: number;
+  instruction_count: number;
+  pending_response_count: number;
+  responded_count: number;
+  resolved_count: number;
 };
 
 export type WorkPlanVisitRecord = {

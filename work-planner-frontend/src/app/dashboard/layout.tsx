@@ -12,7 +12,7 @@ import {
 import { useTheme } from "@/hooks/useTheme";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { Topbar } from "@/components/shell/Topbar";
-
+import { MobileBottomNav } from "@/components/shell/MobileBottomNav";
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -142,9 +142,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           onLogout={handleLogout}
         />
 
-        <main className="flex-1 overflow-y-auto p-4 sm:p-8 space-y-6">
+        <main className="flex-1 overflow-y-auto px-3.5 py-4 pb-28 sm:p-6 lg:p-8 space-y-6">
           {children}
         </main>
+
+        {/* Mobile Bottom Navigation Bar */}
+        <MobileBottomNav onOpenMobileDrawer={() => setMobileNavOpen(true)} />
       </div>
     </div>
   );
