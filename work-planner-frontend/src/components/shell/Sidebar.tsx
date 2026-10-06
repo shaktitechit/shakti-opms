@@ -16,6 +16,7 @@ import {
   X,
   Sparkles,
   ShieldCheck,
+  StickyNote,
 } from "lucide-react";
 import type { UserSession } from "@/types/workPlanner";
 import { isWpAdmin, isWpManager, isWpCoordinator, readSessionFromStorage } from "@/utils/authStorage";
@@ -58,6 +59,7 @@ export function Sidebar({
 
   const isDashboardActive = pathname === "/dashboard";
   const isProjectsActive = pathname.startsWith("/dashboard/projects");
+  const isNotesActive = pathname.startsWith("/dashboard/notes");
   const isPlansActive = pathname === "/dashboard/plans";
   const isTasksVisitsActive = pathname.startsWith("/dashboard/tasks-visits");
   const isCalendarActive = pathname.startsWith("/dashboard/plans/calendar");
@@ -164,6 +166,21 @@ export function Sidebar({
           >
             <FolderKanban className={`h-4 w-4 shrink-0 ${isProjectsActive ? "text-primary" : ""}`} />
             {!desktopCollapsed && <span>Projects</span>}
+          </Link>
+
+          {/* My Notes & Scratchpad */}
+          <Link
+            href="/dashboard/notes"
+            onClick={() => setMobileNavOpen(false)}
+            className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+              isNotesActive
+                ? "bg-primary/15 border border-primary/30 text-primary font-bold shadow-xs"
+                : "text-muted hover:bg-surface-muted hover:text-foreground border border-transparent"
+            }`}
+            title="My Notes & Scratchpad"
+          >
+            <StickyNote className={`h-4 w-4 shrink-0 ${isNotesActive ? "text-primary" : ""}`} />
+            {!desktopCollapsed && <span>My Notes &amp; Scratchpad</span>}
           </Link>
 
           {/* Work Plans */}

@@ -29,6 +29,7 @@ import {
   RotateCcw,
   Loader2,
   History,
+  StickyNote,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useGetUsersQuery } from "@/store/api/authApiSlice";
@@ -50,6 +51,7 @@ import {
   useLazyGetWorkPlanDraftQuery,
   useSaveWorkPlanDraftMutation,
   useDeleteWorkPlanDraftMutation,
+  useMarkNotesConvertedMutation,
 } from "@/store/api/workPlannerApiSlice";
 import { isWpAdmin, isWpManager, isWpCoordinator, isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
 import { getUserWorkPlannerSettings, type CustomWorkTaskTemplate } from "@/utils/userWorkPlannerSettings";
@@ -58,6 +60,7 @@ import {
   WORK_PLAN_TYPE_TABS,
   isVisitsPlan,
   isWorkTaskPlan,
+  isBothTasksAndVisitsPlan,
   isLeavePlan,
   isSunday,
   formatTime,
@@ -68,6 +71,7 @@ import { VisitFormModal } from "./VisitFormModal";
 import { WorkFormModal } from "./WorkFormModal";
 import { WorkPlanCreateMailModal, type CreateEmailPayload } from "./WorkPlanCreateMailModal";
 import { SelectPreviousPendingItemsModal } from "./SelectPreviousPendingItemsModal";
+import { ImportNotesModal } from "./notes/ImportNotesModal";
 import {
   saveWorkPlanDraft,
   loadWorkPlanDraft,
@@ -224,6 +228,49 @@ function getWorkPlannerUserPortalRole(
   return null;
 }
 
+function mapNotesToVisitsAndWorks(notes: any[]) {
+  const visitNotes = notes.filter((n: any) => n.type === "visit");
+  const taskNotes = notes.filter(
+    (n: any) => n.type === "task" || n.type === "general" || (!n.type && n.type !== "visit")
+  );
+
+  const mappedVisits: WorkPlanVisitRecord[] = visitNotes.map((n: any, idx: number) => {
+    const contacts =
+      Array.isArray(n.contacts) && n.contacts.length > 0
+        ? n.contacts
+        : n.contact_person || n.contact_number
+          ? [{ contact_person: n.contact_person || "", contact_number: n.contact_number || "" }]
+          : [];
+
+    return {
+      sequence: idx + 1,
+      party: typeof n.party === "object" && n.party ? (n.party as any)._id : n.party || undefined,
+      party_name: n.party_name || n.title || "Party Visit",
+      party_type: (n.party_type as any) || "existing",
+      contacts,
+      contact_person: n.contact_person || contacts[0]?.contact_person || "",
+      contact_number: n.contact_number || contacts[0]?.contact_number || "",
+      locality: n.locality || "",
+      city: n.city || "",
+      purpose: n.purpose || "Sales Discussion",
+      planned_start_time: n.planned_time || "",
+      notes: n.description || n.content || "",
+      remarks: n.description || n.content || "",
+      status: "created",
+    };
+  });
+
+  const mappedWorks: WorkPlanWorkRecord[] = taskNotes.map((n: any, idx: number) => ({
+    sequence: idx + 1,
+    title: n.title || "Task from Notes",
+    description: n.description || n.content || "",
+    priority: (n.priority as any) || "medium",
+    status: "created",
+  }));
+
+  return { mappedVisits, mappedWorks, noteIds: notes.map((n: any) => String(n._id || n.id)) };
+}
+
 export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPageProps) {
   const router = useRouter();
   const [existingPlanId, setExistingPlanId] = useState<string | null>(planId || null);
@@ -244,6 +291,27 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   const prevFetchedKey = useRef<string>("");
   const copiedVisitsRef = useRef<any[]>([]);
   const copiedWorksRef = useRef<any[]>([]);
+  const importedNotesRef = useRef<{ targetDate?: string; notes: any[] } | null>(null);
+
+  // Read imported notes from session storage on mount
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = sessionStorage.getItem("opms_workplan_import_notes");
+      if (stored) {
+        sessionStorage.removeItem("opms_workplan_import_notes");
+        const parsed = JSON.parse(stored);
+        if (parsed && Array.isArray(parsed.notes) && parsed.notes.length > 0) {
+          importedNotesRef.current = parsed;
+          if (parsed.targetDate && !initialDate) {
+            setPlanDate(parsed.targetDate);
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [initialDate]);
 
   const minPlanDate = useMemo(() => {
     const d = new Date();
@@ -276,6 +344,10 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
 
   // Modal state for selecting previous pending/in-progress items
   const [previousModalMode, setPreviousModalMode] = useState<"visits" | "tasks" | null>(null);
+
+  // Modal state for importing items from Scratchpad / Notes
+  const [importNotesMode, setImportNotesMode] = useState<"visits" | "tasks" | null>(null);
+  const [importedNoteIds, setImportedNoteIds] = useState<string[]>([]);
 
   // Task rollover loading state
   const [rolloverLoading, setRolloverLoading] = useState(false);
@@ -342,6 +414,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   const [lazyGetDraft] = useLazyGetWorkPlanDraftQuery();
   const [saveDraftMut] = useSaveWorkPlanDraftMutation();
   const [deleteDraftMut] = useDeleteWorkPlanDraftMutation();
+  const [markNotesConvertedMut] = useMarkNotesConvertedMutation();
 
   // Fetch Target User Work Planner Settings (Manager assignments & custom task templates)
   const targetUserId = salesUserId || sessionUser?._id || "";
@@ -849,6 +922,27 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                 })),
               ];
               setWorks(mergedWorks);
+            } else if (importedNotesRef.current && Array.isArray(importedNotesRef.current.notes)) {
+              // Merge imported scratchpad notes into existing active plan
+              const { mappedVisits, mappedWorks, noteIds } = mapNotesToVisitsAndWorks(importedNotesRef.current.notes);
+              const mergedVisits = [
+                ...planVisits,
+                ...mappedVisits.map((mv, idx) => ({ ...mv, sequence: planVisits.length + idx + 1 })),
+              ];
+              const mergedWorks = [
+                ...mergedWorksWithTemplates,
+                ...mappedWorks.map((mw, idx) => ({ ...mw, sequence: mergedWorksWithTemplates.length + idx + 1 })),
+              ];
+              setVisits(mergedVisits);
+              setWorks(mergedWorks);
+              if (mergedVisits.length > 0 && mergedWorks.length > 0) {
+                setPlanType("Tasks & Visits");
+              } else if (mergedVisits.length > 0) {
+                setPlanType(fullPlan.plan_type || "Visits");
+              }
+              setImportedNoteIds((prev) => [...new Set([...prev, ...noteIds])]);
+              toast.success(`Imported ${importedNotesRef.current.notes.length} item(s) from Scratchpad Notes into this Work Plan`);
+              importedNotesRef.current = null;
             } else {
               setVisits(planVisits);
               setWorks(mergedWorksWithTemplates);
@@ -884,6 +978,21 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           if (copyId) {
             setVisits(copiedVisitsRef.current);
             setWorks(copiedWorksRef.current);
+          } else if (importedNotesRef.current && Array.isArray(importedNotesRef.current.notes)) {
+            // Load scratchpad notes into fresh new plan
+            const { mappedVisits, mappedWorks, noteIds } = mapNotesToVisitsAndWorks(importedNotesRef.current.notes);
+            setVisits(mappedVisits);
+            setWorks(mappedWorks);
+            if (mappedVisits.length > 0 && mappedWorks.length > 0) {
+              setPlanType("Tasks & Visits");
+            } else if (mappedVisits.length > 0) {
+              setPlanType("Visits");
+            } else {
+              setPlanType("Tasks & Visits");
+            }
+            setImportedNoteIds((prev) => [...new Set([...prev, ...noteIds])]);
+            toast.success(`Loaded ${importedNotesRef.current.notes.length} item(s) from Scratchpad Notes into this Work Plan`);
+            importedNotesRef.current = null;
           } else {
             setVisits([]);
             setWorks([]);
@@ -895,7 +1004,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           setDiscussedManagerName("");
           setDiscussionMethod("on_call");
 
-          if (!isInitialMount) {
+          if (!isInitialMount && !importedNotesRef.current) {
             toast.info(`Switched to Create Work Plan mode for ${planDate}.`, { id: `create-mode-${planDate}` });
           }
         }
@@ -1615,6 +1724,27 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       return;
     }
 
+    if (isBothTasksAndVisitsPlan(planType)) {
+      if (visits.length === 0) {
+        toast.error("For 'Tasks & Visits' plan type, at least one planned visit is required.");
+        return;
+      }
+      if (works.length === 0) {
+        toast.error("For 'Tasks & Visits' plan type, at least one planned task is required.");
+        return;
+      }
+    } else if (planType === "Visits") {
+      if (visits.length === 0) {
+        toast.error("For 'Visits' plan type, at least one planned visit is required.");
+        return;
+      }
+    } else if (planType === "Work From Home" || planType === "Work From Office") {
+      if (works.length === 0) {
+        toast.error(`For '${planType}' plan type, at least one planned task is required.`);
+        return;
+      }
+    }
+
     if (minPlanDate && planDate < minPlanDate) {
       toast.error(
         `Work plans cannot be created or edited for dates earlier than 2 days before today (${minPlanDate}).`
@@ -1852,6 +1982,15 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
             await addWorkMut({ planId: targetPlanId, body: workBody }).unwrap();
           }
         }
+      }
+
+      // Sync imported scratchpad notes as converted
+      if (importedNoteIds.length > 0 && targetPlanId) {
+        markNotesConvertedMut({
+          note_ids: importedNoteIds,
+          work_plan_id: targetPlanId,
+          work_plan_date: pendingPlanData.payload.plan_date,
+        }).catch(() => {});
       }
 
       // Submit plan on backend and send mail
@@ -2611,23 +2750,33 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
 
         {/* Dynamic Embedded Section: Field Visits (if Plan Type is Visits) */}
         {visitsType && (
-          <div className="rounded-xl border border-border bg-surface-muted/40 p-4 space-y-3">
-            <div className="flex items-center justify-between border-b border-border pb-2.5">
+          <div className="rounded-xl border border-border bg-surface-muted/40 p-3 sm:p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-border pb-2.5">
               <div className="flex items-center gap-2">
-                <Building2 className="h-4 w-4 text-primary" />
+                <Building2 className="h-4 w-4 text-primary shrink-0" />
                 <h3 className="text-xs font-bold text-foreground">
-                  Planned Visits ({visits.length})
+                  Planned Visits ({visits.length}) {visitsType && <span className="text-rose-500 font-bold">*</span>}
                 </h3>
               </div>
               {!isPlanCompleted && (
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setImportNotesMode("visits")}
+                    className="inline-flex items-center gap-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition shadow-xs cursor-pointer"
+                    title="Import pending visits from private scratchpad notes"
+                  >
+                    <StickyNote className="h-3.5 w-3.5 shrink-0" />
+                    <span>Import Notes</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => setPreviousModalMode("visits")}
-                    className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-surface-hover transition shadow-xs cursor-pointer"
+                    className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2 py-1 text-xs font-semibold text-foreground hover:bg-surface-hover transition shadow-xs cursor-pointer"
+                    title="Add previous created or pending visits"
                   >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add Previous Created / Pending Visits
+                    <Plus className="h-3.5 w-3.5 shrink-0" />
+                    <span>Add Previous</span>
                   </button>
                   <button
                     type="button"
@@ -2635,10 +2784,10 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                       setEditingVisitIndex(null);
                       setVisitModalOpen(true);
                     }}
-                    className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer"
+                    className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer"
                   >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add Visit
+                    <Plus className="h-3.5 w-3.5 shrink-0" />
+                    <span>Add Visit</span>
                   </button>
                 </div>
               )}
@@ -2695,6 +2844,18 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                             </p>
                           );
                         })()}
+                        {(v.locality || v.city || v.address) && (
+                          <p className="text-[10px] text-muted flex items-center gap-1 truncate">
+                            <MapPin className="h-3 w-3 text-muted shrink-0" />
+                            <span>{[v.locality, v.city, v.address].filter(Boolean).join(", ")}</span>
+                          </p>
+                        )}
+                        {(v.remarks || v.notes || (v as any).description) && (
+                          <p className="text-[11px] text-muted line-clamp-2 bg-surface-muted/50 p-1.5 rounded-md border border-border/40">
+                            <span className="font-semibold text-foreground">Notes: </span>
+                            <span>{v.remarks || v.notes || (v as any).description}</span>
+                          </p>
+                        )}
                         {v.planned_start_time && (
                           <p className="text-[10px] text-muted flex items-center gap-1 font-medium">
                             <Clock className="h-3 w-3" />
@@ -2747,33 +2908,43 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
 
         {/* Dynamic Embedded Section: Work Tasks (if Plan Type is WFH or WFO) */}
         {tasksType && (
-          <div className="rounded-xl border border-border bg-surface-muted/40 p-4 space-y-3">
-            <div className="flex items-center justify-between border-b border-border pb-2.5">
+          <div className="rounded-xl border border-border bg-surface-muted/40 p-3 sm:p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 border-b border-border pb-2.5">
               <div className="flex items-center gap-2">
-                <CheckSquare className="h-4 w-4 text-primary" />
+                <CheckSquare className="h-4 w-4 text-primary shrink-0" />
                 <h3 className="text-xs font-bold text-foreground">
-                  Planned Tasks ({works.length})
+                  Planned Tasks ({works.length}) {tasksType && <span className="text-rose-500 font-bold">*</span>}
                 </h3>
               </div>
               {!isPlanCompleted && (
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setImportNotesMode("tasks")}
+                    className="inline-flex items-center gap-1 rounded-lg border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 transition shadow-xs cursor-pointer"
+                    title="Import pending tasks and quick notes from private scratchpad"
+                  >
+                    <StickyNote className="h-3.5 w-3.5 shrink-0" />
+                    <span>Import Notes</span>
+                  </button>
                   <button
                     type="button"
                     onClick={handleManualRollover}
                     disabled={rolloverLoading}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition shadow-xs cursor-pointer disabled:opacity-50"
+                    className="inline-flex items-center gap-1 rounded-lg border border-primary/30 bg-primary/10 px-2 py-1 text-xs font-semibold text-primary hover:bg-primary/20 transition shadow-xs cursor-pointer disabled:opacity-50"
                     title="Rollover uncompleted tasks from previous plans"
                   >
-                    <RotateCcw className={`h-3.5 w-3.5 ${rolloverLoading ? "animate-spin" : ""}`} />
-                    Rollover Tasks
+                    <RotateCcw className={`h-3.5 w-3.5 shrink-0 ${rolloverLoading ? "animate-spin" : ""}`} />
+                    <span>Rollover</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setPreviousModalMode("tasks")}
-                    className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs font-semibold text-foreground hover:bg-surface-hover transition shadow-xs cursor-pointer"
+                    className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-2 py-1 text-xs font-semibold text-foreground hover:bg-surface-hover transition shadow-xs cursor-pointer"
+                    title="Add previous created or pending tasks"
                   >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add Previous Created / Pending Tasks
+                    <Plus className="h-3.5 w-3.5 shrink-0" />
+                    <span>Add Previous</span>
                   </button>
                   <button
                     type="button"
@@ -2781,10 +2952,10 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                       setEditingWorkIndex(null);
                       setWorkModalOpen(true);
                     }}
-                    className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer"
+                    className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer"
                   >
-                    <Plus className="h-3.5 w-3.5" />
-                    Add Task
+                    <Plus className="h-3.5 w-3.5 shrink-0" />
+                    <span>Add Task</span>
                   </button>
                 </div>
               )}
@@ -2907,19 +3078,19 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                   return (
                     <div
                       key={idx}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card p-3 shadow-2xs"
+                      className="flex items-start justify-between gap-2.5 rounded-lg border border-border bg-card p-3 shadow-2xs min-w-0"
                     >
-                      <div className="flex items-center gap-2.5 truncate">
-                        <Briefcase className="h-4 w-4 text-muted shrink-0" />
-                        <div className="truncate">
+                      <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                        <Briefcase className="h-4 w-4 text-muted shrink-0 mt-0.5" />
+                        <div className="min-w-0 flex-1 space-y-0.5">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-xs font-bold text-foreground truncate">
+                            <span className="text-xs font-bold text-foreground break-words">
                               {w.title}
                             </span>
                             {renderWorkStatusBadge(w.status)}
                             {w.work_type && (
                               <span
-                                className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase ${
+                                className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase shrink-0 ${
                                   w.work_type === "optional"
                                     ? "bg-amber-500/15 text-amber-500 border border-amber-500/20"
                                     : "bg-primary/15 text-primary border border-primary/20"
@@ -2930,11 +3101,11 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                             )}
                           </div>
                           {w.description && (
-                            <p className="text-[11px] text-muted truncate">{w.description}</p>
+                            <p className="text-[11px] text-muted line-clamp-2 break-words">{w.description}</p>
                           )}
                           {w.planned_start_time && (
                             <p className="text-[10px] text-muted flex items-center gap-1 font-medium mt-0.5">
-                              <Clock className="h-3 w-3" />
+                              <Clock className="h-3 w-3 shrink-0" />
                               {formatTime(w.planned_start_time)}
                             </p>
                           )}
@@ -2942,7 +3113,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                       </div>
 
                       {!isPlanCompleted && (
-                        <div className="flex items-center gap-1 shrink-0">
+                        <div className="flex items-center gap-1 shrink-0 ml-1">
                           <button
                             type="button"
                             onClick={() => {
@@ -3123,6 +3294,30 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
             } else {
               setWorks((prev) => [...prev, ...selectedItems]);
             }
+          }}
+        />
+      )}
+
+      {importNotesMode && (
+        <ImportNotesModal
+          open={Boolean(importNotesMode)}
+          mode={importNotesMode}
+          onClose={() => setImportNotesMode(null)}
+          onImportVisits={(newVisits, noteIds) => {
+            setVisits((prev) => [...prev, ...(newVisits as WorkPlanVisitRecord[])]);
+            setImportedNoteIds((prev) => [...new Set([...prev, ...noteIds])]);
+            toast.success(`Imported ${newVisits.length} visit(s) with full details from Scratchpad`);
+          }}
+          onImportTasks={(newWorks, noteIds) => {
+            const currentCount = works.length;
+            const sequenced = newWorks.map((w, i) => ({
+              ...w,
+              sequence: currentCount + i + 1,
+              status: w.status || "created",
+            }));
+            setWorks((prev) => [...prev, ...(sequenced as WorkPlanWorkRecord[])]);
+            setImportedNoteIds((prev) => [...new Set([...prev, ...noteIds])]);
+            toast.success(`Imported ${newWorks.length} task(s) with full details from Scratchpad`);
           }}
         />
       )}

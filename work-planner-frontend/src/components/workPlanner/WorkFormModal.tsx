@@ -338,17 +338,17 @@ export function WorkFormModal({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[1px]"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-3 sm:p-4 backdrop-blur-[1px]"
       role="presentation"
       onClick={() => !isSaving && onClose()}
     >
       <div
         role="dialog"
         aria-modal="true"
-        className="w-full max-w-lg overflow-hidden rounded-xl border border-border bg-card shadow-xl"
+        className="w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        <div className="flex items-center justify-between border-b border-border px-4 sm:px-5 py-3 sm:py-4">
           <div>
             <h2 className="text-base font-semibold text-foreground">
               {mode === "create" ? "Add Work Task" : "Edit Work Task"}
@@ -371,7 +371,7 @@ export function WorkFormModal({
           </button>
         </div>
 
-        <div className="space-y-4 px-5 py-4">
+        <div className="flex-1 overflow-y-auto space-y-4 px-4 sm:px-5 py-3.5 sm:py-4">
           {/* Date & Executive Assignment Bar within Scope */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-surface-muted/60 rounded-xl border border-border">
             <div>

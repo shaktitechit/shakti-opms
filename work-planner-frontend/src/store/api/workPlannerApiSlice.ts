@@ -9,6 +9,10 @@ import type {
   WorkPlannerStats,
   SeniorRemarkFeedItem,
   SeniorRemarksStats,
+  UserNoteRecord,
+  UserNoteKpis,
+  BulkConvertToWorkPlanPayload,
+  MarkNotesConvertedPayload,
 } from "@/types/workPlanner";
 
 function normalizePaginatedResponse<T>(res: any): {
@@ -653,6 +657,123 @@ export const workPlannerApiSlice = baseApi.injectEndpoints({
       }),
       invalidatesTags: ["SeniorRemarks", "WorkPlan", "Expense"],
     }),
+    getNotes: builder.query<UserNoteRecord[], Record<string, any> | void>({
+      query: (params) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/notes`,
+        params: params || {},
+      }),
+      transformResponse: (res: any) => {
+        if (Array.isArray(res)) return res;
+        if (Array.isArray(res?.data)) return res.data;
+        return [];
+      },
+      providesTags: (result) =>
+        result
+          ? [
+              ...result.map(({ _id, id }) => ({ type: "UserNotes" as const, id: _id || id })),
+              { type: "UserNotes", id: "LIST" },
+            ]
+          : [{ type: "UserNotes", id: "LIST" }],
+    }),
+    getNotesKpis: builder.query<UserNoteKpis, void>({
+      query: () => `${WORK_PLANNER_SERVICE_URL}/api/work-planner/notes/kpis`,
+      transformResponse: (res: any) => (res?.data !== undefined ? res.data : res),
+      providesTags: [{ type: "UserNotes", id: "LIST" }],
+    }),
+    getNote: builder.query<UserNoteRecord, string>({
+      query: (id) => `${WORK_PLANNER_SERVICE_URL}/api/work-planner/notes/${id}`,
+      transformResponse: (res: any) => (res?.data !== undefined ? res.data : res),
+      providesTags: (_result, _error, id) => [{ type: "UserNotes", id }],
+    }),
+    createNote: builder.mutation<UserNoteRecord, Partial<UserNoteRecord>>({
+      query: (body) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/notes`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: [{ type: "UserNotes", id: "LIST" }],
+    }),
+    updateNote: builder.mutation<UserNoteRecord, { id: string } & Partial<UserNoteRecord>>({
+      query: ({ id, ...body }) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/notes/${id}`,
+        method: "PATCH",
+        body,
+      }),
+      invalidatesTags: (_result, _error, { id }) => [
+        { type: "UserNotes", id },
+        { type: "UserNotes", id: "LIST" },
+      ],
+    }),
+    deleteNote: builder.mutation<{ success: boolean; message?: string }, string>({
+      query: (id) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/notes/${id}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: [{ type: "UserNotes", id: "LIST" }],
+    }),
+    togglePinNote: builder.mutation<UserNoteRecord, string>({
+      query: (id) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/notes/${id}/toggle-pin`,
+        method: "POST",
+      }),
+      invalidatesTags: (_result, _error, id) => [
+        { type: "UserNotes", id },
+        { type: "UserNotes", id: "LIST" },
+      ],
+    }),
+    toggleArchiveNote: builder.mutation<UserNoteRecord, string>({
+      query: (id) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/notes/${id}/toggle-archive`,
+        method: "POST",
+      }),
+      invalidatesTags: (_result, _error, id) => [
+        { type: "UserNotes", id },
+        { type: "UserNotes", id: "LIST" },
+      ],
+    }),
+    toggleCompleteNote: builder.mutation<UserNoteRecord, string>({
+      query: (id) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/notes/${id}/toggle-complete`,
+        method: "PATCH",
+      }),
+      invalidatesTags: (_result, _error, id) => [
+        { type: "UserNotes", id },
+        { type: "UserNotes", id: "LIST" },
+      ],
+    }),
+    bulkConvertToWorkPlan: builder.mutation<
+      {
+        success: boolean;
+        message: string;
+        work_plan_id: string;
+        plan_date: string;
+        converted_count: number;
+        converted_note_ids: string[];
+      },
+      BulkConvertToWorkPlanPayload
+    >({
+      query: (body) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/notes/bulk-convert`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: [
+        { type: "UserNotes", id: "LIST" },
+        "WorkPlan",
+        "WorkPlanDraft",
+      ],
+    }),
+    markNotesConverted: builder.mutation<
+      { success: boolean; count: number; message?: string },
+      MarkNotesConvertedPayload
+    >({
+      query: (body) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/notes/mark-converted`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: [{ type: "UserNotes", id: "LIST" }],
+    }),
   }),
 });
 
@@ -727,4 +848,17 @@ export const {
   useLazyGetSeniorRemarksFeedQuery,
   useAddJuniorFollowupMutation,
   useUpdateSeniorRemarkStatusMutation,
+  useGetNotesQuery,
+  useLazyGetNotesQuery,
+  useGetNotesKpisQuery,
+  useGetNoteQuery,
+  useLazyGetNoteQuery,
+  useCreateNoteMutation,
+  useUpdateNoteMutation,
+  useDeleteNoteMutation,
+  useTogglePinNoteMutation,
+  useToggleArchiveNoteMutation,
+  useToggleCompleteNoteMutation,
+  useBulkConvertToWorkPlanMutation,
+  useMarkNotesConvertedMutation,
 } = workPlannerApiSlice;

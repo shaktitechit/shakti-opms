@@ -100,7 +100,7 @@ export function DayEndRichEditor({
       className={`flex flex-col rounded-xl border border-border bg-card shadow-xs overflow-hidden ${className}`}
     >
       {/* Sticky Rich Toolbar */}
-      <div className="flex flex-wrap items-center gap-1 border-b border-border bg-surface-muted/50 p-2 text-muted select-none">
+      <div className="flex items-center gap-1 border-b border-border bg-surface-muted/50 p-1.5 sm:p-2 text-muted select-none overflow-x-auto no-scrollbar flex-nowrap sm:flex-wrap shrink-0">
         {/* Undo / Redo */}
         <button
           type="button"
@@ -325,7 +325,7 @@ export function DayEndRichEditor({
         onBlur={emitChange}
         style={{ minHeight }}
         data-placeholder={placeholder}
-        className="day-end-rich-content flex-1 overflow-y-auto p-5 text-sm text-foreground focus:outline-hidden prose prose-sm max-w-none dark:prose-invert"
+        className="day-end-rich-content flex-1 overflow-y-auto p-3 sm:p-5 text-xs sm:text-sm text-foreground focus:outline-hidden prose prose-sm max-w-none dark:prose-invert"
       />
     </div>
   );

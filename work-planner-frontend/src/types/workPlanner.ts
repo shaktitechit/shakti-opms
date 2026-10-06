@@ -514,3 +514,86 @@ export type UserSession = {
   user: AuthUser;
 };
 
+export interface UserNoteReminder {
+  enabled: boolean;
+  remind_at?: string | null;
+  notify_app?: boolean;
+  notify_email?: boolean;
+  is_sent?: boolean;
+  sent_at?: string | null;
+}
+
+export interface UserNoteContact {
+  contact_person?: string;
+  contact_number?: string;
+}
+
+export interface UserNoteRecord {
+  _id: string;
+  id?: string;
+  user: string | { _id: string; name: string; email: string };
+  company_id?: string;
+  type: "task" | "visit" | "general";
+  title: string;
+  description?: string;
+  content?: string;
+  color?: "default" | "emerald" | "blue" | "amber" | "rose" | "purple";
+  category?: string;
+  tags?: string[];
+  is_pinned?: boolean;
+  is_archived?: boolean;
+
+  // Task-specific
+  priority?: "low" | "medium" | "high" | "urgent";
+  target_date?: string | null;
+  is_completed?: boolean;
+  completed_at?: string | null;
+
+  // Visit-specific
+  party?: string | { _id: string; party_name?: string; legal_name?: string; city?: string; state?: string; district?: string } | null;
+  party_name?: string;
+  party_type?: "existing" | "new_party" | "new_lead";
+  contact_person?: string;
+  contact_number?: string;
+  contacts?: UserNoteContact[];
+  locality?: string;
+  city?: string;
+  purpose?: string;
+  planned_time?: string;
+
+  // Work Plan Conversion Link
+  is_converted_to_work_plan?: boolean;
+  work_plan?: string | { _id: string; plan_date?: string; status?: string; plan_type?: string; location?: string } | null;
+  work_plan_item_id?: string | null;
+  work_plan_date?: string | null;
+  converted_at?: string | null;
+
+  // Reminder
+  reminder?: UserNoteReminder;
+
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UserNoteKpis {
+  total: number;
+  tasks: number;
+  visits: number;
+  general: number;
+  pending: number;
+  converted: number;
+  reminders: number;
+}
+
+export interface BulkConvertToWorkPlanPayload {
+  note_ids: string[];
+  target_date: string;
+}
+
+export interface MarkNotesConvertedPayload {
+  note_ids: string[];
+  work_plan_id?: string;
+  work_plan_date?: string;
+}
+
+

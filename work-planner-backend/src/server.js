@@ -20,6 +20,9 @@ async function startServer() {
     const { startSchedulers } = require('./jobs/workPlannerScheduler');
     startSchedulers();
 
+    const { startNoteReminderScheduler } = require('./jobs/noteReminderScheduler');
+    startNoteReminderScheduler();
+
     const serverPort = PORT || 7007;
     const httpServer = http.createServer(app);
 

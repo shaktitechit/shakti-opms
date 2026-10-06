@@ -122,6 +122,7 @@ export const baseApi = createApi({
     "WorkPlanTeamAnalytics",
     "WorkPlanDraft",
     "SeniorRemarks",
+    "UserNotes",
   ],
   endpoints: () => ({}),
 });

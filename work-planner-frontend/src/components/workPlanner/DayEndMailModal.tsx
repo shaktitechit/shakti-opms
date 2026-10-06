@@ -807,49 +807,50 @@ export function DayEndMailModal({
   return (
     <div className="fixed inset-0 z-50 flex flex-col w-screen h-screen bg-card text-foreground overflow-hidden">
       {/* Header Bar */}
-      <div className="flex items-center justify-between border-b border-border bg-surface px-6 py-3.5 shrink-0 shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-            <Mail className="h-5 w-5" />
+      {/* Header Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-border bg-surface px-4 py-3 sm:px-6 sm:py-3.5 shrink-0 shadow-xs gap-3">
+        <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0">
+          <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">
+            <Mail className="h-4 w-4 sm:h-5 sm:w-5" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 className="text-base font-bold text-foreground">Day End Report Mail</h3>
-              <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-sm sm:text-base font-bold text-foreground truncate">Day End Report Mail</h3>
+              <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] sm:text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 shrink-0">
                 Official Completion Dispatch
               </span>
             </div>
-            <p className="text-xs text-muted">
+            <p className="text-[11px] sm:text-xs text-muted line-clamp-1 sm:line-clamp-2">
               Standard email composer panel to review, customize, attach files, and dispatch report to managers
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0 self-end sm:self-auto">
           <button
             type="button"
             disabled={isBusy}
             onClick={onClose}
             title="Discard and close"
-            className="rounded-xl border border-border bg-card px-4 py-2 text-xs font-semibold text-muted hover:bg-surface-muted hover:text-foreground transition cursor-pointer"
+            className="rounded-xl border border-border bg-card px-3 sm:px-4 py-1.5 sm:py-2 text-xs font-semibold text-muted hover:bg-surface-muted hover:text-foreground transition cursor-pointer"
           >
-            Discard & Close
+            Discard
           </button>
           <button
             type="button"
             disabled={isBusy || uploadingFiles.length > 0}
             onClick={handleSubmitDayEnd}
-            className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:opacity-50 transition cursor-pointer"
+            className="inline-flex items-center gap-1.5 sm:gap-2 rounded-xl bg-emerald-600 px-3.5 sm:px-5 py-1.5 sm:py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:opacity-50 transition cursor-pointer shrink-0"
           >
             {isBusy ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Sending & Completing...
+                <Loader2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" />
+                <span>Sending...</span>
               </>
             ) : (
               <>
-                <Send className="h-4 w-4" />
-                Send & Complete Day End
+                <Send className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                <span>Send & Complete</span>
               </>
             )}
           </button>
@@ -857,190 +858,190 @@ export function DayEndMailModal({
       </div>
 
       {/* Email Header Fields */}
-      <div className="border-b border-border bg-card p-4 space-y-3 shrink-0 text-xs">
-          {/* FROM Field */}
-          <div className="flex items-center gap-3">
-            <span className="w-16 font-semibold text-muted shrink-0 text-right">From:</span>
-            <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface-muted/60 px-3 py-1.5 text-xs text-foreground">
-              <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-[10px] font-bold text-white uppercase">
-                {fromName.slice(0, 1)}
-              </div>
-              <span className="font-medium">{fromName}</span>
-              <span className="text-muted text-[11px]">&lt;{fromEmail}&gt;</span>
+      <div className="border-b border-border bg-card p-3 sm:p-4 space-y-2.5 sm:space-y-3 shrink-0 text-xs overflow-x-hidden">
+        {/* FROM Field */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+          <span className="w-auto sm:w-16 font-semibold text-muted shrink-0 text-left sm:text-right">From:</span>
+          <div className="inline-flex items-center gap-2 rounded-lg border border-border bg-surface-muted/60 px-3 py-1.5 text-xs text-foreground max-w-full overflow-hidden">
+            <div className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-[10px] font-bold text-white uppercase shrink-0">
+              {fromName.slice(0, 1)}
             </div>
+            <span className="font-medium truncate">{fromName}</span>
+            <span className="text-muted text-[11px] truncate">&lt;{fromEmail}&gt;</span>
           </div>
+        </div>
 
-          {/* TO Field */}
-          <div className="flex items-start sm:items-center gap-3">
-            <span className="w-16 font-semibold text-muted shrink-0 text-right pt-1 sm:pt-0">To:</span>
-            <div className="flex-1 flex flex-wrap items-center gap-2">
-              <div className="relative flex-1 min-w-[240px]">
-                <input
-                  type="email"
-                  value={toEmail}
-                  onChange={(e) => {
-                    userEditedToRef.current = true;
-                    setToEmail(e.target.value);
-                  }}
-                  placeholder="Primary Manager Email (e.g. manager@shaktipumps.com)"
-                  className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-foreground focus:border-emerald-500 focus:outline-hidden"
-                />
-              </div>
+        {/* TO Field */}
+        <div className="flex flex-col sm:flex-row sm:items-start md:items-center gap-1 sm:gap-3">
+          <span className="w-auto sm:w-16 font-semibold text-muted shrink-0 text-left sm:text-right pt-0 sm:pt-1 md:pt-0">To:</span>
+          <div className="flex-1 flex flex-col md:flex-row md:items-center gap-2 min-w-0 max-w-full">
+            <div className="relative flex-1 min-w-0">
+              <input
+                type="email"
+                value={toEmail}
+                onChange={(e) => {
+                  userEditedToRef.current = true;
+                  setToEmail(e.target.value);
+                }}
+                placeholder="Primary Manager Email (e.g. manager@shaktipumps.com)"
+                className="w-full rounded-lg border border-border bg-surface px-3 py-1.5 text-xs text-foreground focus:border-emerald-500 focus:outline-hidden"
+              />
+            </div>
 
-              {availableManagers.length > 0 && (
-                <div className="flex items-center gap-1.5 overflow-x-auto text-[11px] flex-wrap pt-1 sm:pt-0">
-                  <span className="text-muted text-[11px] font-semibold shrink-0">Quick pick:</span>
-                  {availableManagers.map((m) => {
-                    const isSelected = toEmail.toLowerCase() === m.email.toLowerCase();
-                    const isInCc = ccEmails.some((e) => e.toLowerCase() === m.email.toLowerCase());
-                    return (
-                      <div key={m._id || m.email} className="inline-flex items-center rounded-lg border border-border bg-surface overflow-hidden shrink-0">
+            {availableManagers.length > 0 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 text-[11px] max-w-full">
+                <span className="text-muted text-[10px] sm:text-[11px] font-semibold shrink-0">Quick pick:</span>
+                {availableManagers.map((m) => {
+                  const isSelected = toEmail.toLowerCase() === m.email.toLowerCase();
+                  const isInCc = ccEmails.some((e) => e.toLowerCase() === m.email.toLowerCase());
+                  return (
+                    <div key={m._id || m.email} className="inline-flex items-center rounded-lg border border-border bg-surface overflow-hidden shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          userEditedToRef.current = true;
+                          setToEmail(m.email);
+                        }}
+                        className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition cursor-pointer text-[11px] ${
+                          isSelected
+                            ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold"
+                            : "hover:bg-surface-muted text-foreground"
+                        }`}
+                        title={`Set TO: ${m.name} (${m.email})`}
+                      >
+                        <span className="truncate max-w-[110px] sm:max-w-none">{m.name}</span>
+                        <span
+                          className={`rounded px-1 py-0.2 text-[9px] font-semibold border ${
+                            m.isReportingManager
+                              ? "bg-primary/15 text-primary border-primary/20"
+                              : m.roleBadge === "Portal Admin"
+                              ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/20"
+                              : m.roleBadge === "Portal Coordinator"
+                              ? "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border-indigo-500/20"
+                              : "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/20"
+                          }`}
+                        >
+                          {m.roleBadge}
+                        </span>
+                      </button>
+                      {!isSelected && !isInCc && (
                         <button
                           type="button"
-                          onClick={() => {
-                            userEditedToRef.current = true;
-                            setToEmail(m.email);
-                          }}
-                          className={`inline-flex items-center gap-1 px-2 py-1 font-medium transition cursor-pointer text-xs ${
-                            isSelected
-                              ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 font-bold"
-                              : "hover:bg-surface-muted text-foreground"
-                          }`}
-                          title={`Set TO: ${m.name} (${m.email})`}
+                          onClick={() => handleAddCc(m.email)}
+                          className="px-1.5 py-1 text-[10px] text-muted hover:text-primary hover:bg-primary/10 border-l border-border transition cursor-pointer font-semibold"
+                          title={`Add ${m.name} to CC`}
                         >
-                          <span>{m.name}</span>
-                          <span
-                            className={`rounded px-1 py-0.2 text-[9px] font-semibold border ${
-                              m.isReportingManager
-                                ? "bg-primary/15 text-primary border-primary/20"
-                                : m.roleBadge === "Portal Admin"
-                                ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border-purple-500/20"
-                                : m.roleBadge === "Portal Coordinator"
-                                ? "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border-indigo-500/20"
-                                : "bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/20"
-                            }`}
-                          >
-                            {m.roleBadge}
-                          </span>
+                          +CC
                         </button>
-                        {!isSelected && !isInCc && (
-                          <button
-                            type="button"
-                            onClick={() => handleAddCc(m.email)}
-                            className="px-1.5 py-1 text-[10px] text-muted hover:text-primary hover:bg-primary/10 border-l border-border transition cursor-pointer font-semibold"
-                            title={`Add ${m.name} to CC`}
-                          >
-                            +CC
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
+        </div>
 
-          {/* CC Field */}
-          <div className="flex items-start gap-3">
-            <span className="w-16 font-semibold text-muted shrink-0 text-right pt-1.5">Cc:</span>
-            <div className="flex-1 flex flex-wrap items-center gap-1.5 min-h-[32px]">
-              {ccEmails.map((email, idx) => (
-                <span
-                  key={idx}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs text-foreground"
-                >
-                  <Users className="h-3 w-3 text-muted" />
-                  <span>{email}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveCc(idx)}
-                    className="rounded hover:bg-surface-muted p-0.5 text-muted hover:text-foreground cursor-pointer"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              ))}
-
-              {isAddingCc ? (
-                <div className="flex items-center gap-1">
-                  <input
-                    type="email"
-                    autoFocus
-                    value={newCcInput}
-                    onChange={(e) => setNewCcInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        handleAddCc(newCcInput);
-                      } else if (e.key === "Escape") {
-                        setIsAddingCc(false);
-                      }
-                    }}
-                    placeholder="email@shaktipumps.com"
-                    className="rounded-lg border border-border bg-surface px-2.5 py-1 text-xs text-foreground focus:border-emerald-500 focus:outline-hidden"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleAddCc(newCcInput)}
-                    className="rounded-lg bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-700 cursor-pointer"
-                  >
-                    Add
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsAddingCc(false)}
-                    className="rounded-lg border border-border px-2 py-1 text-xs text-muted hover:bg-surface-muted cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
+        {/* CC Field */}
+        <div className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-3">
+          <span className="w-auto sm:w-16 font-semibold text-muted shrink-0 text-left sm:text-right pt-0 sm:pt-1.5">Cc:</span>
+          <div className="flex-1 flex flex-wrap items-center gap-1.5 min-h-[32px] min-w-0">
+            {ccEmails.map((email, idx) => (
+              <span
+                key={idx}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs text-foreground max-w-full"
+              >
+                <Users className="h-3 w-3 text-muted shrink-0" />
+                <span className="truncate max-w-[140px] sm:max-w-none">{email}</span>
                 <button
                   type="button"
-                  onClick={() => setIsAddingCc(true)}
-                  className="inline-flex items-center gap-1 rounded-lg border border-dashed border-border px-2.5 py-1 text-xs font-semibold text-muted hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition cursor-pointer"
+                  onClick={() => handleRemoveCc(idx)}
+                  className="rounded hover:bg-surface-muted p-0.5 text-muted hover:text-foreground cursor-pointer shrink-0"
                 >
-                  <Plus className="h-3 w-3" />
-                  Add CC
+                  <X className="h-3 w-3" />
                 </button>
-              )}
+              </span>
+            ))}
 
-              {/* Quick suggestions from remaining managers */}
-              {availableManagers
-                .filter(
-                  (m) =>
-                    m.email !== toEmail &&
-                    !ccEmails.some((c) => c.toLowerCase() === m.email.toLowerCase())
-                )
-                .slice(0, 3)
-                .map((m) => (
-                  <button
-                    key={m._id}
-                    type="button"
-                    onClick={() => handleAddCc(m.email)}
-                    className="rounded-md border border-border/80 bg-surface/50 px-2 py-0.5 text-[11px] text-muted hover:bg-surface-muted transition cursor-pointer"
-                  >
-                    + {m.name}
-                  </button>
-                ))}
-            </div>
-          </div>
+            {isAddingCc ? (
+              <div className="flex items-center gap-1 flex-wrap">
+                <input
+                  type="email"
+                  autoFocus
+                  value={newCcInput}
+                  onChange={(e) => setNewCcInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAddCc(newCcInput);
+                    } else if (e.key === "Escape") {
+                      setIsAddingCc(false);
+                    }
+                  }}
+                  placeholder="email@shaktipumps.com"
+                  className="rounded-lg border border-border bg-surface px-2.5 py-1 text-xs text-foreground focus:border-emerald-500 focus:outline-hidden min-w-[160px]"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleAddCc(newCcInput)}
+                  className="rounded-lg bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-700 cursor-pointer"
+                >
+                  Add
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAddingCc(false)}
+                  className="rounded-lg border border-border px-2 py-1 text-xs text-muted hover:bg-surface-muted cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsAddingCc(true)}
+                className="inline-flex items-center gap-1 rounded-lg border border-dashed border-border px-2.5 py-1 text-xs font-semibold text-muted hover:border-emerald-500 hover:text-emerald-600 dark:hover:text-emerald-400 transition cursor-pointer shrink-0"
+              >
+                <Plus className="h-3 w-3" />
+                Add CC
+              </button>
+            )}
 
-          {/* SUBJECT Field */}
-          <div className="flex items-center gap-3">
-            <span className="w-16 font-semibold text-muted shrink-0 text-right">Subject:</span>
-            <input
-              type="text"
-              value={subject}
-              onChange={(e) => {
-                userEditedSubjectRef.current = true;
-                setSubject(e.target.value);
-              }}
-              placeholder="Day End Report Subject"
-              className="flex-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground focus:border-emerald-500 focus:outline-hidden"
-            />
+            {/* Quick suggestions from remaining managers */}
+            {availableManagers
+              .filter(
+                (m) =>
+                  m.email !== toEmail &&
+                  !ccEmails.some((c) => c.toLowerCase() === m.email.toLowerCase())
+              )
+              .slice(0, 3)
+              .map((m) => (
+                <button
+                  key={m._id}
+                  type="button"
+                  onClick={() => handleAddCc(m.email)}
+                  className="rounded-md border border-border/80 bg-surface/50 px-2 py-0.5 text-[11px] text-muted hover:bg-surface-muted transition cursor-pointer shrink-0"
+                >
+                  + {m.name}
+                </button>
+              ))}
           </div>
+        </div>
+
+        {/* SUBJECT Field */}
+        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+          <span className="w-auto sm:w-16 font-semibold text-muted shrink-0 text-left sm:text-right">Subject:</span>
+          <input
+            type="text"
+            value={subject}
+            onChange={(e) => {
+              userEditedSubjectRef.current = true;
+              setSubject(e.target.value);
+            }}
+            placeholder="Day End Report Subject"
+            className="flex-1 rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-foreground focus:border-emerald-500 focus:outline-hidden min-w-0"
+          />
+        </div>
 
           {/* ATTACHMENTS Bar */}
           <div className="flex items-start gap-3 pt-1">

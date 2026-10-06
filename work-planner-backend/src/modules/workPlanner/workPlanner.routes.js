@@ -10,6 +10,7 @@ const {
   requireWorkPlannerRole,
 } = require('../../middlewares/workPlannerAuth.middleware');
 const controller = require('./workPlanner.controller');
+const notesController = require('./notes.controller');
 const teamController = require('./team.controller');
 const analyticsController = require('./workPlanAnalytics.controller');
 const multer = require('multer');
@@ -56,6 +57,20 @@ router.delete('/team/edges/:subordinateId', adminRole, teamController.removeEdge
 router.get('/drafts', controller.getDraft);
 router.put('/drafts', controller.saveDraft);
 router.delete('/drafts', controller.deleteDraft);
+
+// Personal Scratchpad / User Notes (must be before /:id)
+router.get('/notes', notesController.listNotes);
+router.get('/notes/kpis', notesController.getNotesKpis);
+router.post('/notes', notesController.createNote);
+router.post('/notes/bulk-convert', notesController.bulkConvertToWorkPlan);
+router.post('/notes/batch-convert', notesController.bulkConvertToWorkPlan);
+router.post('/notes/mark-converted', notesController.markNotesConverted);
+router.get('/notes/:id', notesController.getNote);
+router.patch('/notes/:id', notesController.updateNote);
+router.delete('/notes/:id', notesController.deleteNote);
+router.post('/notes/:id/toggle-pin', notesController.togglePin);
+router.post('/notes/:id/toggle-archive', notesController.toggleArchive);
+router.patch('/notes/:id/toggle-complete', notesController.toggleTaskComplete);
 
 // Senior Remarks, Objections & Junior Follow-ups
 router.get('/senior-remarks', controller.getSeniorRemarks);
