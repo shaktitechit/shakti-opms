@@ -27,6 +27,7 @@ export interface FlatItem {
   titleOrParty: string;
   contactPerson: string;
   contactNumber: string;
+  parentLocation: string;
   locationOrAddress: string;
   descriptionOrNotes: string;
   plannedTime: string;
@@ -99,6 +100,7 @@ export function DownloadTasksVisitsReportModal({
             titleOrParty: v.party_name || (typeof v.party === "object" ? (v.party as any)?.party_name : undefined) || "Field Visit",
             contactPerson: contactPersonStr,
             contactNumber: contactNumberStr,
+            parentLocation: p.location || "—",
             locationOrAddress: v.address || p.location || "—",
             descriptionOrNotes: v.purpose || v.notes || "—",
             plannedTime: formatTime(v.planned_start_time),
@@ -121,6 +123,7 @@ export function DownloadTasksVisitsReportModal({
             titleOrParty: w.title || "Work Task",
             contactPerson: "—",
             contactNumber: "—",
+            parentLocation: p.location || "—",
             locationOrAddress: p.location || "Office / Remote",
             descriptionOrNotes: w.description || "—",
             plannedTime: formatTime(w.planned_start_time),
@@ -177,6 +180,7 @@ export function DownloadTasksVisitsReportModal({
         { key: "itemType", label: "Category" },
         { key: "executiveName", label: "Executive Name" },
         { key: "executiveEmail", label: "Executive Email" },
+        { key: "parentLocation", label: "Parent Plan Location" },
         { key: "titleOrParty", label: "Party Name / Task Title" },
         { key: "contactPerson", label: "Contact Person" },
         { key: "contactNumber", label: "Contact Number" },
@@ -186,6 +190,12 @@ export function DownloadTasksVisitsReportModal({
         { key: "status", label: "Status" },
         { key: "outcomeOrRemarks", label: "Outcome / Remarks" },
         { key: "managerRemarks", label: "Supervisory / Manager Remarks" },
+        { key: "meetingDoctor", label: "Meeting With Doctor" },
+        { key: "meetingPurchase", label: "Meeting With Purchase" },
+        { key: "meetingFinance", label: "Meeting With Finance" },
+        { key: "meetingEngineer", label: "Meeting With Engineer" },
+        { key: "newProductIntroduced", label: "New Product Introduced" },
+        { key: "orderReceived", label: "Order Received" },
       ];
 
       const rows = filteredItems.map((item) => ({
@@ -193,6 +203,7 @@ export function DownloadTasksVisitsReportModal({
         itemType: item.itemType === "visit" ? "Field Visit" : "Work Task",
         executiveName: item.executiveName,
         executiveEmail: item.executiveEmail,
+        parentLocation: item.parentLocation || "—",
         titleOrParty: item.titleOrParty,
         contactPerson: item.contactPerson,
         contactNumber: item.contactNumber,
@@ -208,6 +219,12 @@ export function DownloadTasksVisitsReportModal({
             "—"
         ),
         managerRemarks: stripHtml(item.raw?.manager_remarks || "—"),
+        meetingDoctor: item.itemType === "visit" ? (item.raw?.meeting_with_doctor ? "Yes" : "No") : "N/A",
+        meetingPurchase: item.itemType === "visit" ? (item.raw?.meeting_with_purchase ? "Yes" : "No") : "N/A",
+        meetingFinance: item.itemType === "visit" ? (item.raw?.meeting_with_finance ? "Yes" : "No") : "N/A",
+        meetingEngineer: item.itemType === "visit" ? (item.raw?.meeting_with_engineer ? "Yes" : "No") : "N/A",
+        newProductIntroduced: item.itemType === "visit" ? (item.raw?.new_product_introduced ? "Yes" : "No") : "N/A",
+        orderReceived: item.itemType === "visit" ? (item.raw?.order_received ? "Yes" : "No") : "N/A",
       }));
 
       const filename = `Tasks_Visits_Report_${new Date().toISOString().slice(0, 10)}.xlsx`;

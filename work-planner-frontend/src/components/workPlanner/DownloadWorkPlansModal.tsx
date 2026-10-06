@@ -344,8 +344,8 @@ export function DownloadWorkPlansModal({
             const endTime = v.planned_end_time ? formatTime(v.planned_end_time) : "";
             const plannedTime = startTime || endTime ? `${startTime} - ${endTime}` : "Not set";
 
-            const checkInTime = v.actual_check_in ? formatTime(v.actual_check_in) : "";
-            const checkOutTime = v.actual_check_out ? formatTime(v.actual_check_out) : "";
+            const checkInTime = v.actual_check_in ? formatTime(v.actual_check_in) : (v.check_in_time || "");
+            const checkOutTime = v.actual_check_out ? formatTime(v.actual_check_out) : (v.check_out_time || "");
             const actualTime = checkInTime || checkOutTime ? `In: ${checkInTime} / Out: ${checkOutTime}` : "—";
 
             // Checklist indicators
@@ -371,10 +371,23 @@ export function DownloadWorkPlansModal({
               address: address || "—",
               plannedTime,
               actualTime,
+              actualCheckIn: checkInTime,
+              actualCheckOut: checkOutTime,
               status: v.status || "created",
               outcome: v.outcome || "—",
               checklistNotes,
               purpose: v.purpose || "Field Visit",
+              notes: v.notes || "",
+              completionRemarks: v.outcome || "",
+              pendingRemarks: v.pending_remarks || "",
+              inProgressRemarks: v.in_progress_remarks || "",
+              nextFollowupDate: v.next_followup_date || "",
+              meetingWithDoctor: Boolean(v.meeting_with_doctor),
+              meetingWithPurchase: Boolean(v.meeting_with_purchase),
+              meetingWithFinance: Boolean(v.meeting_with_finance),
+              meetingWithEngineer: Boolean(v.meeting_with_engineer),
+              newProductIntroduced: Boolean(v.new_product_introduced),
+              orderReceived: Boolean(v.order_received),
               managerRemarks,
               authorityRemarks,
               rescheduledDate,
@@ -419,6 +432,10 @@ export function DownloadWorkPlansModal({
               plannedTime,
               status: w.status || "created",
               remarks: w.completion_remarks || w.outcome || "—",
+              completionRemarks: w.completion_remarks || w.outcome || "",
+              pendingRemarks: w.pending_remarks || "",
+              inProgressRemarks: w.in_progress_remarks || "",
+              outcome: w.outcome || w.completion_remarks || "",
               managerRemarks,
               authorityRemarks,
               rescheduledDate,
@@ -604,7 +621,7 @@ export function DownloadWorkPlansModal({
 
   if (!open) return null;
 
-  // Export Hierarchical Work Plans CSV
+  // Export Hierarchical Work Plans CSV with fully expanded columns
   function exportCsv() {
     setDownloading(true);
     try {
@@ -613,100 +630,159 @@ export function DownloadWorkPlansModal({
         "Record Level",
         "Plan Date",
         "Sales Executive",
+        "Parent Plan Location",
+        "Plan Type",
+        "Activity / Purpose / Title",
+        "Contact Person & Phone",
+        "Visit Address / Location",
         "Discussed With Manager",
         "Discussed Manager",
         "Discussion Method",
-        "Plan Type / Activity",
-        "Party Name / Task Title",
-        "Contact / Description",
-        "Location / City",
         "Planned Time",
+        "Actual Check-In",
+        "Actual Check-Out",
         "Rescheduled Date",
-        "Actual Check-In/Out",
         "Status",
-        "Outcome / Completion Remarks",
+        "Visit Purpose / Task Objective",
+        "Notes & Description",
+        "Outcome",
+        "Completion Remarks",
+        "In-Progress Remarks",
+        "Pending Remarks",
+        "Next Follow-Up Date",
         "Senior Remarks",
-        "Doctor/Purchase Meeting Checklist",
+        "Meeting With Doctor",
+        "Meeting With Purchase",
+        "Meeting With Finance",
+        "Meeting With Engineer",
+        "New Product Introduced",
+        "Order Received",
       ];
 
-      const rows: Array<Array<string | number>> = [];
+      const csvEscape = (val: unknown) => {
+        if (val == null) return '""';
+        const s = stripHtml(String(val)).trim();
+        return `"${s.replace(/"/g, '""')}"`;
+      };
+
+      const rows: string[] = [];
 
       filteredPlanTree.forEach((p, pIdx) => {
         const planIndex = pIdx + 1;
         const execName = salesUserLabel(p.salesUser);
+        const parentLocation = p.planLocation || "—";
 
         // 1. Work Plan Row
         rows.push([
-          planIndex,
-          "WORK PLAN",
-          formatPlanDate(p.planDate),
-          `"${execName.replace(/"/g, '""')}"`,
-          p.isDiscussedWithManager ? "Yes" : "No",
-          `"${(p.discussedManagerName || (p.isDiscussedWithManager ? "Manager" : "—")).replace(/"/g, '""')}"`,
-          p.isDiscussedWithManager ? formatDiscussionMethod(p.discussionMethod) : "—",
-          p.planType,
-          `"${p.planType} Plan (${p.totalVisits} Visits, ${p.totalTasks} Tasks)"`,
-          `"${(p.planRemarks || "").replace(/"/g, '""')}"`,
-          `"${(p.planLocation || "").replace(/"/g, '""')}"`,
-          "Full Day",
-          "—",
-          "—",
-          p.planStatus,
-          `"${(p.planRemarks || "").replace(/"/g, '""')}"`,
-          `"${(p.supervisoryRemarks || "—").replace(/"/g, '""')}"`,
-          "N/A",
-        ]);
+          csvEscape(planIndex),
+          csvEscape("WORK PLAN"),
+          csvEscape(formatPlanDate(p.planDate)),
+          csvEscape(execName),
+          csvEscape(parentLocation),
+          csvEscape(p.planType),
+          csvEscape(`${p.planType} Plan (${p.totalVisits} Visits, ${p.totalTasks} Tasks)`),
+          csvEscape("N/A"),
+          csvEscape("N/A"),
+          csvEscape(p.isDiscussedWithManager ? "Yes" : "No"),
+          csvEscape(p.discussedManagerName || (p.isDiscussedWithManager ? "Manager" : "—")),
+          csvEscape(p.isDiscussedWithManager ? formatDiscussionMethod(p.discussionMethod) : "—"),
+          csvEscape("Full Day"),
+          csvEscape("N/A"),
+          csvEscape("N/A"),
+          csvEscape("—"),
+          csvEscape(p.planStatus),
+          csvEscape(p.planRemarks || "—"),
+          csvEscape(p.planRemarks || "—"),
+          csvEscape(p.planStatus === "completed" ? "Completed" : "—"),
+          csvEscape(p.planRemarks || "—"),
+          csvEscape("N/A"),
+          csvEscape("N/A"),
+          csvEscape("N/A"),
+          csvEscape(p.supervisoryRemarks || "—"),
+          csvEscape("N/A"),
+          csvEscape("N/A"),
+          csvEscape("N/A"),
+          csvEscape("N/A"),
+          csvEscape("N/A"),
+          csvEscape("N/A"),
+        ].join(","));
 
         // 2. Field Visits Rows
         p.visits.forEach((v, vIdx) => {
           rows.push([
-            `${planIndex}.${vIdx + 1}`,
-            "FIELD VISIT",
-            formatPlanDate(p.planDate),
-            `"${execName.replace(/"/g, '""')}"`,
-            "—",
-            "—",
-            "—",
-            "Field Visit",
-            `"${v.partyName.replace(/"/g, '""')}"`,
-            `"${v.contactInfo.replace(/"/g, '""')}"`,
-            `"${v.address.replace(/"/g, '""')}"`,
-            `"${v.plannedTime.replace(/"/g, '""')}"`,
-            `"${(v.rescheduledDate || "—").replace(/"/g, '""')}"`,
-            `"${v.actualTime.replace(/"/g, '""')}"`,
-            v.status,
-            `"${v.outcome.replace(/"/g, '""')}"`,
-            `"${(v.supervisoryRemarks || "—").replace(/"/g, '""')}"`,
-            `"${v.checklistNotes.replace(/"/g, '""')}"`,
-          ]);
+            csvEscape(`${planIndex}.${vIdx + 1}`),
+            csvEscape("FIELD VISIT"),
+            csvEscape(formatPlanDate(p.planDate)),
+            csvEscape(execName),
+            csvEscape(parentLocation),
+            csvEscape("Field Visit"),
+            csvEscape(v.partyName),
+            csvEscape(v.contactInfo),
+            csvEscape(v.address),
+            csvEscape("N/A"),
+            csvEscape("N/A"),
+            csvEscape("N/A"),
+            csvEscape(v.plannedTime),
+            csvEscape(v.actualCheckIn || "—"),
+            csvEscape(v.actualCheckOut || "—"),
+            csvEscape(v.rescheduledDate || "—"),
+            csvEscape(v.status),
+            csvEscape(v.purpose || "Field Visit"),
+            csvEscape(v.notes || "—"),
+            csvEscape(v.outcome || "—"),
+            csvEscape(v.completionRemarks || v.outcome || "—"),
+            csvEscape(v.inProgressRemarks || "—"),
+            csvEscape(v.pendingRemarks || "—"),
+            csvEscape(v.nextFollowupDate || "—"),
+            csvEscape(v.supervisoryRemarks || "—"),
+            csvEscape(v.meetingWithDoctor ? "Yes" : "No"),
+            csvEscape(v.meetingWithPurchase ? "Yes" : "No"),
+            csvEscape(v.meetingWithFinance ? "Yes" : "No"),
+            csvEscape(v.meetingWithEngineer ? "Yes" : "No"),
+            csvEscape(v.newProductIntroduced ? "Yes" : "No"),
+            csvEscape(v.orderReceived ? "Yes" : "No"),
+          ].join(","));
         });
 
         // 3. Work Tasks Rows
         p.tasks.forEach((w, wIdx) => {
           rows.push([
-            `${planIndex}.${p.visits.length + wIdx + 1}`,
-            "WORK TASK",
-            formatPlanDate(p.planDate),
-            `"${execName.replace(/"/g, '""')}"`,
-            "—",
-            "—",
-            "—",
-            "Work Task",
-            `"${w.title.replace(/"/g, '""')}"`,
-            `"${w.description.replace(/"/g, '""')}"`,
-            `"${(p.planLocation || "Office / Remote").replace(/"/g, '""')}"`,
-            `"${w.plannedTime.replace(/"/g, '""')}"`,
-            `"${(w.rescheduledDate || "—").replace(/"/g, '""')}"`,
-            w.status === "completed" ? "Completed" : "—",
-            w.status,
-            `"${w.remarks.replace(/"/g, '""')}"`,
-            `"${(w.supervisoryRemarks || "—").replace(/"/g, '""')}"`,
-            "N/A",
-          ]);
+            csvEscape(`${planIndex}.${p.visits.length + wIdx + 1}`),
+            csvEscape("WORK TASK"),
+            csvEscape(formatPlanDate(p.planDate)),
+            csvEscape(execName),
+            csvEscape(parentLocation),
+            csvEscape("Work Task"),
+            csvEscape(w.title),
+            csvEscape("N/A"),
+            csvEscape("N/A"),
+            csvEscape("N/A"),
+            csvEscape("N/A"),
+            csvEscape("N/A"),
+            csvEscape(w.plannedTime),
+            csvEscape("N/A"),
+            csvEscape("N/A"),
+            csvEscape(w.rescheduledDate || "—"),
+            csvEscape(w.status),
+            csvEscape(w.title),
+            csvEscape(w.description || "—"),
+            csvEscape(w.outcome || w.remarks || "—"),
+            csvEscape(w.completionRemarks || w.remarks || "—"),
+            csvEscape(w.inProgressRemarks || "—"),
+            csvEscape(w.pendingRemarks || "—"),
+            csvEscape("N/A"),
+            csvEscape(w.supervisoryRemarks || "—"),
+            csvEscape("N/A"),
+            csvEscape("N/A"),
+            csvEscape("N/A"),
+            csvEscape("N/A"),
+            csvEscape("N/A"),
+            csvEscape("N/A"),
+          ].join(","));
         });
       });
 
-      const csvContent = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+      const csvContent = [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -734,6 +810,7 @@ export function DownloadWorkPlansModal({
       filteredPlanTree.forEach((p) => {
         planIndex += 1;
         const execName = salesUserLabel(p.salesUser);
+        const parentLocation = p.planLocation || "—";
 
         const discSummary = p.isDiscussedWithManager
           ? `Discussed with ${p.discussedManagerName || "Manager"} (${formatDiscussionMethod(p.discussionMethod)})`
@@ -745,31 +822,69 @@ export function DownloadWorkPlansModal({
           rowType: "WORK PLAN",
           date: formatPlanDate(p.planDate),
           executive: execName,
-          activity: p.planType === "Visits" ? `Visits Plan (${p.visits.length} Visits)` : `Tasks Plan (${p.tasks.length} Tasks)`,
-          details: [stripHtml(p.planRemarks), discSummary].filter(Boolean).join(" | ") || "—",
+          parentPlanLocation: parentLocation,
+          planType: p.planType,
+          activity: p.planType === "Visits" ? `Visits Plan (${p.visits.length} Visits)` : `${p.planType} Plan (${p.tasks.length} Tasks)`,
+          contacts: "N/A",
+          visitAddress: "N/A",
+          discussedWithManager: p.isDiscussedWithManager ? "Yes" : "No",
+          discussedManagerName: p.discussedManagerName || (p.isDiscussedWithManager ? "Manager" : "—"),
+          discussionMethod: p.isDiscussedWithManager ? formatDiscussionMethod(p.discussionMethod) : "—",
           plannedTime: "Full Day",
+          actualCheckIn: "N/A",
+          actualCheckOut: "N/A",
           rescheduledDate: "—",
           status: p.planStatus.toUpperCase(),
-          remarks: [stripHtml(p.planRemarks), discSummary].filter(Boolean).join(" | ") || "—",
+          purpose: stripHtml(p.planRemarks) || "—",
+          description: [stripHtml(p.planRemarks), discSummary].filter(Boolean).join(" | ") || "—",
+          outcome: p.planStatus === "completed" ? "Completed" : "—",
+          completionRemarks: stripHtml(p.planRemarks) || "—",
+          inProgressRemarks: "N/A",
+          pendingRemarks: "N/A",
+          nextFollowupDate: "N/A",
           supervisoryRemarks: p.supervisoryRemarks || "—",
+          meetingDoctor: "N/A",
+          meetingPurchase: "N/A",
+          meetingFinance: "N/A",
+          meetingEngineer: "N/A",
+          newProductIntroduced: "N/A",
+          orderReceived: "N/A",
         });
 
         // 2. Field Visits Rows
         p.visits.forEach((v, vIdx) => {
-          const outcomeText = v.outcome ? stripHtml(v.outcome) : "";
-          const notesText = v.checklistNotes ? stripHtml(v.checklistNotes) : "";
           rows.push({
             hierarchyId: `${planIndex}.${vIdx + 1}`,
             rowType: "FIELD VISIT",
             date: formatPlanDate(p.planDate),
             executive: execName,
+            parentPlanLocation: parentLocation,
+            planType: "Field Visit",
             activity: `Field Visit: ${v.partyName}`,
-            details: `${v.contactInfo ? v.contactInfo + " | " : ""}${v.address}`,
+            contacts: v.contactInfo || "—",
+            visitAddress: v.address || "—",
+            discussedWithManager: "N/A",
+            discussedManagerName: "N/A",
+            discussionMethod: "N/A",
             plannedTime: v.plannedTime || "—",
+            actualCheckIn: v.actualCheckIn || "—",
+            actualCheckOut: v.actualCheckOut || "—",
             rescheduledDate: v.rescheduledDate || "—",
             status: v.status.toUpperCase(),
-            remarks: `${outcomeText ? "Outcome: " + outcomeText : ""}${notesText ? " Notes: " + notesText : ""}` || "—",
+            purpose: stripHtml(v.purpose) || "Field Visit",
+            description: stripHtml(v.notes) || "—",
+            outcome: stripHtml(v.outcome) || "—",
+            completionRemarks: stripHtml(v.completionRemarks || v.outcome) || "—",
+            inProgressRemarks: stripHtml(v.inProgressRemarks) || "—",
+            pendingRemarks: stripHtml(v.pendingRemarks) || "—",
+            nextFollowupDate: v.nextFollowupDate || "—",
             supervisoryRemarks: v.supervisoryRemarks || "—",
+            meetingDoctor: v.meetingWithDoctor ? "Yes" : "No",
+            meetingPurchase: v.meetingWithPurchase ? "Yes" : "No",
+            meetingFinance: v.meetingWithFinance ? "Yes" : "No",
+            meetingEngineer: v.meetingWithEngineer ? "Yes" : "No",
+            newProductIntroduced: v.newProductIntroduced ? "Yes" : "No",
+            orderReceived: v.orderReceived ? "Yes" : "No",
           });
         });
 
@@ -780,13 +895,33 @@ export function DownloadWorkPlansModal({
             rowType: "WORK TASK",
             date: formatPlanDate(p.planDate),
             executive: execName,
+            parentPlanLocation: parentLocation,
+            planType: "Work Task",
             activity: `Work Task: ${w.title}`,
-            details: stripHtml(w.description) || "—",
+            contacts: "N/A",
+            visitAddress: "N/A",
+            discussedWithManager: "N/A",
+            discussedManagerName: "N/A",
+            discussionMethod: "N/A",
             plannedTime: w.plannedTime || "—",
+            actualCheckIn: "N/A",
+            actualCheckOut: "N/A",
             rescheduledDate: w.rescheduledDate || "—",
             status: w.status.toUpperCase(),
-            remarks: stripHtml(w.remarks) || "—",
+            purpose: stripHtml(w.title) || "Work Task",
+            description: stripHtml(w.description) || "—",
+            outcome: stripHtml(w.outcome || w.remarks) || "—",
+            completionRemarks: stripHtml(w.completionRemarks || w.remarks) || "—",
+            inProgressRemarks: stripHtml(w.inProgressRemarks) || "—",
+            pendingRemarks: stripHtml(w.pendingRemarks) || "—",
+            nextFollowupDate: "N/A",
             supervisoryRemarks: w.supervisoryRemarks || "—",
+            meetingDoctor: "N/A",
+            meetingPurchase: "N/A",
+            meetingFinance: "N/A",
+            meetingEngineer: "N/A",
+            newProductIntroduced: "N/A",
+            orderReceived: "N/A",
           });
         });
       });
@@ -800,13 +935,33 @@ export function DownloadWorkPlansModal({
           { key: "rowType", label: "Record Level" },
           { key: "date", label: "Plan Date" },
           { key: "executive", label: "Executive / Representative" },
+          { key: "parentPlanLocation", label: "Parent Plan Location" },
+          { key: "planType", label: "Plan Type" },
           { key: "activity", label: "Activity / Purpose / Title" },
-          { key: "details", label: "Contact / Address / Details" },
-          { key: "plannedTime", label: "Schedule / Time" },
+          { key: "contacts", label: "Contact Person & Phone" },
+          { key: "visitAddress", label: "Visit Address / Location" },
+          { key: "discussedWithManager", label: "Discussed With Manager" },
+          { key: "discussedManagerName", label: "Discussed Manager" },
+          { key: "discussionMethod", label: "Discussion Method" },
+          { key: "plannedTime", label: "Schedule / Planned Time" },
+          { key: "actualCheckIn", label: "Actual Check-In" },
+          { key: "actualCheckOut", label: "Actual Check-Out" },
           { key: "rescheduledDate", label: "Rescheduled Date" },
           { key: "status", label: "Status" },
-          { key: "remarks", label: "Remarks / Outcome" },
-          { key: "supervisoryRemarks", label: "Senior Remarks" },
+          { key: "purpose", label: "Visit Purpose / Task Objective" },
+          { key: "description", label: "Notes & Description" },
+          { key: "outcome", label: "Outcome" },
+          { key: "completionRemarks", label: "Completion Remarks" },
+          { key: "inProgressRemarks", label: "In-Progress Remarks" },
+          { key: "pendingRemarks", label: "Pending Remarks" },
+          { key: "nextFollowupDate", label: "Next Follow-Up Date" },
+          { key: "supervisoryRemarks", label: "Senior Supervisory Remarks" },
+          { key: "meetingDoctor", label: "Meeting With Doctor" },
+          { key: "meetingPurchase", label: "Meeting With Purchase" },
+          { key: "meetingFinance", label: "Meeting With Finance" },
+          { key: "meetingEngineer", label: "Meeting With Engineer" },
+          { key: "newProductIntroduced", label: "New Product Introduced" },
+          { key: "orderReceived", label: "Order Received" },
         ],
         rows,
       });
@@ -826,6 +981,7 @@ export function DownloadWorkPlansModal({
       filteredPlanTree.forEach((p) => {
         planIndex += 1;
         const execName = salesUserLabel(p.salesUser);
+        const parentLocation = p.planLocation || "—";
 
         // 1. Work Plan Row
         const discSummary = p.isDiscussedWithManager
@@ -837,7 +993,8 @@ export function DownloadWorkPlansModal({
           rowType: "WORK PLAN",
           date: formatPlanDate(p.planDate),
           executive: execName,
-          activity: p.planType === "Visits" ? `Visits Plan (${p.visits.length} Visits)` : `Tasks Plan (${p.tasks.length} Tasks)`,
+          parentPlanLocation: parentLocation,
+          activity: p.planType === "Visits" ? `Visits Plan (${p.visits.length} Visits)` : `${p.planType} Plan (${p.tasks.length} Tasks)`,
           details: [p.planRemarks, discSummary].filter(Boolean).join(" | ") || "—",
           plannedTime: "Full Day",
           status: p.planStatus.toUpperCase(),
@@ -858,6 +1015,7 @@ export function DownloadWorkPlansModal({
             rowType: "FIELD VISIT",
             date: formatPlanDate(p.planDate),
             executive: execName,
+            parentPlanLocation: parentLocation,
             activity: `Field Visit: ${v.partyName}`,
             details: `${v.contactInfo ? v.contactInfo + " | " : ""}${v.address}`,
             plannedTime: timeDisplay,
@@ -878,6 +1036,7 @@ export function DownloadWorkPlansModal({
             rowType: "WORK TASK",
             date: formatPlanDate(p.planDate),
             executive: execName,
+            parentPlanLocation: parentLocation,
             activity: `Work Task: ${w.title}`,
             details: stripHtml(w.description) || "—",
             plannedTime: timeDisplay,
@@ -920,15 +1079,16 @@ export function DownloadWorkPlansModal({
         ],
         columns: [
           { key: "hierarchyId", label: "#", width: 0.5, align: "left" },
-          { key: "rowType", label: "Type", width: 0.9, align: "left" },
-          { key: "date", label: "Date", width: 0.9, align: "left" },
-          { key: "executive", label: "Sales Executive", width: 1.3, align: "left" },
-          { key: "activity", label: "Activity / Title / Party", width: 1.8, align: "left" },
-          { key: "details", label: "Details / Address", width: 1.6, align: "left" },
-          { key: "plannedTime", label: "Schedule / Time", width: 1.1, align: "center" },
-          { key: "status", label: "Status", width: 0.9, align: "center" },
-          { key: "remarks", label: "Remarks / Outcome", width: 1.4, align: "left" },
-          { key: "supervisoryRemarks", label: "Senior Remarks", width: 1.7, align: "left" },
+          { key: "rowType", label: "Type", width: 0.8, align: "left" },
+          { key: "date", label: "Date", width: 0.8, align: "left" },
+          { key: "executive", label: "Sales Executive", width: 1.2, align: "left" },
+          { key: "parentPlanLocation", label: "Plan Location", width: 1.1, align: "left" },
+          { key: "activity", label: "Activity / Title / Party", width: 1.7, align: "left" },
+          { key: "details", label: "Details / Address", width: 1.5, align: "left" },
+          { key: "plannedTime", label: "Schedule / Time", width: 1.0, align: "center" },
+          { key: "status", label: "Status", width: 0.8, align: "center" },
+          { key: "remarks", label: "Remarks / Outcome", width: 1.3, align: "left" },
+          { key: "supervisoryRemarks", label: "Senior Remarks", width: 1.5, align: "left" },
         ],
         rows,
       });
@@ -1329,9 +1489,9 @@ export function DownloadWorkPlansModal({
                     <span className="text-[9px] text-muted/70 block">E</span>
                     Contact / Details
                   </th>
-                  <th className="border-r border-border px-3 py-2 w-44">
+                  <th className="border-r border-border px-3 py-2 w-48">
                     <span className="text-[9px] text-muted/70 block">F</span>
-                    Location / City
+                    Parent Location &amp; Visit Address
                   </th>
                   <th className="border-r border-border px-3 py-2 w-40">
                     <span className="text-[9px] text-muted/70 block">G</span>
@@ -1372,7 +1532,7 @@ export function DownloadWorkPlansModal({
                             <button
                               type="button"
                               onClick={() => togglePlanCollapse(parentId)}
-                              className="flex items-center justify-center gap-1 w-full text-foreground hover:text-primary"
+                              className="flex items-center justify-center gap-1 w-full text-foreground hover:text-primary cursor-pointer"
                               title={isCollapsed ? "Expand visits & tasks" : "Collapse visits & tasks"}
                             >
                               {totalItems > 0 ? (
@@ -1421,9 +1581,12 @@ export function DownloadWorkPlansModal({
                             {p.planRemarks || "—"}
                           </td>
 
-                          {/* 6. Location */}
-                          <td className="border-r border-border px-3 py-2.5 font-medium text-foreground truncate max-w-[180px]">
-                            {p.planLocation || "—"}
+                          {/* 6. Parent Plan Location */}
+                          <td className="border-r border-border px-3 py-2.5 font-semibold text-foreground truncate max-w-[180px]">
+                            <div className="flex items-center gap-1.5 text-primary dark:text-primary">
+                              <MapPin className="h-3.5 w-3.5 shrink-0 text-primary" />
+                              <span>{p.planLocation || "—"}</span>
+                            </div>
                           </td>
 
                           {/* 7. Time */}
@@ -1496,9 +1659,15 @@ export function DownloadWorkPlansModal({
                                   {v.contactInfo}
                                 </td>
 
-                                {/* 6. Location */}
-                                <td className="border-r border-border/60 px-3 py-2 text-muted truncate max-w-[180px]">
-                                  {v.address}
+                                {/* 6. Location (Visit Address + Parent Plan Location) */}
+                                <td className="border-r border-border/60 px-3 py-2 text-foreground truncate max-w-[180px]">
+                                  <div className="font-medium text-xs truncate">{v.address || "—"}</div>
+                                  {p.planLocation && (
+                                    <div className="text-[10px] text-muted flex items-center gap-1 mt-0.5">
+                                      <MapPin className="h-2.5 w-2.5 shrink-0 text-muted/70" />
+                                      <span className="truncate">Plan: {p.planLocation}</span>
+                                    </div>
+                                  )}
                                 </td>
 
                                 {/* 7. Planned & Actual Time + Rescheduled Date */}
@@ -1576,9 +1745,12 @@ export function DownloadWorkPlansModal({
                                   {w.description}
                                 </td>
 
-                                {/* 6. Location */}
+                                {/* 6. Parent Plan Location */}
                                 <td className="border-r border-border/60 px-3 py-2 text-muted truncate max-w-[180px]">
-                                  {p.planLocation || "Office / Remote"}
+                                  <div className="flex items-center gap-1 text-xs">
+                                    <MapPin className="h-3 w-3 shrink-0 text-muted/70" />
+                                    <span className="truncate">Plan: {p.planLocation || "Office / Remote"}</span>
+                                  </div>
                                 </td>
 
                                 {/* 7. Time + Rescheduled Date */}
@@ -1644,7 +1816,9 @@ export function DownloadWorkPlansModal({
                           </td>
                           <td className="border-r border-border/60 px-3 py-2 font-bold text-foreground">{p.planType === "Leave" ? "Leave Day" : "No plan activities"}</td>
                           <td className="border-r border-border/60 px-3 py-2 text-muted">{p.planRemarks || "—"}</td>
-                          <td className="border-r border-border/60 px-3 py-2 text-muted">{p.planLocation || "—"}</td>
+                          <td className="border-r border-border/60 px-3 py-2 text-primary font-semibold">
+                            <div className="flex items-center gap-1"><MapPin className="h-3 w-3" />{p.planLocation || "—"}</div>
+                          </td>
                           <td className="border-r border-border/60 px-3 py-2 text-muted font-mono text-[10px]">Full Day</td>
                           <td className="border-r border-border/60 px-3 py-2 whitespace-nowrap">{renderPlanStatusBadge(p.planStatus)}</td>
                           <td className="border-r border-border/60 px-3 py-2 text-foreground font-medium">{p.planRemarks || "—"}</td>
@@ -1666,7 +1840,15 @@ export function DownloadWorkPlansModal({
                           </td>
                           <td className="border-r border-border/60 px-3 py-2 font-bold text-foreground max-w-[200px] truncate">{v.partyName}</td>
                           <td className="border-r border-border/60 px-3 py-2 text-muted max-w-[200px] truncate">{v.contactInfo}</td>
-                          <td className="border-r border-border/60 px-3 py-2 text-muted max-w-[180px] truncate">{v.address}</td>
+                          <td className="border-r border-border/60 px-3 py-2 text-foreground max-w-[180px] truncate">
+                            <div className="font-medium text-xs truncate">{v.address || "—"}</div>
+                            {p.planLocation && (
+                              <div className="text-[10px] text-muted flex items-center gap-1 mt-0.5">
+                                <MapPin className="h-2.5 w-2.5 shrink-0 text-muted/70" />
+                                <span className="truncate">Plan: {p.planLocation}</span>
+                              </div>
+                            )}
+                          </td>
                           <td className="border-r border-border/60 px-3 py-2 text-muted font-mono text-[10px]">
                             <div>{v.plannedTime}</div>
                             {v.rescheduledDate && (
@@ -1697,7 +1879,12 @@ export function DownloadWorkPlansModal({
                           </td>
                           <td className="border-r border-border/60 px-3 py-2 font-bold text-foreground max-w-[200px] truncate">{w.title}</td>
                           <td className="border-r border-border/60 px-3 py-2 text-muted max-w-[200px] truncate">{w.description}</td>
-                          <td className="border-r border-border/60 px-3 py-2 text-muted max-w-[180px] truncate">{p.planLocation || "Office / Remote"}</td>
+                          <td className="border-r border-border/60 px-3 py-2 text-muted max-w-[180px] truncate">
+                            <div className="flex items-center gap-1 text-xs">
+                              <MapPin className="h-3 w-3 shrink-0 text-muted/70" />
+                              <span className="truncate">Plan: {p.planLocation || "Office / Remote"}</span>
+                            </div>
+                          </td>
                           <td className="border-r border-border/60 px-3 py-2 text-muted font-mono text-[10px]">
                             <div>{w.plannedTime}</div>
                             {w.rescheduledDate && (
