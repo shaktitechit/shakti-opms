@@ -427,7 +427,7 @@ export function DirectiveThreadModal({
                   : "border-primary/30 bg-primary/5"
               }`}
             >
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 font-bold text-xs text-foreground">
                   {isAppreciation ? (
                     <Sparkles className="h-4 w-4 text-emerald-500" />
@@ -436,7 +436,10 @@ export function DirectiveThreadModal({
                   ) : (
                     <ShieldCheck className="h-4 w-4 text-primary" />
                   )}
-                  <span>Senior Directive / Guidance:</span>
+                  <span>
+                    Directive from: <strong className="text-primary">{item.senior_user?.name || "Senior Authority"}</strong>
+                    {item.senior_user?.role && <span className="ml-1 text-[10px] font-normal text-muted">({item.senior_user.role})</span>}
+                  </span>
                 </div>
                 <span className="text-[10px] text-muted">{formatDateTime(item.created_at)}</span>
               </div>

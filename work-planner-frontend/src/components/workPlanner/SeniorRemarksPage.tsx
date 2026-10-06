@@ -64,6 +64,7 @@ export function SeniorRemarksPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [selectedExecutive, setSelectedExecutive] = useState<string>("all");
+  const [selectedSenior, setSelectedSenior] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
@@ -111,28 +112,60 @@ export function SeniorRemarksPage() {
     resolved_count: 0,
   };
 
-  // User list for filter dropdown
+  // Senior Authority options for filter dropdown
+  const seniorOptions = useMemo(() => {
+    const list: { id: string; name: string; role?: string }[] = [];
+    const seen = new Set<string>();
+    items.forEach((item) => {
+      if (item.senior_user?.name) {
+        const key = item.senior_user._id || item.senior_user.name;
+        if (!seen.has(key)) {
+          seen.add(key);
+          list.push({
+            id: key,
+            name: item.senior_user.name,
+            role: item.senior_user.role,
+          });
+        }
+      }
+    });
+    return list;
+  }, [items]);
+
+  // Executive (Concerned User) options for filter dropdown
   const executiveOptions = useMemo(() => {
-    if (adminRole && Array.isArray(usersData)) {
-      return usersData.map((u: any) => ({
-        id: String(u._id || u.id),
-        name: u.name || u.email,
-      }));
-    }
     const list: { id: string; name: string }[] = [];
     const seen = new Set<string>();
-    const add = (u: any) => {
-      if (!u) return;
-      const id = String(u._id || u.id);
-      if (id && !seen.has(id)) {
-        seen.add(id);
-        list.push({ id, name: u.name || u.email });
-      }
+
+    const addExec = (id?: string, name?: string) => {
+      if (!id || !name || seen.has(id)) return;
+      seen.add(id);
+      list.push({ id, name });
     };
-    if (sessionUser) add(sessionUser);
-    if (Array.isArray(myTeamData?.members)) myTeamData.members.forEach(add);
-    return list;
-  }, [adminRole, usersData, sessionUser, myTeamData]);
+
+    if (Array.isArray(usersData)) {
+      usersData.forEach((u: any) => addExec(u._id || u.id, u.name));
+    }
+    if (Array.isArray(myTeamData?.members)) {
+      myTeamData.members.forEach((u: any) => addExec(u._id || u.id, u.name));
+    }
+    // Also include sales users present in feed items
+    items.forEach((item) => {
+      if (item.sales_user?.name) {
+        addExec(item.sales_user._id, item.sales_user.name);
+      }
+    });
+
+    return list.sort((a, b) => a.name.localeCompare(b.name));
+  }, [usersData, myTeamData, items]);
+
+  // Filter items by selected senior authority
+  const displayItems = useMemo(() => {
+    if (selectedSenior === "all") return items;
+    return items.filter(
+      (item) => item.senior_user._id === selectedSenior || item.senior_user.name === selectedSenior
+    );
+  }, [items, selectedSenior]);
 
   // Calendar Calculations
   const year = calendarDate.getFullYear();
@@ -175,10 +208,10 @@ export function SeniorRemarksPage() {
     return days;
   }, [year, month]);
 
-  // Items mapped by Date key (YYYY-MM-DD)
+  // Items mapped by Date key (YYYY-MM-DD) using displayItems
   const itemsByDate = useMemo(() => {
     const map = new Map<string, SeniorRemarkFeedItem[]>();
-    for (const item of items) {
+    for (const item of displayItems) {
       // Prioritize plan_date or fallback to created_at
       const d = item.plan_date
         ? String(item.plan_date).slice(0, 10)
@@ -187,20 +220,20 @@ export function SeniorRemarksPage() {
       map.get(d)!.push(item);
     }
     return map;
-  }, [items]);
+  }, [displayItems]);
 
   // Kanban Columns
   const pendingItems = useMemo(
-    () => items.filter((i) => i.status === "pending_response"),
-    [items]
+    () => displayItems.filter((i) => i.status === "pending_response"),
+    [displayItems]
   );
   const respondedItems = useMemo(
-    () => items.filter((i) => i.status === "responded"),
-    [items]
+    () => displayItems.filter((i) => i.status === "responded"),
+    [displayItems]
   );
   const resolvedItems = useMemo(
-    () => items.filter((i) => i.status === "resolved"),
-    [items]
+    () => displayItems.filter((i) => i.status === "resolved"),
+    [displayItems]
   );
 
   return (
@@ -444,8 +477,8 @@ export function SeniorRemarksPage() {
           )}
         </div>
 
-        {/* Secondary Inputs: Search, Status, Priority, Executive */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+        {/* Secondary Inputs: Search, Status, Priority, Senior Authority, Executive */}
+        <div className={`grid grid-cols-1 sm:grid-cols-2 ${elevatedRole ? "md:grid-cols-5" : "md:grid-cols-4"} gap-3 text-xs`}>
           {/* Search */}
           <div className="relative">
             <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted" />
@@ -453,7 +486,7 @@ export function SeniorRemarksPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search directive, executive..."
+              placeholder="Search directive, remark..."
               className="w-full rounded-xl border border-border bg-surface-muted pl-8 pr-3 py-2 text-xs text-foreground outline-none focus:border-primary"
             />
           </div>
@@ -487,7 +520,23 @@ export function SeniorRemarksPage() {
             </select>
           </div>
 
-          {/* Executive Filter */}
+          {/* Senior Authority (Raised By) Filter */}
+          <div>
+            <select
+              value={selectedSenior}
+              onChange={(e) => setSelectedSenior(e.target.value)}
+              className="w-full rounded-xl border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary"
+            >
+              <option value="all">Raised By: All Senior Authorities</option>
+              {seniorOptions.map((opt) => (
+                <option key={opt.id} value={opt.id}>
+                  {opt.name} {opt.role ? `(${opt.role})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Executive Filter (Elevated Manager / Admin view) */}
           {elevatedRole && (
             <div>
               <select
@@ -618,6 +667,7 @@ export function SeniorRemarksPage() {
                     {dayItems.map((item) => {
                       const isObj = item.remark_type === "objection";
                       const isApp = item.remark_type === "appreciation";
+                      const isOwnDirective = !elevatedRole || scope === "mine";
 
                       return (
                         <button
@@ -631,7 +681,7 @@ export function SeniorRemarksPage() {
                               ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/25"
                               : "bg-primary/15 text-primary border-primary/30 hover:bg-primary/25"
                           }`}
-                          title={`${item.sales_user.name}: ${item.title}`}
+                          title={`Directive from ${item.senior_user.name} (${item.senior_user.role || "Senior"}): ${item.title}`}
                         >
                           {isObj ? (
                             <AlertTriangle className="h-3 w-3 shrink-0 text-rose-500" />
@@ -640,7 +690,9 @@ export function SeniorRemarksPage() {
                           ) : (
                             <ShieldCheck className="h-3 w-3 shrink-0 text-primary" />
                           )}
-                          <span className="truncate">{item.sales_user.name}</span>
+                          <span className="truncate">
+                            {isOwnDirective ? `By: ${item.senior_user.name}` : `${item.sales_user.name} (by ${item.senior_user.name})`}
+                          </span>
                         </button>
                       );
                     })}
@@ -831,10 +883,18 @@ export function SeniorRemarksPage() {
                       <h4 className="text-xs font-bold text-foreground leading-snug">
                         {item.title}
                       </h4>
-                      <div className="text-[11px] text-muted flex items-center gap-1.5 mt-1 flex-wrap">
-                        <span className="font-semibold text-foreground">{item.sales_user.name}</span>
-                        <span>•</span>
-                        <span>By {item.senior_user.name} ({item.senior_user.role})</span>
+                      <div className="text-[11px] text-muted flex items-center gap-1.5 mt-1.5 flex-wrap">
+                        <span className="inline-flex items-center gap-1 font-bold rounded bg-primary/10 border border-primary/20 px-2 py-0.5 text-primary">
+                          <ShieldCheck className="h-3 w-3 text-primary shrink-0" />
+                          <span>Raised by: {item.senior_user.name}</span>
+                          {item.senior_user.role && <span className="opacity-75 font-normal">({item.senior_user.role})</span>}
+                        </span>
+                        {elevatedRole && (
+                          <>
+                            <span>•</span>
+                            <span className="font-semibold text-foreground">For: {item.sales_user.name}</span>
+                          </>
+                        )}
                         <span>•</span>
                         <span>{formatPlanDate(item.plan_date || item.created_at)}</span>
                       </div>
@@ -880,7 +940,8 @@ export function SeniorRemarksPage() {
                 <tr>
                   <th className="px-4 py-3">Date</th>
                   <th className="px-4 py-3">Type &amp; Priority</th>
-                  <th className="px-4 py-3">Concerned Executive</th>
+                  <th className="px-4 py-3">Raised By (Senior)</th>
+                  {elevatedRole && <th className="px-4 py-3">Concerned Executive</th>}
                   <th className="px-4 py-3">Target Details</th>
                   <th className="px-4 py-3">Senior Directive</th>
                   <th className="px-4 py-3">Status</th>
@@ -890,18 +951,18 @@ export function SeniorRemarksPage() {
               <tbody className="divide-y divide-border text-foreground">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-muted">
+                    <td colSpan={elevatedRole ? 8 : 7} className="p-8 text-center text-muted">
                       Loading directives feed…
                     </td>
                   </tr>
-                ) : items.length === 0 ? (
+                ) : displayItems.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-muted">
+                    <td colSpan={elevatedRole ? 8 : 7} className="p-8 text-center text-muted">
                       No directives matching current filters.
                     </td>
                   </tr>
                 ) : (
-                  items.map((item) => {
+                  displayItems.map((item) => {
                     const isObj = item.remark_type === "objection";
                     const isApp = item.remark_type === "appreciation";
 
@@ -960,13 +1021,31 @@ export function SeniorRemarksPage() {
                           </div>
                         </td>
 
-                        {/* Executive */}
+                        {/* Raised By (Senior Authority) */}
                         <td className="px-4 py-3 font-semibold whitespace-nowrap">
-                          <div>{item.sales_user.name}</div>
-                          <div className="text-[10px] text-muted font-normal">
-                            By {item.senior_user.name} ({item.senior_user.role})
+                          <div className="flex items-center gap-1.5 text-foreground font-bold">
+                            <ShieldCheck className="h-3.5 w-3.5 text-primary shrink-0" />
+                            <span>{item.senior_user.name}</span>
+                          </div>
+                          <div className="text-[10px] text-muted font-medium mt-0.5">
+                            {item.senior_user.role || "Senior Authority"}
                           </div>
                         </td>
+
+                        {/* Concerned Executive (Elevated Manager view) */}
+                        {elevatedRole && (
+                          <td className="px-4 py-3 font-semibold whitespace-nowrap">
+                            <div className="flex items-center gap-1.5 text-foreground">
+                              <User className="h-3.5 w-3.5 text-muted shrink-0" />
+                              <span>{item.sales_user.name}</span>
+                            </div>
+                            {item.sales_user.email && (
+                              <div className="text-[10px] text-muted font-normal">
+                                {item.sales_user.email}
+                              </div>
+                            )}
+                          </td>
+                        )}
 
                         {/* Target */}
                         <td className="px-4 py-3 max-w-[200px]">
@@ -987,7 +1066,7 @@ export function SeniorRemarksPage() {
                         {/* Directive Snippet */}
                         <td className="px-4 py-3 max-w-[240px]">
                           <div
-                            className="text-xs text-muted truncate"
+                            className="rich-text-content text-xs text-muted truncate"
                             dangerouslySetInnerHTML={{ __html: item.remark }}
                           />
                           {item.followup_remarks.length > 0 && (
@@ -1094,16 +1173,28 @@ function DirectiveKanbanCard({
 
       <div>
         <h4 className="text-xs font-bold text-foreground truncate">{item.title}</h4>
-        <div className="text-[10px] text-muted flex items-center gap-1 mt-0.5">
-          <User className="h-3 w-3 text-primary" />
-          <span>{item.sales_user.name}</span>
-          <span>&bull;</span>
-          <span>By {item.senior_user.name}</span>
+        
+        {/* Senior Authority Badge */}
+        <div className="mt-1.5 flex items-center justify-between gap-1 rounded-lg bg-primary/10 border border-primary/20 px-2 py-1 text-[11px] text-primary font-bold">
+          <span className="flex items-center gap-1 truncate">
+            <ShieldCheck className="h-3 w-3 shrink-0" />
+            <span className="truncate">By: {item.senior_user.name}</span>
+          </span>
+          {item.senior_user.role && (
+            <span className="text-[9px] font-normal text-primary/80 shrink-0">
+              ({item.senior_user.role})
+            </span>
+          )}
+        </div>
+
+        <div className="text-[10px] text-muted flex items-center gap-1 mt-1 font-medium">
+          <User className="h-3 w-3 text-muted shrink-0" />
+          <span>Target: <strong>{item.sales_user.name}</strong></span>
         </div>
       </div>
 
       <div
-        className="text-[11px] text-muted line-clamp-2 leading-relaxed"
+        className="rich-text-content text-[11px] text-muted line-clamp-2 leading-relaxed"
         dangerouslySetInnerHTML={{ __html: item.remark }}
       />
 
