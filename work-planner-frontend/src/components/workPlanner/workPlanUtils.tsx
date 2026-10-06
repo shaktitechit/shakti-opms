@@ -218,11 +218,37 @@ export const EXPENSE_CATEGORY_LABELS: Record<string, string> = {
 };
 
 export function salesUserLabel(
-  salesUser: string | { _id?: string; name?: string; email?: string } | undefined
+  salesUser: string | { _id?: string; name?: string; email?: string } | undefined,
+  lookup?: Array<{ id?: string; _id?: string; name?: string }> | Record<string, string>
 ): string {
   if (!salesUser) return "—";
-  if (typeof salesUser === "string") return salesUser;
-  return salesUser.name || salesUser.email || salesUser._id || "—";
+  if (typeof salesUser === "object" && salesUser !== null) {
+    if (salesUser.name && salesUser.name.trim()) return salesUser.name.trim();
+    if (salesUser.email && salesUser.email.trim()) return salesUser.email.trim();
+    const id = salesUser._id;
+    if (id && lookup) {
+      if (Array.isArray(lookup)) {
+        const match = lookup.find((u) => (u.id || u._id) === id);
+        if (match?.name) return match.name;
+      } else if (lookup[id]) {
+        return lookup[id];
+      }
+    }
+    return salesUser._id || "—";
+  }
+  if (typeof salesUser === "string") {
+    const trimmed = salesUser.trim();
+    if (lookup) {
+      if (Array.isArray(lookup)) {
+        const match = lookup.find((u) => (u.id || u._id) === trimmed);
+        if (match?.name) return match.name;
+      } else if (lookup[trimmed]) {
+        return lookup[trimmed];
+      }
+    }
+    return trimmed;
+  }
+  return "—";
 }
 
 export function partyLabel(

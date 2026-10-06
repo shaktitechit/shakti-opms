@@ -393,6 +393,7 @@ async function loadExpenses(planId) {
   const { WorkPlanExpense } = getModels();
   const { withFreshExpenseAttachmentUrls } = require('../../services/fileManagement');
   const rows = await WorkPlanExpense.find({ work_plan: planId, deletedAt: null })
+    .populate('sales_user', 'name email department')
     .populate('receipt_attachment')
     .populate('attachments')
     .populate('start_reading_image')
@@ -2380,6 +2381,7 @@ async function listAllExpenses(query = {}, user) {
   const [total, rows] = await Promise.all([
     WorkPlanExpense.countDocuments(filter),
     WorkPlanExpense.find(filter)
+      .populate('sales_user', 'name email department')
       .populate({
         path: 'work_plan',
         select: 'plan_date sales_user location status',
@@ -2405,9 +2407,20 @@ async function listAllExpenses(query = {}, user) {
   const data = await Promise.all(
     rows.map(async (row) => {
       const item = await withFreshExpenseAttachmentUrls(toPlain(row));
-      if (!item.sales_user && item.work_plan && typeof item.work_plan === 'object' && item.work_plan.sales_user) {
-        item.sales_user = item.work_plan.sales_user;
-      }
+      const sUserObj =
+        item.sales_user && typeof item.sales_user === 'object' && item.sales_user.name
+          ? item.sales_user
+          : null;
+      const wpUserObj =
+        item.work_plan && typeof item.work_plan === 'object' && item.work_plan.sales_user && item.work_plan.sales_user.name
+          ? item.work_plan.sales_user
+          : null;
+      const createdByObj =
+        item.created_by && typeof item.created_by === 'object' && item.created_by.name
+          ? item.created_by
+          : null;
+
+      item.sales_user = sUserObj || wpUserObj || createdByObj || item.sales_user;
       return item;
     }),
   );

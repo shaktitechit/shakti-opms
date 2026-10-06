@@ -25,6 +25,7 @@ import {
   useGetTeamTreeQuery,
   useGetMyTeamQuery,
 } from "@/store/api/workPlannerApiSlice";
+import { useGetUsersQuery } from "@/store/api/authApiSlice";
 import { isWpAdmin, isWpElevated, isWpManager, readSessionFromStorage } from "@/utils/authStorage";
 import { resolvePublicAssetUrl, withFileAccessToken } from "@/lib/env";
 import type {
@@ -90,35 +91,10 @@ export function ExpensesPage() {
   const [approveExpenseMut] = useApproveExpenseMutation();
   const [rejectExpenseMut] = useRejectExpenseMutation();
 
-  // Team hierarchy data
+  // Team hierarchy & user data
+  const { data: usersData } = useGetUsersQuery(undefined, { skip: !adminRole });
   const { data: tree } = useGetTeamTreeQuery(undefined, { skip: !adminRole });
   const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: !elevatedRole || adminRole });
-
-  const executiveOptions = useMemo<Array<{ id: string; name: string; email?: string }>>(() => {
-    if (!elevatedRole) return [];
-    if (adminRole && tree) {
-      const all: Array<{ _id?: string; id?: string; name: string; email?: string }> = [
-        ...(tree.executives || []),
-        ...(tree.managers || []),
-        ...(tree.coordinators || []),
-      ];
-      const seen = new Set<string>();
-      return all
-        .filter((u) => {
-          const id = String(u._id || u.id || "");
-          if (!id || seen.has(id)) return false;
-          seen.add(id);
-          return true;
-        })
-        .map((u) => ({ id: String(u._id || u.id), name: u.name, email: u.email }));
-    }
-    if (myTeamData?.members) {
-      return (myTeamData.members as Array<{ _id?: string; id?: string; name: string; email?: string }>).map(
-        (m) => ({ id: String(m._id || m.id), name: m.name, email: m.email })
-      );
-    }
-    return [];
-  }, [adminRole, elevatedRole, tree, myTeamData]);
 
   const queryParams = useMemo(() => {
     const q: Record<string, string | number | undefined> = {
@@ -142,6 +118,46 @@ export function ExpensesPage() {
   const expenses = expensesRes?.data || [];
   const total = expensesRes?.total || 0;
   const pages = expensesRes?.pages || 0;
+
+  const executiveOptions = useMemo<Array<{ id: string; name: string; email?: string }>>(() => {
+    const list: Array<{ id: string; name: string; email?: string }> = [];
+    const seen = new Set<string>();
+
+    const addExec = (id?: string, name?: string, email?: string) => {
+      if (!id || !name || seen.has(id)) return;
+      seen.add(id);
+      list.push({ id, name, email });
+    };
+
+    if (Array.isArray(usersData)) {
+      usersData.forEach((u: any) => addExec(String(u._id || u.id), u.name, u.email));
+    }
+    if (adminRole && tree) {
+      const all: Array<{ _id?: string; id?: string; name: string; email?: string }> = [
+        ...(tree.executives || []),
+        ...(tree.managers || []),
+        ...(tree.coordinators || []),
+      ];
+      all.forEach((u) => addExec(String(u._id || u.id), u.name, u.email));
+    }
+    if (myTeamData?.members) {
+      (myTeamData.members as Array<{ _id?: string; id?: string; name: string; email?: string }>).forEach((m) =>
+        addExec(String(m._id || m.id), m.name, m.email)
+      );
+    }
+    if (Array.isArray(expenses)) {
+      expenses.forEach((e: any) => {
+        if (e.sales_user && typeof e.sales_user === "object" && e.sales_user.name) {
+          addExec(String(e.sales_user._id || e.sales_user.id), e.sales_user.name, e.sales_user.email);
+        }
+        if (e.created_by && typeof e.created_by === "object" && e.created_by.name) {
+          addExec(String(e.created_by._id || e.created_by.id), e.created_by.name, e.created_by.email);
+        }
+      });
+    }
+
+    return list.sort((a, b) => a.name.localeCompare(b.name));
+  }, [adminRole, usersData, tree, myTeamData, expenses]);
 
   async function handleApproveExpense(planId: string, expenseId: string) {
     try {
@@ -174,7 +190,7 @@ export function ExpensesPage() {
     const q = searchQuery.toLowerCase();
     const cat = (EXPENSE_CATEGORY_LABELS[e.category] || e.category || "").toLowerCase();
     const desc = (e.description || "").toLowerCase();
-    const userLabel = salesUserLabel(e.sales_user).toLowerCase();
+    const userLabel = salesUserLabel(e.sales_user, executiveOptions).toLowerCase();
     return cat.includes(q) || desc.includes(q) || userLabel.includes(q);
   });
 
@@ -185,7 +201,7 @@ export function ExpensesPage() {
       typeof exp.sales_user === "object" && exp.sales_user
         ? String(exp.sales_user._id || (exp.sales_user as any).id || "")
         : String(exp.sales_user || "");
-    const sUserName = salesUserLabel(exp.sales_user);
+    const sUserName = salesUserLabel(exp.sales_user, executiveOptions);
     const expId = exp._id || exp.id || "";
     const categoryName = EXPENSE_CATEGORY_LABELS[exp.category] || exp.category;
     const amountStr = exp.amount != null ? `₹${exp.amount}` : "";
@@ -428,7 +444,7 @@ export function ExpensesPage() {
                       <div className="text-[11px] text-muted flex items-center gap-1 mt-0.5">
                         <span>{formatPlanDate(exp.expense_date)}</span>
                         <span>•</span>
-                        <span className="font-medium text-foreground">{salesUserLabel(exp.sales_user)}</span>
+                        <span className="font-medium text-foreground">{salesUserLabel(exp.sales_user, executiveOptions)}</span>
                       </div>
                     </div>
                     <div className="text-right">
@@ -581,7 +597,7 @@ export function ExpensesPage() {
                               expenseId: expId,
                               title: `${categoryName} Claim (${formatCurrency(exp.amount)})`,
                               currentStatus: exp.status,
-                              assigneeName: salesUserLabel(exp.sales_user),
+                              assigneeName: salesUserLabel(exp.sales_user, executiveOptions),
                               remarks: exp.manager_remarks || "",
                               history: exp.authority_remarks || [],
                             });
@@ -677,7 +693,7 @@ export function ExpensesPage() {
                         </div>
                       </td>
                       <td className="px-4 py-3 font-medium">
-                        {salesUserLabel(exp.sales_user)}
+                        {salesUserLabel(exp.sales_user, executiveOptions)}
                       </td>
                       <td className="px-4 py-3 font-medium text-foreground">
                         <div>{categoryName}</div>
@@ -863,7 +879,7 @@ export function ExpensesPage() {
                                   expenseId: expId,
                                   title: `${categoryName} Claim (${formatCurrency(exp.amount)})`,
                                   currentStatus: exp.status,
-                                  assigneeName: salesUserLabel(exp.sales_user),
+                                  assigneeName: salesUserLabel(exp.sales_user, executiveOptions),
                                   remarks: exp.manager_remarks || "",
                                   history: exp.authority_remarks || [],
                                 });
