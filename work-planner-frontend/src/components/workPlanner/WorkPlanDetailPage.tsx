@@ -794,7 +794,14 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
             <div className="grid gap-4 grid-cols-1 lg:grid-cols-2 min-w-0">
               {visits.map((v, idx) => {
                 const vId = v._id || v.id || String(idx);
-                const partyName = typeof v.party === "object" && v.party ? (v.party as { party_name?: string }).party_name || "Party" : "Party";
+                const partyName =
+                  v.party_name ||
+                  (typeof v.party === "object" && v.party ? (v.party as { party_name?: string }).party_name : null) ||
+                  (typeof v.party === "string" && !v.party.match(/^[0-9a-fA-F]{24}$/) ? v.party : null) ||
+                  (v as any)?.title ||
+                  (v as any)?.name ||
+                  (v as any)?.company_name ||
+                  "Field Visit";
                 return (
                   <div
                     key={vId}
@@ -1143,9 +1150,10 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                                   item: v,
                                   id: v._id || v.id,
                                   title:
-                                    typeof v.party === "object"
-                                      ? (v.party as any)?.party_name || "Field Visit"
-                                      : v.party_name || "Field Visit",
+                                    v.party_name ||
+                                    (typeof v.party === "object" && v.party ? (v.party as any)?.party_name : null) ||
+                                    (typeof v.party === "string" && !v.party.match(/^[0-9a-fA-F]{24}$/) ? v.party : null) ||
+                                    "Field Visit",
                                   currentStatus: v.status,
                                   remarks: v.manager_remarks,
                                   history: v.authority_remarks,
