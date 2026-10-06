@@ -72,6 +72,7 @@ import { WorkFormModal } from "./WorkFormModal";
 import { WorkPlanCreateMailModal, type CreateEmailPayload } from "./WorkPlanCreateMailModal";
 import { SelectPreviousPendingItemsModal } from "./SelectPreviousPendingItemsModal";
 import { ImportNotesModal } from "./notes/ImportNotesModal";
+import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
 import {
   saveWorkPlanDraft,
   loadWorkPlanDraft,
@@ -348,6 +349,14 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   // Modal state for importing items from Scratchpad / Notes
   const [importNotesMode, setImportNotesMode] = useState<"visits" | "tasks" | null>(null);
   const [importedNoteIds, setImportedNoteIds] = useState<string[]>([]);
+
+  // Deletion confirmation modal state
+  const [deleteItemTarget, setDeleteItemTarget] = useState<{
+    type: "visit" | "task";
+    index: number;
+    title: string;
+  } | null>(null);
+  const [isDeletingItem, setIsDeletingItem] = useState(false);
 
   // Task rollover loading state
   const [rolloverLoading, setRolloverLoading] = useState(false);
@@ -1337,7 +1346,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     setEditingVisitIndex(null);
   }
 
-  async function handleRemoveVisit(index: number) {
+  function handleRemoveVisit(index: number) {
     if (isPlanCompleted) {
       toast.error("This work plan is completed and cannot be edited.");
       return;
@@ -1348,19 +1357,12 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       toast.error("Visits created by a Portal Admin or Portal Manager cannot be removed by Executives.");
       return;
     }
-    if (isEditing && activePlanId && (v?._id || v?.id)) {
-      if (!confirm("Are you sure you want to remove this visit?")) return;
-      try {
-        await removeVisitMut({ planId: activePlanId, visitId: v._id || v.id }).unwrap();
-        toast.success("Visit removed");
-        const updatedPlan = await fetchPlan(activePlanId).unwrap();
-        setVisits(updatedPlan.visits || []);
-      } catch (err: any) {
-        toast.error(err?.data?.message || err?.message || "Failed to remove visit");
-      }
-    } else {
-      setVisits((prev) => prev.filter((_, i) => i !== index));
-    }
+    const visitTitle = v?.customer_name || v?.client_name || v?.purpose || `Visit #${index + 1}`;
+    setDeleteItemTarget({
+      type: "visit",
+      index,
+      title: visitTitle,
+    });
   }
 
   // Work task modal handlers
@@ -1399,7 +1401,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     setEditingWorkIndex(null);
   }
 
-  async function handleRemoveWork(index: number) {
+  function handleRemoveWork(index: number) {
     if (isPlanCompleted) {
       toast.error("This work plan is completed and cannot be edited.");
       return;
@@ -1415,18 +1417,47 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       toast.error("Tasks created by a Portal Admin or Portal Manager cannot be removed by Executives.");
       return;
     }
-    if (isEditing && activePlanId && (w?._id || w?.id)) {
-      if (!confirm("Are you sure you want to remove this task?")) return;
-      try {
-        await removeWorkMut({ planId: activePlanId, workId: w._id || w.id }).unwrap();
-        toast.success("Task removed");
-        const updatedPlan = await fetchPlan(activePlanId).unwrap();
-        setWorks(updatedPlan.works || []);
-      } catch (err: any) {
-        toast.error(err?.data?.message || err?.message || "Failed to remove task");
+    const taskTitle = w?.title || w?.task_name || w?.task || `Task #${index + 1}`;
+    setDeleteItemTarget({
+      type: "task",
+      index,
+      title: taskTitle,
+    });
+  }
+
+  async function handleConfirmDeleteItem() {
+    if (!deleteItemTarget) return;
+    const { type, index } = deleteItemTarget;
+    setIsDeletingItem(true);
+    try {
+      if (type === "visit") {
+        const v = visits[index];
+        if (isEditing && activePlanId && (v?._id || v?.id)) {
+          await removeVisitMut({ planId: activePlanId, visitId: v._id || v.id }).unwrap();
+          toast.success("Visit removed");
+          const updatedPlan = await fetchPlan(activePlanId).unwrap();
+          setVisits(updatedPlan.visits || []);
+        } else {
+          setVisits((prev) => prev.filter((_, i) => i !== index));
+          toast.success("Visit removed");
+        }
+      } else {
+        const w = works[index];
+        if (isEditing && activePlanId && (w?._id || w?.id)) {
+          await removeWorkMut({ planId: activePlanId, workId: w._id || w.id }).unwrap();
+          toast.success("Task removed");
+          const updatedPlan = await fetchPlan(activePlanId).unwrap();
+          setWorks(updatedPlan.works || []);
+        } else {
+          setWorks((prev) => prev.filter((_, i) => i !== index));
+          toast.success("Task removed");
+        }
       }
-    } else {
-      setWorks((prev) => prev.filter((_, i) => i !== index));
+      setDeleteItemTarget(null);
+    } catch (err: any) {
+      toast.error(err?.data?.message || err?.message || `Failed to remove ${type}`);
+    } finally {
+      setIsDeletingItem(false);
     }
   }
 
@@ -3319,6 +3350,20 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
             setImportedNoteIds((prev) => [...new Set([...prev, ...noteIds])]);
             toast.success(`Imported ${newWorks.length} task(s) with full details from Scratchpad`);
           }}
+        />
+      )}
+
+      {deleteItemTarget && (
+        <ConfirmDeleteModal
+          open={Boolean(deleteItemTarget)}
+          title={`Remove ${deleteItemTarget.type === "visit" ? "Visit" : "Task"}`}
+          description={`Are you sure you want to remove "${deleteItemTarget.title}"? This will restore any associated notes back to your Scratchpad.`}
+          confirmLabel="Remove"
+          isDeleting={isDeletingItem}
+          onClose={() => {
+            if (!isDeletingItem) setDeleteItemTarget(null);
+          }}
+          onConfirm={handleConfirmDeleteItem}
         />
       )}
     </div>

@@ -38,6 +38,7 @@ import type { UserNoteRecord } from "@/types/workPlanner";
 import { NoteCard } from "./NoteCard";
 import { NoteEditorModal } from "./NoteEditorModal";
 import { BatchConvertToWorkPlanModal } from "./BatchConvertToWorkPlanModal";
+import { ConfirmDeleteModal } from "../ConfirmDeleteModal";
 
 type NoteFilterTab =
   | "all"
@@ -64,6 +65,8 @@ export function NotesPage() {
   const [editorInitialType, setEditorInitialType] = useState<"task" | "visit" | "general">("task");
 
   const [convertModalOpen, setConvertModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id?: string; bulk?: boolean; count?: number } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Queries & Mutations
   const queryParams = useMemo(() => {
@@ -178,15 +181,8 @@ export function NotesPage() {
     }
   };
 
-  const handleDeleteNote = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this note?")) return;
-    try {
-      await deleteNoteMut(id).unwrap();
-      setSelectedIds((prev) => prev.filter((item) => item !== id));
-      toast.success("Note deleted");
-    } catch (err: any) {
-      toast.error(err?.data?.message || err?.message || "Failed to delete note");
-    }
+  const handleDeleteNote = (id: string) => {
+    setDeleteTarget({ id });
   };
 
   const handleTogglePin = async (id: string) => {
@@ -220,14 +216,29 @@ export function NotesPage() {
   };
 
   // Bulk Delete
-  const handleBulkDelete = async () => {
-    if (!window.confirm(`Delete ${selectedIds.length} selected notes?`)) return;
+  const handleBulkDelete = () => {
+    if (selectedIds.length === 0) return;
+    setDeleteTarget({ bulk: true, count: selectedIds.length });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
     try {
-      await Promise.all(selectedIds.map((id) => deleteNoteMut(id).unwrap()));
-      setSelectedIds([]);
-      toast.success("Selected notes deleted");
+      if (deleteTarget.bulk && selectedIds.length > 0) {
+        await Promise.all(selectedIds.map((id) => deleteNoteMut(id).unwrap()));
+        setSelectedIds([]);
+        toast.success(`Deleted ${selectedIds.length} note(s)`);
+      } else if (deleteTarget.id) {
+        await deleteNoteMut(deleteTarget.id).unwrap();
+        setSelectedIds((prev) => prev.filter((item) => item !== deleteTarget.id));
+        toast.success("Note deleted");
+      }
+      setDeleteTarget(null);
     } catch (err: any) {
-      toast.error("Failed to delete some notes");
+      toast.error(err?.data?.message || err?.message || "Failed to delete note");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -588,6 +599,22 @@ export function NotesPage() {
           selectedNotes={selectedNotesList}
           onClose={() => setConvertModalOpen(false)}
           onClearSelection={() => setSelectedIds([])}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmDeleteModal
+          open={Boolean(deleteTarget)}
+          title={deleteTarget.bulk ? `Delete ${deleteTarget.count || selectedIds.length} Notes?` : "Delete Note?"}
+          description={
+            deleteTarget.bulk
+              ? `Are you sure you want to delete ${deleteTarget.count || selectedIds.length} selected notes from your Scratchpad? This action cannot be undone.`
+              : "Are you sure you want to delete this note from your Scratchpad? This action cannot be undone."
+          }
+          confirmLabel={deleteTarget.bulk ? `Delete ${deleteTarget.count || selectedIds.length} Notes` : "Delete Note"}
+          isDeleting={isDeleting}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={handleConfirmDelete}
         />
       )}
     </div>

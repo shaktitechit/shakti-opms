@@ -1024,6 +1024,27 @@ async function remove(id, user) {
   await WorkPlanWork.updateMany({ work_plan: id, deletedAt: null }, { $set: { deletedAt: now } });
   await WorkPlanExpense.updateMany({ work_plan: id, deletedAt: null }, { $set: { deletedAt: now } });
 
+  // Restore all notes linked to this deleted work plan back to active scratchpad notes
+  try {
+    const { UserNote } = getModels();
+    if (UserNote) {
+      await UserNote.updateMany(
+        { work_plan: id, is_converted_to_work_plan: true },
+        {
+          $set: {
+            is_converted_to_work_plan: false,
+            work_plan: null,
+            work_plan_item_id: null,
+            work_plan_date: null,
+            converted_at: null,
+          },
+        }
+      );
+    }
+  } catch (err) {
+    logger.warn(`[workPlanner.service] Failed to restore notes for removed work plan ${id}:`, err);
+  }
+
   await logActivity(user, plan._id, 'deleted', 'Work plan deleted');
   return toPlain(plan.toObject());
 }
@@ -1687,6 +1708,33 @@ async function removeVisit(planId, visitId, user) {
   visit.deletedAt = new Date();
   await visit.save();
   await renumberVisits(planId);
+
+  // Restore linked Scratchpad notes back to active pending status
+  try {
+    const { UserNote } = getModels();
+    if (UserNote) {
+      await UserNote.updateMany(
+        {
+          $or: [
+            { work_plan_item_id: visit._id || visitId },
+            { work_plan: planId, type: 'visit', party_name: visit.party_name },
+          ],
+          is_converted_to_work_plan: true,
+        },
+        {
+          $set: {
+            is_converted_to_work_plan: false,
+            work_plan: null,
+            work_plan_item_id: null,
+            work_plan_date: null,
+            converted_at: null,
+          },
+        }
+      );
+    }
+  } catch (err) {
+    logger.warn(`[workPlanner.service] Failed to restore notes for removed visit ${visitId}:`, err);
+  }
 
   if (plan.status === 'rejected') {
     plan.status = 'draft';
@@ -3279,6 +3327,33 @@ async function removeWork(planId, workId, user) {
 
   work.deletedAt = new Date();
   await work.save();
+
+  // Restore linked Scratchpad notes back to active pending status
+  try {
+    const { UserNote } = getModels();
+    if (UserNote) {
+      await UserNote.updateMany(
+        {
+          $or: [
+            { work_plan_item_id: work._id || workId },
+            { work_plan: planId, type: { $in: ['task', 'general'] }, title: work.title },
+          ],
+          is_converted_to_work_plan: true,
+        },
+        {
+          $set: {
+            is_converted_to_work_plan: false,
+            work_plan: null,
+            work_plan_item_id: null,
+            work_plan_date: null,
+            converted_at: null,
+          },
+        }
+      );
+    }
+  } catch (err) {
+    logger.warn(`[workPlanner.service] Failed to restore notes for removed work ${workId}:`, err);
+  }
 
   if (plan.status === 'rejected') {
     plan.status = 'draft';

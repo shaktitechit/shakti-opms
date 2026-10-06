@@ -136,7 +136,7 @@ export const workPlannerApiSlice = baseApi.injectEndpoints({
         method: "DELETE",
       }),
       transformResponse: (res: any) => res.data || res,
-      invalidatesTags: [{ type: "WorkPlan", id: "LIST" }, "WorkPlannerStats"],
+      invalidatesTags: [{ type: "WorkPlan", id: "LIST" }, "WorkPlan", "UserNotes", "WorkPlannerStats"],
     }),
     submitPlan: builder.mutation<WorkPlanRecord, { id: string; body?: any } | string>({
       query: (arg) => {
@@ -225,7 +225,12 @@ export const workPlannerApiSlice = baseApi.injectEndpoints({
         url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/${planId}/visits/${visitId}`,
         method: "DELETE",
       }),
-      invalidatesTags: (_result, _error, { planId }) => [{ type: "WorkPlan", id: planId }, "WorkPlannerStats"],
+      invalidatesTags: (_result, _error, { planId }) => [
+        { type: "WorkPlan", id: planId },
+        "WorkPlan",
+        "UserNotes",
+        "WorkPlannerStats",
+      ],
     }),
     checkIn: builder.mutation<WorkPlanRecord, { planId: string; visitId: string; body?: unknown }>({
       query: ({ planId, visitId, body }) => ({
@@ -329,7 +334,12 @@ export const workPlannerApiSlice = baseApi.injectEndpoints({
         url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/${planId}/works/${workId}`,
         method: "DELETE",
       }),
-      invalidatesTags: (_result, _error, { planId }) => [{ type: "WorkPlan", id: planId }, "WorkPlannerStats"],
+      invalidatesTags: (_result, _error, { planId }) => [
+        { type: "WorkPlan", id: planId },
+        "WorkPlan",
+        "UserNotes",
+        "WorkPlannerStats",
+      ],
     }),
     // Expenses
     getExpenses: builder.query<

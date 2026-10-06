@@ -30,6 +30,7 @@ import {
   RotateCcw,
   Users,
   Sparkles,
+  StickyNote,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -49,6 +50,7 @@ import {
   useUpdateWorkMutation,
   useCompleteVisitMutation,
   useAddWorkPlanAuthorityRemarkMutation,
+  useMarkNotesConvertedMutation,
 } from "@/store/api/workPlannerApiSlice";
 import { isWpAdmin, isWpManager, isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
 import { resolvePublicAssetUrl, withFileAccessToken } from "@/lib/env";
@@ -90,6 +92,8 @@ import { CopyWorkPlanModal } from "./CopyWorkPlanModal";
 import { PlanAiAnalysisModal } from "./PlanAiAnalysisModal";
 import { DirectiveThreadModal } from "./DirectiveThreadModal";
 import { FilePreviewModal, useFilePreview } from "./FilePreviewModal";
+import { ImportNotesModal } from "./notes/ImportNotesModal";
+import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
 import type { SeniorRemarkFeedItem } from "@/types/workPlanner";
 
 interface WorkPlanDetailPageProps {
@@ -143,6 +147,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   const [checkInMut] = useCheckInMutation();
   const [checkOutMut] = useCheckOutMutation();
   const [addPlanAuthorityRemarkMut] = useAddWorkPlanAuthorityRemarkMutation();
+  const [markNotesConvertedMut] = useMarkNotesConvertedMutation();
 
   // Modals state
   const [visitModalOpen, setVisitModalOpen] = useState(false);
@@ -150,6 +155,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
 
   const [workModalOpen, setWorkModalOpen] = useState(false);
   const [editingWork, setEditingWork] = useState<WorkPlanWorkRecord | null>(null);
+  const [importNotesMode, setImportNotesMode] = useState<"visits" | "tasks" | null>(null);
 
   const [statusRemarksTarget, setStatusRemarksTarget] = useState<{
     type: "visit" | "task";
@@ -173,6 +179,12 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   const [planAiModalOpen, setPlanAiModalOpen] = useState(false);
   const [threadModalOpen, setThreadModalOpen] = useState(false);
   const [selectedThreadItem, setSelectedThreadItem] = useState<SeniorRemarkFeedItem | null>(null);
+  const [deleteItemTarget, setDeleteItemTarget] = useState<{
+    type: "visit" | "task";
+    id: string;
+    title: string;
+    item?: any;
+  } | null>(null);
 
   const {
     previewDoc,
@@ -186,8 +198,10 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   const isAnyModalOpen =
     visitModalOpen ||
     workModalOpen ||
+    Boolean(importNotesMode) ||
     Boolean(statusRemarksTarget) ||
     Boolean(seniorRemarksTarget) ||
+    Boolean(deleteItemTarget) ||
     dayEndMailModalOpen ||
     dayEndViewModalOpen ||
     copyModalOpen ||
@@ -340,14 +354,11 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
       toast.error("Visits created by a Portal Admin or Portal Manager cannot be removed by Executives.");
       return;
     }
-    if (!confirm("Are you sure you want to remove this visit?")) return;
-    try {
-      await removeVisitMut({ planId, visitId }).unwrap();
-      toast.success("Visit removed");
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to remove visit";
-      toast.error(msg);
-    }
+    const partyName =
+      visitItem?.party_name ||
+      (typeof visitItem?.party === "object" && visitItem?.party ? (visitItem.party as any)?.party_name : null) ||
+      "Field Visit";
+    setDeleteItemTarget({ type: "visit", id: visitId, title: partyName, item: visitItem });
   }
 
   async function handleRemoveWork(workId: string, workItem?: WorkPlanWorkRecord) {
@@ -360,13 +371,112 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
       toast.error("Tasks created by a Portal Admin or Portal Manager cannot be removed by Executives.");
       return;
     }
-    if (!confirm("Are you sure you want to remove this task?")) return;
+    setDeleteItemTarget({ type: "task", id: workId, title: workItem?.title || "Work Task", item: workItem });
+  }
+
+  async function handleConfirmDeleteItem() {
+    if (!deleteItemTarget) return;
+    setActionLoading(true);
     try {
-      await removeWorkMut({ planId, workId }).unwrap();
-      toast.success("Task removed");
+      if (deleteItemTarget.type === "visit") {
+        await removeVisitMut({ planId, visitId: deleteItemTarget.id }).unwrap();
+        toast.success("Visit removed");
+      } else {
+        await removeWorkMut({ planId, workId: deleteItemTarget.id }).unwrap();
+        toast.success("Task removed");
+      }
+      setDeleteItemTarget(null);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to remove task";
+      const msg = err instanceof Error ? err.message : "Failed to remove item";
       toast.error(msg);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleImportVisitsDirectly(
+    importedVisits: Partial<WorkPlanVisitRecord>[],
+    noteIds: string[]
+  ) {
+    setActionLoading(true);
+    try {
+      for (const v of importedVisits) {
+        const partyObj: any = typeof v.party === "object" ? v.party : null;
+        const resolvedPartyType = v.party_type || (v.party ? "existing" : "new_party");
+        const partyId = partyObj ? partyObj._id || partyObj.id : (typeof v.party === "string" ? v.party : undefined);
+        const visitBody: any = {
+          party_type: resolvedPartyType,
+          party_name: v.party_name || partyObj?.party_name || "Client Visit",
+          contact_person: v.contact_person || "Contact Person",
+          contact_number: v.contact_number || "+91 98765 43210",
+          contact_email:
+            v.contact_email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v.contact_email).trim())
+              ? String(v.contact_email).trim()
+              : `${(v.contact_person || "contact").toLowerCase().replace(/[^a-z0-9]/g, "") || "contact"}@client.com`,
+          contacts: v.contacts,
+          address: v.address || undefined,
+          purpose: v.purpose || undefined,
+          notes: v.notes || undefined,
+          planned_start_time: v.planned_start_time || undefined,
+          planned_end_time: v.planned_end_time || undefined,
+        };
+        if (resolvedPartyType === "existing" && partyId) {
+          visitBody.party = partyId;
+        }
+        await addVisitMut({ planId, body: visitBody }).unwrap();
+      }
+
+      if (noteIds.length > 0 && plan?.plan_date) {
+        await markNotesConvertedMut({
+          note_ids: noteIds,
+          work_plan_id: planId,
+          work_plan_date: plan.plan_date,
+        }).unwrap();
+      }
+
+      await loadPlan();
+      toast.success(`Successfully imported and added ${importedVisits.length} visit(s) to this plan.`);
+      setImportNotesMode(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to import visits from notes";
+      toast.error(msg);
+    } finally {
+      setActionLoading(false);
+    }
+  }
+
+  async function handleImportTasksDirectly(
+    importedWorks: Partial<WorkPlanWorkRecord>[],
+    noteIds: string[]
+  ) {
+    setActionLoading(true);
+    try {
+      for (const w of importedWorks) {
+        const workBody = {
+          title: w.title,
+          description: w.description || undefined,
+          planned_start_time: w.planned_start_time || undefined,
+          planned_end_time: w.planned_end_time || undefined,
+        };
+        await addWorkMut({ planId, body: workBody }).unwrap();
+      }
+
+      if (noteIds.length > 0 && plan?.plan_date) {
+        await markNotesConvertedMut({
+          note_ids: noteIds,
+          work_plan_id: planId,
+          work_plan_date: plan.plan_date,
+        }).unwrap();
+      }
+
+      await loadPlan();
+      toast.success(`Successfully imported and added ${importedWorks.length} task(s) to this plan.`);
+      setImportNotesMode(null);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to import tasks from notes";
+      toast.error(msg);
+    } finally {
+      setActionLoading(false);
     }
   }
 
@@ -772,17 +882,28 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
               </h2>
             </div>
             {showStructureActions && (
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingVisit(null);
-                  setVisitModalOpen(true);
-                }}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer shrink-0"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Add Visit
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setImportNotesMode("visits")}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1.5 text-xs font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition shadow-xs cursor-pointer"
+                  title="Import pending visits from private scratchpad notes"
+                >
+                  <StickyNote className="h-3.5 w-3.5 shrink-0" />
+                  <span>Import from Notes</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingVisit(null);
+                    setVisitModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer shrink-0"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Visit
+                </button>
+              </div>
             )}
           </div>
 
@@ -1272,17 +1393,28 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
               </h2>
             </div>
             {showStructureActions && (
-              <button
-                type="button"
-                onClick={() => {
-                  setEditingWork(null);
-                  setWorkModalOpen(true);
-                }}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer shrink-0"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Add Task
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setImportNotesMode("tasks")}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 px-2.5 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 transition shadow-xs cursor-pointer"
+                  title="Import pending tasks and quick notes from private scratchpad"
+                >
+                  <StickyNote className="h-3.5 w-3.5 shrink-0" />
+                  <span>Import from Notes</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingWork(null);
+                    setWorkModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs cursor-pointer shrink-0"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add Task
+                </button>
+              </div>
             )}
           </div>
 
@@ -1935,6 +2067,42 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
           planDate={plan.plan_date}
           executiveName={salesUserLabel(plan.sales_user)}
           onClose={() => setPlanAiModalOpen(false)}
+        />
+      )}
+
+      {importNotesMode && (
+        <ImportNotesModal
+          open={Boolean(importNotesMode)}
+          mode={importNotesMode}
+          onClose={() => setImportNotesMode(null)}
+          onImportVisits={handleImportVisitsDirectly}
+          onImportTasks={handleImportTasksDirectly}
+        />
+      )}
+
+      {deleteItemTarget && (
+        <ConfirmDeleteModal
+          open={Boolean(deleteItemTarget)}
+          title={deleteItemTarget.type === "visit" ? "Remove Field Visit?" : "Remove Planned Task?"}
+          description={
+            deleteItemTarget.type === "visit" ? (
+              <span>
+                Are you sure you want to remove visit to{" "}
+                <strong className="text-foreground">{deleteItemTarget.title}</strong> from this work plan? Any linked
+                Scratchpad note will be automatically restored back to active pending status.
+              </span>
+            ) : (
+              <span>
+                Are you sure you want to remove task{" "}
+                <strong className="text-foreground">&ldquo;{deleteItemTarget.title}&rdquo;</strong> from this work
+                plan? Any linked Scratchpad note will be automatically restored back to active pending status.
+              </span>
+            )
+          }
+          confirmLabel={deleteItemTarget.type === "visit" ? "Remove Visit" : "Remove Task"}
+          isDeleting={actionLoading}
+          onClose={() => setDeleteItemTarget(null)}
+          onConfirm={handleConfirmDeleteItem}
         />
       )}
 

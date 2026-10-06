@@ -19,6 +19,7 @@ import { isManager as isManagerUtil, readSessionFromStorage } from "@/utils/auth
 import type { WorkPlanExpenseRecord, WorkPlanRecord, WorkPlanExpenseAttachment } from "@/types/workPlanner";
 import { ExpenseFormModal, type ExpenseFormPayload } from "./ExpenseFormModal";
 import { RejectExpenseModal } from "./RejectExpenseModal";
+import { ConfirmDeleteModal } from "./ConfirmDeleteModal";
 import { FilePreviewModal, useFilePreview } from "./FilePreviewModal";
 import { canAddExpenseForPlanDate, expenseAddWindowHint, formatPlanDate } from "./workPlanUtils";
 
@@ -66,6 +67,7 @@ export function ExpenseListSection({
   const [formOpen, setFormOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<WorkPlanExpenseRecord | null>(null);
   const [rejectingExpense, setRejectingExpense] = useState<WorkPlanExpenseRecord | null>(null);
+  const [deleteTargetExpense, setDeleteTargetExpense] = useState<WorkPlanExpenseRecord | null>(null);
   const [rejectAllOpen, setRejectAllOpen] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -115,15 +117,22 @@ export function ExpenseListSection({
     }
   }
 
-  async function handleDelete(exp: WorkPlanExpenseRecord) {
+  function handleDelete(exp: WorkPlanExpenseRecord) {
     const id = exp._id || exp.id;
     if (!id) return;
-    if (!confirm("Are you sure you want to delete this expense claim?")) return;
+    setDeleteTargetExpense(exp);
+  }
+
+  async function handleConfirmDelete() {
+    if (!deleteTargetExpense) return;
+    const id = deleteTargetExpense._id || deleteTargetExpense.id;
+    if (!id) return;
 
     setLoading(true);
     try {
       await removeExpenseMut({ planId, expenseId: id }).unwrap();
       toast.success("Expense claim deleted");
+      setDeleteTargetExpense(null);
       await onRefresh?.();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to delete expense";
@@ -723,6 +732,20 @@ export function ExpenseListSection({
           onConfirm={handleRejectAll}
         />
       ) : null}
+
+      {deleteTargetExpense && (
+        <ConfirmDeleteModal
+          open={Boolean(deleteTargetExpense)}
+          title="Delete Expense Claim"
+          description={`Are you sure you want to delete this expense claim (${deleteTargetExpense.category || "Expense"} - ${formatMoney(deleteTargetExpense.amount)})? This action cannot be undone.`}
+          confirmLabel="Delete"
+          isDeleting={loading}
+          onClose={() => {
+            if (!loading) setDeleteTargetExpense(null);
+          }}
+          onConfirm={handleConfirmDelete}
+        />
+      )}
 
       <FilePreviewModal
         doc={previewDoc}

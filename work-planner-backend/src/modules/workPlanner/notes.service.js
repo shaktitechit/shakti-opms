@@ -502,7 +502,7 @@ async function bulkConvertToWorkPlan({ note_ids, target_date }, user) {
       }
     }
 
-    await WorkPlanVisit.create({
+    const createdVisit = await WorkPlanVisit.create({
       work_plan: workPlan._id,
       sales_user: uId,
       plan_date: planDateStart,
@@ -524,6 +524,20 @@ async function bulkConvertToWorkPlan({ note_ids, target_date }, user) {
       created_by: uId,
       updated_by: uId,
     });
+
+    const now = new Date();
+    await UserNote.updateOne(
+      { _id: vNote._id },
+      {
+        $set: {
+          is_converted_to_work_plan: true,
+          work_plan: workPlan._id,
+          work_plan_item_id: createdVisit._id,
+          work_plan_date: planDateStart,
+          converted_at: now,
+        },
+      }
+    );
     convertedNoteIds.push(vNote._id);
   }
 
@@ -536,7 +550,7 @@ async function bulkConvertToWorkPlan({ note_ids, target_date }, user) {
 
   // Append Tasks as WorkPlanWork documents
   for (const tNote of taskNotes) {
-    await WorkPlanWork.create({
+    const createdWork = await WorkPlanWork.create({
       work_plan: workPlan._id,
       sales_user: uId,
       plan_date: planDateStart,
@@ -547,22 +561,22 @@ async function bulkConvertToWorkPlan({ note_ids, target_date }, user) {
       created_by: uId,
       updated_by: uId,
     });
+
+    const now = new Date();
+    await UserNote.updateOne(
+      { _id: tNote._id },
+      {
+        $set: {
+          is_converted_to_work_plan: true,
+          work_plan: workPlan._id,
+          work_plan_item_id: createdWork._id,
+          work_plan_date: planDateStart,
+          converted_at: now,
+        },
+      }
+    );
     convertedNoteIds.push(tNote._id);
   }
-
-  // Mark all converted notes
-  const now = new Date();
-  await UserNote.updateMany(
-    { _id: { $in: convertedNoteIds }, user: uId },
-    {
-      $set: {
-        is_converted_to_work_plan: true,
-        work_plan: workPlan._id,
-        work_plan_date: planDateStart,
-        converted_at: now,
-      },
-    }
-  );
 
   logger.info(
     `[notes.service] Converted ${convertedNoteIds.length} notes to WorkPlan ${workPlan._id} on ${target_date}`
@@ -580,38 +594,56 @@ async function bulkConvertToWorkPlan({ note_ids, target_date }, user) {
 }
 
 /**
- * Mark notes as converted when imported inside WorkPlanFormPage and saved.
+ * Mark notes as converted when imported inside WorkPlanFormPage or WorkPlanDetailPage.
  */
-async function markNotesConverted({ note_ids, work_plan_id, work_plan_date }, user) {
+async function markNotesConverted({ note_ids, work_plan_id, work_plan_date, item_mappings }, user) {
   const { UserNote } = getModels();
   const uId = userId(user);
   if (!uId) throw new ApiError(401, 'Unauthorized');
 
-  if (!Array.isArray(note_ids) || note_ids.length === 0) {
-    return { success: true, count: 0 };
+  const targetDate = work_plan_date ? startOfDay(work_plan_date) : new Date();
+  const now = new Date();
+
+  // If fine-grained item mappings provided (note_id -> created work/visit item_id)
+  if (Array.isArray(item_mappings) && item_mappings.length > 0) {
+    for (const m of item_mappings) {
+      if (m.note_id && mongoose.Types.ObjectId.isValid(m.note_id)) {
+        await UserNote.updateOne(
+          { _id: m.note_id, user: uId },
+          {
+            $set: {
+              is_converted_to_work_plan: true,
+              work_plan: work_plan_id && mongoose.Types.ObjectId.isValid(work_plan_id) ? work_plan_id : null,
+              work_plan_item_id: m.item_id && mongoose.Types.ObjectId.isValid(m.item_id) ? m.item_id : null,
+              work_plan_date: targetDate,
+              converted_at: now,
+            },
+          }
+        );
+      }
+    }
   }
 
-  const validIds = note_ids.filter((id) => mongoose.Types.ObjectId.isValid(id));
-  if (validIds.length === 0) return { success: true, count: 0 };
-
-  const targetDate = work_plan_date ? startOfDay(work_plan_date) : new Date();
-
-  await UserNote.updateMany(
-    { _id: { $in: validIds }, user: uId },
-    {
-      $set: {
-        is_converted_to_work_plan: true,
-        work_plan: work_plan_id && mongoose.Types.ObjectId.isValid(work_plan_id) ? work_plan_id : null,
-        work_plan_date: targetDate,
-        converted_at: new Date(),
-      },
+  if (Array.isArray(note_ids) && note_ids.length > 0) {
+    const validIds = note_ids.filter((id) => mongoose.Types.ObjectId.isValid(id));
+    if (validIds.length > 0) {
+      await UserNote.updateMany(
+        { _id: { $in: validIds }, user: uId },
+        {
+          $set: {
+            is_converted_to_work_plan: true,
+            work_plan: work_plan_id && mongoose.Types.ObjectId.isValid(work_plan_id) ? work_plan_id : null,
+            work_plan_date: targetDate,
+            converted_at: now,
+          },
+        }
+      );
     }
-  );
+  }
 
   return {
     success: true,
-    count: validIds.length,
-    message: `Marked ${validIds.length} notes as converted to Work Plan`,
+    message: 'Marked notes as converted to Work Plan',
   };
 }
 
