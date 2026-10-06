@@ -395,7 +395,7 @@ export function SeniorRemarksModal({
                         </span>
                       </div>
                       <div
-                        className="text-muted text-[11px] prose prose-xs dark:prose-invert max-w-none bg-surface-muted/30 p-2 rounded-lg"
+                        className="rich-text-content text-muted text-[11px] prose prose-xs dark:prose-invert max-w-none bg-surface-muted/30 p-2 rounded-lg"
                         dangerouslySetInnerHTML={{ __html: item.remark }}
                       />
                     </div>

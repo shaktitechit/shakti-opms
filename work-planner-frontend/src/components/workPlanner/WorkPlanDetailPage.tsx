@@ -102,7 +102,7 @@ function RichTextDisplay({ content, className = "" }: { content?: string; classN
   if (isHtml) {
     return (
       <div
-        className={`prose prose-xs dark:prose-invert max-w-none break-words [overflow-wrap:anywhere] ${className}`}
+        className={`rich-text-content max-w-none break-words [overflow-wrap:anywhere] ${className}`}
         dangerouslySetInnerHTML={{ __html: content }}
       />
     );
@@ -715,20 +715,35 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                 </div>
               </div>
 
-              {plan.manager_remarks ? (
-                <RichTextDisplay content={plan.manager_remarks} className="text-xs text-foreground" />
+              {/* Active Directive Remark Content */}
+              {latestRemark?.remark || plan.manager_remarks ? (
+                <div className="space-y-1">
+                  <RichTextDisplay content={latestRemark?.remark || plan.manager_remarks} className="text-xs text-foreground" />
+                  {latestRemark && (latestRemark.user_name || latestRemark.created_at) && (
+                    <div className="flex items-center justify-between text-[10px] text-primary/80 font-medium pt-1">
+                      <span>
+                        By: {latestRemark.user_name || "Senior Authority"}{" "}
+                        {latestRemark.role ? `(${latestRemark.role})` : ""}
+                      </span>
+                      {latestRemark.created_at && (
+                        <span>{new Date(latestRemark.created_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
               ) : (
                 <p className="text-xs text-muted italic">No senior remarks recorded yet.</p>
               )}
 
-              {plan.authority_remarks && plan.authority_remarks.length > 0 && (
+              {/* Prior Directives History (shown only if multiple remarks exist, to avoid duplication) */}
+              {plan.authority_remarks && plan.authority_remarks.length > 1 && (
                 <div className="pt-2 border-t border-primary/10 space-y-1">
                   <span className="text-[10px] font-bold text-primary uppercase tracking-wider">
-                    Directive History ({plan.authority_remarks.length})
+                    Prior Directives ({plan.authority_remarks.length - 1})
                   </span>
                   <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                    {plan.authority_remarks.map((item, idx) => (
-                      <div key={idx} className="rounded bg-card/70 p-2 text-[11px] border border-border/50">
+                    {plan.authority_remarks.slice(0, -1).map((item, idx) => (
+                      <div key={item._id || idx} className="rounded bg-card/70 p-2 text-[11px] border border-border/50 space-y-1">
                         <div className="flex items-center justify-between text-[10px] text-muted mb-0.5">
                           <span className="font-semibold text-foreground">
                             {item.user_name || "Senior Authority"} ({item.role || "Senior Authority"})
@@ -1053,15 +1068,39 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                               </button>
                             </div>
 
-                            {v.manager_remarks ? <RichTextDisplay content={v.manager_remarks} /> : null}
-                            {v.authority_remarks && v.authority_remarks.length > 0 && (
-                              <div className="pt-1 border-t border-primary/20 space-y-1 text-[11px] min-w-0">
-                                {v.authority_remarks.map((r: any, idx: number) => (
-                                  <div key={r._id || idx} className="flex flex-col sm:flex-row sm:items-start justify-between gap-1 min-w-0">
-                                    <span className="font-semibold text-primary shrink-0">
-                                      {r.user_name || "Senior Authority"} ({r.role || "Senior"}):
+                            {/* Main Active Directive Content */}
+                            {vLatestRemark?.remark || v.manager_remarks ? (
+                              <div className="space-y-1">
+                                <RichTextDisplay content={vLatestRemark?.remark || v.manager_remarks} />
+                                {vLatestRemark && (vLatestRemark.user_name || vLatestRemark.created_at) && (
+                                  <div className="flex items-center justify-between gap-2 text-[10px] text-primary/80 font-medium pt-0.5">
+                                    <span>
+                                      By: {vLatestRemark.user_name || "Senior Authority"}{" "}
+                                      {vLatestRemark.role ? `(${vLatestRemark.role})` : ""}
                                     </span>
-                                    <span className="flex-1 break-words sm:text-right">{r.remark}</span>
+                                    {vLatestRemark.created_at && (
+                                      <span>{new Date(vLatestRemark.created_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}</span>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            ) : null}
+
+                            {/* Prior Directives History (only if > 1 remark, avoiding duplication) */}
+                            {v.authority_remarks && v.authority_remarks.length > 1 && (
+                              <div className="pt-1.5 border-t border-primary/20 space-y-1.5 text-[11px] min-w-0">
+                                <span className="text-[10px] font-bold text-primary uppercase tracking-wider block">
+                                  Prior Directives ({v.authority_remarks.length - 1})
+                                </span>
+                                {v.authority_remarks.slice(0, -1).map((r: any, idx: number) => (
+                                  <div key={r._id || idx} className="rounded bg-primary/5 p-2 border border-primary/15 space-y-1">
+                                    <div className="flex items-center justify-between text-[10px] text-primary/80 font-semibold">
+                                      <span>
+                                        {r.user_name || "Senior Authority"} ({r.role || "Senior"}):
+                                      </span>
+                                      {r.created_at && <span>{new Date(r.created_at).toLocaleDateString()}</span>}
+                                    </div>
+                                    <RichTextDisplay content={r.remark} />
                                   </div>
                                 ))}
                               </div>
@@ -1427,15 +1466,39 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
                             </button>
                           </div>
 
-                          {w.manager_remarks ? <RichTextDisplay content={w.manager_remarks} /> : null}
-                          {w.authority_remarks && w.authority_remarks.length > 0 && (
-                            <div className="pt-1 border-t border-primary/20 space-y-1 text-[11px] min-w-0">
-                              {w.authority_remarks.map((r: any, idx: number) => (
-                                <div key={r._id || idx} className="flex flex-col sm:flex-row sm:items-start justify-between gap-1 min-w-0">
-                                  <span className="font-semibold text-primary shrink-0">
-                                    {r.user_name || "Senior Authority"} ({r.role || "Senior"}):
+                          {/* Main Active Directive Content */}
+                          {wLatestRemark?.remark || w.manager_remarks ? (
+                            <div className="space-y-1">
+                              <RichTextDisplay content={wLatestRemark?.remark || w.manager_remarks} />
+                              {wLatestRemark && (wLatestRemark.user_name || wLatestRemark.created_at) && (
+                                <div className="flex items-center justify-between gap-2 text-[10px] text-primary/80 font-medium pt-0.5">
+                                  <span>
+                                    By: {wLatestRemark.user_name || "Senior Authority"}{" "}
+                                    {wLatestRemark.role ? `(${wLatestRemark.role})` : ""}
                                   </span>
-                                  <span className="flex-1 break-words sm:text-right">{r.remark}</span>
+                                  {wLatestRemark.created_at && (
+                                    <span>{new Date(wLatestRemark.created_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" })}</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          ) : null}
+
+                          {/* Prior Directives History (only if > 1 remark, avoiding duplication) */}
+                          {w.authority_remarks && w.authority_remarks.length > 1 && (
+                            <div className="pt-1.5 border-t border-primary/20 space-y-1.5 text-[11px] min-w-0">
+                              <span className="text-[10px] font-bold text-primary uppercase tracking-wider block">
+                                Prior Directives ({w.authority_remarks.length - 1})
+                              </span>
+                              {w.authority_remarks.slice(0, -1).map((r: any, idx: number) => (
+                                <div key={r._id || idx} className="rounded bg-primary/5 p-2 border border-primary/15 space-y-1">
+                                  <div className="flex items-center justify-between text-[10px] text-primary/80 font-semibold">
+                                    <span>
+                                      {r.user_name || "Senior Authority"} ({r.role || "Senior"}):
+                                    </span>
+                                    {r.created_at && <span>{new Date(r.created_at).toLocaleDateString()}</span>}
+                                  </div>
+                                  <RichTextDisplay content={r.remark} />
                                 </div>
                               ))}
                             </div>

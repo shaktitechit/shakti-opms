@@ -442,7 +442,7 @@ export function DirectiveThreadModal({
               </div>
 
               <div
-                className="prose prose-sm dark:prose-invert max-w-none text-xs leading-relaxed text-foreground"
+                className="rich-text-content prose prose-sm dark:prose-invert max-w-none text-xs leading-relaxed text-foreground"
                 dangerouslySetInnerHTML={{ __html: item.remark }}
               />
             </div>
@@ -526,7 +526,7 @@ export function DirectiveThreadModal({
                         </div>
 
                         <div
-                          className="prose prose-sm dark:prose-invert max-w-none text-xs text-foreground leading-relaxed"
+                          className="rich-text-content prose prose-sm dark:prose-invert max-w-none text-xs text-foreground leading-relaxed"
                           dangerouslySetInnerHTML={{ __html: f.response }}
                         />
 

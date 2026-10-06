@@ -159,3 +159,70 @@ select option {
   color: var(--foreground);
 }
 
+/* Rich Text Formatting Container */
+.rich-text-content {
+  color: inherit;
+}
+.rich-text-content ol {
+  list-style-type: decimal;
+  padding-left: 1.25rem;
+  margin-top: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+.rich-text-content ul {
+  list-style-type: disc;
+  padding-left: 1.25rem;
+  margin-top: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+.rich-text-content li {
+  margin-top: 0.15rem;
+  margin-bottom: 0.15rem;
+}
+.rich-text-content p {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+.rich-text-content p:first-child {
+  margin-top: 0;
+}
+.rich-text-content p:last-child {
+  margin-bottom: 0;
+}
+.rich-text-content strong,
+.rich-text-content b {
+  font-weight: 700;
+}
+.rich-text-content em,
+.rich-text-content i {
+  font-style: italic;
+}
+.rich-text-content u {
+  text-decoration: underline;
+}
+.rich-text-content s,
+.rich-text-content strike {
+  text-decoration: line-through;
+}
+.rich-text-content blockquote {
+  border-left: 3px solid currentColor;
+  padding-left: 0.75rem;
+  opacity: 0.85;
+  margin: 0.35rem 0;
+}
+.rich-text-content code {
+  background-color: rgba(125, 125, 125, 0.15);
+  padding: 0.1rem 0.25rem;
+  border-radius: 0.25rem;
+  font-family: var(--font-geist-mono);
+  font-size: 0.9em;
+}
+.rich-text-content pre {
+  background-color: rgba(125, 125, 125, 0.15);
+  padding: 0.5rem;
+  border-radius: 0.375rem;
+  overflow-x: auto;
+  margin: 0.35rem 0;
+}
+
+
