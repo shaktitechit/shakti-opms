@@ -1564,12 +1564,39 @@ async function sendPendingWorkPlanMorningReminder(pendingUsers, dateStr, timeZon
       return;
     }
 
-    logger.info(`[AutoNotification] Morning 11:30 AM reminder: Sending alerts for ${pendingUsers.length} pending executives.`);
+    const { WorkPlan } = getModels();
+
+    // Live safety filter: Ensure none of these users have created/planned a work plan or taken leave for dateStr
+    const boundsStart = new Date(`${dateStr}T00:00:00.000Z`);
+    boundsStart.setHours(boundsStart.getHours() - 12);
+    const boundsEnd = new Date(`${dateStr}T23:59:59.999Z`);
+    boundsEnd.setHours(boundsEnd.getHours() + 12);
+
+    const userIds = pendingUsers.map((u) => u._id || u.id).filter(Boolean);
+    const activePlans = await WorkPlan.find({
+      sales_user: { $in: userIds },
+      plan_date: { $gte: boundsStart, $lte: boundsEnd },
+      $or: [
+        { status: { $in: ['planned', 'submitted', 'approved', 'completed', 'in_progress'] } },
+        { plan_type: 'Leave' },
+      ],
+      deletedAt: null,
+    }).select('sales_user status plan_type').lean();
+
+    const plannedUserIds = new Set(activePlans.map((p) => String(p.sales_user)));
+    const verifiedPendingUsers = pendingUsers.filter((u) => !plannedUserIds.has(String(u._id || u.id)));
+
+    if (verifiedPendingUsers.length === 0) {
+      logger.info(`[AutoNotification] Morning 11:30 AM reminder: All executives verified planned for ${dateStr}. No reminders sent.`);
+      return;
+    }
+
+    logger.info(`[AutoNotification] Morning 11:30 AM reminder: Sending alerts for ${verifiedPendingUsers.length} pending executives.`);
 
     // Group pending users by direct manager for manager digest
     const managerDigestMap = new Map();
 
-    for (const exec of pendingUsers) {
+    for (const exec of verifiedPendingUsers) {
       const execName = exec.name || exec.email.split('@')[0];
       const { directManager, allManagers } = await resolveStakeholders(exec._id);
 
@@ -1725,11 +1752,37 @@ async function sendPendingDayEndEveningReminder(pendingPlansWithUsers, dateStr, 
       return;
     }
 
-    logger.info(`[AutoNotification] Evening 6:30 PM reminder: Sending alerts for ${pendingPlansWithUsers.length} pending Day End reports.`);
+    const { WorkPlan } = getModels();
+
+    // Live safety filter: Query the current status of each plan to make sure none were just submitted/completed
+    const planIds = pendingPlansWithUsers.map((i) => i.plan?._id).filter(Boolean);
+    const livePlans = await WorkPlan.find({
+      _id: { $in: planIds },
+      deletedAt: null,
+    }).select('status day_end plan_type').lean();
+
+    const livePlanMap = new Map(livePlans.map((p) => [String(p._id), p]));
+
+    const verifiedPending = pendingPlansWithUsers.filter((item) => {
+      const live = livePlanMap.get(String(item.plan?._id));
+      if (!live) return false;
+      // If plan is completed, on Leave, or has completed_at on day_end, exclude!
+      if (live.status === 'completed' || live.plan_type === 'Leave' || live.day_end?.completed_at) {
+        return false;
+      }
+      return true;
+    });
+
+    if (verifiedPending.length === 0) {
+      logger.info(`[AutoNotification] Evening 6:30 PM reminder: All plans verified completed for ${dateStr}. No reminders sent.`);
+      return;
+    }
+
+    logger.info(`[AutoNotification] Evening 6:30 PM reminder: Sending alerts for ${verifiedPending.length} pending Day End reports.`);
 
     const managerDigestMap = new Map();
 
-    for (const item of pendingPlansWithUsers) {
+    for (const item of verifiedPending) {
       const exec = item.user;
       const plan = item.plan;
       const execName = exec.name || exec.email.split('@')[0];

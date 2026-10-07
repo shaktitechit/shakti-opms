@@ -112,11 +112,11 @@ async function runPendingWorkPlanCheck({ timeZone = WORK_PLANNER_TZ || 'Asia/Kol
       return;
     }
 
-    // 2. Query today's work plans that are submitted, approved, completed, or on Leave
+    // 2. Query today's work plans that are planned, submitted, approved, completed, or on Leave
     const submittedOrLeavePlans = await WorkPlan.find({
       plan_date: { $gte: start, $lt: endExclusive },
       $or: [
-        { status: { $in: ['submitted', 'approved', 'completed'] } },
+        { status: { $in: ['planned', 'submitted', 'approved', 'completed', 'in_progress'] } },
         { plan_type: 'Leave' },
       ],
       deletedAt: null,
@@ -126,7 +126,7 @@ async function runPendingWorkPlanCheck({ timeZone = WORK_PLANNER_TZ || 'Asia/Kol
       submittedOrLeavePlans.map((p) => String(p.sales_user)).filter(Boolean)
     );
 
-    // 3. Find executives with no submitted/approved/leave plan for today
+    // 3. Find executives with no planned/submitted/approved/leave plan for today
     const pendingExecutives = executives.filter((e) => !usersSubmittedOrLeave.has(String(e._id)));
 
     logger.info(
@@ -134,7 +134,7 @@ async function runPendingWorkPlanCheck({ timeZone = WORK_PLANNER_TZ || 'Asia/Kol
     );
 
     if (pendingExecutives.length === 0) {
-      logger.info(`[workPlannerScheduler] All executives have submitted/approved work plans for ${ymd}. No reminders needed.`);
+      logger.info(`[workPlannerScheduler] All executives have planned/submitted work plans for ${ymd}. No reminders needed.`);
       return;
     }
 
@@ -165,9 +165,12 @@ async function runPendingDayEndCheck({ timeZone = WORK_PLANNER_TZ || 'Asia/Kolka
     // 1. Query today's work plans that are NOT completed, NOT a Leave day, and have no day_end completed_at
     const incompletePlans = await WorkPlan.find({
       plan_date: { $gte: start, $lt: endExclusive },
-      status: { $ne: 'completed' },
+      status: { $nin: ['completed', 'rejected'] },
       plan_type: { $ne: 'Leave' },
-      'day_end.completed_at': { $exists: false },
+      $or: [
+        { 'day_end.completed_at': { $exists: false } },
+        { 'day_end.completed_at': null },
+      ],
       deletedAt: null,
     }).populate('sales_user', 'name email portals is_active').lean();
 
@@ -176,6 +179,9 @@ async function runPendingDayEndCheck({ timeZone = WORK_PLANNER_TZ || 'Asia/Kolka
     for (const plan of incompletePlans) {
       const user = plan.sales_user;
       if (user && user.is_active !== false) {
+        if (plan.status === 'completed' || plan.plan_type === 'Leave' || plan.day_end?.completed_at) {
+          continue;
+        }
         pendingPlansWithUsers.push({ user, plan });
       }
     }
