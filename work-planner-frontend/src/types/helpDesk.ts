@@ -41,6 +41,7 @@ export interface HelpTicketAttachment {
   size?: number;
   url?: string;
   uploaded_by?: string;
+  uploaded_by_name?: string;
   uploaded_at?: string;
 }
 

@@ -186,7 +186,8 @@ export function CreateHelpTicketModal({
             mime_type: uploaded.mime_type || f.type || "application/octet-stream",
             size: uploaded.size || f.size,
             url: uploaded.url || `/api/work-planner/attachments/${uploaded.file_id || (uploaded as any)._id}/preview`,
-            uploaded_by: sessionUser?.name || "Me",
+            uploaded_by: currentUserId || undefined,
+            uploaded_by_name: sessionUser?.name || "Me",
             uploaded_at: new Date().toISOString(),
           },
         ]);

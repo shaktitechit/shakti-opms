@@ -331,7 +331,8 @@ export function HelpTicketDetailModal({
             mime_type: uploaded.mime_type || file.type,
             size: uploaded.size || file.size,
             url: uploaded.url || `/api/work-planner/attachments/${uploaded.file_id || (uploaded as any)._id}/preview`,
-            uploaded_by: currentUser?.name || "Me",
+            uploaded_by: currentUserId || undefined,
+            uploaded_by_name: currentUser?.name || "Me",
             uploaded_at: new Date().toISOString(),
           },
         ]);

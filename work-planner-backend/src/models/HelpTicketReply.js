@@ -43,6 +43,9 @@ const helpTicketReplySchema = new mongoose.Schema(
         mime_type: { type: String, default: '' },
         size: { type: Number, default: 0 },
         url: { type: String, default: '' },
+        uploaded_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+        uploaded_by_name: { type: String, default: '' },
+        uploaded_at: { type: Date, default: Date.now },
       },
     ],
     metadata: {

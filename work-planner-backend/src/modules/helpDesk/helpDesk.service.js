@@ -23,6 +23,46 @@ function toPlain(doc) {
   return JSON.parse(JSON.stringify(doc));
 }
 
+function sanitizeAttachments(attachments, defaultUserId, defaultUserName = '') {
+  if (!Array.isArray(attachments)) return [];
+  return attachments
+    .filter(Boolean)
+    .map((att) => {
+      let uId = att.uploaded_by;
+      let uName = att.uploaded_by_name || '';
+      if (uId && typeof uId === 'object' && uId._id) {
+        uName = uName || uId.name || '';
+        uId = uId._id;
+      }
+      const rawIdStr = String(uId || '').trim();
+      const isValidObjId =
+        rawIdStr &&
+        mongoose.Types.ObjectId.isValid(rawIdStr) &&
+        String(new mongoose.Types.ObjectId(rawIdStr)) === rawIdStr;
+
+      const fallbackUserId =
+        defaultUserId && mongoose.Types.ObjectId.isValid(String(defaultUserId))
+          ? defaultUserId
+          : null;
+
+      return {
+        file_id: att.file_id || att._id || '',
+        filename: att.filename || '',
+        original_name: att.original_name || att.filename || '',
+        mime_type: att.mime_type || '',
+        size: Number(att.size) || 0,
+        url: att.url || '',
+        uploaded_by: isValidObjId ? uId : fallbackUserId,
+        uploaded_by_name:
+          uName ||
+          (!isValidObjId && typeof att.uploaded_by === 'string' && att.uploaded_by !== String(fallbackUserId)
+            ? att.uploaded_by
+            : defaultUserName),
+        uploaded_at: att.uploaded_at ? new Date(att.uploaded_at) : new Date(),
+      };
+    });
+}
+
 async function hydrateTicketAttachments(ticket) {
   if (!ticket) return ticket;
   const out = { ...ticket };
@@ -160,7 +200,7 @@ async function createTicket(user, payload) {
     company_id: user.company_id || creatorDoc?.company_id || null,
     tagged_users: taggedUsersData,
     related_entity: payload.related_entity || { entity_type: 'none' },
-    attachments: Array.isArray(payload.attachments) ? payload.attachments : [],
+    attachments: sanitizeAttachments(payload.attachments, userId, creatorSnapshot.name),
     due_date: payload.due_date ? new Date(payload.due_date) : null,
     last_activity_at: new Date(),
   });
@@ -378,7 +418,7 @@ async function addReply(user, ticketId, payload) {
     user_snapshot: userSnapshot,
     message: payload.message.trim(),
     reply_type: replyType,
-    attachments: Array.isArray(payload.attachments) ? payload.attachments : [],
+    attachments: sanitizeAttachments(payload.attachments, userId, userSnapshot.name),
     metadata: payload.metadata || {},
   });
 
@@ -556,7 +596,7 @@ async function proposeSolution(user, ticketId, payload) {
     proposed_by: userId,
     proposed_by_name: userDoc?.name || user.name || 'Collaborator',
     proposed_at: new Date(),
-    attachments: Array.isArray(payload.attachments) ? payload.attachments : [],
+    attachments: sanitizeAttachments(payload.attachments, userId, userDoc?.name || user.name || 'Collaborator'),
   };
 
   ticket.proposed_solution = solutionData;
