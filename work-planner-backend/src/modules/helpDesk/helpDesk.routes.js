@@ -29,6 +29,9 @@ router.post('/attachments/upload', upload.single('file'), controller.uploadAttac
 // KPI Stats
 router.get('/stats', controller.getHelpDeskStats);
 
+// User directory for tagging collaborators
+router.get('/users', controller.listUsers);
+
 // Ticket CRUD & Lifecycle
 router.get('/tickets', controller.listTickets);
 router.post('/tickets', controller.createTicket);

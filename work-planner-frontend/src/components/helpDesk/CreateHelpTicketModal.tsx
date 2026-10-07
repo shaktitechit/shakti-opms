@@ -22,10 +22,10 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useGetUsersQuery } from "@/store/api/authApiSlice";
 import {
   useCreateHelpTicketMutation,
   useUploadHelpDeskAttachmentMutation,
+  useGetHelpDeskUsersQuery,
 } from "@/store/api/helpDeskApiSlice";
 import { FilePreviewModal, useFilePreview } from "@/components/workPlanner/FilePreviewModal";
 import { readSessionFromStorage } from "@/utils/authStorage";
@@ -74,6 +74,14 @@ function formatBytes(bytes?: number): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
+function getUserDepartmentName(u: any): string {
+  if (!u || !u.department) return "";
+  if (typeof u.department === "object") {
+    return String(u.department.name || u.department.code || u.department.title || "");
+  }
+  return String(u.department);
+}
+
 export function CreateHelpTicketModal({
   open,
   initialCategory,
@@ -97,7 +105,7 @@ export function CreateHelpTicketModal({
   const sessionUser = useMemo(() => readSessionFromStorage()?.user, []);
   const currentUserId = String(sessionUser?._id || (sessionUser as any)?.id || "");
 
-  const { data: allUsers = [], isLoading: usersLoading } = useGetUsersQuery(undefined, { skip: !open });
+  const { data: allUsers = [], isLoading: usersLoading } = useGetHelpDeskUsersQuery(undefined, { skip: !open });
   const [createTicketMut, { isLoading: isSubmitting }] = useCreateHelpTicketMutation();
   const [uploadAttachmentMut] = useUploadHelpDeskAttachmentMutation();
 
@@ -125,7 +133,7 @@ export function CreateHelpTicketModal({
     return availableUsers.filter((u) => {
       const name = (u.name || "").toLowerCase();
       const email = (u.email || "").toLowerCase();
-      const dept = (u.department || "").toLowerCase();
+      const dept = getUserDepartmentName(u).toLowerCase();
       return name.includes(q) || email.includes(q) || dept.includes(q);
     });
   }, [availableUsers, userSearchQuery]);
@@ -428,9 +436,9 @@ export function CreateHelpTicketModal({
                             {u.name?.charAt(0) || "U"}
                           </div>
                           <span className="truncate font-medium">{u.name}</span>
-                          {u.department && (
+                          {getUserDepartmentName(u) && (
                             <span className="rounded bg-surface-muted px-1.5 py-0.2 text-[9px] text-muted truncate">
-                              {u.department}
+                              {getUserDepartmentName(u)}
                             </span>
                           )}
                         </div>

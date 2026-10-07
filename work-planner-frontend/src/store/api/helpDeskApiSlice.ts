@@ -189,6 +189,24 @@ export const helpDeskApiSlice = baseApi.injectEndpoints({
       }),
       transformResponse: (res: { success: boolean; data: HelpTicketAttachment }) => res.data,
     }),
+
+    getHelpDeskUsers: builder.query<
+      Array<{
+        _id: string;
+        id?: string;
+        name: string;
+        email: string;
+        department?: string | { name?: string };
+        roles?: unknown;
+        role_codes?: unknown;
+        portals?: unknown;
+        wp_role?: string;
+      }>,
+      void
+    >({
+      query: () => "/help-desk/users",
+      transformResponse: (res: { success: boolean; data: any[] }) => res.data || [],
+    }),
   }),
 });
 
@@ -207,5 +225,6 @@ export const {
   useReopenHelpTicketMutation,
   useCancelHelpTicketMutation,
   useUploadHelpDeskAttachmentMutation,
+  useGetHelpDeskUsersQuery,
 } = helpDeskApiSlice;
 

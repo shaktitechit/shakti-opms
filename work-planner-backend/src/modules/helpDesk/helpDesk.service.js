@@ -739,6 +739,18 @@ async function getHelpDeskStats(user) {
   };
 }
 
+/**
+ * List all active users across company/departments for collaborator tagging and assignment in Help Desk.
+ */
+async function listUsers(actor) {
+  const { User } = getModels();
+  const docs = await User.find({ is_active: { $ne: false } })
+    .select('_id name email phone department roles role_codes portals wp_role')
+    .sort({ name: 1 })
+    .lean();
+  return docs;
+}
+
 module.exports = {
   generateTicketNumber,
   createTicket,
@@ -752,4 +764,5 @@ module.exports = {
   reopenTicket,
   cancelTicket,
   getHelpDeskStats,
+  listUsers,
 };

@@ -227,6 +227,16 @@ async function downloadAttachment(req, res) {
   }
 }
 
+async function listUsers(req, res) {
+  try {
+    const users = await helpDeskService.listUsers(req.user);
+    return res.json({ success: true, data: users });
+  } catch (err) {
+    logger.error(`[HelpDeskController] listUsers error: ${err.message}`);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+}
+
 module.exports = {
   createTicket,
   listTickets,
@@ -243,5 +253,6 @@ module.exports = {
   previewAttachment,
   viewAttachment,
   downloadAttachment,
+  listUsers,
 };
 

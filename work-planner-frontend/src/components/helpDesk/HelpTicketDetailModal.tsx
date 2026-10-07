@@ -43,8 +43,8 @@ import {
   useReopenHelpTicketMutation,
   useCancelHelpTicketMutation,
   useUploadHelpDeskAttachmentMutation,
+  useGetHelpDeskUsersQuery,
 } from "@/store/api/helpDeskApiSlice";
-import { useGetUsersQuery } from "@/store/api/authApiSlice";
 import { FilePreviewModal, useFilePreview } from "@/components/workPlanner/FilePreviewModal";
 import type {
   HelpTicketRecord,
@@ -54,6 +54,14 @@ import type {
   HelpTicketStatus,
 } from "@/types/helpDesk";
 import { readSessionFromStorage } from "@/utils/authStorage";
+
+function getUserDepartmentName(u: any): string {
+  if (!u || !u.department) return "";
+  if (typeof u.department === "object") {
+    return String(u.department.name || u.department.code || u.department.title || "");
+  }
+  return String(u.department);
+}
 
 interface HelpTicketDetailModalProps {
   ticketId: string | null;
@@ -226,7 +234,7 @@ export function HelpTicketDetailModal({
     skip: !isOpen || !ticketId,
   });
 
-  const { data: usersData } = useGetUsersQuery(undefined, {
+  const { data: usersData } = useGetHelpDeskUsersQuery(undefined, {
     skip: !showTagModal,
   });
   const allUsers = (Array.isArray(usersData) ? usersData : (usersData as any)?.data) || [];
@@ -453,7 +461,7 @@ export function HelpTicketDetailModal({
     const matchesSearch =
       (u.name || "").toLowerCase().includes(tagSearch.toLowerCase()) ||
       (u.email || "").toLowerCase().includes(tagSearch.toLowerCase()) ||
-      (u.department || "").toLowerCase().includes(tagSearch.toLowerCase());
+      getUserDepartmentName(u).toLowerCase().includes(tagSearch.toLowerCase());
     return !alreadyTagged && !isOwner && matchesSearch;
   });
 
@@ -1376,7 +1384,7 @@ export function HelpTicketDetailModal({
                               {u.name}
                             </span>
                             <span className="text-[10px] text-muted truncate block">
-                              {u.department || u.email}
+                              {getUserDepartmentName(u) || u.email}
                             </span>
                           </div>
                         </div>
