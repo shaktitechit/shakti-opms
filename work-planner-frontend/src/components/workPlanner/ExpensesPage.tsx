@@ -241,14 +241,14 @@ export function ExpensesPage() {
   }
 
   return (
-    <div className="space-y-4 font-sans">
+    <div className="space-y-3.5 sm:space-y-4 font-sans w-full max-w-full">
       {/* Top Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-card p-4 rounded-xl border border-border">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card p-3.5 sm:p-4 rounded-2xl border border-border shadow-2xs">
         <div>
-          <h1 className="text-xl font-bold text-foreground">
+          <h1 className="text-lg sm:text-xl font-bold text-foreground">
             Expense Claims Management
           </h1>
-          <p className="text-xs text-muted">
+          <p className="text-[11px] sm:text-xs text-muted">
             {elevatedRole
               ? ownershipScope === "mine"
                 ? "Your own field visit expenses — track submissions and reimbursements"
@@ -256,36 +256,36 @@ export function ExpensesPage() {
               : "Track and submit your field visit expense claims"}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-0.5 sm:flex-wrap">
           <button
             type="button"
             onClick={() => setDownloadOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted active:scale-95 transition shrink-0 cursor-pointer"
           >
             <FileSpreadsheet className="h-4 w-4 text-teal-600 dark:text-teal-400" />
-            Expense Report
+            <span>Expense Report</span>
           </button>
           <button
             type="button"
             onClick={() => setWorkPlanReportOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted active:scale-95 transition shrink-0 cursor-pointer"
           >
             <FileSpreadsheet className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-            Work Plan Report
+            <span>Work Plan Report</span>
           </button>
         </div>
       </div>
 
       {/* My Expenses vs Team Expenses (admin / manager) */}
       {elevatedRole && (
-        <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1.5">
+        <div className="flex items-center gap-1 rounded-xl border border-border bg-card p-1 overflow-x-auto scrollbar-none">
           <button
             type="button"
             onClick={() => {
               setOwnershipScope("mine");
               setCurrentPage(1);
             }}
-            className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
+            className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap active:scale-95 transition ${
               ownershipScope === "mine"
                 ? "bg-primary text-primary-foreground shadow-xs"
                 : "text-muted hover:bg-surface-muted hover:text-foreground"
@@ -299,7 +299,7 @@ export function ExpensesPage() {
               setOwnershipScope("team");
               setCurrentPage(1);
             }}
-            className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
+            className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap active:scale-95 transition ${
               ownershipScope === "team"
                 ? "bg-primary text-primary-foreground shadow-xs"
                 : "text-muted hover:bg-surface-muted hover:text-foreground"
@@ -311,7 +311,7 @@ export function ExpensesPage() {
       )}
 
       {/* Filter Tabs */}
-      <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1.5">
+      <div className="flex items-center gap-1 rounded-xl border border-border bg-card p-1.5 overflow-x-auto scrollbar-none">
         {["all", "submitted", "approved", "rejected", "draft"].map((st) => (
           <button
             key={st}
@@ -320,7 +320,7 @@ export function ExpensesPage() {
               setStatusFilter(st);
               setCurrentPage(1);
             }}
-            className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize transition ${
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize whitespace-nowrap active:scale-95 transition shrink-0 ${
               statusFilter === st
                 ? "bg-primary text-primary-foreground shadow-xs"
                 : "text-muted hover:bg-surface-muted hover:text-foreground"
@@ -332,9 +332,9 @@ export function ExpensesPage() {
       </div>
 
       {/* Controls Bar */}
-      <div className="flex flex-wrap items-center gap-3 bg-card p-3 rounded-xl border border-border">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted" />
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3 bg-card p-3 rounded-2xl border border-border shadow-2xs">
+        <div className="relative flex-1 min-w-0">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted pointer-events-none" />
           <input
             type="text"
             value={searchQuery}

@@ -615,31 +615,31 @@ export function DownloadExpensesModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Google Sheet Header Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface-muted/40 px-5 py-3.5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border bg-surface-muted/40 px-4 sm:px-5 py-3 sm:py-3.5 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-teal-500/10 text-teal-600 dark:text-teal-400 shrink-0">
               <FileSpreadsheet className="h-5 w-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-foreground">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-sm sm:text-base font-bold text-foreground truncate">
                   Expense Claims Master Report
                 </h2>
                 <span className="rounded bg-teal-500/10 text-teal-600 dark:text-teal-400 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
                   Google Sheet Mode
                 </span>
               </div>
-              <p className="text-xs text-muted">
+              <p className="text-[11px] sm:text-xs text-muted truncate">
                 Displaying {filteredItems.length} expense claims entries
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <button
               type="button"
               onClick={() => setShowFilterPanel((prev) => !prev)}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold active:scale-95 transition ${
                 showFilterPanel
                   ? "border-teal-500 bg-teal-500/10 text-teal-600 dark:text-teal-400"
                   : "border-border bg-card text-foreground hover:bg-surface-muted"
@@ -658,7 +658,7 @@ export function DownloadExpensesModal({
               type="button"
               disabled={loading}
               onClick={loadReportData}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-muted transition disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-muted active:scale-95 transition disabled:opacity-50"
               title="Refresh sheet data"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
@@ -668,33 +668,33 @@ export function DownloadExpensesModal({
               type="button"
               disabled={downloading || filteredItems.length === 0}
               onClick={exportCsv}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-teal-600/30 bg-teal-500/10 px-3.5 py-1.5 text-xs font-semibold text-teal-700 dark:text-teal-300 hover:bg-teal-500/20 disabled:opacity-50 transition shadow-xs"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-teal-600/30 bg-teal-500/10 px-3 py-1.5 text-xs font-semibold text-teal-700 dark:text-teal-300 hover:bg-teal-500/20 active:scale-95 disabled:opacity-50 transition shadow-xs"
             >
               <Download className="h-4 w-4" />
-              {downloading ? "Exporting…" : "Export CSV"}
+              {downloading ? "Exporting…" : "CSV"}
             </button>
             <button
               type="button"
               disabled={downloadingExcel || filteredItems.length === 0}
               onClick={exportExcel}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-teal-600/40 bg-teal-600 text-white px-3.5 py-1.5 text-xs font-semibold hover:bg-teal-700 disabled:opacity-50 transition shadow-xs"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-teal-600/40 bg-teal-600 text-white px-3 py-1.5 text-xs font-semibold hover:bg-teal-700 active:scale-95 disabled:opacity-50 transition shadow-xs"
             >
               <FileSpreadsheet className="h-4 w-4" />
-              {downloadingExcel ? "Generating Excel…" : "Export Excel (.xlsx)"}
+              {downloadingExcel ? "Generating…" : "Excel"}
             </button>
             <button
               type="button"
               disabled={downloadingPdf || filteredItems.length === 0}
               onClick={exportPdf}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50 transition shadow-xs"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 active:scale-95 disabled:opacity-50 transition shadow-xs"
             >
               <Download className="h-4 w-4" />
-              {downloadingPdf ? "Generating PDF…" : "Download PDF"}
+              {downloadingPdf ? "Generating…" : "PDF"}
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg p-1.5 text-muted hover:bg-surface-muted hover:text-foreground transition"
+              className="rounded-lg p-1.5 text-muted hover:bg-surface-muted hover:text-foreground active:scale-90 transition ml-auto sm:ml-0"
               title="Close report modal"
             >
               <X className="h-5 w-5" />

@@ -196,7 +196,7 @@ function StatsBlock({
 
   return (
     <div className="space-y-3 font-sans w-full">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div>
           <div className="flex items-center gap-2">
             <h3 className="text-xs font-bold uppercase tracking-wider text-muted">
@@ -212,52 +212,52 @@ function StatsBlock({
         </div>
         <Link
           href={buildUrl("/dashboard/plans")}
-          className="text-xs font-semibold text-primary hover:underline"
+          className="text-xs font-semibold text-primary hover:underline active:scale-95 transition"
         >
           View plans →
         </Link>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 w-full">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5 sm:gap-3 w-full">
         {cards.map((card) => (
           <Link
             key={card.key}
             href={card.href}
-            className={`group relative overflow-hidden rounded-xl border border-border bg-card p-3.5 shadow-xs transition hover:border-primary ${
+            className={`group relative overflow-hidden rounded-xl border border-border bg-card p-3 sm:p-3.5 shadow-xs transition active:scale-[0.98] hover:border-primary ${
               loading ? "opacity-70 animate-pulse" : ""
             }`}
           >
             <div className={`absolute inset-x-0 top-0 h-0.5 ${card.accent}`} />
             <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="text-xs font-medium text-muted">
+              <div className="min-w-0">
+                <div className="text-xs font-medium text-muted truncate">
                   {card.label}
                 </div>
-                <div className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+                <div className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-foreground">
                   {card.value}
                 </div>
                 {card.sub ? (
-                  <div className="mt-0.5 text-[10px] text-muted">
+                  <div className="mt-0.5 text-[10px] text-muted line-clamp-1">
                     {card.sub}
                   </div>
                 ) : null}
               </div>
               <div
-                className={`flex h-8 w-8 items-center justify-center rounded-lg ${card.iconWrap}`}
+                className={`flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg ${card.iconWrap}`}
               >
-                <card.Icon className={`h-4 w-4 ${card.iconTone}`} />
+                <card.Icon className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${card.iconTone}`} />
               </div>
             </div>
           </Link>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3 w-full">
+      <div className="grid grid-cols-1 gap-2.5 sm:gap-3 md:grid-cols-3 w-full">
         {statusCards.map((card) => (
           <Link
             key={card.key}
             href={card.href}
-            className={`group relative overflow-hidden rounded-xl border border-border bg-card p-3.5 shadow-xs transition hover:border-primary ${
+            className={`group relative overflow-hidden rounded-xl border border-border bg-card p-3 sm:p-3.5 shadow-xs transition active:scale-[0.98] hover:border-primary ${
               loading ? "opacity-70 animate-pulse" : ""
             }`}
           >
@@ -267,43 +267,43 @@ function StatsBlock({
                 <div className="text-xs font-medium text-muted">
                   {card.label}
                 </div>
-                <div className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+                <div className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-foreground">
                   {card.value}
                 </div>
               </div>
               <div
-                className={`flex h-8 w-8 items-center justify-center rounded-lg ${card.iconWrap}`}
+                className={`flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg ${card.iconWrap}`}
               >
-                <card.Icon className={`h-4 w-4 ${card.iconTone}`} />
+                <card.Icon className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${card.iconTone}`} />
               </div>
             </div>
           </Link>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3 w-full">
+      <div className="grid grid-cols-1 gap-2.5 sm:gap-3 md:grid-cols-3 w-full">
         {expenseCards.map((card) => (
           <Link
             key={card.key}
             href={card.href}
-            className={`group relative overflow-hidden rounded-xl border border-border bg-card p-3.5 shadow-xs transition hover:border-primary ${
+            className={`group relative overflow-hidden rounded-xl border border-border bg-card p-3 sm:p-3.5 shadow-xs transition active:scale-[0.98] hover:border-primary ${
               loading ? "opacity-70 animate-pulse" : ""
             }`}
           >
             <div className={`absolute inset-x-0 top-0 h-0.5 ${card.accent}`} />
             <div className="flex items-start justify-between gap-2">
-              <div>
-                <div className="text-xs font-medium text-muted">
+              <div className="min-w-0">
+                <div className="text-xs font-medium text-muted truncate">
                   {card.label}
                 </div>
-                <div className="mt-1 text-2xl font-bold tabular-nums text-foreground">
+                <div className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-foreground truncate">
                   {card.value}
                 </div>
               </div>
               <div
-                className={`flex h-8 w-8 items-center justify-center rounded-lg ${card.iconWrap}`}
+                className={`flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg ${card.iconWrap}`}
               >
-                <card.Icon className={`h-4 w-4 ${card.iconTone}`} />
+                <card.Icon className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${card.iconTone}`} />
               </div>
             </div>
           </Link>
@@ -311,7 +311,7 @@ function StatsBlock({
       </div>
 
       {trend.length > 0 ? (
-        <div className="rounded-xl border border-border bg-card p-4">
+        <div className="rounded-xl border border-border bg-card p-3.5 sm:p-4">
           <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
             Monthly Plan Trend
           </div>
@@ -319,7 +319,7 @@ function StatsBlock({
             {trend.map((m) => (
               <div
                 key={`${m.year}-${m.month}`}
-                className="rounded-lg bg-surface-muted px-3 py-1.5 text-xs"
+                className="rounded-lg bg-surface-muted px-2.5 sm:px-3 py-1.5 text-xs"
               >
                 <span className="font-medium text-foreground">
                   {m.year}-{String(m.month).padStart(2, "0")}
@@ -332,7 +332,7 @@ function StatsBlock({
       ) : null}
 
       {expenseTrend.length > 0 ? (
-        <div className="rounded-xl border border-border bg-card p-4">
+        <div className="rounded-xl border border-border bg-card p-3.5 sm:p-4">
           <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">
             Monthly Approved Expenses
           </div>
@@ -340,7 +340,7 @@ function StatsBlock({
             {expenseTrend.map((m) => (
               <div
                 key={`exp-${m.year}-${m.month}`}
-                className="rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs"
+                className="rounded-lg bg-emerald-500/10 px-2.5 sm:px-3 py-1.5 text-xs"
               >
                 <span className="font-medium text-foreground">
                   {m.year}-{String(m.month).padStart(2, "0")}
@@ -383,7 +383,7 @@ export function WorkPlannerStatsWidgets({
   }
 
   return (
-    <div className="space-y-8 w-full">
+    <div className="space-y-6 sm:space-y-8 w-full">
       <StatsBlock
         title="My Overview"
         tag="Personal"
@@ -404,4 +404,3 @@ export function WorkPlannerStatsWidgets({
     </div>
   );
 }
-

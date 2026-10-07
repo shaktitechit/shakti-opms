@@ -922,28 +922,33 @@ export function VisitFormModal({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[1px]"
+      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in duration-200"
       role="presentation"
       onClick={() => !isSaving && onClose()}
     >
       <div
         role="dialog"
         aria-modal="true"
-        className="w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xl"
+        className="w-full sm:max-w-xl max-h-[94vh] sm:max-h-[90vh] flex flex-col overflow-hidden rounded-t-3xl sm:rounded-2xl border border-border bg-card shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+        {/* Mobile Drag Indicator Handle */}
+        <div className="flex justify-center pt-2.5 pb-1 sm:hidden">
+          <div className="h-1.5 w-12 rounded-full bg-border" />
+        </div>
+
+        <div className="flex items-center justify-between border-b border-border px-4 sm:px-5 py-3 sm:py-4 bg-surface-muted/30 shrink-0">
           <div>
-            <h2 className="text-base font-semibold text-foreground">
+            <h2 className="text-sm sm:text-base font-bold text-foreground">
               {mode === "create" ? "Add Field Visit" : "Edit Field Visit"}
             </h2>
-            <p className="text-xs text-muted">
+            <p className="text-[11px] sm:text-xs text-muted">
               {adminRole
-                ? "Portal Admin — Assign and schedule visit for any portal member"
+                ? "Portal Admin — Assign visit for any portal member"
                 : managerRole
-                ? "Portal Manager — Assign and schedule visit for yourself or your reporting team"
+                ? "Portal Manager — Assign visit for yourself or reporting team"
                 : isPowerAudit
-                ? "Power Audit — Schedule site audit facility & enquiry field visits"
+                ? "Power Audit — Schedule site audit facility & enquiry visits"
                 : "Schedule your field visit details"}
             </p>
           </div>
@@ -957,7 +962,7 @@ export function VisitFormModal({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto space-y-4 px-5 py-4">
+        <div className="flex-1 overflow-y-auto space-y-4 px-4 sm:px-5 py-3.5 sm:py-4">
           {/* Date & Executive Assignment Bar within Scope */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-surface-muted/60 rounded-xl border border-border">
             <div>
@@ -1593,12 +1598,12 @@ export function VisitFormModal({
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3 bg-surface-muted/30">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center sm:justify-end gap-2 border-t border-border px-4 sm:px-5 py-3 sm:py-3.5 bg-surface-muted/30 shrink-0">
           <button
             type="button"
             onClick={onClose}
             disabled={isSaving}
-            className="rounded-lg border border-border px-4 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition cursor-pointer"
+            className="w-full sm:w-auto rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-semibold text-foreground hover:bg-surface-muted active:scale-[0.98] transition cursor-pointer text-center"
           >
             Cancel
           </button>
@@ -1606,7 +1611,7 @@ export function VisitFormModal({
             type="button"
             onClick={handleSave}
             disabled={isSaving || isCheckingPlan || planCompleted}
-            className="rounded-lg bg-primary px-5 py-2 text-xs font-bold text-primary-foreground hover:bg-primary-hover shadow-xs transition cursor-pointer"
+            className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground hover:bg-primary-hover active:scale-[0.98] shadow-md transition cursor-pointer"
           >
             {isSaving ? "Saving…" : mode === "create" ? "Add Visit" : "Save Changes"}
           </button>

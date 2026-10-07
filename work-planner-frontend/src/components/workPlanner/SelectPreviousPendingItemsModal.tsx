@@ -137,50 +137,61 @@ export function SelectPreviousPendingItemsModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
-      <div className="w-full max-w-2xl rounded-xl border border-border bg-card p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 backdrop-blur-xs transition-all duration-300">
+      <div className="w-full sm:max-w-2xl max-h-[94vh] sm:max-h-[90vh] rounded-t-3xl sm:rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-6 sm:zoom-in-95 duration-200">
+        {/* Mobile Drag Indicator */}
+        <div className="flex justify-center -mt-1 sm:hidden">
+          <div className="h-1.5 w-12 rounded-full bg-border" />
+        </div>
+
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border pb-3 shrink-0">
           <div className="flex items-center gap-2">
-            <CheckSquare className="h-5 w-5 text-primary" />
-            <h2 className="text-base font-bold text-foreground">
-              Add Previous Pending / In-Progress / Created {mode === "visits" ? "Visits" : "Tasks"}
-            </h2>
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <CheckSquare className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-sm sm:text-base font-bold text-foreground">
+                Add Previous Pending {mode === "visits" ? "Visits" : "Tasks"}
+              </h2>
+              <p className="text-[11px] text-muted">Select uncompleted items to carry forward</p>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1 text-muted hover:bg-surface-muted hover:text-foreground"
+            aria-label="Close dialog"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-surface-muted hover:text-foreground active:scale-95 transition"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Description Banner */}
-        <div className="rounded-lg border border-sky-500/20 bg-sky-500/10 p-3 text-xs text-sky-400 flex items-start gap-2.5 shrink-0">
+        <div className="rounded-xl border border-sky-500/20 bg-sky-500/10 p-3 text-xs text-sky-400 flex items-start gap-2.5 shrink-0">
           <AlertCircle className="h-4 w-4 text-sky-400 shrink-0 mt-0.5" />
-          <div>
+          <div className="leading-relaxed">
             Adding selected previous items will reassign them directly to this work plan. Their current status and pending remarks will be preserved.
           </div>
         </div>
 
         {/* Search & Select All Toolbar */}
-        <div className="flex items-center justify-between gap-3 shrink-0">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 shrink-0">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted" />
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted pointer-events-none" />
             <input
               type="text"
               placeholder={`Search previous ${mode}...`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-lg border border-border bg-surface-muted pl-9 pr-3 py-2 text-xs text-foreground outline-none focus:border-primary"
+              className="w-full rounded-xl border border-border bg-surface-muted pl-9 pr-3 py-2 text-xs text-foreground placeholder:text-muted/70 outline-none focus:border-primary focus:ring-1 focus:ring-primary transition"
             />
           </div>
           {filteredItems.length > 0 && (
             <button
               type="button"
               onClick={toggleAll}
-              className="text-xs text-primary font-semibold hover:underline shrink-0 px-1"
+              className="text-xs text-primary font-bold hover:underline self-end sm:self-auto py-1 px-2 rounded-md hover:bg-primary/5 active:scale-95 transition"
             >
               {selectedIds.size === filteredItems.length ? "Deselect All" : "Select All"}
             </button>
@@ -188,7 +199,7 @@ export function SelectPreviousPendingItemsModal({
         </div>
 
         {/* Item List */}
-        <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-[200px]">
+        <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 min-h-[180px]">
           {isLoading ? (
             <p className="text-xs text-muted text-center py-10">Loading previous items...</p>
           ) : filteredItems.length === 0 ? (
@@ -202,9 +213,9 @@ export function SelectPreviousPendingItemsModal({
                 <div
                   key={item.id}
                   onClick={() => toggleItem(item.id)}
-                  className={`flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition ${
+                  className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer transition active:scale-[0.99] ${
                     isSelected
-                      ? "border-primary bg-primary/5 dark:bg-primary/10"
+                      ? "border-primary bg-primary/5 dark:bg-primary/10 ring-1 ring-primary/20"
                       : "border-border bg-surface-muted/40 hover:bg-surface-muted"
                   }`}
                 >
@@ -214,12 +225,12 @@ export function SelectPreviousPendingItemsModal({
                     onChange={() => toggleItem(item.id)}
                     className="mt-1 h-4 w-4 rounded border-border text-primary focus:ring-primary shrink-0"
                   />
-                  <div className="flex-1 min-w-0 space-y-1">
+                  <div className="flex-1 min-w-0 space-y-1.5">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
                       <span className="text-xs font-bold text-foreground truncate">
                         {item.titleOrParty}
                       </span>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         {mode === "visits"
                           ? renderVisitStatusBadge(item.status)
                           : renderWorkStatusBadge(item.status)}
@@ -240,7 +251,7 @@ export function SelectPreviousPendingItemsModal({
                     )}
 
                     {item.descriptionOrNotes && (
-                      <p className="text-[11px] text-muted truncate">{item.descriptionOrNotes}</p>
+                      <p className="text-[11px] text-muted line-clamp-2">{item.descriptionOrNotes}</p>
                     )}
 
                     {item.remarks && (
@@ -256,11 +267,11 @@ export function SelectPreviousPendingItemsModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 border-t border-border pt-3 shrink-0">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center sm:justify-end gap-2 border-t border-border pt-3 shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg border border-border px-4 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition"
+            className="rounded-xl border border-border px-4 py-2.5 text-xs font-semibold text-foreground hover:bg-surface-muted active:scale-[0.98] transition text-center"
           >
             Cancel
           </button>
@@ -268,7 +279,7 @@ export function SelectPreviousPendingItemsModal({
             type="button"
             disabled={selectedIds.size === 0}
             onClick={handleConfirm}
-            className="rounded-lg bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:bg-primary-hover disabled:opacity-50 transition shadow-xs cursor-pointer"
+            className="rounded-xl bg-primary px-4 py-2.5 text-xs font-bold text-primary-foreground hover:bg-primary-hover disabled:opacity-50 active:scale-[0.98] transition shadow-xs cursor-pointer text-center"
           >
             Add Selected Items ({selectedIds.size})
           </button>

@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import { X, Download, ExternalLink, FileText, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { resolvePublicAssetUrl } from "@/lib/env";
+import { readSessionFromStorage } from "@/utils/authStorage";
 
 export type PreviewFile = {
   name: string;
@@ -49,55 +50,76 @@ export function FilePreviewModal({
   onDownload,
   subtitle = "Document Preview",
 }: FilePreviewModalProps) {
+  const sessionToken = useMemo(() => {
+    return typeof window !== "undefined" ? readSessionFromStorage()?.token : null;
+  }, []);
+
   if (!doc) return null;
+
+  const rawUrl = doc.url || "";
+  let externalUrl = rawUrl;
+  if (rawUrl && (rawUrl.startsWith("http") || rawUrl.startsWith("/"))) {
+    externalUrl = resolvePublicAssetUrl(rawUrl, sessionToken);
+    if (sessionToken && !externalUrl.includes("token=")) {
+      externalUrl += (externalUrl.includes("?") ? "&" : "?") + `token=${encodeURIComponent(sessionToken)}`;
+    }
+  }
 
   return (
     <div
-      className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]"
+      className="fixed inset-0 z-[110] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in duration-200"
       onClick={onClose}
       role="presentation"
     >
       <div
-        className="flex h-[min(90vh,820px)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-2xl"
+        className="flex h-[94vh] sm:h-[min(90vh,820px)] w-full max-w-5xl flex-col overflow-hidden rounded-t-3xl sm:rounded-2xl border border-border bg-card shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={`Preview ${doc.name}`}
       >
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 py-3.5 bg-surface-muted/50">
-          <div className="min-w-0">
-            <h3 className="truncate text-sm font-semibold text-foreground flex items-center gap-2">
+        {/* Mobile Drag Indicator */}
+        <div className="flex justify-center pt-2.5 pb-1 sm:hidden">
+          <div className="h-1.5 w-12 rounded-full bg-border" />
+        </div>
+
+        {/* Header */}
+        <div className="flex shrink-0 items-center justify-between gap-2.5 border-b border-border px-4 sm:px-5 py-3 sm:py-3.5 bg-surface-muted/50">
+          <div className="min-w-0 flex-1">
+            <h3 className="truncate text-xs sm:text-sm font-bold text-foreground flex items-center gap-1.5 sm:gap-2">
               <FileText className="h-4 w-4 text-primary shrink-0" />
-              {doc.name}
+              <span className="truncate">{doc.name}</span>
             </h3>
-            <p className="text-xs text-muted">{subtitle}</p>
+            <p className="text-[10px] sm:text-xs text-muted truncate">{subtitle}</p>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            {doc.url && (
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            {externalUrl && externalUrl !== "#" && (
               <a
-                href={doc.url}
+                href={externalUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-surface-muted transition"
+                className="inline-flex items-center gap-1 rounded-xl border border-border bg-card px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-muted active:scale-95 transition"
+                title="Open in new tab"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
-                Open Tab
+                <span className="hidden sm:inline">Open Tab</span>
               </a>
             )}
             {blobUrl && onDownload && (
               <button
                 type="button"
                 onClick={() => onDownload(doc)}
-                className="inline-flex items-center gap-1 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition"
+                className="inline-flex items-center gap-1 rounded-xl bg-primary px-2.5 sm:px-3 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary-hover active:scale-95 transition cursor-pointer"
+                title="Download document"
               >
                 <Download className="h-3.5 w-3.5" />
-                Download
+                <span className="hidden sm:inline">Download</span>
               </button>
             )}
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg p-1.5 text-muted hover:bg-surface-muted hover:text-foreground transition"
+              className="flex h-8 w-8 items-center justify-center rounded-xl text-muted hover:bg-surface-muted hover:text-foreground active:scale-95 transition cursor-pointer"
               aria-label="Close preview"
             >
               <X className="h-5 w-5" />
@@ -145,7 +167,7 @@ export function FilePreviewModal({
                   <button
                     type="button"
                     onClick={() => onDownload(doc)}
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary-hover"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary-hover cursor-pointer"
                   >
                     <Download className="h-4 w-4" />
                     Download File
@@ -195,17 +217,20 @@ export function useFilePreview(token?: string | null) {
         return;
       }
 
+      const effectiveToken =
+        token || (typeof window !== "undefined" ? readSessionFromStorage()?.token : null);
+
       try {
-        let fetchUrl = resolvePublicAssetUrl(doc.url, token);
-        if (token && !fetchUrl.includes("token=")) {
+        let fetchUrl = resolvePublicAssetUrl(doc.url, effectiveToken);
+        if (effectiveToken && !fetchUrl.includes("token=")) {
           fetchUrl +=
             (fetchUrl.includes("?") ? "&" : "?") +
-            `token=${encodeURIComponent(token)}`;
+            `token=${encodeURIComponent(effectiveToken)}`;
         }
 
         const headers: Record<string, string> = {};
-        if (token && !doc.url.includes("token=")) {
-          headers.Authorization = `Bearer ${token}`;
+        if (effectiveToken && !doc.url.includes("token=")) {
+          headers.Authorization = `Bearer ${effectiveToken}`;
         }
 
         const response = await fetch(fetchUrl, { headers });
@@ -225,9 +250,11 @@ export function useFilePreview(token?: string | null) {
       } catch (err: unknown) {
         console.warn("Blob fetch failed, falling back to direct URL:", err);
         if (doc.url && doc.url !== "#") {
-          let fallbackUrl = resolvePublicAssetUrl(doc.url, token);
-          if (token && !fallbackUrl.includes("token=")) {
-            fallbackUrl += (fallbackUrl.includes("?") ? "&" : "?") + `token=${encodeURIComponent(token)}`;
+          let fallbackUrl = resolvePublicAssetUrl(doc.url, effectiveToken);
+          if (effectiveToken && !fallbackUrl.includes("token=")) {
+            fallbackUrl +=
+              (fallbackUrl.includes("?") ? "&" : "?") +
+              `token=${encodeURIComponent(effectiveToken)}`;
           }
           setPreviewBlobUrl(fallbackUrl);
         } else {

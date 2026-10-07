@@ -17,9 +17,11 @@ import {
   Sparkles,
   ShieldCheck,
   StickyNote,
+  LifeBuoy,
 } from "lucide-react";
 import type { UserSession } from "@/types/workPlanner";
 import { isWpAdmin, isWpManager, isWpCoordinator, readSessionFromStorage } from "@/utils/authStorage";
+import { useGetHelpDeskStatsQuery } from "@/store/api/helpDeskApiSlice";
 
 export function Sidebar({
   mobileNavOpen,
@@ -54,12 +56,18 @@ export function Sidebar({
   const managerRole = isWpManager(activeUser);
   const adminRole = isWpAdmin(activeUser);
 
+  const { data: helpDeskStats } = useGetHelpDeskStatsQuery(undefined, {
+    pollingInterval: 45000,
+  });
+  const pendingHelpDeskCount = (helpDeskStats?.tagged_to_me_open || 0) + (helpDeskStats?.solution_proposed_waiting_me || 0);
+
   const companyLogoUrl = companyInfo?.logo_url || process.env.NEXT_PUBLIC_COMPANY_LOGO_URL || "";
   const companyTitle = companyInfo?.trade_name || companyInfo?.legal_name || process.env.NEXT_PUBLIC_COMPANY_NAME || "Portal";
 
   const isDashboardActive = pathname === "/dashboard";
   const isProjectsActive = pathname.startsWith("/dashboard/projects");
   const isNotesActive = pathname.startsWith("/dashboard/notes");
+  const isHelpDeskActive = pathname.startsWith("/dashboard/help-desk");
   const isPlansActive = pathname === "/dashboard/plans";
   const isTasksVisitsActive = pathname.startsWith("/dashboard/tasks-visits");
   const isCalendarActive = pathname.startsWith("/dashboard/plans/calendar");
@@ -246,6 +254,34 @@ export function Sidebar({
                 <span className="ml-1 text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30 shrink-0">
                   Track
                 </span>
+              </div>
+            )}
+          </Link>
+
+          {/* Help Desk & Requirements */}
+          <Link
+            href="/dashboard/help-desk"
+            onClick={() => setMobileNavOpen(false)}
+            className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+              isHelpDeskActive
+                ? "bg-primary/15 border border-primary/30 text-primary font-bold shadow-xs"
+                : "text-muted hover:bg-surface-muted hover:text-foreground border border-transparent"
+            }`}
+            title="Inter-Portal Help Desk & Requirements"
+          >
+            <LifeBuoy className={`h-4 w-4 shrink-0 ${isHelpDeskActive ? "text-primary" : ""}`} />
+            {!desktopCollapsed && (
+              <div className="flex items-center justify-between flex-1 min-w-0">
+                <span className="truncate">Help Desk</span>
+                {pendingHelpDeskCount > 0 ? (
+                  <span className="ml-1 text-[9px] font-black uppercase px-1.5 py-0.5 rounded-full bg-amber-500 text-white shrink-0 animate-pulse">
+                    {pendingHelpDeskCount}
+                  </span>
+                ) : (
+                  <span className="ml-1 text-[8px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/30 shrink-0">
+                    Live
+                  </span>
+                )}
               </div>
             )}
           </Link>

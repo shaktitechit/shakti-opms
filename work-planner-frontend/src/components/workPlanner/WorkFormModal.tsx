@@ -338,26 +338,31 @@ export function WorkFormModal({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-3 sm:p-4 backdrop-blur-[1px]"
+      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in duration-200"
       role="presentation"
       onClick={() => !isSaving && onClose()}
     >
       <div
         role="dialog"
         aria-modal="true"
-        className="w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xl"
+        className="w-full sm:max-w-lg max-h-[94vh] sm:max-h-[90vh] flex flex-col overflow-hidden rounded-t-3xl sm:rounded-2xl border border-border bg-card shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-border px-4 sm:px-5 py-3 sm:py-4">
+        {/* Mobile Drag Indicator Handle */}
+        <div className="flex justify-center pt-2.5 pb-1 sm:hidden">
+          <div className="h-1.5 w-12 rounded-full bg-border" />
+        </div>
+
+        <div className="flex items-center justify-between border-b border-border px-4 sm:px-5 py-3 sm:py-4 bg-surface-muted/30 shrink-0">
           <div>
-            <h2 className="text-base font-semibold text-foreground">
+            <h2 className="text-sm sm:text-base font-bold text-foreground">
               {mode === "create" ? "Add Work Task" : "Edit Work Task"}
             </h2>
-            <p className="text-xs text-muted">
+            <p className="text-[11px] sm:text-xs text-muted">
               {adminRole
-                ? "Portal Admin — Assign and schedule task for any portal member"
+                ? "Portal Admin — Assign task for any portal member"
                 : managerRole
-                ? "Portal Manager — Assign and schedule task for yourself or your reporting team"
+                ? "Portal Manager — Assign task for yourself or reporting team"
                 : "Schedule your work task details"}
             </p>
           </div>
@@ -557,12 +562,12 @@ export function WorkFormModal({
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3 bg-surface-muted/30">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center sm:justify-end gap-2 border-t border-border px-4 sm:px-5 py-3 sm:py-3.5 bg-surface-muted/30 shrink-0">
           <button
             type="button"
             onClick={onClose}
             disabled={isSaving}
-            className="rounded-lg border border-border px-4 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition cursor-pointer"
+            className="w-full sm:w-auto rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-semibold text-foreground hover:bg-surface-muted active:scale-[0.98] transition cursor-pointer text-center"
           >
             Cancel
           </button>
@@ -570,7 +575,7 @@ export function WorkFormModal({
             type="button"
             onClick={handleSave}
             disabled={isSaving || isCheckingPlan || planCompleted}
-            className="rounded-lg bg-primary px-5 py-2 text-xs font-bold text-primary-foreground hover:bg-primary-hover shadow-xs transition cursor-pointer"
+            className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground hover:bg-primary-hover active:scale-[0.98] shadow-md transition cursor-pointer"
           >
             {isSaving ? "Saving…" : mode === "create" ? "Add Task" : "Save Changes"}
           </button>

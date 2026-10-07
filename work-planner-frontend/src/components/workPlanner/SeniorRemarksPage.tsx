@@ -387,12 +387,12 @@ export function SeniorRemarksPage() {
       {/* Filter Toolbar */}
       <div className="rounded-2xl border border-border bg-card p-4 space-y-3 shadow-xs">
         {/* Intent Pills & Quick Toggles */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
-          <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-3">
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5 sm:flex-wrap">
             <button
               type="button"
               onClick={() => setTypeFilter("all")}
-              className={`rounded-xl px-3 py-1.5 text-xs font-bold transition cursor-pointer ${
+              className={`rounded-xl px-3 py-1.5 text-xs font-bold whitespace-nowrap active:scale-95 transition cursor-pointer shrink-0 ${
                 typeFilter === "all"
                   ? "bg-primary text-primary-foreground shadow-xs"
                   : "bg-surface-muted text-muted hover:text-foreground"
@@ -404,7 +404,7 @@ export function SeniorRemarksPage() {
             <button
               type="button"
               onClick={() => setTypeFilter("objection")}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold border transition cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold border whitespace-nowrap active:scale-95 transition cursor-pointer shrink-0 ${
                 typeFilter === "objection"
                   ? "bg-rose-500/15 border-rose-500/40 text-rose-600 dark:text-rose-400 ring-1 ring-rose-500/30"
                   : "bg-surface-muted border-border text-muted hover:text-foreground"
@@ -417,7 +417,7 @@ export function SeniorRemarksPage() {
             <button
               type="button"
               onClick={() => setTypeFilter("appreciation")}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold border transition cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold border whitespace-nowrap active:scale-95 transition cursor-pointer shrink-0 ${
                 typeFilter === "appreciation"
                   ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-600 dark:text-emerald-400 ring-1 ring-emerald-500/30"
                   : "bg-surface-muted border-border text-muted hover:text-foreground"
@@ -430,7 +430,7 @@ export function SeniorRemarksPage() {
             <button
               type="button"
               onClick={() => setTypeFilter("instruction")}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold border transition cursor-pointer ${
+              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold border whitespace-nowrap active:scale-95 transition cursor-pointer shrink-0 ${
                 typeFilter === "instruction"
                   ? "bg-primary/15 border-primary/40 text-primary ring-1 ring-primary/30"
                   : "bg-surface-muted border-border text-muted hover:text-foreground"

@@ -1112,51 +1112,51 @@ export function DownloadWorkPlansModal({
         onClick={(e) => e.stopPropagation()}
       >
         {/* Google Sheet Header Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-surface-muted/40 px-5 py-3.5">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border bg-surface-muted/40 px-4 sm:px-5 py-3 sm:py-3.5 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">
               <FileSpreadsheet className="h-5 w-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-foreground">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-sm sm:text-base font-bold text-foreground truncate">
                   Work Plans Master Report (Work Plans & Field Activity View)
                 </h2>
                 <span className="rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider">
                   Google Sheet Tree Mode
                 </span>
               </div>
-              <p className="text-xs text-muted">
+              <p className="text-[11px] sm:text-xs text-muted truncate">
                 Displaying {summaryMetrics.totalPlans} Work Plans with {summaryMetrics.totalVisits} Field Visits and {summaryMetrics.totalTasks} Work Tasks
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <div className="flex items-center rounded-lg border border-border bg-card p-0.5">
               <button
                 type="button"
                 onClick={() => setViewMode("tree")}
-                className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+                className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold active:scale-95 transition ${
                   viewMode === "tree"
                     ? "bg-primary text-primary-foreground shadow-xs"
                     : "text-muted hover:text-foreground"
                 }`}
               >
                 <Layers className="h-3.5 w-3.5" />
-                Tree View
+                Tree
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode("flat")}
-                className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold transition ${
+                className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold active:scale-95 transition ${
                   viewMode === "flat"
                     ? "bg-primary text-primary-foreground shadow-xs"
                     : "text-muted hover:text-foreground"
                 }`}
               >
                 <Table className="h-3.5 w-3.5" />
-                Flat List View
+                Flat
               </button>
             </div>
 
@@ -1164,24 +1164,24 @@ export function DownloadWorkPlansModal({
               <button
                 type="button"
                 onClick={toggleCollapseAll}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-muted transition"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-muted active:scale-95 transition"
               >
                 <FolderOpen className="h-3.5 w-3.5 text-primary" />
-                {allCollapsed ? "Expand All" : "Collapse All"}
+                {allCollapsed ? "Expand" : "Collapse"}
               </button>
             )}
 
             <button
               type="button"
               onClick={() => setShowFilterPanel((prev) => !prev)}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold active:scale-95 transition ${
                 showFilterPanel
                   ? "border-primary bg-primary/10 text-primary"
                   : "border-border bg-card text-foreground hover:bg-surface-muted"
               }`}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
-              Filter Panel
+              Filter
               {activeFiltersCount > 0 && (
                 <span className="ml-0.5 rounded-full bg-primary px-1.5 py-0.2 text-[10px] font-bold text-primary-foreground">
                   {activeFiltersCount}
@@ -1193,7 +1193,7 @@ export function DownloadWorkPlansModal({
               type="button"
               disabled={loading}
               onClick={loadReportData}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-muted transition disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-surface-muted active:scale-95 transition disabled:opacity-50"
               title="Refresh sheet data"
             >
               <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
@@ -1203,33 +1203,33 @@ export function DownloadWorkPlansModal({
               type="button"
               disabled={downloading || filteredPlanTree.length === 0}
               onClick={exportCsv}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-600/30 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50 transition shadow-xs"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-600/30 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/20 active:scale-95 disabled:opacity-50 transition shadow-xs"
             >
               <Download className="h-4 w-4" />
-              {downloading ? "Exporting…" : "Export CSV"}
+              {downloading ? "Exporting…" : "CSV"}
             </button>
             <button
               type="button"
               disabled={downloadingExcel || filteredPlanTree.length === 0}
               onClick={exportExcel}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-600/40 bg-emerald-600 text-white px-3.5 py-1.5 text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50 transition shadow-xs"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-600/40 bg-emerald-600 text-white px-3.5 py-1.5 text-xs font-semibold hover:bg-emerald-700 active:scale-95 disabled:opacity-50 transition shadow-xs"
             >
               <FileSpreadsheet className="h-4 w-4" />
-              {downloadingExcel ? "Generating Excel…" : "Export Excel (.xlsx)"}
+              {downloadingExcel ? "Generating…" : "Excel"}
             </button>
             <button
               type="button"
               disabled={downloadingPdf || filteredPlanTree.length === 0}
               onClick={exportPdf}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-50 transition shadow-xs"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 text-xs font-semibold text-primary-foreground hover:opacity-90 active:scale-95 disabled:opacity-50 transition shadow-xs"
             >
               <Download className="h-4 w-4" />
-              {downloadingPdf ? "Generating PDF…" : "Download PDF"}
+              {downloadingPdf ? "Generating…" : "PDF"}
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg p-1.5 text-muted hover:bg-surface-muted hover:text-foreground transition"
+              className="rounded-lg p-1.5 text-muted hover:bg-surface-muted hover:text-foreground active:scale-90 transition ml-auto sm:ml-0"
               title="Close report modal"
             >
               <X className="h-5 w-5" />

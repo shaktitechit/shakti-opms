@@ -129,8 +129,13 @@ export function CopyWorkPlanModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 font-sans">
-      <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4 font-sans animate-in fade-in duration-150">
+      <div className="w-full sm:max-w-md max-h-[94vh] sm:max-h-[90vh] flex flex-col rounded-t-3xl sm:rounded-2xl border border-border bg-card p-4 sm:p-6 shadow-2xl space-y-4 sm:space-y-5 animate-in slide-in-from-bottom sm:zoom-in-95 duration-150 overflow-y-auto">
+        {/* Mobile Drag Indicator Handle */}
+        <div className="flex justify-center -mt-1 pb-1 sm:hidden">
+          <div className="h-1.5 w-12 rounded-full bg-border" />
+        </div>
+
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border pb-3">
           <div className="flex items-center gap-2.5">
@@ -138,8 +143,8 @@ export function CopyWorkPlanModal({
               <Copy className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-foreground">Copy Work Plan</h2>
-              <p className="text-xs text-muted">
+              <h2 className="text-sm sm:text-base font-bold text-foreground">Copy Work Plan</h2>
+              <p className="text-[11px] sm:text-xs text-muted">
                 Duplicate visits and tasks to another plan date
               </p>
             </div>
@@ -147,7 +152,7 @@ export function CopyWorkPlanModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-muted hover:bg-surface-muted hover:text-foreground transition cursor-pointer"
+            className="rounded-lg p-1.5 text-muted hover:bg-surface-muted hover:text-foreground active:scale-95 transition cursor-pointer"
           >
             <X className="h-4 w-4" />
           </button>
@@ -236,11 +241,11 @@ export function CopyWorkPlanModal({
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-border">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center sm:justify-end gap-2 pt-3 border-t border-border">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl border border-border bg-card px-4 py-2 text-xs font-semibold text-muted hover:bg-surface-muted hover:text-foreground transition cursor-pointer"
+            className="w-full sm:w-auto rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-semibold text-muted hover:bg-surface-muted hover:text-foreground active:scale-[0.98] transition cursor-pointer text-center"
           >
             Cancel
           </button>
@@ -248,7 +253,7 @@ export function CopyWorkPlanModal({
             type="button"
             disabled={checkingDate || isCompletedPlan || !targetDate}
             onClick={handleConfirm}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-5 py-2 text-xs font-bold text-primary-foreground shadow-xs hover:bg-primary-hover disabled:opacity-50 transition cursor-pointer"
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-xl bg-primary px-5 py-2.5 text-xs font-bold text-primary-foreground shadow-md hover:bg-primary-hover active:scale-[0.98] disabled:opacity-50 transition cursor-pointer"
           >
             <span>
               {hasActivePlan ? "Merge & Proceed to Form" : "Proceed to Copy Form"}

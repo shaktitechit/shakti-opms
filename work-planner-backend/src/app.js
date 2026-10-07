@@ -12,6 +12,7 @@ const { notFound } = require('./middlewares/notFound.middleware');
 
 const workPlannerRoutes = require('./modules/workPlanner/workPlanner.routes');
 const projectRoutes = require('./modules/project/project.routes');
+const helpDeskRoutes = require('./modules/helpDesk/helpDesk.routes');
 const { proxyToNotificationService } = require('./utils/proxyToNotificationService');
 const { proxyToMessageService } = require('./utils/proxyToMessageService');
 const { proxyToPartyService } = require('./utils/proxyToPartyService');
@@ -33,16 +34,40 @@ app.get(['/health', '/api/health'], (req, res) => {
   res.json({ status: 'ok', service: 'work-planner-backend', timestamp: new Date().toISOString() });
 });
 
-app.get(['/api/files/:fileId/preview', '/api/files/:fileId/view', '/api/files/:fileId'], async (req, res) => {
-  const { streamFileToResponse } = require('./services/fileManagement');
-  await streamFileToResponse(req.params.fileId, res, { disposition: 'inline' });
-});
-app.get('/api/files/:fileId/download', async (req, res) => {
-  const { streamFileToResponse } = require('./services/fileManagement');
-  await streamFileToResponse(req.params.fileId, res, { disposition: 'attachment' });
-});
+app.get(
+  [
+    '/api/files/:fileId/preview',
+    '/api/files/:fileId/view',
+    '/api/files/:fileId',
+    '/api/attachments/:fileId/preview',
+    '/api/attachments/:fileId/view',
+    '/api/attachments/:fileId',
+    '/api/work-planner/attachments/:fileId/preview',
+    '/api/work-planner/attachments/:fileId/view',
+    '/api/help-desk/attachments/:fileId/preview',
+    '/api/help-desk/attachments/:fileId/view',
+  ],
+  async (req, res) => {
+    const { streamFileToResponse } = require('./services/fileManagement');
+    await streamFileToResponse(req.params.fileId, res, { disposition: 'inline' });
+  }
+);
+app.get(
+  [
+    '/api/files/:fileId/download',
+    '/api/attachments/:fileId/download',
+    '/api/work-planner/attachments/:fileId/download',
+    '/api/help-desk/attachments/:fileId/download',
+  ],
+  async (req, res) => {
+    const { streamFileToResponse } = require('./services/fileManagement');
+    await streamFileToResponse(req.params.fileId, res, { disposition: 'attachment' });
+  }
+);
+
 
 app.use(['/api/work-planner', '/api/work-plans'], workPlannerRoutes);
+app.use(['/api/help-desk', '/api/v1/help-desk'], helpDeskRoutes);
 app.use('/api/projects', projectRoutes);
 app.use('/api/power-app', powerAppRoutes);
 app.use('/api/facilities', powerAppRoutes);

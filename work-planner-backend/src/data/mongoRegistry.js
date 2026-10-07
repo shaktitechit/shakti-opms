@@ -810,6 +810,12 @@ function registerModels() {
   if (!mongoose.models.UserNote) {
     require('../models/UserNote');
   }
+  if (!mongoose.models.HelpTicket) {
+    require('../models/HelpTicket');
+  }
+  if (!mongoose.models.HelpTicketReply) {
+    require('../models/HelpTicketReply');
+  }
 
   _cached = {
     User: mongoose.model('User'),
@@ -824,6 +830,8 @@ function registerModels() {
     WorkPlanWork: mongoose.model('WorkPlanWork'),
     WorkPlanExpense: mongoose.model('WorkPlanExpense'),
     UserNote: mongoose.model('UserNote'),
+    HelpTicket: mongoose.model('HelpTicket'),
+    HelpTicketReply: mongoose.model('HelpTicketReply'),
     UserWorkPlannerSettings: mongoose.model('UserWorkPlannerSettings'),
     WorkPlannerReportingEdge: mongoose.model('WorkPlannerReportingEdge'),
     WorkPlanAnalyticsCache: mongoose.model('WorkPlanAnalyticsCache'),

@@ -263,17 +263,22 @@ export function DirectiveThreadModal({
       <div
         role="dialog"
         aria-modal="true"
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-in fade-in duration-200"
+        className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in duration-200"
       >
         <div
           onClick={(e) => e.stopPropagation()}
-          className="relative flex flex-col w-full max-w-3xl max-h-[90vh] rounded-2xl border border-border bg-card shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+          className="relative flex flex-col w-full sm:max-w-3xl max-h-[94vh] sm:max-h-[90vh] rounded-t-3xl sm:rounded-2xl border border-border bg-card shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-200"
         >
+          {/* Mobile Drag Indicator Handle */}
+          <div className="flex justify-center pt-2.5 pb-1 sm:hidden">
+            <div className="h-1.5 w-12 rounded-full bg-border" />
+          </div>
+
           {/* Header with Classification Badge */}
-          <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-surface-muted/80 via-card to-card px-6 py-4">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between border-b border-border bg-gradient-to-r from-surface-muted/80 via-card to-card px-4 sm:px-6 py-3.5 sm:py-4 shrink-0">
+            <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
               <div
-                className={`flex h-11 w-11 items-center justify-center rounded-xl border shadow-xs ${
+                className={`flex h-9 w-9 sm:h-11 sm:w-11 shrink-0 items-center justify-center rounded-xl border shadow-xs ${
                   isAppreciation
                     ? "bg-emerald-500/15 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
                     : isObjection
@@ -282,22 +287,22 @@ export function DirectiveThreadModal({
                 }`}
               >
                 {isAppreciation ? (
-                  <Sparkles className="h-6 w-6" />
+                  <Sparkles className="h-5 w-5 sm:h-6 sm:w-6" />
                 ) : isObjection ? (
-                  <AlertTriangle className="h-6 w-6" />
+                  <AlertTriangle className="h-5 w-5 sm:h-6 sm:w-6" />
                 ) : (
-                  <ShieldCheck className="h-6 w-6" />
+                  <ShieldCheck className="h-5 w-5 sm:h-6 sm:w-6" />
                 )}
               </div>
 
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="text-base font-bold text-foreground">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                  <h3 className="text-sm sm:text-base font-bold text-foreground truncate">
                     {isAppreciation
-                      ? "⭐ Supervisory Appreciation"
+                      ? "Appreciation"
                       : isObjection
-                      ? "⚠️ Supervisory Objection"
-                      : "📋 Senior Directive"}
+                      ? "Objection"
+                      : "Senior Directive"}
                   </h3>
 
                   {/* Priority Badge */}
@@ -312,7 +317,7 @@ export function DirectiveThreadModal({
                         : "bg-blue-500/15 text-blue-600 border-blue-500/30"
                     }`}
                   >
-                    {item.priority} Priority
+                    {item.priority}
                   </span>
 
                   {/* Status Badge */}
@@ -329,20 +334,20 @@ export function DirectiveThreadModal({
                       ? "✅ Resolved"
                       : item.status === "responded"
                       ? "💬 Responded"
-                      : "⏳ Pending Response"}
+                      : "⏳ Pending"}
                   </span>
                 </div>
-                <p className="text-xs text-muted mt-0.5">
+                <p className="text-[11px] sm:text-xs text-muted mt-0.5 truncate">
                   Target: <strong className="text-foreground capitalize">{item.target_type}</strong> &bull;{" "}
                   {item.title}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
               <Link
                 href={`/dashboard/plans/${item.plan_id}`}
-                className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs font-semibold text-muted hover:text-foreground transition"
+                className="inline-flex items-center gap-1 rounded-xl border border-border bg-surface-muted px-2.5 py-1.5 text-xs font-semibold text-muted hover:text-foreground active:scale-95 transition"
                 title="Open full Work Plan"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
@@ -351,7 +356,7 @@ export function DirectiveThreadModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-lg p-1.5 text-muted hover:bg-surface-muted hover:text-foreground transition cursor-pointer"
+                className="rounded-lg p-1.5 text-muted hover:bg-surface-muted hover:text-foreground active:scale-95 transition cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>

@@ -20,6 +20,15 @@ async function authMiddleware(req, res, next) {
     rawToken = h.slice(7);
   } else if (typeof req.query?.token === 'string' && req.query.token.trim()) {
     rawToken = req.query.token.trim();
+  } else if (typeof req.query?.access_token === 'string' && req.query.access_token.trim()) {
+    rawToken = req.query.access_token.trim();
+  } else if (req.headers['x-access-token']) {
+    rawToken = String(req.headers['x-access-token']).trim();
+  } else if (req.headers.cookie) {
+    const match = req.headers.cookie.match(/(?:access_token|shakti_session|medica_session)=([^;]+)/i);
+    if (match?.[1]) {
+      rawToken = decodeURIComponent(match[1].trim());
+    }
   }
 
   if (!rawToken) return next();

@@ -74,23 +74,28 @@ export function DayEndViewModal({ dayEnd, isOpen, onClose }: DayEndViewModalProp
     : "N/A";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur-xs">
-      <div className="flex flex-col h-[90vh] w-full max-w-4xl rounded-2xl border border-border bg-card shadow-2xl overflow-hidden animate-in fade-in-50 zoom-in-95">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-3 backdrop-blur-xs animate-in fade-in duration-200">
+      <div className="flex flex-col h-[94vh] sm:h-[90vh] w-full max-w-4xl rounded-t-3xl sm:rounded-2xl border border-border bg-card shadow-2xl overflow-hidden animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
+        {/* Mobile Drag Indicator Handle */}
+        <div className="flex justify-center pt-2.5 pb-1 sm:hidden">
+          <div className="h-1.5 w-12 rounded-full bg-border" />
+        </div>
+
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-border bg-surface px-5 py-3.5 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+        <div className="flex items-center justify-between border-b border-border bg-surface px-4 sm:px-5 py-3 sm:py-3.5 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">
               <Mail className="h-5 w-5" />
             </div>
-            <div>
-              <h3 className="text-base font-bold text-foreground">Submitted Day End Mail</h3>
-              <p className="text-xs text-muted">Sent on {formattedDate}</p>
+            <div className="min-w-0">
+              <h3 className="text-sm sm:text-base font-bold text-foreground truncate">Submitted Day End Mail</h3>
+              <p className="text-[11px] sm:text-xs text-muted truncate">Sent on {formattedDate}</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-2 text-muted hover:bg-surface-muted hover:text-foreground transition cursor-pointer"
+            className="rounded-lg p-1.5 text-muted hover:bg-surface-muted hover:text-foreground active:scale-95 transition cursor-pointer"
           >
             <X className="h-4 w-4" />
           </button>

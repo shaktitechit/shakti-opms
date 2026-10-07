@@ -977,7 +977,7 @@ function TreeNode({
         onDragOver={(e) => isDroppableRole && onDragOver(e, user)}
         onDragLeave={() => isDroppableRole && onDragLeave(null as any, user._id)}
         onDrop={(e) => isDroppableRole && onDrop(e, user)}
-        className={`group relative inline-flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border p-3.5 transition-all duration-200 min-w-[280px] max-w-full ${
+        className={`group relative inline-flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border p-3 sm:p-3.5 transition-all duration-200 w-full sm:w-auto min-w-0 sm:min-w-[280px] max-w-full active:scale-[0.99] ${
           isBeingDragged
             ? "opacity-35 scale-95 border-dashed border-primary"
             : isDragTarget && dragOverValid
@@ -987,20 +987,20 @@ function TreeNode({
             : "border-border bg-card hover:border-border/90 hover:shadow-xs"
         }`}
       >
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
           {/* Collapse toggle / Grip */}
           <div className="flex items-center gap-1 shrink-0">
             {hasChildren ? (
               <button
                 type="button"
                 onClick={() => onToggleCollapse(user._id)}
-                className="flex h-6 w-6 items-center justify-center rounded-lg hover:bg-surface-muted text-muted hover:text-foreground transition cursor-pointer"
+                className="flex h-7 w-7 items-center justify-center rounded-lg hover:bg-surface-muted active:scale-90 text-muted hover:text-foreground transition cursor-pointer"
                 title={isCollapsed ? "Expand subordinates" : "Collapse subordinates"}
               >
                 {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </button>
             ) : (
-              <div className="w-6 flex justify-center text-muted/40">
+              <div className="w-7 flex justify-center text-muted/40">
                 <span className="h-1.5 w-1.5 rounded-full bg-border" />
               </div>
             )}
@@ -1011,9 +1011,9 @@ function TreeNode({
           </div>
 
           {/* User Info */}
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-bold text-foreground">{user.name}</span>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+              <span className="text-xs font-bold text-foreground truncate">{user.name}</span>
               <span
                 className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[9px] font-bold border ${roleStyle.bg} ${roleStyle.text} ${roleStyle.border}`}
               >
@@ -1026,12 +1026,12 @@ function TreeNode({
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2 text-3xs text-muted mt-0.5">
-              <span>{user.email}</span>
+            <div className="flex items-center gap-1.5 sm:gap-2 text-3xs text-muted mt-0.5 truncate">
+              <span className="truncate">{user.email}</span>
               {user.department && (
                 <>
                   <span>•</span>
-                  <span>
+                  <span className="truncate">
                     {typeof user.department === "object" ? (user.department as any)?.name : user.department}
                   </span>
                 </>
@@ -1059,7 +1059,7 @@ function TreeNode({
               type="button"
               onClick={() => onUnmap(user._id)}
               title="Unassign manager"
-              className="rounded-lg p-1.5 text-muted hover:text-rose-500 hover:bg-rose-500/10 transition opacity-0 group-hover:opacity-100"
+              className="rounded-lg p-1.5 text-muted hover:text-rose-500 hover:bg-rose-500/10 active:scale-95 transition opacity-100 sm:opacity-0 sm:group-hover:opacity-100"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>

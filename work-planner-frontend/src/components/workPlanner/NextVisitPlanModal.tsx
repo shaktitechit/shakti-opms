@@ -51,42 +51,46 @@ export function NextVisitPlanModal({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[1px]"
+      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in duration-200"
       role="presentation"
       onClick={() => !isSaving && onClose()}
     >
       <div
         role="dialog"
         aria-modal="true"
-        className="w-full max-w-md overflow-hidden rounded-xl border border-border bg-card shadow-xl"
+        className="w-full sm:max-w-md max-h-[92vh] flex flex-col overflow-hidden rounded-t-3xl sm:rounded-2xl border border-border bg-card shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="border-b border-border px-5 py-4">
-          <h2 className="text-lg font-semibold text-foreground">
+        {/* Mobile Drag Indicator Handle */}
+        <div className="flex justify-center pt-2.5 pb-1 sm:hidden">
+          <div className="h-1.5 w-12 rounded-full bg-border" />
+        </div>
+
+        <div className="border-b border-border px-4 sm:px-5 py-3.5 sm:py-4">
+          <h2 className="text-base sm:text-lg font-bold text-foreground">
             Next visit plan
           </h2>
-          <p className="mt-1 text-sm text-muted">
+          <p className="mt-0.5 text-xs text-muted">
             Pick a work plan date
             {partyLabel ? (
               <>
                 {" "}
-                for <span className="font-medium text-foreground">{partyLabel}</span>
+                for <span className="font-semibold text-foreground">{partyLabel}</span>
               </>
             ) : null}
-            . A <span className="font-medium">new pending visit</span> is created on that
-            day&apos;s plan.
+            . A <span className="font-semibold">new pending visit</span> is created on that day&apos;s plan.
           </p>
         </div>
-        <div className="space-y-3 px-5 py-4">
+        <div className="space-y-3 px-4 sm:px-5 py-3.5 sm:py-4">
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted">
+            <label className="mb-1.5 block text-xs font-semibold text-muted">
               Work plan date
             </label>
             <input
               type="date"
               value={planDate}
               onChange={(e) => setPlanDate(e.target.value)}
-              className="w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+              className="w-full rounded-xl border border-border bg-surface-muted px-3 py-2.5 text-xs sm:text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
             />
             {sameAsCurrent ? (
               <p className="mt-1 text-xs text-rose-600">
@@ -95,12 +99,12 @@ export function NextVisitPlanModal({
             ) : null}
           </div>
         </div>
-        <div className="flex flex-wrap justify-end gap-2 border-t border-border px-5 py-4 bg-surface-muted/50">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center sm:justify-end gap-2 border-t border-border px-4 sm:px-5 py-3 bg-surface-muted/50">
           <button
             type="button"
             disabled={isSaving}
             onClick={onClose}
-            className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-muted disabled:opacity-50 transition"
+            className="w-full sm:w-auto rounded-xl border border-border bg-card px-4 py-2.5 text-xs sm:text-sm font-semibold text-foreground transition hover:bg-surface-muted active:scale-[0.98] disabled:opacity-50 cursor-pointer text-center"
           >
             Cancel
           </button>
@@ -108,7 +112,7 @@ export function NextVisitPlanModal({
             type="button"
             disabled={isSaving || !planDate || sameAsCurrent}
             onClick={() => void onConfirm(planDate)}
-            className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-50 transition"
+            className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl bg-primary px-5 py-2.5 text-xs sm:text-sm font-bold text-primary-foreground hover:bg-primary-hover active:scale-[0.98] disabled:opacity-50 transition cursor-pointer shadow-md"
           >
             {isSaving ? "Scheduling…" : "Schedule next visit"}
           </button>

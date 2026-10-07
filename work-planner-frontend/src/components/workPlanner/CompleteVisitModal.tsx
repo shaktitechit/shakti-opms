@@ -144,18 +144,23 @@ export function CompleteVisitModal({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[1px]"
+      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in duration-200"
       role="presentation"
       onClick={() => !isSaving && onClose()}
     >
       <div
         role="dialog"
         aria-modal="true"
-        className="w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xl"
+        className="w-full sm:max-w-lg max-h-[94vh] sm:max-h-[90vh] flex flex-col overflow-hidden rounded-t-3xl sm:rounded-2xl border border-border bg-card shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="border-b border-border px-5 py-4">
-          <h2 className="text-lg font-semibold text-foreground">
+        {/* Mobile Drag Indicator Handle */}
+        <div className="flex justify-center pt-2.5 pb-1 sm:hidden">
+          <div className="h-1.5 w-12 rounded-full bg-border" />
+        </div>
+
+        <div className="border-b border-border px-4 sm:px-5 py-3 sm:py-4">
+          <h2 className="text-base sm:text-lg font-bold text-foreground">
             Complete visit
           </h2>
           <p className="mt-0.5 text-xs text-muted">
@@ -163,9 +168,9 @@ export function CompleteVisitModal({
           </p>
         </div>
         <form onSubmit={handleSubmit} className="flex flex-col overflow-hidden flex-1">
-          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-5 py-3.5 sm:py-4 space-y-4">
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted">
+              <label className="mb-1.5 block text-xs font-semibold text-muted">
                 Outcome / Summary notes <span className="text-rose-500">*</span>
               </label>
               <textarea
@@ -173,13 +178,13 @@ export function CompleteVisitModal({
                 onChange={(e) => setOutcome(e.target.value)}
                 rows={3}
                 disabled={isSaving}
-                className="w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+                className="w-full rounded-xl border border-border bg-surface-muted px-3 py-2.5 text-xs sm:text-sm text-foreground outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-60 leading-relaxed"
                 placeholder="What was discussed? Next steps?"
               />
             </div>
 
-            <div className="space-y-3 rounded-lg border border-border bg-surface-muted/50 p-3.5">
-              <div className="text-xs font-semibold uppercase tracking-wider text-muted">
+            <div className="space-y-3 rounded-xl border border-border bg-surface-muted/50 p-3.5">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-muted">
                 Mandatory Check-list Questions
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -199,19 +204,19 @@ export function CompleteVisitModal({
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3 bg-surface-muted/50">
+          <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center sm:justify-end gap-2 border-t border-border px-4 sm:px-5 py-3 bg-surface-muted/50">
             <button
               type="button"
               disabled={isSaving}
               onClick={onClose}
-              className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-muted disabled:opacity-50 transition"
+              className="w-full sm:w-auto rounded-xl border border-border bg-card px-4 py-2.5 text-xs sm:text-sm font-semibold text-foreground hover:bg-surface-muted active:scale-[0.98] disabled:opacity-50 transition cursor-pointer text-center"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!isValid || isSaving}
-              className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition"
+              className="w-full sm:w-auto inline-flex items-center justify-center rounded-xl bg-emerald-600 px-5 py-2.5 text-xs sm:text-sm font-bold text-white hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50 transition cursor-pointer shadow-md"
             >
               {isSaving ? "Saving…" : "Complete Visit"}
             </button>

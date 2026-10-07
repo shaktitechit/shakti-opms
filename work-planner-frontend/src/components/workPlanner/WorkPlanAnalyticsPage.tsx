@@ -416,55 +416,55 @@ export function WorkPlanAnalyticsPage() {
       </div>
 
       {/* Main Tabs Header */}
-      <div className="flex items-center border-b border-border bg-card px-4 rounded-xl shadow-xs overflow-x-auto gap-2">
+      <div className="flex items-center border-b border-border bg-card px-3 sm:px-4 rounded-xl shadow-xs overflow-x-auto scrollbar-none gap-1 sm:gap-2">
         <button
           type="button"
           onClick={() => setActiveTab("complete")}
-          className={`flex items-center gap-2 py-3.5 px-3 text-xs font-bold border-b-2 transition whitespace-nowrap cursor-pointer ${
+          className={`flex items-center gap-2 py-3 sm:py-3.5 px-3 text-xs font-bold border-b-2 whitespace-nowrap active:scale-95 transition cursor-pointer shrink-0 ${
             activeTab === "complete"
               ? "border-primary text-primary"
               : "border-transparent text-muted hover:text-foreground"
           }`}
         >
           <Compass className="h-4 w-4" />
-          1. Complete Plan 360° Profile
+          <span>1. Complete Plan 360° Profile</span>
         </button>
         <button
           type="button"
           onClick={() => setActiveTab("visits")}
-          className={`flex items-center gap-2 py-3.5 px-3 text-xs font-bold border-b-2 transition whitespace-nowrap cursor-pointer ${
+          className={`flex items-center gap-2 py-3 sm:py-3.5 px-3 text-xs font-bold border-b-2 whitespace-nowrap active:scale-95 transition cursor-pointer shrink-0 ${
             activeTab === "visits"
               ? "border-blue-500 text-blue-600 dark:text-blue-400"
               : "border-transparent text-muted hover:text-foreground"
           }`}
         >
           <MapPin className="h-4 w-4" />
-          2. Dedicated Visits Performance Report
+          <span>2. Visits Performance</span>
         </button>
         <button
           type="button"
           onClick={() => setActiveTab("tasks")}
-          className={`flex items-center gap-2 py-3.5 px-3 text-xs font-bold border-b-2 transition whitespace-nowrap cursor-pointer ${
+          className={`flex items-center gap-2 py-3 sm:py-3.5 px-3 text-xs font-bold border-b-2 whitespace-nowrap active:scale-95 transition cursor-pointer shrink-0 ${
             activeTab === "tasks"
               ? "border-purple-500 text-purple-600 dark:text-purple-400"
               : "border-transparent text-muted hover:text-foreground"
           }`}
         >
           <CheckSquare className="h-4 w-4" />
-          3. Dedicated Tasks Execution Report
+          <span>3. Tasks Execution</span>
         </button>
         {elevatedRole && (
           <button
             type="button"
             onClick={() => setActiveTab("team")}
-            className={`flex items-center gap-2 py-3.5 px-3 text-xs font-bold border-b-2 transition whitespace-nowrap cursor-pointer ${
+            className={`flex items-center gap-2 py-3 sm:py-3.5 px-3 text-xs font-bold border-b-2 whitespace-nowrap active:scale-95 transition cursor-pointer shrink-0 ${
               activeTab === "team"
                 ? "border-emerald-500 text-emerald-600 dark:text-emerald-400"
                 : "border-transparent text-muted hover:text-foreground"
             }`}
           >
             <Users className="h-4 w-4" />
-            4. Team Caliber Benchmark Matrix
+            <span>4. Team Benchmark</span>
           </button>
         )}
       </div>

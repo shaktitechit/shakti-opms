@@ -652,14 +652,14 @@ export function TasksVisitsPage() {
   }
 
   return (
-    <div className="space-y-4 font-sans">
+    <div className="space-y-3.5 sm:space-y-4 font-sans w-full max-w-full">
       {/* Top Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-card p-4 rounded-xl border border-border shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card p-3.5 sm:p-4 rounded-2xl border border-border shadow-2xs">
         <div>
-          <h1 className="text-xl font-bold text-foreground">
+          <h1 className="text-lg sm:text-xl font-bold text-foreground">
             Tasks &amp; Field Visits Management
           </h1>
-          <p className="text-xs text-muted">
+          <p className="text-[11px] sm:text-xs text-muted">
             {adminRole
               ? "Portal Admin — Plan & manage visits and tasks for all portal members"
               : managerRole
@@ -667,55 +667,55 @@ export function TasksVisitsPage() {
               : "Executive — Track and plan your scheduled field visits and work tasks"}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-0.5 sm:flex-wrap">
           <button
             type="button"
             onClick={() => setPlanVisitDate(toYmd(new Date()))}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-sky-700 shadow-xs transition cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-sky-700 shadow-xs active:scale-95 transition cursor-pointer shrink-0"
           >
             <Building2 className="h-4 w-4" />
-            + Create Field Visit
+            <span>+ Create Visit</span>
           </button>
           <button
             type="button"
             onClick={() => setPlanTaskDate(toYmd(new Date()))}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-700 shadow-xs transition cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-700 shadow-xs active:scale-95 transition cursor-pointer shrink-0"
           >
             <Briefcase className="h-4 w-4" />
-            + Create Work Task
+            <span>+ Create Task</span>
           </button>
           <button
             type="button"
             onClick={() => setReportModalOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3.5 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition cursor-pointer"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3.5 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted active:scale-95 transition cursor-pointer shrink-0"
           >
             <FileSpreadsheet className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-            Report
+            <span>Report</span>
           </button>
           <Link
             href="/dashboard/plans"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted active:scale-95 transition shrink-0"
           >
             <FileText className="h-4 w-4 text-primary" />
-            Work Plans
+            <span>Work Plans</span>
           </Link>
           <Link
             href="/dashboard/plans/new"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary-hover shadow-xs transition"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 sm:px-4 py-2 text-xs font-bold text-primary-foreground hover:bg-primary-hover shadow-xs active:scale-95 transition shrink-0"
           >
             <Plus className="h-4 w-4" />
-            New Work Plan
+            <span>New Plan</span>
           </Link>
         </div>
       </div>
 
       {/* Primary Mode Navigation & Role Filtering Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
-        <div className="flex flex-wrap items-center gap-1.5 bg-surface-muted p-1 rounded-xl border border-border">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-2">
+        <div className="flex items-center gap-1.5 bg-surface-muted p-1 rounded-xl border border-border overflow-x-auto scrollbar-none">
           <button
             type="button"
             onClick={() => setViewMode("list")}
-            className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold transition cursor-pointer ${
+            className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold whitespace-nowrap active:scale-95 transition cursor-pointer shrink-0 ${
               viewMode === "list"
                 ? "bg-primary text-primary-foreground shadow-xs"
                 : "text-muted hover:text-foreground hover:bg-card"
@@ -731,14 +731,14 @@ export function TasksVisitsPage() {
               setViewMode("visits_calendar");
               if (!selectedYmd) setSelectedYmd(toYmd(new Date()));
             }}
-            className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold transition cursor-pointer ${
+            className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold whitespace-nowrap active:scale-95 transition cursor-pointer shrink-0 ${
               viewMode === "visits_calendar"
                 ? "bg-sky-600 text-white shadow-xs"
                 : "text-muted hover:text-foreground hover:bg-card"
             }`}
           >
             <Building2 className="h-4 w-4 text-sky-400" />
-            <span>📍 Visits Planner &amp; Calendar</span>
+            <span>📍 Visits Planner</span>
           </button>
 
           <button
@@ -747,14 +747,14 @@ export function TasksVisitsPage() {
               setViewMode("tasks_calendar");
               if (!selectedYmd) setSelectedYmd(toYmd(new Date()));
             }}
-            className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold transition cursor-pointer ${
+            className={`flex items-center gap-2 rounded-lg px-3.5 py-1.5 text-xs font-bold whitespace-nowrap active:scale-95 transition cursor-pointer shrink-0 ${
               viewMode === "tasks_calendar"
                 ? "bg-emerald-600 text-white shadow-xs"
                 : "text-muted hover:text-foreground hover:bg-card"
             }`}
           >
-            <Briefcase className="h-4 w-4 text-emerald-300" />
-            <span>💼 Tasks Planner &amp; Calendar</span>
+            <Briefcase className="h-4 w-4 text-emerald-400" />
+            <span>💼 Tasks Planner</span>
           </button>
         </div>
 

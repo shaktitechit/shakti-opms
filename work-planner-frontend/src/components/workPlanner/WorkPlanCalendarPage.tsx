@@ -405,25 +405,25 @@ export function WorkPlanCalendarPage() {
   }
 
   return (
-    <div className="space-y-4 font-sans">
+    <div className="space-y-3.5 sm:space-y-4 font-sans w-full max-w-full">
       {/* Calendar Top Control Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card p-4 shadow-xs">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-border bg-card p-3.5 sm:p-4 shadow-2xs">
+        <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto scrollbar-none pb-0.5 sm:pb-0">
           <button
             type="button"
             onClick={prevMonth}
-            className="rounded-lg border border-border p-1.5 hover:bg-surface-muted transition cursor-pointer"
+            className="rounded-xl border border-border p-2 hover:bg-surface-muted active:scale-95 transition cursor-pointer shrink-0"
             title="Previous month"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <h2 className="text-lg font-bold text-foreground min-w-[160px]">
+          <h2 className="text-base sm:text-lg font-bold text-foreground min-w-[130px] sm:min-w-[160px] text-center truncate">
             {monthLabel}
           </h2>
           <button
             type="button"
             onClick={nextMonth}
-            className="rounded-lg border border-border p-1.5 hover:bg-surface-muted transition cursor-pointer"
+            className="rounded-xl border border-border p-2 hover:bg-surface-muted active:scale-95 transition cursor-pointer shrink-0"
             title="Next month"
           >
             <ChevronRight className="h-4 w-4" />
@@ -431,7 +431,7 @@ export function WorkPlanCalendarPage() {
           <button
             type="button"
             onClick={goToday}
-            className="rounded-lg border border-border bg-surface-muted px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-card transition cursor-pointer"
+            className="rounded-xl border border-border bg-surface-muted px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-card active:scale-95 transition cursor-pointer shrink-0"
           >
             Today
           </button>
@@ -439,15 +439,15 @@ export function WorkPlanCalendarPage() {
 
         {/* Elevated Controls: My vs Team & Executive Filtering */}
         {elevatedRole && (
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1">
+          <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-0.5 sm:flex-wrap">
+            <div className="flex items-center gap-1 rounded-xl border border-border bg-card p-1 shrink-0">
               <button
                 type="button"
                 onClick={() => {
                   setOwnershipScope("mine");
                   setSelectedExecutiveFilter("all");
                 }}
-                className={`rounded-lg px-3 py-1 text-xs font-semibold transition cursor-pointer ${
+                className={`rounded-lg px-3 py-1 text-xs font-semibold whitespace-nowrap active:scale-95 transition cursor-pointer ${
                   ownershipScope === "mine"
                     ? "bg-primary text-primary-foreground shadow-xs"
                     : "text-muted hover:bg-surface-muted hover:text-foreground"
@@ -458,19 +458,19 @@ export function WorkPlanCalendarPage() {
               <button
                 type="button"
                 onClick={() => setOwnershipScope("team")}
-                className={`rounded-lg px-3 py-1 text-xs font-semibold transition cursor-pointer ${
+                className={`rounded-lg px-3 py-1 text-xs font-semibold whitespace-nowrap active:scale-95 transition cursor-pointer ${
                   ownershipScope === "team"
                     ? "bg-primary text-primary-foreground shadow-xs"
                     : "text-muted hover:bg-surface-muted hover:text-foreground"
                 }`}
               >
-                {adminRole ? "All Portal Members" : "My Team Plans"}
+                {adminRole ? "All Members" : "My Team"}
               </button>
             </div>
 
             {/* Team Filter Dropdown when viewing team (admin sees all manager teams) */}
             {ownershipScope === "team" && teamOptions.length > 0 && (
-              <div className="flex items-center gap-1.5 bg-card border border-border px-2.5 py-1 rounded-xl">
+              <div className="flex items-center gap-1.5 bg-card border border-border px-2.5 py-1 rounded-xl shrink-0">
                 <Network className="h-3.5 w-3.5 text-muted" />
                 <select
                   value={selectedTeamFilter}
@@ -478,7 +478,7 @@ export function WorkPlanCalendarPage() {
                     setSelectedTeamFilter(e.target.value);
                     setSelectedExecutiveFilter("all");
                   }}
-                  className="bg-transparent text-xs font-semibold text-foreground outline-none cursor-pointer max-w-[170px]"
+                  className="bg-transparent text-xs font-semibold text-foreground outline-none cursor-pointer max-w-[140px] sm:max-w-[170px]"
                 >
                   <option value="all">All Teams</option>
                   {teamOptions.map((t) => (
@@ -490,12 +490,12 @@ export function WorkPlanCalendarPage() {
 
             {/* Executive Filter Dropdown when viewing team */}
             {ownershipScope === "team" && (
-              <div className="flex items-center gap-1.5 bg-card border border-border px-2.5 py-1 rounded-xl">
+              <div className="flex items-center gap-1.5 bg-card border border-border px-2.5 py-1 rounded-xl shrink-0">
                 <Users className="h-3.5 w-3.5 text-muted" />
                 <select
                   value={selectedExecutiveFilter}
                   onChange={(e) => setSelectedExecutiveFilter(e.target.value)}
-                  className="bg-transparent text-xs font-semibold text-foreground outline-none cursor-pointer max-w-[180px]"
+                  className="bg-transparent text-xs font-semibold text-foreground outline-none cursor-pointer max-w-[140px] sm:max-w-[180px]"
                 >
                   <option value="all">All Executives</option>
                   {allowedExecutives.map((exec) => (
@@ -509,26 +509,26 @@ export function WorkPlanCalendarPage() {
           </div>
         )}
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-0.5 sm:flex-wrap">
           <Link
             href={`/dashboard/plans/new${selectedYmd ? `?date=${selectedYmd}` : ""}`}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary-hover transition shadow-xs"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-2 text-xs font-bold text-primary-foreground hover:bg-primary-hover shadow-xs active:scale-95 transition shrink-0"
           >
             <Plus className="h-4 w-4" />
-            New Work Plan
+            <span>New Plan</span>
           </Link>
           <Link
             href="/dashboard/plans"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted active:scale-95 transition shrink-0"
           >
             <List className="h-4 w-4 text-muted" />
-            List View
+            <span>List View</span>
           </Link>
           <button
             type="button"
             onClick={loadMonthPlans}
             disabled={loading}
-            className="rounded-lg border border-border p-2 text-muted hover:bg-surface-muted hover:text-foreground transition cursor-pointer"
+            className="rounded-xl border border-border p-2 text-muted hover:bg-surface-muted hover:text-foreground active:scale-95 transition cursor-pointer shrink-0"
             title="Refresh calendar"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />

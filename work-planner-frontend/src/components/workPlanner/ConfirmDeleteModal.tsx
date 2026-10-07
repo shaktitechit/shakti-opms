@@ -46,7 +46,7 @@ export function ConfirmDeleteModal({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs animate-in fade-in duration-200"
+      className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in duration-200"
       role="presentation"
       onClick={() => !isDeleting && onClose()}
     >
@@ -54,10 +54,15 @@ export function ConfirmDeleteModal({
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="confirm-delete-title"
-        className="w-full max-w-md overflow-hidden rounded-2xl border border-border bg-card shadow-2xl animate-in zoom-in-95 duration-200"
+        className="w-full sm:max-w-md max-h-[92vh] flex flex-col overflow-hidden rounded-t-3xl sm:rounded-2xl border border-border bg-card shadow-2xl animate-in slide-in-from-bottom sm:zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="p-5 sm:p-6 space-y-4">
+        {/* Mobile Drag Indicator Handle */}
+        <div className="flex justify-center pt-2.5 pb-1 sm:hidden">
+          <div className="h-1.5 w-12 rounded-full bg-border" />
+        </div>
+
+        <div className="p-4 sm:p-6 space-y-4">
           <div className="flex items-start gap-3.5">
             <div
               className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
@@ -71,11 +76,11 @@ export function ConfirmDeleteModal({
             <div className="flex-1 min-w-0">
               <h2
                 id="confirm-delete-title"
-                className="text-base font-bold text-foreground truncate"
+                className="text-sm sm:text-base font-bold text-foreground truncate"
               >
                 {title}
               </h2>
-              <div className="mt-1.5 text-xs text-muted leading-relaxed break-words">
+              <div className="mt-1 text-xs text-muted leading-relaxed break-words">
                 {typeof description === "string" ? <p>{description}</p> : description}
               </div>
             </div>
@@ -91,12 +96,12 @@ export function ConfirmDeleteModal({
           </div>
         </div>
 
-        <div className="flex items-center justify-end gap-2.5 border-t border-border bg-surface-muted/40 px-5 py-3.5 sm:px-6">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center sm:justify-end gap-2 border-t border-border bg-surface-muted/40 px-4 py-3 sm:px-6">
           <button
             type="button"
             disabled={isDeleting}
             onClick={onClose}
-            className="rounded-lg border border-border bg-card px-4 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition shadow-2xs disabled:opacity-50 cursor-pointer"
+            className="w-full sm:w-auto rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-semibold text-foreground hover:bg-surface-muted active:scale-[0.98] transition shadow-2xs disabled:opacity-50 cursor-pointer text-center"
           >
             {cancelLabel}
           </button>
@@ -104,7 +109,7 @@ export function ConfirmDeleteModal({
             type="button"
             disabled={isDeleting}
             onClick={() => void onConfirm()}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-xs font-bold text-white shadow-xs transition disabled:opacity-50 cursor-pointer ${
+            className={`w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-xl px-5 py-2.5 text-xs font-bold text-white shadow-md active:scale-[0.98] transition disabled:opacity-50 cursor-pointer ${
               isDanger
                 ? "bg-rose-600 hover:bg-rose-700"
                 : "bg-amber-600 hover:bg-amber-700"

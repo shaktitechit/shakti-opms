@@ -122,14 +122,14 @@ export function WorkPlansPage() {
   }
 
   return (
-    <div className="space-y-4 font-sans">
+    <div className="space-y-3.5 sm:space-y-4 font-sans w-full max-w-full">
       {/* Top action header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-card p-4 rounded-xl border border-border">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-card p-3.5 sm:p-4 rounded-2xl border border-border shadow-2xs">
         <div>
-          <h1 className="text-xl font-bold text-foreground">
+          <h1 className="text-lg sm:text-xl font-bold text-foreground">
             Work Plans Management
           </h1>
-          <p className="text-xs text-muted">
+          <p className="text-[11px] sm:text-xs text-muted">
             {elevatedRole
               ? ownershipScope === "mine"
                 ? "Your own work plans — create, track, and complete"
@@ -137,50 +137,50 @@ export function WorkPlansPage() {
               : "Plan and track daily field visits, tasks, and expense entries"}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-0.5 sm:flex-wrap">
           <Link
             href="/dashboard/plans/calendar"
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted active:scale-95 transition shrink-0"
           >
             <CalendarDays className="h-4 w-4 text-primary" />
-            Calendar View
+            <span>Calendar</span>
           </Link>
           <button
             type="button"
             onClick={() => setDownloadOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted active:scale-95 transition shrink-0 cursor-pointer"
           >
             <FileSpreadsheet className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-            Work Plan Report
+            <span>Plans Report</span>
           </button>
           <button
             type="button"
             onClick={() => setExpenseReportOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted active:scale-95 transition shrink-0 cursor-pointer"
           >
             <FileSpreadsheet className="h-4 w-4 text-teal-600 dark:text-teal-400" />
-            Expense Report
+            <span>Expense Report</span>
           </button>
           <Link
             href="/dashboard/plans/new"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary-hover shadow-xs transition"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 sm:px-4 py-2 text-xs font-bold text-primary-foreground hover:bg-primary-hover shadow-xs active:scale-95 transition shrink-0"
           >
             <Plus className="h-4 w-4" />
-            New Work Plan
+            <span>New Plan</span>
           </Link>
         </div>
       </div>
 
       {/* My Plans vs Team Plans (admin / manager) */}
       {elevatedRole && (
-        <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1.5">
+        <div className="flex items-center gap-1 rounded-xl border border-border bg-card p-1 overflow-x-auto scrollbar-none">
           <button
             type="button"
             onClick={() => {
               setOwnershipScope("mine");
               setCurrentPage(1);
             }}
-            className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
+            className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap active:scale-95 transition ${
               ownershipScope === "mine"
                 ? "bg-primary text-primary-foreground shadow-xs"
                 : "text-muted hover:bg-surface-muted hover:text-foreground"
@@ -194,7 +194,7 @@ export function WorkPlansPage() {
               setOwnershipScope("team");
               setCurrentPage(1);
             }}
-            className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold transition ${
+            className={`rounded-lg px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap active:scale-95 transition ${
               ownershipScope === "team"
                 ? "bg-primary text-primary-foreground shadow-xs"
                 : "text-muted hover:bg-surface-muted hover:text-foreground"
@@ -206,7 +206,7 @@ export function WorkPlansPage() {
       )}
 
       {/* Status tabs */}
-      <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1.5">
+      <div className="flex items-center gap-1 rounded-xl border border-border bg-card p-1.5 overflow-x-auto scrollbar-none">
         {WORK_PLAN_STATUS_TABS.map((tab) => (
           <button
             key={tab.id}
@@ -215,7 +215,7 @@ export function WorkPlansPage() {
               setStatusFilter(tab.id);
               setCurrentPage(1);
             }}
-            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold whitespace-nowrap active:scale-95 transition shrink-0 ${
               statusFilter === tab.id
                 ? "bg-primary text-primary-foreground shadow-xs"
                 : "text-muted hover:bg-surface-muted hover:text-foreground"
@@ -227,68 +227,70 @@ export function WorkPlansPage() {
       </div>
 
       {/* Filters bar */}
-      <div className="flex flex-wrap items-center gap-3 bg-card p-3 rounded-xl border border-border">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted" />
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 sm:gap-3 bg-card p-3 rounded-2xl border border-border shadow-2xs">
+        <div className="relative flex-1 min-w-0">
+          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search by executive, location, remarks..."
-            className="w-full rounded-lg border border-border bg-surface-muted pl-9 pr-3 py-1.5 text-xs text-foreground outline-none focus:border-primary"
+            className="w-full rounded-xl border border-border bg-surface-muted pl-9 pr-3 py-2 text-xs text-foreground placeholder:text-muted outline-none focus:border-primary focus:ring-1 focus:ring-primary"
           />
         </div>
 
-        <select
-          value={planTypeFilter}
-          onChange={(e) => {
-            setPlanTypeFilter(e.target.value);
-            setCurrentPage(1);
-          }}
-          className="rounded-lg border border-border bg-surface-muted px-3 py-1.5 text-xs text-foreground outline-none focus:border-primary"
-        >
-          {WORK_PLAN_TYPE_TABS.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.label}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+          <select
+            value={planTypeFilter}
+            onChange={(e) => {
+              setPlanTypeFilter(e.target.value);
+              setCurrentPage(1);
+            }}
+            className="flex-1 sm:flex-initial rounded-xl border border-border bg-surface-muted px-3 py-2 text-xs text-foreground outline-none focus:border-primary"
+          >
+            {WORK_PLAN_TYPE_TABS.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
 
-        <div className="flex items-center gap-1.5">
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
-            className="rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
-          />
-          <span className="text-xs text-muted">to</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
-            className="rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
-          />
+          <div className="flex items-center gap-1.5 flex-1 sm:flex-initial">
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="w-full sm:w-auto rounded-xl border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
+            />
+            <span className="text-xs text-muted shrink-0">to</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="w-full sm:w-auto rounded-xl border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
+            />
+          </div>
+
+          <button
+            type="button"
+            onClick={loadData}
+            disabled={loading}
+            className="rounded-xl p-2 text-muted hover:bg-surface-muted hover:text-foreground active:scale-95 transition cursor-pointer shrink-0"
+            title="Refresh"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+          </button>
         </div>
-
-        <button
-          type="button"
-          onClick={loadData}
-          disabled={loading}
-          className="rounded-lg p-2 text-muted hover:bg-surface-muted hover:text-foreground transition"
-          title="Refresh"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-        </button>
       </div>
 
       {/* Mobile Touch Cards View (< md) */}
       <div className="md:hidden space-y-3">
         {loading ? (
-          <div className="rounded-xl border border-border bg-card p-6 text-center text-xs text-muted">
+          <div className="rounded-2xl border border-border bg-card p-6 text-center text-xs text-muted">
             Loading work plans…
           </div>
         ) : filteredPlans.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border bg-card p-8 text-center text-xs text-muted">
+          <div className="rounded-2xl border border-dashed border-border bg-card p-8 text-center text-xs text-muted">
             No work plans found for selected filters.
           </div>
         ) : (
@@ -302,8 +304,8 @@ export function WorkPlansPage() {
                 className="rounded-2xl border border-border bg-card p-4 space-y-3 shadow-xs transition hover:border-primary/40 active:scale-[0.99]"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
+                  <div className="space-y-0.5 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-bold text-foreground">
                         {formatPlanDate(r.plan_date)}
                       </span>
@@ -311,11 +313,11 @@ export function WorkPlansPage() {
                         {r.plan_type || "Visits"}
                       </span>
                     </div>
-                    <p className="text-xs font-medium text-muted">
+                    <p className="text-xs font-medium text-muted truncate">
                       {salesUserLabel(r.sales_user)}
                     </p>
                   </div>
-                  {renderPlanStatusBadge(r.status)}
+                  <div className="shrink-0">{renderPlanStatusBadge(r.status)}</div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-2 text-xs text-muted pt-1 border-t border-border/50">
@@ -332,9 +334,9 @@ export function WorkPlansPage() {
                 </div>
 
                 {r.is_discussed_with_manager && (
-                  <div className="flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                  <div className="flex items-center gap-1.5 rounded-xl bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
                     <MessageSquare className="h-3.5 w-3.5 shrink-0" />
-                    <span>Discussed ({formatDiscussionMethod(r.discussion_method)})</span>
+                    <span className="truncate">Discussed ({formatDiscussionMethod(r.discussion_method)})</span>
                   </div>
                 )}
 
@@ -344,7 +346,7 @@ export function WorkPlansPage() {
                     <button
                       type="button"
                       onClick={() => setCopyTarget(r)}
-                      className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs font-semibold text-muted hover:text-foreground transition cursor-pointer"
+                      className="inline-flex items-center gap-1 rounded-xl border border-border bg-surface-muted px-2.5 py-1.5 text-xs font-semibold text-muted hover:text-foreground active:scale-95 transition cursor-pointer"
                     >
                       <Copy className="h-3.5 w-3.5" />
                       <span>Copy</span>
@@ -358,7 +360,7 @@ export function WorkPlansPage() {
                             label: `Plan for ${formatPlanDate(r.plan_date)}`,
                           })
                         }
-                        className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-1.5 text-xs font-semibold text-rose-500 hover:bg-rose-500/20 transition cursor-pointer"
+                        className="rounded-xl border border-rose-500/20 bg-rose-500/10 p-1.5 text-xs font-semibold text-rose-500 hover:bg-rose-500/20 active:scale-95 transition cursor-pointer"
                         title="Delete plan"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -368,7 +370,7 @@ export function WorkPlansPage() {
 
                   <Link
                     href={`/dashboard/plans/${id}`}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 transition shadow-xs"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3.5 py-1.5 text-xs font-bold text-primary-foreground hover:bg-primary/90 active:scale-95 transition shadow-xs"
                   >
                     <span>Open Plan</span>
                     <ExternalLink className="h-3.5 w-3.5" />
@@ -381,7 +383,7 @@ export function WorkPlansPage() {
       </div>
 
       {/* Desktop / Tablet Table View (≥ md) */}
-      <div className="hidden md:block overflow-hidden rounded-xl border border-border bg-card">
+      <div className="hidden md:block overflow-hidden rounded-2xl border border-border bg-card">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="border-b border-border bg-surface-muted font-semibold text-muted">
@@ -413,8 +415,6 @@ export function WorkPlansPage() {
                 filteredPlans.map((r) => {
                   const id = planIdOf(r);
                   const canEdit = canEditPlan(r.status, { isAdmin: elevatedRole });
-                  const visitsCount = r.visit_count ?? (r.visits?.length || 0);
-                  const worksCount = r.work_count ?? (r.works?.length || 0);
 
                   return (
                     <tr key={id} className="hover:bg-surface-muted/50 transition">
@@ -469,7 +469,7 @@ export function WorkPlansPage() {
                         <div className="flex items-center justify-end gap-2">
                           <Link
                             href={`/dashboard/plans/${id}`}
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline active:scale-95 transition"
                           >
                             View
                             <ExternalLink className="h-3 w-3" />
@@ -477,7 +477,7 @@ export function WorkPlansPage() {
                           <button
                             type="button"
                             onClick={() => setCopyTarget(r)}
-                            className="rounded p-1 text-muted hover:bg-primary/10 hover:text-primary transition cursor-pointer"
+                            className="rounded p-1 text-muted hover:bg-primary/10 hover:text-primary active:scale-95 transition cursor-pointer"
                             title="Copy plan"
                           >
                             <Copy className="h-3.5 w-3.5" />
@@ -487,11 +487,11 @@ export function WorkPlansPage() {
                               type="button"
                               onClick={() =>
                                 setDeleteTarget({
-                                  id,
-                                  label: `Plan for ${formatPlanDate(r.plan_date)}`,
+                                    id,
+                                    label: `Plan for ${formatPlanDate(r.plan_date)}`,
                                 })
                               }
-                              className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 transition cursor-pointer"
+                              className="rounded p-1 text-muted hover:bg-rose-500/10 hover:text-rose-500 active:scale-95 transition cursor-pointer"
                               title="Delete plan"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -519,7 +519,7 @@ export function WorkPlansPage() {
                 type="button"
                 disabled={currentPage <= 1 || loading}
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                className="rounded-lg border border-border px-3 py-1 font-medium text-foreground hover:bg-surface-muted disabled:opacity-50 transition cursor-pointer"
+                className="rounded-lg border border-border px-3 py-1 font-medium text-foreground hover:bg-surface-muted disabled:opacity-50 active:scale-95 transition cursor-pointer"
               >
                 Previous
               </button>
@@ -527,7 +527,7 @@ export function WorkPlansPage() {
                 type="button"
                 disabled={currentPage >= pages || loading}
                 onClick={() => setCurrentPage((p) => Math.min(pages, p + 1))}
-                className="rounded-lg border border-border px-3 py-1 font-medium text-foreground hover:bg-surface-muted disabled:opacity-50 transition cursor-pointer"
+                className="rounded-lg border border-border px-3 py-1 font-medium text-foreground hover:bg-surface-muted disabled:opacity-50 active:scale-95 transition cursor-pointer"
               >
                 Next
               </button>

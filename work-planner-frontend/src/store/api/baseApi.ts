@@ -123,6 +123,7 @@ export const baseApi = createApi({
     "WorkPlanDraft",
     "SeniorRemarks",
     "UserNotes",
+    "HelpDesk",
   ],
   endpoints: () => ({}),
 });
