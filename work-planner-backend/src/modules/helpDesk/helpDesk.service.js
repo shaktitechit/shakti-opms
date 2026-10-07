@@ -175,71 +175,96 @@ async function createTicket(user, payload) {
   return plainTicket;
 }
 
+function isSuperAdmin(user) {
+  if (!user) return false;
+  const role = String(user.role || user.wp_role || user.department || '').toLowerCase().trim();
+  if (role === 'super_admin' || role === 'admin') return true;
+  if (Array.isArray(user.role_codes) && user.role_codes.includes('super_admin')) return true;
+  if (
+    Array.isArray(user.roles) &&
+    user.roles.some((r) => String(r.code || r.name || r).toLowerCase() === 'super_admin')
+  ) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * Queries tickets with rich filters, scoping, and pagination.
+ * Strict Access Guard: Non-super-admin users can ONLY list tickets they created or are tagged in.
  */
 async function listTickets(user, query = {}) {
   const { HelpTicket } = getModels();
   const userId = String(user._id || user.id);
+  const superAdmin = isSuperAdmin(user);
 
   const page = Math.max(1, parseInt(query.page, 10) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(query.limit, 10) || 20));
   const skip = (page - 1) * limit;
 
-  const filter = { deletedAt: null };
+  const conditions = [{ deletedAt: null }];
 
-  // Scope: 'tagged' | 'created' | 'all' | 'needs_my_approval'
+  // Access / Scope control:
+  // Non-super-admins MUST ONLY see tickets they created or are tagged in.
   const scope = query.scope || 'all';
   if (scope === 'tagged') {
-    filter['tagged_users.user'] = userId;
+    conditions.push({ 'tagged_users.user': userId });
   } else if (scope === 'created') {
-    filter.created_by = userId;
+    conditions.push({ created_by: userId });
   } else if (scope === 'needs_my_approval') {
-    filter.created_by = userId;
-    filter.status = 'solution_proposed';
-  } else if (scope !== 'all') {
-    // Default fallback: related to user either as creator or tagged collaborator
-    filter.$or = [{ created_by: userId }, { 'tagged_users.user': userId }];
+    conditions.push({ created_by: userId, status: 'solution_proposed' });
+  } else {
+    // scope === 'all' or any default
+    if (!superAdmin) {
+      conditions.push({
+        $or: [{ created_by: userId }, { 'tagged_users.user': userId }],
+      });
+    }
   }
 
   // Status Filter
   if (query.status && query.status !== 'all') {
     if (query.status === 'active') {
-      filter.status = { $in: ['open', 'in_progress', 'solution_proposed', 'reopened'] };
+      conditions.push({ status: { $in: ['open', 'in_progress', 'solution_proposed', 'reopened'] } });
     } else {
-      filter.status = query.status;
+      conditions.push({ status: query.status });
     }
   }
 
   // Priority Filter
   if (query.priority && query.priority !== 'all') {
-    filter.priority = query.priority;
+    conditions.push({ priority: query.priority });
   }
 
   // Category Filter
   if (query.category && query.category !== 'all') {
-    filter.category = query.category;
+    conditions.push({ category: query.category });
   }
 
   // Date Range
   if (query.from || query.to) {
-    filter.createdAt = {};
-    if (query.from) filter.createdAt.$gte = new Date(query.from);
-    if (query.to) filter.createdAt.$lte = new Date(`${query.to}T23:59:59.999Z`);
+    const dateCond = {};
+    if (query.from) dateCond.$gte = new Date(query.from);
+    if (query.to) dateCond.$lte = new Date(`${query.to}T23:59:59.999Z`);
+    conditions.push({ createdAt: dateCond });
   }
 
-  // Search Filter
+  // Search Filter (safely AND-ed with access condition)
   if (query.search && query.search.trim()) {
     const q = query.search.trim();
     const regex = new RegExp(q, 'i');
-    filter.$or = [
-      { ticket_number: regex },
-      { title: regex },
-      { description: regex },
-      { 'creator_snapshot.name': regex },
-      { 'tagged_users.name': regex },
-    ];
+    conditions.push({
+      $or: [
+        { ticket_number: regex },
+        { title: regex },
+        { description: regex },
+        { 'creator_snapshot.name': regex },
+        { 'tagged_users.name': regex },
+      ],
+    });
   }
+
+  const filter = conditions.length === 1 ? conditions[0] : { $and: conditions };
 
   const [total, tickets] = await Promise.all([
     HelpTicket.countDocuments(filter),
@@ -265,10 +290,12 @@ async function listTickets(user, query = {}) {
 
 /**
  * Gets a single ticket with full details, replies stream, and access flags.
+ * Strict Access Guard: Non-super-admins cannot view tickets they are not creator or tagged in.
  */
 async function getTicketById(user, ticketId) {
   const { HelpTicket, HelpTicketReply } = getModels();
   const userId = String(user._id || user.id);
+  const superAdmin = isSuperAdmin(user);
 
   if (!mongoose.Types.ObjectId.isValid(ticketId)) {
     throw new Error('Invalid ticket ID format');
@@ -279,14 +306,18 @@ async function getTicketById(user, ticketId) {
     throw new Error('Help ticket not found');
   }
 
-  const replies = await HelpTicketReply.find({ ticket: ticketId }).sort({ createdAt: 1 }).lean();
-
   const isCreator = String(ticket.created_by) === userId;
   const isTagged = (ticket.tagged_users || []).some((t) => String(t.user?._id || t.user) === userId);
-  const elevatedRole = ['admin', 'super_admin', 'manager'].includes(String(user.role || user.wp_role).toLowerCase());
 
-  const canResolve = isCreator || elevatedRole;
-  const canProposeSolution = isTagged || isCreator || elevatedRole;
+  // Strict Access Guard
+  if (!isCreator && !isTagged && !superAdmin) {
+    throw new Error('Access denied: You can only view help tickets that you created or are tagged on.');
+  }
+
+  const replies = await HelpTicketReply.find({ ticket: ticketId }).sort({ createdAt: 1 }).lean();
+
+  const canResolve = isCreator || superAdmin;
+  const canProposeSolution = isTagged || isCreator || superAdmin;
   const canAcknowledge = isTagged && ticket.status === 'open';
   const canReopen = isCreator && (ticket.status === 'solution_proposed' || ticket.status === 'resolved');
 
@@ -311,7 +342,8 @@ async function getTicketById(user, ticketId) {
  */
 async function addReply(user, ticketId, payload) {
   const { HelpTicket, HelpTicketReply, User } = getModels();
-  const userId = user._id || user.id;
+  const userId = String(user._id || user.id);
+  const superAdmin = isSuperAdmin(user);
 
   if (!payload.message || !payload.message.trim()) {
     throw new Error('Reply message content is required');
@@ -320,6 +352,14 @@ async function addReply(user, ticketId, payload) {
   const ticket = await HelpTicket.findOne({ _id: ticketId, deletedAt: null });
   if (!ticket) {
     throw new Error('Help ticket not found');
+  }
+
+  const isCreator = String(ticket.created_by) === userId;
+  const isTagged = (ticket.tagged_users || []).some((t) => String(t.user?._id || t.user) === userId);
+
+  // Strict Access Guard
+  if (!isCreator && !isTagged && !superAdmin) {
+    throw new Error('Access denied: You can only reply to help tickets that you created or are tagged on.');
   }
 
   const userDoc = await User.findById(userId).lean();
@@ -367,11 +407,20 @@ async function addReply(user, ticketId, payload) {
  */
 async function tagUsers(user, ticketId, payload) {
   const { HelpTicket, HelpTicketReply, User } = getModels();
-  const userId = user._id || user.id;
+  const userId = String(user._id || user.id);
+  const superAdmin = isSuperAdmin(user);
 
   const ticket = await HelpTicket.findOne({ _id: ticketId, deletedAt: null });
   if (!ticket) {
     throw new Error('Help ticket not found');
+  }
+
+  const isCreator = String(ticket.created_by) === userId;
+  const isTagged = (ticket.tagged_users || []).some((t) => String(t.user?._id || t.user) === userId);
+
+  // Strict Access Guard
+  if (!isCreator && !isTagged && !superAdmin) {
+    throw new Error('Access denied: You can only tag collaborators on help tickets you are involved with.');
   }
 
   const rawIds = Array.isArray(payload.user_ids) ? payload.user_ids : [];
@@ -481,7 +530,8 @@ async function acknowledgeTicket(user, ticketId) {
  */
 async function proposeSolution(user, ticketId, payload) {
   const { HelpTicket, HelpTicketReply, User } = getModels();
-  const userId = user._id || user.id;
+  const userId = String(user._id || user.id);
+  const superAdmin = isSuperAdmin(user);
 
   if (!payload.solution_text || !payload.solution_text.trim()) {
     throw new Error('Solution / deliverable explanation is required');
@@ -490,6 +540,14 @@ async function proposeSolution(user, ticketId, payload) {
   const ticket = await HelpTicket.findOne({ _id: ticketId, deletedAt: null });
   if (!ticket) {
     throw new Error('Help ticket not found');
+  }
+
+  const isCreator = String(ticket.created_by) === userId;
+  const isTagged = (ticket.tagged_users || []).some((t) => String(t.user?._id || t.user) === userId);
+
+  // Strict Access Guard
+  if (!isCreator && !isTagged && !superAdmin) {
+    throw new Error('Access denied: You can only propose solutions for help tickets you are involved with.');
   }
 
   const userDoc = await User.findById(userId).lean();
@@ -686,9 +744,14 @@ async function cancelTicket(user, ticketId, payload = {}) {
 async function getHelpDeskStats(user) {
   const { HelpTicket } = getModels();
   const userId = String(user._id || user.id);
+  const superAdmin = isSuperAdmin(user);
 
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const userInvolvement = superAdmin
+    ? {}
+    : { $or: [{ created_by: userId }, { 'tagged_users.user': userId }] };
 
   const [
     taggedToMeOpen,
@@ -714,16 +777,19 @@ async function getHelpDeskStats(user) {
       deletedAt: null,
     }),
     HelpTicket.countDocuments({
+      ...userInvolvement,
       status: 'resolved',
       'resolution_details.resolved_at': { $gte: startOfMonth },
       deletedAt: null,
     }),
     HelpTicket.countDocuments({
+      ...userInvolvement,
       priority: 'urgent',
       status: { $in: ['open', 'in_progress', 'reopened'] },
       deletedAt: null,
     }),
     HelpTicket.countDocuments({
+      ...userInvolvement,
       status: { $in: ['open', 'in_progress', 'solution_proposed', 'reopened'] },
       deletedAt: null,
     }),
