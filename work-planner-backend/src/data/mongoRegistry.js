@@ -8,6 +8,33 @@ const softDeletePlugin = require('../plugins/softDelete.plugin');
 let _cached = null;
 
 function registerModels() {
+  // CompanyInfo schema
+  if (!mongoose.models.CompanyInfo) {
+    const companyInfoSchema = new mongoose.Schema(
+      {
+        legal_name: { type: String, trim: true, default: '' },
+        trade_name: { type: String, trim: true, default: '' },
+        gstin: { type: String, trim: true, uppercase: true, default: '' },
+        cin: { type: String, trim: true, uppercase: true, default: '' },
+        pan: { type: String, trim: true, uppercase: true, default: '' },
+        email: { type: String, lowercase: true, trim: true, default: '' },
+        phone: { type: String, trim: true, default: '' },
+        website: { type: String, trim: true, default: '' },
+        logo_url: { type: String, trim: true, default: '' },
+        primary_color: { type: String, trim: true, default: '#4f46e5' },
+        secondary_color: { type: String, trim: true, default: '#3b82f6' },
+        address: { type: String, trim: true, default: '' },
+        city: { type: String, trim: true, default: '' },
+        state: { type: String, trim: true, default: '' },
+        pincode: { type: String, trim: true, default: '' },
+        country: { type: String, trim: true, default: '' },
+        is_default: { type: Boolean, default: true, index: true },
+      },
+      { timestamps: true }
+    );
+    mongoose.model('CompanyInfo', companyInfoSchema);
+  }
+
   // User schema
   if (!mongoose.models.User) {
     const userSchema = new mongoose.Schema(

@@ -94,20 +94,88 @@ async function sendInAppNotification(userId, { title, message, type = 'info', en
   }
 }
 
+let _cachedCompanyInfo = null;
+let _cachedCompanyInfoTime = 0;
+
 /**
- * Builds responsive, styled branded HTML email template for Help Desk notifications.
+ * Retrieves company letterhead information from CompanyInfo collection.
+ */
+async function getCompanyLetterhead(companyId = null) {
+  const now = Date.now();
+  if (_cachedCompanyInfo && now - _cachedCompanyInfoTime < 60000 && !companyId) {
+    return _cachedCompanyInfo;
+  }
+
+  try {
+    const { CompanyInfo } = getModels();
+    if (CompanyInfo) {
+      let doc = null;
+      if (companyId) {
+        doc = await CompanyInfo.findById(companyId).lean();
+      }
+      if (!doc) {
+        doc = (await CompanyInfo.findOne({ is_default: true }).lean()) || (await CompanyInfo.findOne().lean());
+      }
+      if (doc) {
+        const primaryColor = doc.primary_color || '#4f46e5';
+        const secondaryColor = doc.secondary_color || '#3b82f6';
+        const companyName = doc.trade_name || doc.legal_name || 'OPMS Operations & Management Portal';
+        const addressParts = [doc.address, doc.city, doc.state, doc.pincode].filter(Boolean);
+
+        const info = {
+          company_name: companyName,
+          legal_name: doc.legal_name || companyName,
+          trade_name: doc.trade_name || companyName,
+          logo_url: doc.logo_url || '',
+          email: doc.email || doc.billing_email || '',
+          phone: doc.phone || '',
+          website: doc.website || '',
+          address: addressParts.join(', '),
+          gstin: doc.gstin || '',
+          cin: doc.cin || '',
+          primary_color: primaryColor,
+          secondary_color: secondaryColor,
+        };
+
+        if (!companyId) {
+          _cachedCompanyInfo = info;
+          _cachedCompanyInfoTime = now;
+        }
+        return info;
+      }
+    }
+  } catch (err) {
+    logger.warn(`[HelpDeskNotification] Failed to query CompanyInfo: ${err.message}`);
+  }
+
+  return {
+    company_name: 'OPMS Operations & Management',
+    legal_name: 'OPMS Operations & Management',
+    trade_name: 'OPMS Portal',
+    logo_url: '',
+    email: 'support@opms.local',
+    phone: '',
+    website: '',
+    address: '',
+    gstin: '',
+    cin: '',
+    primary_color: '#4f46e5',
+    secondary_color: '#3b82f6',
+  };
+}
+
+/**
+ * Builds responsive, styled company letterhead HTML email template for Help Desk notifications.
  */
 function buildHelpDeskEmailHtml({
+  company = {},
   headerTitle,
   headerSubtitle,
   badgeText,
-  badgeColor,
   ticket,
   mainContentHtml,
   actionButtonText,
   actionButtonUrl,
-  secondaryActionText,
-  secondaryActionUrl,
   noteText,
 }) {
   const ticketNum = ticket.ticket_number || 'HD-TICKET';
@@ -116,6 +184,17 @@ function buildHelpDeskEmailHtml({
   const creatorName = ticket.creator_snapshot?.name || 'Portal User';
   const creatorDept = ticket.creator_snapshot?.department ? `(${ticket.creator_snapshot.department})` : '';
 
+  const companyName = company.trade_name || company.legal_name || company.company_name || 'OPMS Portal';
+  const logoUrl = company.logo_url || '';
+  const primaryColor = company.primary_color || '#4f46e5';
+  const secondaryColor = company.secondary_color || '#3b82f6';
+  const currentYear = new Date().getFullYear();
+
+  const contactItems = [];
+  if (company.phone) contactItems.push(`Phone: ${escapeHtml(company.phone)}`);
+  if (company.email) contactItems.push(`Email: <a href="mailto:${escapeHtml(company.email)}" style="color: inherit; text-decoration: none;">${escapeHtml(company.email)}</a>`);
+  if (company.website) contactItems.push(`Web: <a href="${escapeHtml(company.website)}" target="_blank" style="color: inherit; text-decoration: none;">${escapeHtml(company.website)}</a>`);
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -123,24 +202,57 @@ function buildHelpDeskEmailHtml({
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(ticket.title)}</title>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f8fafc; padding: 24px 12px;">
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f1f5f9; padding: 30px 12px;">
     <tr>
       <td align="center">
-        <table role="presentation" width="100%" max-width="620px" style="max-width: 620px; background-color: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);">
-          <!-- Header Banner -->
+        <table role="presentation" width="100%" style="max-width: 660px; background-color: #ffffff; border-radius: 12px; border: 1px solid #cbd5e1; overflow: hidden; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06);">
+          
+          <!-- ── OFFICIAL COMPANY LETTERHEAD HEADER ── -->
           <tr>
-            <td style="background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%); padding: 24px 28px; color: #ffffff;">
+            <td style="background-color: #ffffff; padding: 24px 32px 18px 32px; text-align: center; border-bottom: 1px solid #f1f5f9;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td align="center">
+                    ${
+                      logoUrl
+                        ? `<img src="${escapeHtml(logoUrl)}" alt="${escapeHtml(companyName)}" style="max-height: 58px; max-width: 200px; display: block; margin: 0 auto 10px auto;" />`
+                        : `<div style="display: inline-block; background: linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%); color: #ffffff; font-weight: 900; font-size: 16px; padding: 8px 16px; border-radius: 8px; letter-spacing: 0.05em; margin-bottom: 8px;">${escapeHtml(companyName.toUpperCase())}</div>`
+                    }
+                    <h2 style="margin: 0; font-size: 18px; font-weight: 800; color: #0f172a; letter-spacing: -0.2px; text-transform: uppercase;">
+                      ${escapeHtml(companyName)}
+                    </h2>
+                    ${
+                      company.address
+                        ? `<p style="margin: 4px 0 0 0; font-size: 11.5px; color: #64748b; line-height: 1.4;">${escapeHtml(company.address)}</p>`
+                        : ''
+                    }
+                    ${
+                      contactItems.length > 0
+                        ? `<p style="margin: 3px 0 0 0; font-size: 11px; color: #64748b;">${contactItems.join(' &bull; ')}</p>`
+                        : ''
+                    }
+                    <!-- Elegant Letterhead Gradient Bar -->
+                    <div style="height: 3px; background: linear-gradient(90deg, ${primaryColor} 0%, ${secondaryColor} 70%, #93c5fd 100%); margin-top: 16px; border-radius: 2px;"></div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ── NOTIFICATION CONTEXT & SUBJECT BANNER ── -->
+          <tr>
+            <td style="background: linear-gradient(135deg, ${primaryColor} 0%, ${secondaryColor} 100%); padding: 18px 32px; color: #ffffff;">
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                 <tr>
                   <td>
-                    <span style="display: inline-block; background: rgba(255, 255, 255, 0.2); padding: 4px 10px; border-radius: 9999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">
-                      ${escapeHtml(badgeText || 'Help Desk Ticket')}
+                    <span style="display: inline-block; background: rgba(255, 255, 255, 0.22); padding: 3px 10px; border-radius: 9999px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;">
+                      ${escapeHtml(badgeText || 'Help Desk Notification')}
                     </span>
-                    <h1 style="margin: 10px 0 4px 0; font-size: 20px; font-weight: 800; line-height: 1.3; color: #ffffff;">
+                    <h1 style="margin: 8px 0 3px 0; font-size: 18px; font-weight: 800; line-height: 1.3; color: #ffffff;">
                       ${escapeHtml(headerTitle)}
                     </h1>
-                    <p style="margin: 0; font-size: 13px; opacity: 0.9; color: #e0e7ff;">
+                    <p style="margin: 0; font-size: 12.5px; opacity: 0.92; color: #e0e7ff;">
                       ${escapeHtml(headerSubtitle || `Ticket #${ticketNum}`)}
                     </p>
                   </td>
@@ -149,26 +261,27 @@ function buildHelpDeskEmailHtml({
             </td>
           </tr>
 
-          <!-- Ticket Overview Card -->
+          <!-- ── TICKET SUMMARY CARD & BODY ── -->
           <tr>
-            <td style="padding: 24px 28px 16px 28px;">
-              <div style="background-color: #f1f5f9; border-radius: 12px; padding: 16px; border: 1px solid #e2e8f0; margin-bottom: 20px;">
+            <td style="padding: 26px 32px 18px 32px;">
+              <!-- Ticket Overview Metadata Box -->
+              <div style="background-color: #f8fafc; border-radius: 10px; padding: 14px 18px; border: 1px solid #e2e8f0; margin-bottom: 22px;">
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
                   <tr>
-                    <td style="font-size: 12px; color: #64748b; font-weight: 600; padding-bottom: 6px;">Ticket:</td>
-                    <td style="font-size: 13px; color: #0f172a; font-weight: 700; padding-bottom: 6px; text-align: right;">
-                      <span style="background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 6px; font-family: monospace;">#${escapeHtml(ticketNum)}</span>
+                    <td style="font-size: 12px; color: #64748b; font-weight: 600; padding-bottom: 5px;">Ticket Number:</td>
+                    <td style="font-size: 13px; color: #0f172a; font-weight: 700; padding-bottom: 5px; text-align: right;">
+                      <span style="background: #e0e7ff; color: #3730a3; padding: 2px 8px; border-radius: 5px; font-family: monospace; font-size: 12px;">#${escapeHtml(ticketNum)}</span>
                     </td>
                   </tr>
                   <tr>
-                    <td style="font-size: 12px; color: #64748b; font-weight: 600; padding-bottom: 6px;">Created By:</td>
-                    <td style="font-size: 13px; color: #0f172a; font-weight: 600; padding-bottom: 6px; text-align: right;">
+                    <td style="font-size: 12px; color: #64748b; font-weight: 600; padding-bottom: 5px;">Created By:</td>
+                    <td style="font-size: 13px; color: #0f172a; font-weight: 600; padding-bottom: 5px; text-align: right;">
                       ${escapeHtml(creatorName)} ${escapeHtml(creatorDept)}
                     </td>
                   </tr>
                   <tr>
-                    <td style="font-size: 12px; color: #64748b; font-weight: 600; padding-bottom: 6px;">Priority & Category:</td>
-                    <td style="font-size: 12px; color: #0f172a; font-weight: 600; padding-bottom: 6px; text-align: right;">
+                    <td style="font-size: 12px; color: #64748b; font-weight: 600; padding-bottom: 5px;">Priority & Category:</td>
+                    <td style="font-size: 12px; color: #0f172a; font-weight: 600; padding-bottom: 5px; text-align: right;">
                       <span style="background-color: ${priority.bg}; color: ${priority.text}; border: 1px solid ${priority.border}; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; margin-right: 4px;">
                         ${priority.label}
                       </span>
@@ -176,7 +289,7 @@ function buildHelpDeskEmailHtml({
                     </td>
                   </tr>
                   <tr>
-                    <td style="font-size: 12px; color: #64748b; font-weight: 600;">Subject / Title:</td>
+                    <td style="font-size: 12px; color: #64748b; font-weight: 600;">Subject / Requirement:</td>
                     <td style="font-size: 13px; color: #0f172a; font-weight: 700; text-align: right;">
                       ${escapeHtml(ticket.title)}
                     </td>
@@ -189,11 +302,11 @@ function buildHelpDeskEmailHtml({
                 ${mainContentHtml}
               </div>
 
-              <!-- CTA Button -->
+              <!-- Primary Call To Action Button -->
               ${
                 actionButtonUrl && actionButtonText
                   ? `<div style="text-align: center; margin: 28px 0 16px 0;">
-                      <a href="${actionButtonUrl}" style="display: inline-block; background: #4f46e5; color: #ffffff; text-decoration: none; padding: 12px 28px; border-radius: 10px; font-size: 14px; font-weight: 700; box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.25);">
+                      <a href="${actionButtonUrl}" style="display: inline-block; background: ${primaryColor}; color: #ffffff; text-decoration: none; padding: 12px 30px; border-radius: 8px; font-size: 14px; font-weight: 700; box-shadow: 0 4px 10px rgba(79, 70, 229, 0.25);">
                         ${escapeHtml(actionButtonText)} &rarr;
                       </a>
                     </div>`
@@ -210,13 +323,28 @@ function buildHelpDeskEmailHtml({
             </td>
           </tr>
 
-          <!-- Footer -->
+          <!-- ── OFFICIAL COMPANY LETTERHEAD FOOTER ── -->
           <tr>
-            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 28px; text-align: center; font-size: 11px; color: #94a3b8;">
-              <p style="margin: 0;">This is an automated notification from OPMS Help Desk & Collaboration Portal.</p>
-              <p style="margin: 4px 0 0 0;">&copy; ${new Date().getFullYear()} OPMS Work Planner. All rights reserved.</p>
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 32px; text-align: center; font-size: 11.5px; color: #64748b; line-height: 1.6;">
+              <p style="margin: 0; font-weight: 700; color: #334155;">
+                ${escapeHtml(company.legal_name || companyName)}
+              </p>
+              ${
+                company.address
+                  ? `<p style="margin: 2px 0 0 0; font-size: 11px; color: #64748b;">${escapeHtml(company.address)}</p>`
+                  : ''
+              }
+              <div style="margin: 6px 0; font-size: 10.5px; color: #94a3b8;">
+                ${company.gstin ? `GSTIN: ${escapeHtml(company.gstin)} &bull; ` : ''}
+                ${company.cin ? `CIN: ${escapeHtml(company.cin)} &bull; ` : ''}
+                Help Desk & Support System
+              </div>
+              <p style="margin: 6px 0 0 0; font-size: 10.5px; color: #94a3b8;">
+                This is an official automated notification. &copy; ${currentYear} ${escapeHtml(companyName)}. All rights reserved.
+              </p>
             </td>
           </tr>
+
         </table>
       </td>
     </tr>
@@ -234,6 +362,7 @@ async function dispatchTicketCreatedNotification(ticket) {
   const creatorName = ticket.creator_snapshot?.name || 'A team member';
   const title = ticket.title;
   const deepLink = `${FRONTEND_BASE_URL}/dashboard/help-desk?ticket=${ticketId}`;
+  const company = await getCompanyLetterhead(ticket.company_id);
 
   const inAppTitle = `Help Request: Tagged in #${ticketNum}`;
   const inAppMessage = `${creatorName} tagged you for help: "${title}"`;
@@ -255,6 +384,7 @@ async function dispatchTicketCreatedNotification(ticket) {
     if (tagged.email) {
       try {
         const emailHtml = buildHelpDeskEmailHtml({
+          company,
           headerTitle: 'You Were Tagged in a Help Request',
           headerSubtitle: `${creatorName} requested your assistance on ticket #${ticketNum}`,
           badgeText: 'New Help Request',
@@ -295,6 +425,7 @@ async function dispatchReplyNotification(ticket, reply, newlyTaggedUsers = []) {
   const authorName = reply.user_snapshot?.name || 'A team member';
   const authorId = String(reply.user?._id || reply.user);
   const deepLink = `${FRONTEND_BASE_URL}/dashboard/help-desk?ticket=${ticketId}`;
+  const company = await getCompanyLetterhead(ticket.company_id);
 
   const recipientMap = new Map();
 
@@ -335,6 +466,7 @@ async function dispatchReplyNotification(ticket, reply, newlyTaggedUsers = []) {
     if (recipient.email) {
       try {
         const emailHtml = buildHelpDeskEmailHtml({
+          company,
           headerTitle: 'New Message on Help Ticket',
           headerSubtitle: `Update on Ticket #${ticketNum}`,
           badgeText: 'Ticket Update',
@@ -377,6 +509,7 @@ async function dispatchSolutionProposedNotification(ticket, solution) {
   const creatorId = String(ticket.created_by?._id || ticket.created_by);
   const creatorEmail = ticket.creator_snapshot?.email;
   const deepLink = `${FRONTEND_BASE_URL}/dashboard/help-desk?ticket=${ticketId}`;
+  const company = await getCompanyLetterhead(ticket.company_id);
 
   const inAppTitle = `Solution Proposed for #${ticketNum}`;
   const inAppMessage = `${proposedByName} proposed a solution for "${ticket.title}". Please verify and resolve.`;
@@ -392,6 +525,7 @@ async function dispatchSolutionProposedNotification(ticket, solution) {
   if (creatorEmail) {
     try {
       const emailHtml = buildHelpDeskEmailHtml({
+        company,
         headerTitle: 'Solution Proposed — Action Required',
         headerSubtitle: `${proposedByName} has provided deliverables for Ticket #${ticketNum}`,
         badgeText: 'Action Required: Verify Solution',
@@ -431,6 +565,7 @@ async function dispatchTicketResolvedNotification(ticket, resolverName) {
   const ticketId = String(ticket._id || ticket.id);
   const ticketNum = ticket.ticket_number || 'HD-TICKET';
   const deepLink = `${FRONTEND_BASE_URL}/dashboard/help-desk?ticket=${ticketId}`;
+  const company = await getCompanyLetterhead(ticket.company_id);
 
   for (const tagged of ticket.tagged_users || []) {
     const userId = tagged.user?._id || tagged.user;
@@ -448,6 +583,7 @@ async function dispatchTicketResolvedNotification(ticket, resolverName) {
       try {
         const rating = ticket.resolution_details?.satisfaction_rating ? ` (${ticket.resolution_details.satisfaction_rating} / 5 ⭐)` : '';
         const emailHtml = buildHelpDeskEmailHtml({
+          company,
           headerTitle: 'Help Ticket Successfully Resolved',
           headerSubtitle: `Ticket #${ticketNum} has been marked Resolved by ${resolverName}`,
           badgeText: 'Resolved & Closed',
@@ -489,6 +625,7 @@ async function dispatchTicketReopenedNotification(ticket, reopenerName, reason) 
   const ticketId = String(ticket._id || ticket.id);
   const ticketNum = ticket.ticket_number || 'HD-TICKET';
   const deepLink = `${FRONTEND_BASE_URL}/dashboard/help-desk?ticket=${ticketId}`;
+  const company = await getCompanyLetterhead(ticket.company_id);
 
   for (const tagged of ticket.tagged_users || []) {
     const userId = tagged.user?._id || tagged.user;
@@ -505,6 +642,7 @@ async function dispatchTicketReopenedNotification(ticket, reopenerName, reason) 
     if (tagged.email) {
       try {
         const emailHtml = buildHelpDeskEmailHtml({
+          company,
           headerTitle: 'Help Ticket Reopened',
           headerSubtitle: `Further assistance requested on #${ticketNum}`,
           badgeText: 'Ticket Reopened',
