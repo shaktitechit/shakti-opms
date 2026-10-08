@@ -35,10 +35,22 @@ async function listSettlements(query = {}, actor) {
 
   await applySalesUserFilter(filter, actor, query);
 
-  if (query.from || query.to) {
+  const fromDate = query.from_date || query.from || query.start_date;
+  const toDate = query.to_date || query.to || query.end_date;
+  if (fromDate || toDate) {
     filter.settlement_date = {};
-    if (query.from) filter.settlement_date.$gte = startOfDay(query.from);
-    if (query.to) filter.settlement_date.$lte = endOfDay(query.to);
+    if (fromDate) filter.settlement_date.$gte = startOfDay(fromDate);
+    if (toDate) filter.settlement_date.$lte = endOfDay(toDate);
+  }
+
+  const searchParam = query.q || query.search;
+  if (searchParam && String(searchParam).trim()) {
+    const rgx = new RegExp(String(searchParam).trim(), 'i');
+    filter.$or = [
+      { settlement_number: rgx },
+      { settlement_notes: rgx },
+      { payment_reference: rgx },
+    ];
   }
 
   const limit = Math.min(parseInt(query.limit, 10) || 50, 1000);

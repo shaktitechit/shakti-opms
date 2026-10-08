@@ -1684,7 +1684,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
             </h2>
           </div>
 
-          <ExpenseListSection plan={plan} isManager={managerRole} onRefresh={() => { loadPlan(); }} />
+          <ExpenseListSection plan={plan} isManager={elevatedRole} onRefresh={() => { loadPlan(); }} />
         </div>
       )}
 

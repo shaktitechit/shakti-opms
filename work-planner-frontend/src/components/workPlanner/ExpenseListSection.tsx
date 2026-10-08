@@ -15,7 +15,7 @@ import {
   useApproveAllExpensesMutation,
   useRejectAllExpensesMutation,
 } from "@/store/api/workPlannerApiSlice";
-import { isManager as isManagerUtil, readSessionFromStorage } from "@/utils/authStorage";
+import { isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
 import type { WorkPlanExpenseRecord, WorkPlanRecord, WorkPlanExpenseAttachment } from "@/types/workPlanner";
 import { ExpenseFormModal, type ExpenseFormPayload } from "./ExpenseFormModal";
 import { RejectExpenseModal } from "./RejectExpenseModal";
@@ -61,7 +61,8 @@ export function ExpenseListSection({
 }: ExpenseListSectionProps) {
   const sessionUser = readSessionFromStorage()?.user;
   const sessionToken = readSessionFromStorage()?.token;
-  const isManager = isManagerProp ?? isManagerUtil(sessionUser);
+  const isElevated = isWpElevated(sessionUser);
+  const isManager = isManagerProp ?? isElevated;
   const { previewDoc, previewBlobUrl, previewLoading, openPreview, closePreview, downloadFile } =
     useFilePreview(sessionToken);
   const [formOpen, setFormOpen] = useState(false);
@@ -86,8 +87,10 @@ export function ExpenseListSection({
   const visits = plan.visits || [];
 
   const isPlanCompleted = plan.status === "completed";
-  const windowOpen = isManager || canAddExpenseForPlanDate(plan.plan_date);
-  const windowHint = expenseAddWindowHint(plan.plan_date);
+  const windowOpen = isElevated || canAddExpenseForPlanDate(plan.plan_date);
+  const windowHint = isElevated
+    ? "Elevated Authority: You can add and edit expense claims anytime for yourself and subordinates without date restrictions."
+    : expenseAddWindowHint(plan.plan_date);
 
   const draftCount = expenses.filter((e) => e.status === "draft" || e.status === "rejected").length;
   const submittedCount = expenses.filter((e) => e.status === "submitted").length;

@@ -69,6 +69,16 @@ export function ExpenseBalancesTab({
     });
   }, [balances, searchQuery]);
 
+  const hasActiveFilters = Boolean(
+    (selectedExecutive && selectedExecutive !== "all") || searchQuery
+  );
+
+  function resetFilters() {
+    setSelectedExecutive("all");
+    setSearchQuery("");
+    setCurrentPage(1);
+  }
+
   return (
     <div className="space-y-3.5">
       {/* Controls Bar */}
@@ -105,11 +115,22 @@ export function ExpenseBalancesTab({
           </div>
         )}
 
+        {hasActiveFilters && (
+          <button
+            type="button"
+            onClick={resetFilters}
+            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 active:scale-95 transition cursor-pointer whitespace-nowrap"
+          >
+            Clear Filters
+          </button>
+        )}
+
         <button
           type="button"
           onClick={() => refetch()}
           disabled={isLoading}
           className="rounded-lg p-2 text-muted hover:bg-surface-muted hover:text-foreground transition cursor-pointer"
+          title="Refresh table"
         >
           <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
         </button>

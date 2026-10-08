@@ -93,6 +93,40 @@ export function ExpenseClaimsTab({
 
   const [approveExpenseMut] = useApproveExpenseMutation();
 
+  const isViewingSelf =
+    ownershipScope === "mine" ||
+    (selectedExecutive !== "all" && String(selectedExecutive) === String(currentUser?._id || ""));
+
+  const statusOptions = useMemo(() => {
+    return isViewingSelf
+      ? ["all", "submitted", "approved", "rejected", "draft"]
+      : ["all", "submitted", "approved", "rejected"];
+  }, [isViewingSelf]);
+
+  // If user switched to team view / subordinate where draft is not allowed, reset statusFilter
+  React.useEffect(() => {
+    if (!isViewingSelf && statusFilter === "draft") {
+      setStatusFilter("all");
+    }
+  }, [isViewingSelf, statusFilter]);
+
+  const hasActiveFilters = Boolean(
+    statusFilter !== "all" ||
+      (selectedExecutive && selectedExecutive !== "all") ||
+      dateFrom ||
+      dateTo ||
+      searchQuery
+  );
+
+  function resetFilters() {
+    setStatusFilter("all");
+    setSelectedExecutive("all");
+    setDateFrom("");
+    setDateTo("");
+    setSearchQuery("");
+    setCurrentPage(1);
+  }
+
   const queryParams = useMemo(() => {
     const p: Record<string, string | number | undefined> = {
       scope: ownershipScope,
@@ -180,7 +214,7 @@ export function ExpenseClaimsTab({
     <div className="space-y-3.5">
       {/* Status Filter Tabs */}
       <div className="flex items-center gap-1 rounded-xl border border-border bg-card p-1.5 overflow-x-auto scrollbar-none">
-        {["all", "submitted", "approved", "rejected", "draft"].map((st) => (
+        {statusOptions.map((st) => (
           <button
             key={st}
             type="button"
@@ -188,7 +222,7 @@ export function ExpenseClaimsTab({
               setStatusFilter(st);
               setCurrentPage(1);
             }}
-            className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize whitespace-nowrap active:scale-95 transition shrink-0 ${
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize whitespace-nowrap active:scale-95 transition shrink-0 cursor-pointer ${
               statusFilter === st
                 ? "bg-primary text-primary-foreground shadow-xs"
                 : "text-muted hover:bg-surface-muted hover:text-foreground"
@@ -237,23 +271,40 @@ export function ExpenseClaimsTab({
           <input
             type="date"
             value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
+            onChange={(e) => {
+              setDateFrom(e.target.value);
+              setCurrentPage(1);
+            }}
             className="rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
           />
           <span className="text-xs text-muted">to</span>
           <input
             type="date"
             value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
+            onChange={(e) => {
+              setDateTo(e.target.value);
+              setCurrentPage(1);
+            }}
             className="rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
           />
         </div>
+
+        {hasActiveFilters && (
+          <button
+            type="button"
+            onClick={resetFilters}
+            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 active:scale-95 transition cursor-pointer whitespace-nowrap"
+          >
+            Clear Filters
+          </button>
+        )}
 
         <button
           type="button"
           onClick={() => refetch()}
           disabled={isLoading}
           className="rounded-lg p-2 text-muted hover:bg-surface-muted hover:text-foreground transition cursor-pointer"
+          title="Refresh table"
         >
           <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
         </button>

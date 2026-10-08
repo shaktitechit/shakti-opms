@@ -72,6 +72,21 @@ export function ExpenseSettlementsTab({
     });
   }, [settlements, searchQuery, executiveOptions]);
 
+  const hasActiveFilters = Boolean(
+    (selectedExecutive && selectedExecutive !== "all") ||
+      dateFrom ||
+      dateTo ||
+      searchQuery
+  );
+
+  function resetFilters() {
+    setSelectedExecutive("all");
+    setDateFrom("");
+    setDateTo("");
+    setSearchQuery("");
+    setCurrentPage(1);
+  }
+
   return (
     <div className="space-y-3.5">
       {/* Controls Bar */}
@@ -112,23 +127,40 @@ export function ExpenseSettlementsTab({
           <input
             type="date"
             value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
+            onChange={(e) => {
+              setDateFrom(e.target.value);
+              setCurrentPage(1);
+            }}
             className="rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
           />
           <span className="text-xs text-muted">to</span>
           <input
             type="date"
             value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
+            onChange={(e) => {
+              setDateTo(e.target.value);
+              setCurrentPage(1);
+            }}
             className="rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
           />
         </div>
+
+        {hasActiveFilters && (
+          <button
+            type="button"
+            onClick={resetFilters}
+            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 active:scale-95 transition cursor-pointer whitespace-nowrap"
+          >
+            Clear Filters
+          </button>
+        )}
 
         <button
           type="button"
           onClick={() => refetch()}
           disabled={isLoading}
           className="rounded-lg p-2 text-muted hover:bg-surface-muted hover:text-foreground transition cursor-pointer"
+          title="Refresh table"
         >
           <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
         </button>

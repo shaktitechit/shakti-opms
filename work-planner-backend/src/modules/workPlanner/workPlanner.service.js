@@ -2394,36 +2394,97 @@ function assertPrivateBikeExpense(expense) {
 
 async function listAllExpenses(query = {}, user) {
   const { WorkPlan, WorkPlanExpense } = getModels();
-  const planFilter = { deletedAt: null };
-
-  await applySalesUserFilter(planFilter, user, query);
-
-  const planIds = await WorkPlan.find(planFilter).distinct('_id');
-
-  const filter = {
-    deletedAt: null,
-    work_plan: { $in: planIds },
-  };
-
-  if (query.status) {
-    if (isAdminDept(user) && query.status === 'draft') {
-      filter.status = { $in: [] };
-    } else {
-      filter.status = query.status;
-    }
-  } else if (isAdminDept(user)) {
-    filter.status = { $ne: 'draft' };
-  }
-
-  if (query.from || query.to) {
-    filter.expense_date = {};
-    if (query.from) filter.expense_date.$gte = startOfDay(query.from);
-    if (query.to) filter.expense_date.$lte = endOfDay(query.to);
-  }
-
   const limit = Math.min(parseInt(query.limit, 10) || 50, 1000);
   const page = Math.max(parseInt(query.page, 10) || 1, 1);
   const skip = (page - 1) * limit;
+
+  const selfId = String(userId(user) || '');
+  const isMineScope = String(query.scope || query.ownership || '').toLowerCase() === 'mine';
+  const targetUserParam =
+    query.sales_user ||
+    query.sales_user_id ||
+    query.salesUser ||
+    query.user ||
+    query.userId ||
+    query.user_id;
+  const isSelfFilter = targetUserParam && String(targetUserParam) === selfId;
+  const isViewingSelf = isMineScope || isSelfFilter || (!isWpElevated(user));
+
+  const visible = await getVisibleSalesUserIds(user);
+  let allowedUserOids = null;
+  if (isMineScope || isSelfFilter) {
+    allowedUserOids = [asObjectId(selfId)].filter(Boolean);
+  } else if (targetUserParam && targetUserParam !== 'all') {
+    if (visible !== null && !visible.includes(String(targetUserParam))) {
+      return { total: 0, page: 1, limit, pages: 0, data: [] };
+    }
+    allowedUserOids = [asObjectId(targetUserParam)].filter(Boolean);
+  } else if (visible !== null) {
+    allowedUserOids = visible.map(asObjectId).filter(Boolean);
+  }
+
+  const filter = { deletedAt: null };
+
+  if (allowedUserOids) {
+    const planIds = await WorkPlan.find({
+      sales_user: { $in: allowedUserOids },
+      deletedAt: null,
+    }).distinct('_id');
+
+    filter.$or = [
+      { work_plan: { $in: planIds } },
+      { sales_user: { $in: allowedUserOids } },
+    ];
+  }
+
+  // Draft isolation: Draft expenses must strictly be visible only to self.
+  // When populated to senior authority (team/all scope or reviewing subordinates), expenses MUST be submitted/approved/rejected.
+  if (query.status && query.status !== 'all') {
+    if (query.status === 'draft') {
+      if (!isViewingSelf) {
+        return { total: 0, page: 1, limit, pages: 0, data: [] };
+      }
+      filter.status = 'draft';
+    } else {
+      filter.status = query.status;
+    }
+  } else if (!isViewingSelf) {
+    // In team/all view: only allow self's own drafts (if any) or non-draft expenses
+    if (selfId) {
+      filter.$and = filter.$and || [];
+      filter.$and.push({
+        $or: [
+          { sales_user: asObjectId(selfId), status: 'draft' },
+          { status: { $ne: 'draft' } },
+        ],
+      });
+    } else {
+      filter.status = { $ne: 'draft' };
+    }
+  }
+
+  const fromDate = query.from_date || query.from || query.start_date;
+  const toDate = query.to_date || query.to || query.end_date;
+  if (fromDate || toDate) {
+    filter.expense_date = {};
+    if (fromDate) filter.expense_date.$gte = startOfDay(fromDate);
+    if (toDate) filter.expense_date.$lte = endOfDay(toDate);
+  }
+
+  const searchParam = query.q || query.search;
+  if (searchParam && String(searchParam).trim()) {
+    const rgx = new RegExp(String(searchParam).trim(), 'i');
+    filter.$and = filter.$and || [];
+    filter.$and.push({
+      $or: [
+        { description: rgx },
+        { vendor_name: rgx },
+        { bill_number: rgx },
+        { category: rgx },
+        { sub_category: rgx },
+      ],
+    });
+  }
 
   const { withFreshExpenseAttachmentUrls } = require('../../services/fileManagement');
   const [total, rows] = await Promise.all([
@@ -2505,7 +2566,7 @@ async function addExpense(planId, body, user) {
   if (!plan) throw new ApiError(404, 'Work plan not found');
   await assertCanManageExpense(plan, user);
 
-  if (!isAdminDept(user) && !isExpenseAddWindowOpen(plan.plan_date)) {
+  if (!isWpElevated(user) && !isExpenseAddWindowOpen(plan.plan_date)) {
     throw new ApiError(
       400,
       'Expenses can only be added from the work plan day through the next 2 days (3 days total). Earlier or later entries are not allowed.',
@@ -2591,10 +2652,10 @@ async function removeExpense(planId, expenseId, user) {
   if (!expense) throw new ApiError(404, 'Expense not found');
   await assertCanManageExpense(plan, user);
 
-  if (!isAdminDept(user) && !EDITABLE_EXPENSE_STATUSES.includes(expense.status)) {
+  if (!isWpElevated(user) && !EDITABLE_EXPENSE_STATUSES.includes(expense.status)) {
     throw new ApiError(400, 'Only draft or rejected expenses can be deleted');
   }
-  if (isAdminDept(user) && expense.status === 'approved') {
+  if (isWpElevated(user) && expense.status === 'approved') {
     throw new ApiError(400, 'Cannot delete an approved expense');
   }
 

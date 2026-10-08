@@ -126,13 +126,13 @@ async function applySalesUserFilter(filter, user, query = {}) {
   const selfOid = asObjectId(selfId);
   const scope = String(query.scope || query.ownership || '').toLowerCase();
 
-  // 1. Explicit sales_user filter requested
   const userParam =
     query.sales_user ||
     query.sales_user_id ||
     query.salesUser ||
     query.user ||
-    query.userId;
+    query.userId ||
+    query.user_id;
 
   if (userParam && userParam !== 'all') {
     const requested = String(userParam);

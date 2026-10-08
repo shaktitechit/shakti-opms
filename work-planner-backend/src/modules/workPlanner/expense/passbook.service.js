@@ -516,6 +516,29 @@ async function getExpenseKpiSummary(query = {}, actor) {
     },
   ];
 
+  const selfId = String(userId(actor) || '');
+  const isMineScope = query.scope === 'mine' || (requestedUser && String(requestedUser) === selfId);
+
+  // Drafts of subordinates are private and must not be populated in team metrics
+  if (!isMineScope) {
+    if (selfId) {
+      expensePipeline.push({
+        $match: {
+          $or: [
+            { sales_user: asObjectId(selfId), status: 'draft' },
+            { status: { $ne: 'draft' } },
+          ],
+        },
+      });
+    } else {
+      expensePipeline.push({
+        $match: {
+          status: { $ne: 'draft' },
+        },
+      });
+    }
+  }
+
   const expenseMatch = {};
   if (matchUserIds && matchUserIds.length > 0) {
     expenseMatch.effective_sales_user = { $in: matchUserIds };
@@ -537,12 +560,12 @@ async function getExpenseKpiSummary(query = {}, actor) {
       total_logged_count: { $sum: 1 },
       pending_approval_amount: {
         $sum: {
-          $cond: [{ $in: ['$status', ['draft', 'submitted']] }, '$amount', 0],
+          $cond: [{ $eq: ['$status', 'submitted'] }, '$amount', 0],
         },
       },
       pending_approval_count: {
         $sum: {
-          $cond: [{ $in: ['$status', ['draft', 'submitted']] }, 1, 0],
+          $cond: [{ $eq: ['$status', 'submitted'] }, 1, 0],
         },
       },
       approved_unsettled_amount: {

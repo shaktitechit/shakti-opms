@@ -54,10 +54,23 @@ async function listAdvances(query = {}, actor) {
     filter.status = query.status;
   }
 
-  if (query.from || query.to) {
+  const fromDate = query.from_date || query.from || query.start_date;
+  const toDate = query.to_date || query.to || query.end_date;
+  if (fromDate || toDate) {
     filter.request_date = {};
-    if (query.from) filter.request_date.$gte = startOfDay(query.from);
-    if (query.to) filter.request_date.$lte = endOfDay(query.to);
+    if (fromDate) filter.request_date.$gte = startOfDay(fromDate);
+    if (toDate) filter.request_date.$lte = endOfDay(toDate);
+  }
+
+  const searchParam = query.q || query.search;
+  if (searchParam && String(searchParam).trim()) {
+    const rgx = new RegExp(String(searchParam).trim(), 'i');
+    filter.$or = [
+      { advance_number: rgx },
+      { purpose: rgx },
+      { destination: rgx },
+      { notes: rgx },
+    ];
   }
 
   const limit = Math.min(parseInt(query.limit, 10) || 50, 1000);

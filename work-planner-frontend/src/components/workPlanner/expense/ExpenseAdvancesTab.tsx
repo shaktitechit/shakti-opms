@@ -193,6 +193,23 @@ export function ExpenseAdvancesTab({
     }
   }
 
+  const hasActiveFilters = Boolean(
+    statusFilter !== "all" ||
+      (selectedExecutive && selectedExecutive !== "all") ||
+      dateFrom ||
+      dateTo ||
+      searchQuery
+  );
+
+  function resetFilters() {
+    setStatusFilter("all");
+    setSelectedExecutive("all");
+    setDateFrom("");
+    setDateTo("");
+    setSearchQuery("");
+    setCurrentPage(1);
+  }
+
   return (
     <div className="space-y-3.5">
       {/* Top Controls & Request Button */}
@@ -206,7 +223,7 @@ export function ExpenseAdvancesTab({
                 setStatusFilter(st);
                 setCurrentPage(1);
               }}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize whitespace-nowrap active:scale-95 transition shrink-0 ${
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold capitalize whitespace-nowrap active:scale-95 transition shrink-0 cursor-pointer ${
                 statusFilter === st
                   ? "bg-primary text-primary-foreground shadow-xs"
                   : "text-muted hover:bg-surface-muted hover:text-foreground"
@@ -278,23 +295,40 @@ export function ExpenseAdvancesTab({
           <input
             type="date"
             value={dateFrom}
-            onChange={(e) => setDateFrom(e.target.value)}
+            onChange={(e) => {
+              setDateFrom(e.target.value);
+              setCurrentPage(1);
+            }}
             className="rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
           />
           <span className="text-xs text-muted">to</span>
           <input
             type="date"
             value={dateTo}
-            onChange={(e) => setDateTo(e.target.value)}
+            onChange={(e) => {
+              setDateTo(e.target.value);
+              setCurrentPage(1);
+            }}
             className="rounded-lg border border-border bg-surface-muted px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-primary"
           />
         </div>
+
+        {hasActiveFilters && (
+          <button
+            type="button"
+            onClick={resetFilters}
+            className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 active:scale-95 transition cursor-pointer whitespace-nowrap"
+          >
+            Clear Filters
+          </button>
+        )}
 
         <button
           type="button"
           onClick={() => refetch()}
           disabled={isLoading}
           className="rounded-lg p-2 text-muted hover:bg-surface-muted hover:text-foreground transition cursor-pointer"
+          title="Refresh table"
         >
           <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
         </button>
