@@ -111,7 +111,7 @@ function applySessionCookies(response: NextResponse, session: string | IssuedSes
     const refreshMax =
       refreshExpiresIn && refreshExpiresIn > 0
         ? refreshExpiresIn
-        : 7 * 24 * 60 * 60; // 7 days default
+        : 30 * 24 * 60 * 60; // 30 days default
     response.cookies.set("refresh_token", refreshToken, {
       path: "/",
       maxAge: Math.max(refreshMax, 60),

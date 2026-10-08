@@ -85,20 +85,22 @@ const baseQueryWithAuth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQuery
   api,
   extraOptions,
 ) => {
-  const result = await rawBaseQuery(args, api, extraOptions);
-  if (result.error?.status !== 401 || skipRefresh(requestUrl(args))) return result;
-
-  if (!refreshInFlight) {
-    refreshInFlight = refreshAccessToken(api).finally(() => {
-      refreshInFlight = null;
-    });
+  let result = await rawBaseQuery(args, api, extraOptions);
+  if (result.error?.status === 401 && !skipRefresh(requestUrl(args))) {
+    if (!refreshInFlight) {
+      refreshInFlight = refreshAccessToken(api).finally(() => {
+        refreshInFlight = null;
+      });
+    }
+    const ok = await refreshInFlight;
+    if (ok) {
+      // Retry original request with renewed token
+      result = await rawBaseQuery(args, api, extraOptions);
+    } else {
+      forceLogout(api);
+    }
   }
-  const ok = await refreshInFlight;
-  if (!ok) {
-    forceLogout(api);
-    return result;
-  }
-  return rawBaseQuery(args, api, extraOptions);
+  return result;
 };
 
 /** Swagger / `app.js` domain tags → cache invalidation buckets. */

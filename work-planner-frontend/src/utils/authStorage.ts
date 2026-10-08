@@ -241,6 +241,22 @@ export function roleLabel(user: AuthUser | null | undefined): string {
   return "User";
 }
 
+export function getRefreshToken(): string | null {
+  if (typeof window === "undefined") return null;
+  const cookieVal = getCookie(REFRESH_COOKIE);
+  if (cookieVal) return cookieVal;
+  try {
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed?.refreshToken) return parsed.refreshToken;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 export function readSessionFromStorage(): UserSession | null {
   if (typeof window === "undefined") return null;
   try {
@@ -261,17 +277,35 @@ export function readSessionFromStorage(): UserSession | null {
     }
 
     const accessToken = getCookie(ACCESS_COOKIE);
-    const refreshToken = getCookie(REFRESH_COOKIE) || undefined;
+    const refreshToken = getRefreshToken() || undefined;
+
+    let storedSession: UserSession | null = null;
+    try {
+      const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+      if (raw) storedSession = JSON.parse(raw);
+    } catch {
+      /* ignore */
+    }
 
     if (accessToken) {
       const userFromJwt = parseJwtUser(accessToken);
       if (userFromJwt && hasWorkPlannerPortalAccess(userFromJwt)) {
         return {
           token: accessToken,
-          refreshToken,
+          refreshToken: refreshToken || storedSession?.refreshToken,
+          refreshExpiresAt: storedSession?.refreshExpiresAt,
           user: userFromJwt,
         };
       }
+    }
+
+    if (storedSession && (refreshToken || storedSession.refreshToken)) {
+      return {
+        token: storedSession.token || "",
+        refreshToken: refreshToken || storedSession.refreshToken,
+        refreshExpiresAt: storedSession.refreshExpiresAt,
+        user: storedSession.user,
+      };
     }
 
     return null;
@@ -294,9 +328,8 @@ export function saveSessionToStorage(session: UserSession | null): void {
       deleteCookie(cookieName);
     }
   } else {
-    // Purge legacy localStorage session key
     try {
-      window.localStorage.removeItem(SESSION_STORAGE_KEY);
+      window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
     } catch {
       /* ignore */
     }
@@ -306,7 +339,7 @@ export function saveSessionToStorage(session: UserSession | null): void {
     if (session.refreshToken) {
       const refreshMax = session.refreshExpiresAt
         ? Math.floor((session.refreshExpiresAt - Date.now()) / 1000)
-        : 7 * 24 * 60 * 60; // 7 days default
+        : 30 * 24 * 60 * 60; // 30 days default
       setCookieMaxAge(REFRESH_COOKIE, session.refreshToken, Math.max(refreshMax, 60));
     } else {
       deleteCookie(REFRESH_COOKIE);

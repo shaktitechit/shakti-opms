@@ -32,7 +32,7 @@ function durationMs(value, fallbackMs) {
 }
 
 function refreshTtlMs(value) {
-  return durationMs(value, 8 * 60 * 60 * 1000);
+  return durationMs(value, 30 * 24 * 60 * 60 * 1000);
 }
 
 async function issueRefreshToken(userId, familyId) {
@@ -49,8 +49,8 @@ async function issueRefreshToken(userId, familyId) {
 
 function tokenLifetimes() {
   return {
-    expiresIn: Math.floor(durationMs(JWT_EXPIRES_IN, 8 * 60 * 60 * 1000) / 1000),
-    refreshExpiresIn: Math.floor(durationMs(JWT_REFRESH_EXPIRES_IN, 8 * 60 * 60 * 1000) / 1000),
+    expiresIn: Math.floor(durationMs(JWT_EXPIRES_IN, 15 * 60 * 1000) / 1000),
+    refreshExpiresIn: Math.floor(durationMs(JWT_REFRESH_EXPIRES_IN, 30 * 24 * 60 * 60 * 1000) / 1000),
   };
 }
 

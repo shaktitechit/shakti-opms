@@ -7,6 +7,7 @@ import {
 } from "@reduxjs/toolkit/query/react";
 import {
   clearSessionFromStorage,
+  getRefreshToken,
   readSessionFromStorage,
   saveSessionToStorage,
 } from "@/utils/authStorage";
@@ -34,14 +35,14 @@ function skipRefresh(url: string): boolean {
 
 let refreshInFlight: Promise<boolean> | null = null;
 
-async function refreshAccessToken(): Promise<boolean> {
-  const session = readSessionFromStorage();
-  if (!session?.refreshToken) return false;
+export async function refreshAccessToken(): Promise<boolean> {
+  const refreshToken = getRefreshToken() || readSessionFromStorage()?.refreshToken;
+  if (!refreshToken) return false;
   try {
     const res = await fetch(`${AUTH_SERVICE_URL}/api/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken: session.refreshToken }),
+      body: JSON.stringify({ refreshToken }),
     });
     if (!res.ok) return false;
     const data = (await res.json()) as {
@@ -57,14 +58,15 @@ async function refreshAccessToken(): Promise<boolean> {
       };
     };
     const token = data.token || data.data?.token;
-    const refreshToken = data.refreshToken || data.data?.refreshToken;
+    const newRefreshToken = data.refreshToken || data.data?.refreshToken || refreshToken;
     const refreshExpiresIn = data.refreshExpiresIn || data.data?.refreshExpiresIn;
-    const user = data.user || data.data?.user || session.user;
-    if (!token || !refreshToken || !user) return false;
+    const existingSession = readSessionFromStorage();
+    const user = data.user || data.data?.user || existingSession?.user;
+    if (!token || !user) return false;
     saveSessionToStorage({
       token,
-      refreshToken,
-      refreshExpiresAt: refreshExpiresIn ? Date.now() + refreshExpiresIn * 1000 : undefined,
+      refreshToken: newRefreshToken,
+      refreshExpiresAt: refreshExpiresIn ? Date.now() + refreshExpiresIn * 1000 : Date.now() + 30 * 24 * 60 * 60 * 1000,
       user,
     });
     return true;
@@ -85,20 +87,22 @@ const baseQueryWithAuth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQuery
   api,
   extraOptions,
 ) => {
-  const result = await rawBaseQuery(args, api, extraOptions);
-  if (result.error?.status !== 401 || skipRefresh(requestUrl(args))) return result;
-
-  if (!refreshInFlight) {
-    refreshInFlight = refreshAccessToken().finally(() => {
-      refreshInFlight = null;
-    });
+  let result = await rawBaseQuery(args, api, extraOptions);
+  if (result.error?.status === 401 && !skipRefresh(requestUrl(args))) {
+    if (!refreshInFlight) {
+      refreshInFlight = refreshAccessToken().finally(() => {
+        refreshInFlight = null;
+      });
+    }
+    const ok = await refreshInFlight;
+    if (ok) {
+      // Retry original API request with renewed access token
+      result = await rawBaseQuery(args, api, extraOptions);
+    } else {
+      forceLogout();
+    }
   }
-  const ok = await refreshInFlight;
-  if (!ok) {
-    forceLogout();
-    return result;
-  }
-  return rawBaseQuery(args, api, extraOptions);
+  return result;
 };
 
 export const baseApi = createApi({

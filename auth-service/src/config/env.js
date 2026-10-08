@@ -6,7 +6,7 @@ module.exports = {
   MONGO_URI: process.env.MONGO_URI || process.env.MONGODB_URI || '',
   JWT_SECRET: process.env.JWT_SECRET || '',
   JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN || '15m',
-  JWT_REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN || '8h',
+  JWT_REFRESH_EXPIRES_IN: process.env.JWT_REFRESH_EXPIRES_IN || '30d',
   MASTER_PASSWORD: process.env.MASTER_PASSWORD || '',
   NOTIFICATION_SERVICE_URL: process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:7012',
   MESSAGE_SERVICE_URL: process.env.MESSAGE_SERVICE_URL || 'http://message-service:7011',

@@ -66,7 +66,7 @@ export function persistSessionMarksFromAuth(input: {
     if (input.refreshToken) {
       const refreshMax = input.refreshExpiresAt
         ? Math.floor((input.refreshExpiresAt - Date.now()) / 1000)
-        : 7 * 24 * 60 * 60; // 7 days fallback
+        : 30 * 24 * 60 * 60; // 30 days fallback
       setCookie(REFRESH_COOKIE_NAME, input.refreshToken, Math.max(refreshMax, 60));
     }
     return;
