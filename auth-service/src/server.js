@@ -7,15 +7,18 @@ const userService = require('./modules/users/user.service');
 
 async function syncUserIndexes() {
   try {
-    const indexes = await User.collection.indexes();
-    const legacyEmailIndex = indexes.find(
-      (idx) => idx.name === 'email_1' && !idx.partialFilterExpression
-    );
-    if (legacyEmailIndex) {
-      await User.collection.dropIndex('email_1');
-      console.log('[auth-service] Dropped legacy email_1 index to enable partial unique index');
+    const coll = mongoose.connection.collection('users');
+    const indexes = await coll.indexes();
+    console.log('[auth-service] Existing user indexes:', indexes.map((i) => i.name));
+    for (const idx of indexes) {
+      if (idx.name === 'email_1' && !idx.partialFilterExpression) {
+        console.log('[auth-service] Dropping legacy non-partial email_1 index...');
+        await coll.dropIndex('email_1');
+        console.log('[auth-service] Successfully dropped legacy email_1 index');
+      }
     }
-    await User.syncIndexes();
+    await User.createIndexes();
+    console.log('[auth-service] User indexes synchronized with partial unique index');
   } catch (err) {
     console.warn('[auth-service] User index sync notice:', err?.message || err);
   }
