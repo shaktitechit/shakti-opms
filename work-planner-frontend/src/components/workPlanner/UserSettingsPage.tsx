@@ -35,7 +35,16 @@ import {
   useUpdateUserSettingsMutation,
   useGetMyTeamQuery,
 } from "@/store/api/workPlannerApiSlice";
-import { isManager, isWpAdmin, isWpManager, isWpCoordinator, isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
+import {
+  isManager,
+  isWpAdmin,
+  isWpManager,
+  isWpCoordinator,
+  isWpElevated,
+  hasWorkPlannerPortalAccess,
+  getWpAccessRoles,
+  readSessionFromStorage,
+} from "@/utils/authStorage";
 import { resolveRoleLabels } from "@/utils/resolveRoleLabels";
 import {
   getUserWorkPlannerSettings,
@@ -81,7 +90,7 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
   const { data: myTeamData, isLoading: loadingMyTeam } = useGetMyTeamQuery(undefined, { skip: !isElevatedNonAdmin });
 
   const rawUsers = useMemo<any[]>(() => {
-    if (adminAccess) return (usersData as any[]) || [];
+    if (adminAccess) return Array.isArray(usersData) ? (usersData as any[]).filter(hasWorkPlannerPortalAccess) : [];
     const list: any[] = [];
     const seen = new Set<string>();
 
@@ -119,29 +128,8 @@ export function UserSettingsPage({ userId, hideBreadcrumb = false, readOnly = fa
   // Available Managers list - strictly users assigned to work_planner portal with coordinator, manager or admin role
   const availableManagers = useMemo(() => {
     return rawUsers.filter((u: any) => {
-      if (
-        u.department === "super_admin" ||
-        (Array.isArray(u.role_codes) && u.role_codes.includes("super_admin")) ||
-        (Array.isArray(u.roles) && u.roles.includes("super_admin")) ||
-        u.wp_role === "coordinator" ||
-        u.wp_role === "manager" ||
-        u.wp_role === "admin" ||
-        u.wp_role === "super_admin"
-      ) {
-        return true;
-      }
-      if (Array.isArray(u.portals)) {
-        const wpPortal = u.portals.find((p: any) => {
-          const code = p.portal_code || p.portal?.code || p.code || p.portal;
-          return code === "work_planner";
-        });
-        if (wpPortal && Array.isArray(wpPortal.access_roles)) {
-          return wpPortal.access_roles.some((r: string) =>
-            ["coordinator", "manager", "admin", "super_admin"].includes(String(r).toLowerCase().trim())
-          );
-        }
-      }
-      return false;
+      const roles = getWpAccessRoles(u);
+      return roles.includes("coordinator") || roles.includes("manager") || roles.includes("admin");
     });
   }, [rawUsers]);
 

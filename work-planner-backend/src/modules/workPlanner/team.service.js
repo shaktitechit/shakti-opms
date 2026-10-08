@@ -11,7 +11,6 @@ const {
   isWpManager,
   isWpCoordinator,
   isWpElevated,
-  isSuperAdminBypass,
 } = require('./workPlanner.constants');
 const {
   asObjectId,
@@ -27,13 +26,12 @@ const ALLOWED_PAIRS = Object.freeze({
 
 function normalizeRolesFromUserDoc(doc) {
   if (!doc) return [];
-  if (isSuperAdminBypass(doc)) return ['admin'];
   const roles = getWorkPlannerAccessRoles(doc);
   if (roles.includes('admin')) return ['admin'];
   if (roles.includes('manager')) return ['manager'];
   if (roles.includes('coordinator')) return ['coordinator'];
-  if (roles.some((r) => ['executive', 'sales'].includes(r))) return ['executive'];
-  return roles;
+  if (roles.includes('executive')) return ['executive'];
+  return [];
 }
 
 function primaryWpRole(doc) {
@@ -228,7 +226,12 @@ async function getTree(actor) {
   const [users, edges] = await Promise.all([
     User.find({
       is_active: { $ne: false },
-      portals: { $elemMatch: { portal_code: 'work_planner', access_roles: { $exists: true, $ne: [] } } },
+      portals: {
+        $elemMatch: {
+          portal_code: 'work_planner',
+          access_roles: { $in: ['executive', 'coordinator', 'manager', 'admin'] },
+        },
+      },
     })
       .select('name email department portals is_active')
       .lean(),
@@ -290,10 +293,24 @@ async function getMyTeam(actor) {
   if (visibleIds === null) {
     memberFilter = {
       is_active: { $ne: false },
-      portals: { $elemMatch: { portal_code: 'work_planner', access_roles: { $exists: true, $ne: [] } } },
+      portals: {
+        $elemMatch: {
+          portal_code: 'work_planner',
+          access_roles: { $in: ['executive', 'coordinator', 'manager', 'admin'] },
+        },
+      },
     };
   } else {
-    memberFilter = { _id: { $in: visibleIds.map(asObjectId).filter(Boolean) } };
+    memberFilter = {
+      _id: { $in: visibleIds.map(asObjectId).filter(Boolean) },
+      is_active: { $ne: false },
+      portals: {
+        $elemMatch: {
+          portal_code: 'work_planner',
+          access_roles: { $in: ['executive', 'coordinator', 'manager', 'admin'] },
+        },
+      },
+    };
   }
 
   const members = await User.find(memberFilter)

@@ -44,6 +44,7 @@ import {
   isWpAdmin,
   isWpManager,
   isWpElevated,
+  hasWorkPlannerPortalAccess,
   readSessionFromStorage,
 } from "@/utils/authStorage";
 import type {
@@ -101,39 +102,11 @@ interface ExecutiveUser {
   }>;
 }
 
-function hasWorkPlannerAccess(u: ExecutiveUser, sessionUserId?: string): boolean {
-  if (u._id === sessionUserId || u.id === sessionUserId) return true;
-
-  if (!Array.isArray(u.portals) || u.portals.length === 0) {
-    return false;
-  }
-
-  const wpPortal = u.portals.find((p) => {
-    const code = p.portal_code || p.portal?.code || p.code;
-    return code === "work_planner";
-  });
-
-  if (!wpPortal) return false;
-
-  const roles: string[] = Array.isArray(wpPortal.access_roles)
-    ? wpPortal.access_roles
-    : (wpPortal as any).access_role
-      ? [(wpPortal as any).access_role]
-      : [];
-
-  if (roles.length === 0) return true;
-
-  return roles.some((r) => {
-    const normalized = String(r).toLowerCase().trim();
-    return (
-      normalized === "executive" ||
-      normalized === "coordinator" ||
-      normalized === "manager" ||
-      normalized === "admin" ||
-      normalized === "super_admin" ||
-      normalized === "sales"
-    );
-  });
+function hasWorkPlannerAccess(u: ExecutiveUser | any, sessionUserId?: string): boolean {
+  if (!u) return false;
+  const uId = String(u._id || u.id || "");
+  if (sessionUserId && uId === String(sessionUserId)) return true;
+  return hasWorkPlannerPortalAccess(u);
 }
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;

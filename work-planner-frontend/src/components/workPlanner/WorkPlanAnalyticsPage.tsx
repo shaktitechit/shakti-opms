@@ -33,7 +33,13 @@ import {
   useGetTeamMembersQuery,
 } from "@/store/api/workPlannerApiSlice";
 import { useGetUsersQuery } from "@/store/api/authApiSlice";
-import { isWpAdmin, isWpManager, isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
+import {
+  isWpAdmin,
+  isWpManager,
+  isWpElevated,
+  hasWorkPlannerPortalAccess,
+  readSessionFromStorage,
+} from "@/utils/authStorage";
 import { formatPlanDate } from "./workPlanUtils";
 import { toast } from "sonner";
 import { AiAnalysisLoader } from "./AiAnalysisLoader";
@@ -65,7 +71,7 @@ export function WorkPlanAnalyticsPage() {
 
   const rosterUsers = useMemo(() => {
     if (adminRole && Array.isArray(usersData)) {
-      return usersData.map((u: any) => ({
+      return usersData.filter(hasWorkPlannerPortalAccess).map((u: any) => ({
         _id: String(u._id || u.id),
         name: u.name,
         email: u.email,

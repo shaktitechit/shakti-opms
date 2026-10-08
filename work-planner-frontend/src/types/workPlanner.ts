@@ -147,6 +147,9 @@ export type WorkPlanExpenseRecord = {
   start_reading_image?: WorkPlanExpenseAttachment | string | null;
   end_reading_image?: WorkPlanExpenseAttachment | string | null;
   status: WorkPlanExpenseStatus;
+  settled_amount?: number;
+  settlement_status?: "unsettled" | "partially_settled" | "settled";
+  settlement_id?: string;
   approved_by?: { _id?: string; name?: string; email?: string } | string;
   approved_at?: string;
   rejection_reason?: string;
@@ -155,6 +158,162 @@ export type WorkPlanExpenseRecord = {
   created_by?: { _id?: string; name?: string; email?: string } | string;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type ExpenseAttachmentItem = {
+  _id?: string;
+  attachment_id?: string;
+  file_id?: string;
+  filename?: string;
+  original_name?: string;
+  mime_type?: string;
+  size?: number;
+  url?: string;
+};
+
+export type TourAdvanceStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "disbursed"
+  | "settled"
+  | "recovered"
+  | "refunded";
+
+export type TourAdvanceRefundItem = {
+  _id?: string;
+  amount: number;
+  refund_date?: string;
+  payment_method?: string;
+  transaction_reference?: string;
+  notes?: string;
+  attachments?: string[] | any[];
+  attachment_details?: ExpenseAttachmentItem[];
+  accepted_by?: { _id?: string; name?: string; email?: string } | string;
+  accepted_at?: string;
+};
+
+export type WorkPlanTourAdvanceRecord = {
+  _id?: string;
+  id?: string;
+  advance_number: string;
+  sales_user: string | { _id: string; name: string; email: string; department?: string; phone?: string };
+  work_plan?: string | { _id: string; plan_date?: string; title?: string };
+  request_date: string;
+  amount: number;
+  purpose: string;
+  notes?: string;
+  status: TourAdvanceStatus;
+  approved_by?: { _id: string; name: string; email?: string } | string;
+  approved_at?: string;
+  rejection_reason?: string;
+  disbursed_amount?: number;
+  disbursed_by?: { _id: string; name: string; email?: string } | string;
+  disbursed_at?: string;
+  payment_method?: string;
+  transaction_reference?: string;
+  bank_name?: string;
+  disbursement_notes?: string;
+  attachments?: string[] | any[];
+  attachment_details?: ExpenseAttachmentItem[];
+  disbursement_attachments?: string[] | any[];
+  disbursement_attachment_details?: ExpenseAttachmentItem[];
+  settled_amount?: number;
+  remaining_balance?: number;
+  refunded_amount?: number;
+  refunds?: TourAdvanceRefundItem[];
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type SettlementMode = "advance_deduction" | "direct_payment" | "split";
+
+export type SettlementClaimItem = {
+  expense: string | WorkPlanExpenseRecord;
+  amount: number;
+  category?: string;
+  description?: string;
+  expense_date?: string;
+};
+
+export type SettlementAdvanceItem = {
+  advance: string | WorkPlanTourAdvanceRecord;
+  deducted_amount: number;
+  advance_number?: string;
+};
+
+export type WorkPlanExpenseSettlementRecord = {
+  _id?: string;
+  id?: string;
+  settlement_number: string;
+  sales_user: string | { _id: string; name: string; email: string; department?: string; phone?: string };
+  settlement_date: string;
+  claims: SettlementClaimItem[];
+  advances: SettlementAdvanceItem[];
+  total_claim_amount: number;
+  advance_deduction_amount: number;
+  direct_payment_amount: number;
+  settlement_mode: SettlementMode;
+  payment_method?: string;
+  transaction_reference?: string;
+  bank_name?: string;
+  settlement_notes?: string;
+  attachments?: string[] | any[];
+  attachment_details?: ExpenseAttachmentItem[];
+  settled_by: { _id: string; name: string; email?: string } | string;
+  settled_at: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type ExecutiveBalanceItem = {
+  sales_user: { _id: string; name: string; email: string; department?: string; phone?: string };
+  active_advance_balance: number;
+  active_advance_count: number;
+  unsettled_approved_claims_amount: number;
+  unsettled_approved_claims_count: number;
+  total_settled_claims_amount: number;
+  total_settled_claims_count: number;
+  net_position: number;
+  position_status: "due_to_employee" | "due_to_company" | "balanced";
+};
+
+export type PassbookLedgerEntry = {
+  id: string;
+  entry_type: "advance_disbursement" | "advance_refund" | "expense_approved" | "settlement_voucher";
+  date: string;
+  reference: string;
+  title: string;
+  amount: number;
+  advance_deduction_amount?: number;
+  direct_payment_amount?: number;
+  impact_advance_balance: number;
+  impact_claim_receivable: number;
+  running_advance_balance: number;
+  running_claim_receivable: number;
+  running_net_position: number;
+  payment_method?: string;
+  transaction_reference?: string;
+  actor_name?: string;
+  details?: string;
+  attachments?: string[] | any[];
+  attachment_details?: ExpenseAttachmentItem[];
+};
+
+export type ExecutivePassbookData = {
+  sales_user: { _id: string; name: string; email: string; department?: string; phone?: string };
+  current_advance_balance: number;
+  current_claim_receivable: number;
+  current_net_position: number;
+  entries: PassbookLedgerEntry[];
+};
+
+export type ExpenseKpiSummaryData = {
+  total_claims_logged: { amount: number; count: number };
+  pending_approval: { amount: number; count: number };
+  approved_unsettled: { amount: number; count: number };
+  active_tour_advances: { amount: number; count: number };
+  settled_this_month: { amount: number; count: number };
 };
 
 export type AuthorityRemarkType = "instruction" | "appreciation" | "objection";

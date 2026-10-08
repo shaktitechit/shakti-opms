@@ -13,6 +13,11 @@ import type {
   UserNoteKpis,
   BulkConvertToWorkPlanPayload,
   MarkNotesConvertedPayload,
+  WorkPlanTourAdvanceRecord,
+  WorkPlanExpenseSettlementRecord,
+  ExecutiveBalanceItem,
+  ExecutivePassbookData,
+  ExpenseKpiSummaryData,
 } from "@/types/workPlanner";
 
 function normalizePaginatedResponse<T>(res: any): {
@@ -439,6 +444,271 @@ export const workPlannerApiSlice = baseApi.injectEndpoints({
       }),
       transformResponse: (res: any) => res.data || res,
     }),
+    getExpenseKpis: builder.query<ExpenseKpiSummaryData, Record<string, string | number | undefined> | void>({
+      query: (params) => {
+        const query = new URLSearchParams();
+        if (params) {
+          Object.entries(params).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== "") query.append(k, String(v));
+          });
+        }
+        return `${WORK_PLANNER_SERVICE_URL}/api/work-planner/expenses/kpi-summary?${query.toString()}`;
+      },
+      transformResponse: (res: any) => res.data || res,
+      providesTags: ["Expense", "TourAdvance", "ExpenseSettlement", "ExecutiveBalance"],
+    }),
+    getTourAdvances: builder.query<
+      { data: WorkPlanTourAdvanceRecord[]; total: number; page: number; limit: number; pages: number },
+      Record<string, string | number | undefined> | void
+    >({
+      query: (params) => {
+        const query = new URLSearchParams();
+        if (params) {
+          Object.entries(params).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== "") query.append(k, String(v));
+          });
+        }
+        return `${WORK_PLANNER_SERVICE_URL}/api/work-planner/expenses/advances?${query.toString()}`;
+      },
+      transformResponse: (res: any) => normalizePaginatedResponse<WorkPlanTourAdvanceRecord>(res),
+      providesTags: (result) => {
+        const list = Array.isArray(result?.data) ? result.data : [];
+        return [
+          ...list.map(({ _id, id }) => ({ type: "TourAdvance" as const, id: _id || id })),
+          "TourAdvance",
+        ];
+      },
+    }),
+    requestTourAdvance: builder.mutation<
+      WorkPlanTourAdvanceRecord,
+      {
+        amount: number;
+        purpose: string;
+        notes?: string;
+        work_plan?: string;
+        request_date?: string;
+        attachments?: string[];
+        attachment_details?: any[];
+        sales_user?: string;
+      }
+    >({
+      query: (body) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/expenses/advances`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["TourAdvance", "ExecutiveBalance", "ExecutivePassbook", "WorkPlannerStats"],
+    }),
+    issueDirectTourAdvance: builder.mutation<
+      WorkPlanTourAdvanceRecord,
+      {
+        sales_user: string;
+        amount: number;
+        purpose: string;
+        request_date?: string;
+        notes?: string;
+        payment_method?: string;
+        transaction_reference?: string;
+        bank_name?: string;
+        disbursement_notes?: string;
+        attachments?: string[];
+        attachment_details?: any[];
+        disbursement_attachments?: string[];
+        disbursement_attachment_details?: any[];
+      }
+    >({
+      query: (body) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/expenses/advances/issue`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["TourAdvance", "ExecutiveBalance", "ExecutivePassbook", "WorkPlannerStats"],
+    }),
+    approveTourAdvance: builder.mutation<WorkPlanTourAdvanceRecord, { advanceId: string }>({
+      query: ({ advanceId }) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/expenses/advances/${advanceId}/approve`,
+        method: "POST",
+      }),
+      invalidatesTags: (_result, _error, { advanceId }) => [
+        { type: "TourAdvance", id: advanceId },
+        "TourAdvance",
+        "ExecutiveBalance",
+        "ExecutivePassbook",
+      ],
+    }),
+    rejectTourAdvance: builder.mutation<WorkPlanTourAdvanceRecord, { advanceId: string; rejection_reason: string }>({
+      query: ({ advanceId, rejection_reason }) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/expenses/advances/${advanceId}/reject`,
+        method: "POST",
+        body: { rejection_reason },
+      }),
+      invalidatesTags: (_result, _error, { advanceId }) => [
+        { type: "TourAdvance", id: advanceId },
+        "TourAdvance",
+        "ExecutiveBalance",
+      ],
+    }),
+    disburseTourAdvance: builder.mutation<
+      WorkPlanTourAdvanceRecord,
+      {
+        advanceId: string;
+        disbursed_amount?: number;
+        payment_method: string;
+        transaction_reference?: string;
+        bank_name?: string;
+        disbursement_notes?: string;
+        attachments?: string[];
+        attachment_details?: any[];
+        disbursement_attachments?: string[];
+        disbursement_attachment_details?: any[];
+      }
+    >({
+      query: ({ advanceId, ...body }) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/expenses/advances/${advanceId}/disburse`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: (_result, _error, { advanceId }) => [
+        { type: "TourAdvance", id: advanceId },
+        "TourAdvance",
+        "ExecutiveBalance",
+        "ExecutivePassbook",
+      ],
+    }),
+    refundTourAdvance: builder.mutation<
+      WorkPlanTourAdvanceRecord,
+      {
+        advanceId: string;
+        amount: number;
+        payment_method?: string;
+        transaction_reference?: string;
+        notes?: string;
+        attachments?: string[];
+        attachment_details?: any[];
+      }
+    >({
+      query: ({ advanceId, ...body }) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/expenses/advances/${advanceId}/refund`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: (_result, _error, { advanceId }) => [
+        { type: "TourAdvance", id: advanceId },
+        "TourAdvance",
+        "ExecutiveBalance",
+        "ExecutivePassbook",
+      ],
+    }),
+    uploadExpenseAttachment: builder.mutation<
+      any,
+      FormData
+    >({
+      query: (body) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/expenses/upload`,
+        method: "POST",
+        body,
+      }),
+      transformResponse: (res: any) => res.data || res,
+    }),
+    getActiveTourAdvances: builder.query<{ data: WorkPlanTourAdvanceRecord[]; total_active_balance: number }, { userId?: string } | void>({
+      query: (params) => {
+        const query = new URLSearchParams();
+        if (params?.userId) query.append("userId", params.userId);
+        return `${WORK_PLANNER_SERVICE_URL}/api/work-planner/expenses/advances/active?${query.toString()}`;
+      },
+      transformResponse: (res: any) => res.data || res,
+      providesTags: ["TourAdvance"],
+    }),
+    getExpenseSettlements: builder.query<
+      { data: WorkPlanExpenseSettlementRecord[]; total: number; page: number; limit: number; pages: number },
+      Record<string, string | number | undefined> | void
+    >({
+      query: (params) => {
+        const query = new URLSearchParams();
+        if (params) {
+          Object.entries(params).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== "") query.append(k, String(v));
+          });
+        }
+        return `${WORK_PLANNER_SERVICE_URL}/api/work-planner/expenses/settlements?${query.toString()}`;
+      },
+      transformResponse: (res: any) => normalizePaginatedResponse<WorkPlanExpenseSettlementRecord>(res),
+      providesTags: (result) => {
+        const list = Array.isArray(result?.data) ? result.data : [];
+        return [
+          ...list.map(({ _id, id }) => ({ type: "ExpenseSettlement" as const, id: _id || id })),
+          "ExpenseSettlement",
+        ];
+      },
+    }),
+    getExpenseSettlement: builder.query<WorkPlanExpenseSettlementRecord, string>({
+      query: (id) => `${WORK_PLANNER_SERVICE_URL}/api/work-planner/expenses/settlements/${id}`,
+      transformResponse: (res: any) => res.data || res,
+      providesTags: (_result, _error, id) => [{ type: "ExpenseSettlement", id }],
+    }),
+    createExpenseSettlement: builder.mutation<
+      WorkPlanExpenseSettlementRecord,
+      {
+        sales_user: string;
+        settlement_date?: string;
+        expense_ids: string[];
+        advances?: Array<{ advance_id: string; deducted_amount: number }>;
+        direct_payment_amount?: number;
+        payment_method?: string;
+        transaction_reference?: string;
+        bank_name?: string;
+        settlement_notes?: string;
+        attachments?: string[];
+        attachment_details?: any[];
+      }
+    >({
+      query: (body) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/expenses/settlements`,
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: [
+        "ExpenseSettlement",
+        "Expense",
+        "TourAdvance",
+        "ExecutiveBalance",
+        "ExecutivePassbook",
+        "WorkPlan",
+        "WorkPlannerStats",
+      ],
+    }),
+    getExecutiveBalances: builder.query<
+      { data: ExecutiveBalanceItem[]; total: number; page: number; limit: number; pages: number },
+      Record<string, string | number | undefined> | void
+    >({
+      query: (params) => {
+        const query = new URLSearchParams();
+        if (params) {
+          Object.entries(params).forEach(([k, v]) => {
+            if (v !== undefined && v !== null && v !== "") query.append(k, String(v));
+          });
+        }
+        return `${WORK_PLANNER_SERVICE_URL}/api/work-planner/expenses/balances?${query.toString()}`;
+      },
+      transformResponse: (res: any) => normalizePaginatedResponse<ExecutiveBalanceItem>(res),
+      providesTags: ["ExecutiveBalance"],
+    }),
+    getExecutivePassbook: builder.query<
+      ExecutivePassbookData,
+      { userId: string; from_date?: string; to_date?: string }
+    >({
+      query: ({ userId, from_date, to_date }) => {
+        const query = new URLSearchParams();
+        if (from_date) query.append("from_date", from_date);
+        if (to_date) query.append("to_date", to_date);
+        return `${WORK_PLANNER_SERVICE_URL}/api/work-planner/expenses/passbook/${userId}?${query.toString()}`;
+      },
+      transformResponse: (res: any) => res.data || res,
+      providesTags: (_result, _error, { userId }) => [
+        { type: "ExecutivePassbook", id: userId },
+        "ExecutivePassbook",
+      ],
+    }),
     getUserSettings: builder.query<any, string>({
       query: (userId) => `${WORK_PLANNER_SERVICE_URL}/api/work-planner/user-settings/${userId}`,
       transformResponse: (res: any) => res.data || res,
@@ -828,6 +1098,28 @@ export const {
   useApproveAllExpensesMutation,
   useRejectAllExpensesMutation,
   useUploadExpenseReceiptMutation,
+  useGetExpenseKpisQuery,
+  useLazyGetExpenseKpisQuery,
+  useGetTourAdvancesQuery,
+  useLazyGetTourAdvancesQuery,
+  useRequestTourAdvanceMutation,
+  useIssueDirectTourAdvanceMutation,
+  useApproveTourAdvanceMutation,
+  useRejectTourAdvanceMutation,
+  useDisburseTourAdvanceMutation,
+  useRefundTourAdvanceMutation,
+  useUploadExpenseAttachmentMutation,
+  useGetActiveTourAdvancesQuery,
+  useLazyGetActiveTourAdvancesQuery,
+  useGetExpenseSettlementsQuery,
+  useLazyGetExpenseSettlementsQuery,
+  useGetExpenseSettlementQuery,
+  useLazyGetExpenseSettlementQuery,
+  useCreateExpenseSettlementMutation,
+  useGetExecutiveBalancesQuery,
+  useLazyGetExecutiveBalancesQuery,
+  useGetExecutivePassbookQuery,
+  useLazyGetExecutivePassbookQuery,
   useGetDayEndDraftQuery,
   useLazyGetDayEndDraftQuery,
   useUploadWorkPlanAttachmentMutation,

@@ -53,7 +53,14 @@ import {
   useDeleteWorkPlanDraftMutation,
   useMarkNotesConvertedMutation,
 } from "@/store/api/workPlannerApiSlice";
-import { isWpAdmin, isWpManager, isWpCoordinator, isWpElevated, readSessionFromStorage } from "@/utils/authStorage";
+import {
+  isWpAdmin,
+  isWpManager,
+  isWpCoordinator,
+  isWpElevated,
+  hasWorkPlannerPortalAccess,
+  readSessionFromStorage,
+} from "@/utils/authStorage";
 import { getUserWorkPlannerSettings, type CustomWorkTaskTemplate } from "@/utils/userWorkPlannerSettings";
 import type { WorkPlanRecord, WorkPlanVisitRecord, WorkPlanWorkRecord } from "@/types/workPlanner";
 import {
@@ -116,48 +123,11 @@ interface ExecutiveUser {
   }>;
 }
 
-function hasWorkPlannerAccess(u: ExecutiveUser, sessionUserId?: string): boolean {
-  if (u._id === sessionUserId || u.id === sessionUserId) return true;
-  const uAny = u as any;
-  if (
-    uAny.department === "super_admin" ||
-    (Array.isArray(uAny.role_codes) && uAny.role_codes.includes("super_admin")) ||
-    (Array.isArray(uAny.roles) && uAny.roles.includes("super_admin")) ||
-    uAny.wp_role
-  ) {
-    return true;
-  }
-
-  if (!Array.isArray(u.portals) || u.portals.length === 0) {
-    return false;
-  }
-
-  const wpPortal = u.portals.find((p) => {
-    const code = p.portal_code || p.portal?.code || p.code;
-    return code === "work_planner";
-  });
-
-  if (!wpPortal) return false;
-
-  const roles: string[] = Array.isArray(wpPortal.access_roles)
-    ? wpPortal.access_roles
-    : (wpPortal as any).access_role
-      ? [(wpPortal as any).access_role]
-      : [];
-
-  if (roles.length === 0) return true;
-
-  return roles.some((r) => {
-    const normalized = String(r).toLowerCase().trim();
-    return (
-      normalized === "executive" ||
-      normalized === "coordinator" ||
-      normalized === "manager" ||
-      normalized === "admin" ||
-      normalized === "super_admin" ||
-      normalized === "sales"
-    );
-  });
+function hasWorkPlannerAccess(u: ExecutiveUser | any, sessionUserId?: string): boolean {
+  if (!u) return false;
+  const uId = String(u._id || u.id || "");
+  if (sessionUserId && uId === String(sessionUserId)) return true;
+  return hasWorkPlannerPortalAccess(u);
 }
 
 function getWorkPlannerUserRole(u: ExecutiveUser): "Admin" | "Manager" | "Coordinator" | null {

@@ -126,7 +126,7 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
   function isManagerOrAdminCreatedItem(item?: Record<string, any>): boolean {
     if (!item) return false;
     const role = String(item.created_by_role || "").toLowerCase().trim();
-    return ["manager", "admin", "super_admin", "super admin"].includes(role);
+    return ["coordinator", "manager", "admin"].includes(role);
   }
 
   const { data: plan, isLoading: loading, refetch: loadPlan } = useGetPlanQuery(planId);

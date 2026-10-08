@@ -98,6 +98,13 @@ async function getWorkPlannerManagers() {
 }
 
 /**
+ * Gets all active portal admins for work_planner portal.
+ */
+async function getWorkPlannerAdmins() {
+  return getActiveUsersByWpRole('admin');
+}
+
+/**
  * Sends in-app notification (SSE / WebPush via notification-service + MongoDB fallback).
  */
 async function sendInAppNotification(userId, { title, message, type = 'info', entity_type = 'work_planner', entity_id = null }) {
@@ -255,6 +262,133 @@ async function resolveStakeholders(salesUserId, planDoc = null) {
     allManagers,
     primaryRecipientEmail,
     ccList: Array.from(ccSet),
+    inAppUserIds: Array.from(inAppUserIds),
+  };
+}
+
+/**
+ * Resolves stakeholders strictly for Request Created and Claims Logged:
+ * - Primary TO: Direct Manager
+ * - CC: Portal Admins (excluding direct manager)
+ * - If NO direct manager: Primary TO = Portal Admin (1st), CC = Remaining Admins (or managers if no admins)
+ * - In-App: Direct Manager + All Admins
+ */
+async function resolveDirectManagerAndAdmins(salesUserId, planDoc = null) {
+  const { User, UserWorkPlannerSettings, WorkPlannerReportingEdge } = getModels();
+  const salesUser = await User.findOne({ _id: salesUserId, is_active: { $ne: false } }).lean();
+  const allManagers = await getWorkPlannerManagers();
+  const allAdmins = await getWorkPlannerAdmins();
+
+  let directManager = null;
+  let settingsCcEmails = [];
+
+  // Check UserWorkPlannerSettings
+  const settings = await UserWorkPlannerSettings.findOne({ user: salesUserId }).lean();
+  if (settings) {
+    if (settings.assigned_manager) {
+      directManager = allManagers.find(
+        (m) => String(m._id) === String(settings.assigned_manager)
+      );
+      if (!directManager) {
+        directManager = await User.findOne({ _id: settings.assigned_manager, is_active: { $ne: false } }).lean();
+      }
+    }
+
+    // Match plan type settings if available
+    const planType = planDoc?.plan_type || 'Visits';
+    const ptSetting = Array.isArray(settings.plan_type_settings)
+      ? settings.plan_type_settings.find((p) => p.plan_type === planType)
+      : null;
+
+    if (ptSetting?.assigned_manager) {
+      const ptMgr = allManagers.find((m) => String(m._id) === String(ptSetting.assigned_manager));
+      if (ptMgr) directManager = ptMgr;
+    }
+
+    if (Array.isArray(ptSetting?.cc_emails) && ptSetting.cc_emails.length > 0) {
+      settingsCcEmails = ptSetting.cc_emails;
+    } else if (Array.isArray(settings.cc_emails) && settings.cc_emails.length > 0) {
+      settingsCcEmails = settings.cc_emails;
+    }
+  }
+
+  // Check WorkPlannerReportingEdge if no direct manager from settings
+  if (!directManager) {
+    const edge = await WorkPlannerReportingEdge.findOne({
+      subordinate: salesUserId,
+      is_active: { $ne: false },
+    }).populate('manager').lean();
+    if (edge?.manager) {
+      directManager = edge.manager;
+    }
+  }
+
+  // Check discussed manager from plan
+  if (!directManager && planDoc?.discussed_manager_id) {
+    directManager = allManagers.find(
+      (m) => String(m._id) === String(planDoc.discussed_manager_id)
+    );
+  }
+
+  // Disallow user from being their own direct manager
+  if (directManager && String(directManager._id) === String(salesUserId)) {
+    directManager = null;
+  }
+
+  const adminEmails = allAdmins.map((a) => a.email).filter(Boolean);
+  const managerEmails = allManagers.map((m) => m.email).filter(Boolean);
+
+  let primaryRecipientEmail = '';
+  const ccEmails = new Set(
+    settingsCcEmails.map((e) => String(e).trim().toLowerCase()).filter(Boolean)
+  );
+
+  const inAppUserIds = new Set();
+  // Admins always receive in-app alerts
+  for (const a of allAdmins) {
+    if (a._id) inAppUserIds.add(String(a._id));
+  }
+
+  if (directManager && directManager.email) {
+    // 1. Direct Manager exists -> Send TO direct manager, and CC admins
+    primaryRecipientEmail = directManager.email;
+    if (directManager._id) inAppUserIds.add(String(directManager._id));
+
+    for (const adminEmail of adminEmails) {
+      if (adminEmail.toLowerCase() !== primaryRecipientEmail.toLowerCase()) {
+        ccEmails.add(adminEmail.toLowerCase());
+      }
+    }
+  } else {
+    // 2. No Direct Manager -> Send TO Portal Admins
+    if (adminEmails.length > 0) {
+      primaryRecipientEmail = adminEmails[0];
+      for (let i = 1; i < adminEmails.length; i++) {
+        ccEmails.add(adminEmails[i].toLowerCase());
+      }
+    } else if (managerEmails.length > 0) {
+      // Fallback to elevated managers if no admin found
+      primaryRecipientEmail = managerEmails[0];
+      for (let i = 1; i < managerEmails.length; i++) {
+        ccEmails.add(managerEmails[i].toLowerCase());
+      }
+      for (const m of allManagers) {
+        if (m._id) inAppUserIds.add(String(m._id));
+      }
+    }
+  }
+
+  if (primaryRecipientEmail) {
+    ccEmails.delete(primaryRecipientEmail.toLowerCase());
+  }
+
+  return {
+    salesUser,
+    directManager,
+    allAdmins,
+    allManagers,
+    primaryRecipientEmail,
+    ccList: Array.from(ccEmails),
     inAppUserIds: Array.from(inAppUserIds),
   };
 }
@@ -1376,13 +1510,20 @@ async function notifyExpenseSubmitted({ planId, count = 1, totalAmount = 0, acto
     if (!plan) return;
 
     const salesUserId = plan.sales_user;
-    const { salesUser, directManager, allManagers, primaryRecipientEmail } = await resolveStakeholders(salesUserId, plan);
+    const {
+      salesUser,
+      directManager,
+      allAdmins,
+      primaryRecipientEmail,
+      ccList,
+      inAppUserIds,
+    } = await resolveDirectManagerAndAdmins(salesUserId, plan);
     const actorName = actorUser?.name || actorUser?.email?.split('@')[0] || 'Executive';
     const planDateStr = formatDate(plan.plan_date);
 
-    // In-App Notification to Managers
-    for (const m of allManagers) {
-      await sendInAppNotification(m._id, {
+    // In-App Notification to Direct Manager and Admins
+    for (const uId of inAppUserIds) {
+      await sendInAppNotification(uId, {
         title: `Expense Claim Submitted: ${actorName}`,
         message: `${actorName} submitted ${count} expense claim(s) totaling ₹${Number(totalAmount).toLocaleString('en-IN')} for ${planDateStr}.`,
         type: 'info',
@@ -1391,14 +1532,15 @@ async function notifyExpenseSubmitted({ planId, count = 1, totalAmount = 0, acto
       });
     }
 
-    // Email to Direct Manager (with CC to selected CCs only)
+    // Email to Direct Manager (TO) with Admins in CC; if no Direct Manager, sent TO Admins
     if (primaryRecipientEmail) {
       const baseUrl = (FRONTEND_URL || process.env.FRONTEND_URL || '').replace(/\/$/, '');
-      const expenseUrl = baseUrl ? `${baseUrl}/dashboard/expenses` : '';
+      const expenseUrl = baseUrl ? `${baseUrl}/dashboard/expenses/claims` : '';
       const subject = `Expense Claim Submitted — ${actorName} (${planDateStr})`;
       const emailHtml = `
         <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
           <div style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #ffffff; padding: 24px; border-radius: 8px 8px 0 0;">
+            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.85; margin-bottom: 4px; font-weight: 600;">Work Planner Expense Claim</div>
             <h2 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #ffffff;">Expense Claim Submitted</h2>
             <p style="margin: 0; font-size: 14px; opacity: 0.95;">For Plan Date: <strong>${escapeHtml(planDateStr)}</strong></p>
           </div>
@@ -1432,7 +1574,15 @@ async function notifyExpenseSubmitted({ planId, count = 1, totalAmount = 0, acto
         </div>
       `;
 
-      const mailCc = Array.isArray(selectedCcEmails) ? selectedCcEmails.map((e) => String(e).trim()).filter(Boolean) : [];
+      const mailCc = Array.from(
+        new Set([
+          ...(Array.isArray(selectedCcEmails) ? selectedCcEmails : []),
+          ...(Array.isArray(ccList) ? ccList : []),
+        ])
+      )
+        .map((e) => String(e).trim())
+        .filter((e) => e && e.toLowerCase() !== primaryRecipientEmail.toLowerCase());
+
       await emailHelper.sendEmail(primaryRecipientEmail, subject, '', emailHtml, [], mailCc).catch((err) => {
         logger.warn(`[AutoNotification] Failed sending expense submission email: ${err.message}`);
       });
@@ -1551,6 +1701,545 @@ async function notifyExpenseRejected({ planId, count = 1, totalAmount = 0, reaso
     }
   } catch (err) {
     logger.error(`[AutoNotification] Error in notifyExpenseRejected: ${err.message}`);
+  }
+}
+
+/**
+ * 12. TOUR ADVANCE REQUESTED AUTO NOTIFICATION
+ */
+async function notifyTourAdvanceRequested({ advanceDoc, actorUser, selectedCcEmails = [] }) {
+  try {
+    if (!advanceDoc) return;
+
+    const salesUserId = advanceDoc.sales_user?._id || advanceDoc.sales_user;
+    if (!salesUserId) return;
+
+    const {
+      salesUser,
+      directManager,
+      allAdmins,
+      primaryRecipientEmail,
+      ccList,
+      inAppUserIds,
+    } = await resolveDirectManagerAndAdmins(salesUserId);
+    if (!salesUser) return;
+
+    const actorName = actorUser?.name || salesUser.name || 'Executive';
+    const amountStr = Number(advanceDoc.amount || 0).toLocaleString('en-IN');
+    const reqDateStr = formatDate(advanceDoc.request_date || advanceDoc.createdAt);
+
+    // In-App Notification to Direct Manager and Admins
+    for (const uId of inAppUserIds) {
+      await sendInAppNotification(uId, {
+        title: `Tour Advance Requested: ${actorName}`,
+        message: `${actorName} requested a tour advance of ₹${amountStr} for "${advanceDoc.purpose || 'Tour'}".`,
+        type: 'info',
+        entity_type: 'tour_advance',
+        entity_id: advanceDoc._id,
+      });
+    }
+
+    // Email to Direct Manager (TO) with Admins in CC; if no Direct Manager, sent TO Admins
+    if (primaryRecipientEmail) {
+      const baseUrl = (FRONTEND_URL || process.env.FRONTEND_URL || '').replace(/\/$/, '');
+      const advanceUrl = baseUrl ? `${baseUrl}/dashboard/expenses/advances` : '';
+      const subject = `Tour Advance Request — ${actorName} (₹${amountStr})`;
+      const emailHtml = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
+          <div style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); color: #ffffff; padding: 24px; border-radius: 8px 8px 0 0;">
+            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.85; margin-bottom: 4px; font-weight: 600;">Work Planner Tour Advance</div>
+            <h2 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #ffffff;">Tour Advance Requested</h2>
+            <p style="margin: 0; font-size: 14px; opacity: 0.95;">Request Date: <strong>${escapeHtml(reqDateStr)}</strong></p>
+          </div>
+          <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
+            <table style="width: 100%; margin-bottom: 20px; font-size: 13px;">
+              <tr>
+                <td style="padding: 6px 0; color: #64748b; width: 140px;"><strong>Executive:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a;">${escapeHtml(actorName)} (${escapeHtml(salesUser?.email || '')})</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Advance Number:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a; font-family: monospace; font-weight: 600;">${escapeHtml(advanceDoc.advance_number || 'ADV-PENDING')}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Requested Amount:</strong></td>
+                <td style="padding: 6px 0; color: #0369a1; font-weight: 700; font-size: 16px;">₹${amountStr}</td>
+              </tr>
+              <tr>
+                <td style="padding: 6px 0; color: #64748b;"><strong>Tour Purpose:</strong></td>
+                <td style="padding: 6px 0; color: #0f172a;">${escapeHtml(advanceDoc.purpose || '—')}</td>
+              </tr>
+              ${
+                advanceDoc.notes
+                  ? `
+                <tr>
+                  <td style="padding: 6px 0; color: #64748b;"><strong>Notes:</strong></td>
+                  <td style="padding: 6px 0; color: #475569;">${escapeHtml(advanceDoc.notes)}</td>
+                </tr>
+              `
+                  : ''
+              }
+            </table>
+            ${
+              advanceUrl
+                ? `
+              <div style="margin: 24px 0 12px 0; text-align: center;">
+                <a href="${advanceUrl}" style="background-color: #0284c7; color: #ffffff; padding: 10px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 13px; display: inline-block;">
+                  Review & Approve Tour Advance
+                </a>
+              </div>
+            `
+                : ''
+            }
+          </div>
+        </div>
+      `;
+
+      const mailCc = Array.from(
+        new Set([
+          ...(Array.isArray(selectedCcEmails) ? selectedCcEmails : []),
+          ...(Array.isArray(ccList) ? ccList : []),
+        ])
+      )
+        .map((e) => String(e).trim())
+        .filter((e) => e && e.toLowerCase() !== primaryRecipientEmail.toLowerCase());
+
+      await emailHelper.sendEmail(primaryRecipientEmail, subject, '', emailHtml, [], mailCc).catch((err) => {
+        logger.warn(`[AutoNotification] Failed sending tour advance request email: ${err.message}`);
+      });
+    }
+  } catch (err) {
+    logger.error(`[AutoNotification] Error in notifyTourAdvanceRequested: ${err.message}`);
+  }
+}
+
+/**
+ * 13. TOUR ADVANCE APPROVED AUTO NOTIFICATION
+ */
+async function notifyTourAdvanceApproved({ advanceDoc, actorUser }) {
+  try {
+    if (!advanceDoc) return;
+    const { User } = getModels();
+
+    const salesUserId = advanceDoc.sales_user?._id || advanceDoc.sales_user;
+    const salesUser = advanceDoc.sales_user?.name
+      ? advanceDoc.sales_user
+      : await User.findById(salesUserId).lean();
+    if (!salesUser) return;
+
+    const actorName = actorUser?.name || actorUser?.email?.split('@')[0] || 'Manager';
+    const amountStr = Number(advanceDoc.amount || 0).toLocaleString('en-IN');
+    const advanceNo = advanceDoc.advance_number || 'ADV';
+
+    // In-App Notification to Executive
+    await sendInAppNotification(salesUserId, {
+      title: 'Tour Advance Approved',
+      message: `Your tour advance #${advanceNo} for ₹${amountStr} was approved by ${actorName}. It has been forwarded for disbursement.`,
+      type: 'success',
+      entity_type: 'tour_advance',
+      entity_id: advanceDoc._id,
+    });
+
+    // Email to Executive
+    if (salesUser.email) {
+      const subject = `Tour Advance Approved — ₹${amountStr} (${advanceNo})`;
+      const emailHtml = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
+          <div style="background: linear-gradient(135deg, #059669 0%, #10b981 100%); color: #ffffff; padding: 24px; border-radius: 8px 8px 0 0;">
+            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.85; margin-bottom: 4px; font-weight: 600;">Work Planner Tour Advance</div>
+            <h2 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #ffffff;">Tour Advance Approved</h2>
+            <p style="margin: 0; font-size: 14px; opacity: 0.95;">Advance Number: <strong>${escapeHtml(advanceNo)}</strong></p>
+          </div>
+          <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
+            <p style="font-size: 14px; margin-top: 0; color: #334155;">
+              Hi <strong>${escapeHtml(salesUser.name || 'Executive')}</strong>,
+            </p>
+            <p style="font-size: 13px; color: #475569;">
+              Your tour advance request of <strong>₹${amountStr}</strong> for <em>"${escapeHtml(advanceDoc.purpose || 'Tour')}"</em> has been <strong>approved</strong> by <strong>${escapeHtml(actorName)}</strong>.
+            </p>
+            <div style="background-color: #f0fdf4; border: 1px solid #dcfce7; border-left: 4px solid #10b981; border-radius: 6px; padding: 14px; margin: 18px 0;">
+              <div style="font-size: 11px; font-weight: 700; color: #166534; text-transform: uppercase; margin-bottom: 2px;">Next Step:</div>
+              <div style="font-size: 13px; color: #15803d;">Finance/Management will disburse the funds and notify you with transaction details.</div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+        logger.warn(`[AutoNotification] Failed sending tour advance approval email: ${err.message}`);
+      });
+    }
+  } catch (err) {
+    logger.error(`[AutoNotification] Error in notifyTourAdvanceApproved: ${err.message}`);
+  }
+}
+
+/**
+ * 14. TOUR ADVANCE REJECTED AUTO NOTIFICATION
+ */
+async function notifyTourAdvanceRejected({ advanceDoc, reason, actorUser }) {
+  try {
+    if (!advanceDoc) return;
+    const { User } = getModels();
+
+    const salesUserId = advanceDoc.sales_user?._id || advanceDoc.sales_user;
+    const salesUser = advanceDoc.sales_user?.name
+      ? advanceDoc.sales_user
+      : await User.findById(salesUserId).lean();
+    if (!salesUser) return;
+
+    const actorName = actorUser?.name || actorUser?.email?.split('@')[0] || 'Manager';
+    const amountStr = Number(advanceDoc.amount || 0).toLocaleString('en-IN');
+    const advanceNo = advanceDoc.advance_number || 'ADV';
+    const rejectionReason = reason || advanceDoc.rejection_reason || 'Advance request rejected by manager.';
+
+    // In-App Notification to Executive
+    await sendInAppNotification(salesUserId, {
+      title: 'Tour Advance Rejected',
+      message: `Your tour advance request #${advanceNo} (₹${amountStr}) was rejected by ${actorName}. Reason: ${rejectionReason}`,
+      type: 'warning',
+      entity_type: 'tour_advance',
+      entity_id: advanceDoc._id,
+    });
+
+    // Email to Executive
+    if (salesUser.email) {
+      const subject = `Tour Advance Rejected — ₹${amountStr} (${advanceNo})`;
+      const emailHtml = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
+          <div style="background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%); color: #ffffff; padding: 24px; border-radius: 8px 8px 0 0;">
+            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.85; margin-bottom: 4px; font-weight: 600;">Work Planner Tour Advance</div>
+            <h2 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #ffffff;">Tour Advance Rejected</h2>
+            <p style="margin: 0; font-size: 14px; opacity: 0.95;">Advance Number: <strong>${escapeHtml(advanceNo)}</strong></p>
+          </div>
+          <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
+            <p style="font-size: 14px; margin-top: 0; color: #334155;">
+              Hi <strong>${escapeHtml(salesUser.name || 'Executive')}</strong>,
+            </p>
+            <p style="font-size: 13px; color: #475569;">
+              Your tour advance request of <strong>₹${amountStr}</strong> for <em>"${escapeHtml(advanceDoc.purpose || 'Tour')}"</em> was <strong>rejected</strong> by <strong>${escapeHtml(actorName)}</strong>.
+            </p>
+            <div style="background-color: #fef2f2; border: 1px solid #fee2e2; border-left: 4px solid #ef4444; border-radius: 6px; padding: 14px; margin: 18px 0;">
+              <div style="font-size: 11px; font-weight: 700; color: #b91c1c; text-transform: uppercase; margin-bottom: 4px;">Rejection Reason:</div>
+              <div style="font-size: 13px; color: #7f1d1d; font-weight: 500;">${escapeHtml(rejectionReason)}</div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+        logger.warn(`[AutoNotification] Failed sending tour advance rejection email: ${err.message}`);
+      });
+    }
+  } catch (err) {
+    logger.error(`[AutoNotification] Error in notifyTourAdvanceRejected: ${err.message}`);
+  }
+}
+
+/**
+ * 15. TOUR ADVANCE DISBURSED AUTO NOTIFICATION
+ */
+async function notifyTourAdvanceDisbursed({ advanceDoc, actorUser }) {
+  try {
+    if (!advanceDoc) return;
+    const { User } = getModels();
+
+    const salesUserId = advanceDoc.sales_user?._id || advanceDoc.sales_user;
+    const salesUser = advanceDoc.sales_user?.name
+      ? advanceDoc.sales_user
+      : await User.findById(salesUserId).lean();
+    if (!salesUser) return;
+
+    const actorName = actorUser?.name || actorUser?.email?.split('@')[0] || 'Finance Authority';
+    const disbursedAmountStr = Number(advanceDoc.disbursed_amount || advanceDoc.amount || 0).toLocaleString('en-IN');
+    const advanceNo = advanceDoc.advance_number || 'ADV';
+
+    // In-App Notification to Executive
+    await sendInAppNotification(salesUserId, {
+      title: 'Tour Advance Disbursed',
+      message: `₹${disbursedAmountStr} has been disbursed for advance #${advanceNo} via ${advanceDoc.payment_method || 'Bank Transfer'}.`,
+      type: 'success',
+      entity_type: 'tour_advance',
+      entity_id: advanceDoc._id,
+    });
+
+    // Email to Executive
+    if (salesUser.email) {
+      const subject = `Tour Advance Disbursed — ₹${disbursedAmountStr} (${advanceNo})`;
+      const emailHtml = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
+          <div style="background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%); color: #ffffff; padding: 24px; border-radius: 8px 8px 0 0;">
+            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.85; margin-bottom: 4px; font-weight: 600;">Work Planner Tour Advance</div>
+            <h2 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #ffffff;">Tour Advance Disbursed</h2>
+            <p style="margin: 0; font-size: 14px; opacity: 0.95;">Advance Number: <strong>${escapeHtml(advanceNo)}</strong></p>
+          </div>
+          <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
+            <p style="font-size: 14px; margin-top: 0; color: #334155;">
+              Hi <strong>${escapeHtml(salesUser.name || 'Executive')}</strong>,
+            </p>
+            <p style="font-size: 13px; color: #475569;">
+              Funds for your tour advance have been <strong>disbursed</strong> by <strong>${escapeHtml(actorName)}</strong>.
+            </p>
+            <table style="width: 100%; margin: 18px 0; font-size: 13px; border-collapse: collapse;">
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; color: #64748b; width: 140px;"><strong>Disbursed Amount:</strong></td>
+                <td style="padding: 8px 0; color: #7c3aed; font-weight: 700; font-size: 16px;">₹${disbursedAmountStr}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; color: #64748b;"><strong>Payment Mode:</strong></td>
+                <td style="padding: 8px 0; color: #0f172a;">${escapeHtml(advanceDoc.payment_method || 'Bank Transfer')}</td>
+              </tr>
+              ${
+                advanceDoc.transaction_reference
+                  ? `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 8px 0; color: #64748b;"><strong>Txn / UTR Ref:</strong></td>
+                  <td style="padding: 8px 0; color: #0f172a; font-family: monospace;">${escapeHtml(advanceDoc.transaction_reference)}</td>
+                </tr>
+              `
+                  : ''
+              }
+              ${
+                advanceDoc.bank_name
+                  ? `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 8px 0; color: #64748b;"><strong>Bank:</strong></td>
+                  <td style="padding: 8px 0; color: #0f172a;">${escapeHtml(advanceDoc.bank_name)}</td>
+                </tr>
+              `
+                  : ''
+              }
+              ${
+                advanceDoc.disbursement_notes
+                  ? `
+                <tr>
+                  <td style="padding: 8px 0; color: #64748b;"><strong>Notes:</strong></td>
+                  <td style="padding: 8px 0; color: #475569;">${escapeHtml(advanceDoc.disbursement_notes)}</td>
+                </tr>
+              `
+                  : ''
+              }
+            </table>
+            <div style="background-color: #f5f3ff; border: 1px solid #ede9fe; border-left: 4px solid #7c3aed; border-radius: 6px; padding: 12px; margin: 18px 0; font-size: 12px; color: #5b21b6;">
+              Please log tour expense claims against this advance. Any remaining unspent balance must be refunded back to company accounts upon tour completion.
+            </div>
+          </div>
+        </div>
+      `;
+
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+        logger.warn(`[AutoNotification] Failed sending tour advance disbursement email: ${err.message}`);
+      });
+    }
+  } catch (err) {
+    logger.error(`[AutoNotification] Error in notifyTourAdvanceDisbursed: ${err.message}`);
+  }
+}
+
+/**
+ * 16. TOUR ADVANCE REFUNDED AUTO NOTIFICATION
+ */
+async function notifyTourAdvanceRefunded({ advanceDoc, refundItem, actorUser }) {
+  try {
+    if (!advanceDoc || !refundItem) return;
+    const { User } = getModels();
+
+    const salesUserId = advanceDoc.sales_user?._id || advanceDoc.sales_user;
+    const salesUser = advanceDoc.sales_user?.name
+      ? advanceDoc.sales_user
+      : await User.findById(salesUserId).lean();
+    if (!salesUser) return;
+
+    const actorName = actorUser?.name || actorUser?.email?.split('@')[0] || 'Finance Manager';
+    const refundAmountStr = Number(refundItem.amount || 0).toLocaleString('en-IN');
+    const remainingBalanceStr = Number(advanceDoc.remaining_balance || 0).toLocaleString('en-IN');
+    const advanceNo = advanceDoc.advance_number || 'ADV';
+
+    // In-App Notification to Executive
+    await sendInAppNotification(salesUserId, {
+      title: 'Tour Advance Refund Acknowledged',
+      message: `Refund of ₹${refundAmountStr} for advance #${advanceNo} was acknowledged. Remaining advance in hand: ₹${remainingBalanceStr}.`,
+      type: 'info',
+      entity_type: 'tour_advance',
+      entity_id: advanceDoc._id,
+    });
+
+    // Email to Executive
+    if (salesUser.email) {
+      const subject = `Advance Refund Acknowledged — ₹${refundAmountStr} (${advanceNo})`;
+      const emailHtml = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
+          <div style="background: linear-gradient(135deg, #0f766e 0%, #14b8a6 100%); color: #ffffff; padding: 24px; border-radius: 8px 8px 0 0;">
+            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.85; margin-bottom: 4px; font-weight: 600;">Work Planner Tour Advance</div>
+            <h2 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #ffffff;">Advance Refund Acknowledged</h2>
+            <p style="margin: 0; font-size: 14px; opacity: 0.95;">Advance Number: <strong>${escapeHtml(advanceNo)}</strong></p>
+          </div>
+          <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
+            <p style="font-size: 14px; margin-top: 0; color: #334155;">
+              Hi <strong>${escapeHtml(salesUser.name || 'Executive')}</strong>,
+            </p>
+            <p style="font-size: 13px; color: #475569;">
+              Your advance refund of <strong>₹${refundAmountStr}</strong> has been received and verified by <strong>${escapeHtml(actorName)}</strong>.
+            </p>
+            <table style="width: 100%; margin: 18px 0; font-size: 13px; border-collapse: collapse;">
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; color: #64748b; width: 150px;"><strong>Refunded Amount:</strong></td>
+                <td style="padding: 8px 0; color: #0f766e; font-weight: 700; font-size: 15px;">₹${refundAmountStr}</td>
+              </tr>
+              <tr style="border-bottom: 1px solid #f1f5f9;">
+                <td style="padding: 8px 0; color: #64748b;"><strong>Payment Mode:</strong></td>
+                <td style="padding: 8px 0; color: #0f172a;">${escapeHtml(refundItem.payment_method || 'UPI')}</td>
+              </tr>
+              ${
+                refundItem.transaction_reference
+                  ? `
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 8px 0; color: #64748b;"><strong>Txn / UTR Ref:</strong></td>
+                  <td style="padding: 8px 0; color: #0f172a; font-family: monospace;">${escapeHtml(refundItem.transaction_reference)}</td>
+                </tr>
+              `
+                  : ''
+              }
+              <tr>
+                <td style="padding: 8px 0; color: #64748b;"><strong>Remaining Advance:</strong></td>
+                <td style="padding: 8px 0; color: #0f172a; font-weight: 700;">₹${remainingBalanceStr}</td>
+              </tr>
+            </table>
+          </div>
+        </div>
+      `;
+
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+        logger.warn(`[AutoNotification] Failed sending tour advance refund email: ${err.message}`);
+      });
+    }
+  } catch (err) {
+    logger.error(`[AutoNotification] Error in notifyTourAdvanceRefunded: ${err.message}`);
+  }
+}
+
+/**
+ * 17. EXPENSE SETTLEMENT COMPLETED AUTO NOTIFICATION
+ */
+async function notifyExpenseSettlementCompleted({ settlementDoc, actorUser }) {
+  try {
+    if (!settlementDoc) return;
+    const { User } = getModels();
+
+    const salesUserId = settlementDoc.sales_user?._id || settlementDoc.sales_user;
+    const salesUser = settlementDoc.sales_user?.name
+      ? settlementDoc.sales_user
+      : await User.findById(salesUserId).lean();
+    if (!salesUser) return;
+
+    const actorName = actorUser?.name || actorUser?.email?.split('@')[0] || 'Finance Manager';
+    const totalClaimStr = Number(settlementDoc.total_claim_amount || 0).toLocaleString('en-IN');
+    const advanceDeductionStr = Number(settlementDoc.advance_deduction_amount || 0).toLocaleString('en-IN');
+    const directPaymentStr = Number(settlementDoc.direct_payment_amount || 0).toLocaleString('en-IN');
+    const settlementNo = settlementDoc.settlement_number || 'SETTLE';
+    const claimsCount = Array.isArray(settlementDoc.claims) ? settlementDoc.claims.length : 0;
+
+    // In-App Notification to Executive
+    await sendInAppNotification(salesUserId, {
+      title: `Expense Settlement Completed: #${settlementNo}`,
+      message: `Settlement voucher #${settlementNo} generated for ₹${totalClaimStr} (${claimsCount} claim(s)). Direct Payout: ₹${directPaymentStr}, Advance Adjusted: ₹${advanceDeductionStr}.`,
+      type: 'success',
+      entity_type: 'expense_settlement',
+      entity_id: settlementDoc._id,
+    });
+
+    // Email to Executive
+    if (salesUser.email) {
+      const baseUrl = (FRONTEND_URL || process.env.FRONTEND_URL || '').replace(/\/$/, '');
+      const settlementUrl = baseUrl ? `${baseUrl}/dashboard/expenses/settlements` : '';
+      const subject = `Expense Settlement Voucher — ${settlementNo} (₹${totalClaimStr})`;
+      const emailHtml = `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #1e293b; line-height: 1.5;">
+          <div style="background: linear-gradient(135deg, #4338ca 0%, #3730a3 100%); color: #ffffff; padding: 24px; border-radius: 8px 8px 0 0;">
+            <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.85; margin-bottom: 4px; font-weight: 600;">Work Planner Expense Settlement</div>
+            <h2 style="margin: 0 0 6px 0; font-size: 20px; font-weight: 700; color: #ffffff;">Expense Settlement Voucher</h2>
+            <p style="margin: 0; font-size: 14px; opacity: 0.95;">Voucher No: <strong>${escapeHtml(settlementNo)}</strong></p>
+          </div>
+          <div style="padding: 24px; border: 1px solid #e2e8f0; border-top: none; background-color: #ffffff; border-radius: 0 0 8px 8px;">
+            <p style="font-size: 14px; margin-top: 0; color: #334155;">
+              Hi <strong>${escapeHtml(salesUser.name || 'Executive')}</strong>,
+            </p>
+            <p style="font-size: 13px; color: #475569;">
+              Your expense claims (${claimsCount} item(s)) have been settled by <strong>${escapeHtml(actorName)}</strong>.
+            </p>
+            
+            <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 18px 0;">
+              <div style="font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; margin-bottom: 10px;">Voucher Summary:</div>
+              <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                  <td style="padding: 6px 0; color: #64748b;">Total Approved Claims Settled:</td>
+                  <td style="padding: 6px 0; color: #0f172a; font-weight: 700; text-align: right;">₹${totalClaimStr}</td>
+                </tr>
+                <tr style="border-bottom: 1px solid #e2e8f0;">
+                  <td style="padding: 6px 0; color: #64748b;">Tour Advance Adjusted:</td>
+                  <td style="padding: 6px 0; color: #dc2626; font-weight: 600; text-align: right;">- ₹${advanceDeductionStr}</td>
+                </tr>
+                <tr style="border-top: 2px solid #cbd5e1;">
+                  <td style="padding: 8px 0; color: #0f172a; font-weight: 700; font-size: 14px;">Net Direct Payout:</td>
+                  <td style="padding: 8px 0; color: #059669; font-weight: 800; font-size: 16px; text-align: right;">₹${directPaymentStr}</td>
+                </tr>
+              </table>
+            </div>
+
+            ${
+              settlementDoc.direct_payment_amount > 0
+                ? `
+              <table style="width: 100%; margin-bottom: 18px; font-size: 13px; border-collapse: collapse;">
+                <tr style="border-bottom: 1px solid #f1f5f9;">
+                  <td style="padding: 6px 0; color: #64748b; width: 140px;"><strong>Payout Method:</strong></td>
+                  <td style="padding: 6px 0; color: #0f172a;">${escapeHtml(settlementDoc.payment_method || 'Bank Transfer')}</td>
+                </tr>
+                ${
+                  settlementDoc.transaction_reference
+                    ? `
+                  <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 6px 0; color: #64748b;"><strong>Txn / UTR Ref:</strong></td>
+                    <td style="padding: 6px 0; color: #0f172a; font-family: monospace;">${escapeHtml(settlementDoc.transaction_reference)}</td>
+                  </tr>
+                `
+                    : ''
+                }
+                ${
+                  settlementDoc.bank_name
+                    ? `
+                  <tr style="border-bottom: 1px solid #f1f5f9;">
+                    <td style="padding: 6px 0; color: #64748b;"><strong>Bank Name:</strong></td>
+                    <td style="padding: 6px 0; color: #0f172a;">${escapeHtml(settlementDoc.bank_name)}</td>
+                  </tr>
+                `
+                    : ''
+                }
+              </table>
+            `
+                : ''
+            }
+
+            ${
+              settlementUrl
+                ? `
+              <div style="margin: 24px 0 12px 0; text-align: center;">
+                <a href="${settlementUrl}" style="background-color: #4338ca; color: #ffffff; padding: 10px 24px; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 13px; display: inline-block;">
+                  View Settlement Details
+                </a>
+              </div>
+            `
+                : ''
+            }
+          </div>
+        </div>
+      `;
+
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+        logger.warn(`[AutoNotification] Failed sending expense settlement voucher email: ${err.message}`);
+      });
+    }
+  } catch (err) {
+    logger.error(`[AutoNotification] Error in notifyExpenseSettlementCompleted: ${err.message}`);
   }
 }
 
@@ -1939,7 +2628,9 @@ module.exports = {
   isWpAdmin,
   getActiveUsersByWpRole,
   getWorkPlannerManagers,
+  getWorkPlannerAdmins,
   resolveStakeholders,
+  resolveDirectManagerAndAdmins,
   sendInAppNotification,
   notifyWorkPlanCreated,
   notifyWorkPlanSubmitted: notifyWorkPlanCreated,
@@ -1953,6 +2644,12 @@ module.exports = {
   notifyExpenseSubmitted,
   notifyExpenseApproved,
   notifyExpenseRejected,
+  notifyTourAdvanceRequested,
+  notifyTourAdvanceApproved,
+  notifyTourAdvanceRejected,
+  notifyTourAdvanceDisbursed,
+  notifyTourAdvanceRefunded,
+  notifyExpenseSettlementCompleted,
   notifyDayEndCompleted,
   sendPendingWorkPlanMorningReminder,
   sendPendingDayEndEveningReminder,

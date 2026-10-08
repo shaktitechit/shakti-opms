@@ -35,6 +35,7 @@ import {
   isWpManager,
   isWpCoordinator,
   isWpElevated,
+  hasWorkPlannerPortalAccess,
   readSessionFromStorage,
 } from "@/utils/authStorage";
 import type { SeniorRemarkFeedItem, AuthorityRemarkType, AuthorityRemarkStatus } from "@/types/workPlanner";
@@ -144,7 +145,7 @@ export function SeniorRemarksPage() {
     };
 
     if (Array.isArray(usersData)) {
-      usersData.forEach((u: any) => addExec(u._id || u.id, u.name));
+      usersData.filter(hasWorkPlannerPortalAccess).forEach((u: any) => addExec(u._id || u.id, u.name));
     }
     if (Array.isArray(myTeamData?.members)) {
       myTeamData.members.forEach((u: any) => addExec(u._id || u.id, u.name));

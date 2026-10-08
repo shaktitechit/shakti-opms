@@ -110,66 +110,108 @@ export function isPowerAuditUser(user: any): boolean {
   );
 }
 
-export function hasWorkPlannerPortalAccess(user: AuthUser | null | undefined): boolean {
+export const WORK_PLANNER_ROLES = ["executive", "coordinator", "manager", "admin"] as const;
+export type WorkPlannerRole = (typeof WORK_PLANNER_ROLES)[number];
+
+export function hasWorkPlannerPortalAccess(user: AuthUser | any | null | undefined): boolean {
   if (!user) return false;
   const uAny = user as any;
-  if (
-    uAny.department === "super_admin" ||
-    (Array.isArray(uAny.role_codes) && uAny.role_codes.includes("super_admin")) ||
-    (Array.isArray(uAny.roles) && uAny.roles.includes("super_admin"))
-  ) {
-    return true;
+  if (uAny.is_active === false || uAny.active === false) return false;
+
+  if (uAny.wp_role) {
+    const r = String(uAny.wp_role).toLowerCase().trim();
+    if (WORK_PLANNER_ROLES.includes(r as WorkPlannerRole)) {
+      return true;
+    }
   }
+
   const portals = Array.isArray(user.portals)
     ? user.portals
     : Array.isArray(uAny.portal_access)
     ? uAny.portal_access
     : [];
-  const portalAccess = portals.find(
-    (p: any) => p && (p.portal_code === "work_planner" || p.portal === "work_planner")
-  );
-  return Boolean(
-    portalAccess &&
-      Array.isArray(portalAccess.access_roles) &&
-      portalAccess.access_roles.length > 0
-  );
+
+  const wpPortal = portals.find((p: any) => {
+    if (!p) return false;
+    const code =
+      p.portal_code ||
+      p.code ||
+      (typeof p.portal === "object" ? p.portal?.code || p.portal?.portal_code : p.portal);
+    return String(code || "").toLowerCase().trim() === "work_planner";
+  });
+
+  if (!wpPortal) return false;
+
+  const roles: string[] = Array.isArray(wpPortal.access_roles)
+    ? wpPortal.access_roles
+    : wpPortal.access_role
+    ? [wpPortal.access_role]
+    : Array.isArray((wpPortal as any).roles)
+    ? (wpPortal as any).roles
+    : [];
+
+  const validRoles = roles
+    .map((r) => String(r || "").toLowerCase().trim())
+    .filter((r) => WORK_PLANNER_ROLES.includes(r as WorkPlannerRole));
+
+  return validRoles.length > 0;
 }
 
-function getWpAccessRoles(user: AuthUser | null | undefined): string[] {
+export function getWpAccessRoles(user: AuthUser | any | null | undefined): string[] {
   if (!user) return [];
-  const portals = Array.isArray(user.portals) ? user.portals : [];
-  const portalAccess = portals.find(
-    (p: UserPortalAccess) => p.portal_code === "work_planner" || (p as any).portal === "work_planner"
-  );
-  if (!portalAccess || !Array.isArray(portalAccess.access_roles)) return [];
-  return portalAccess.access_roles.map((r) => String(r).toLowerCase());
-}
-
-function isSuperAdminBypass(user: AuthUser | null | undefined): boolean {
-  if (!user) return false;
   const uAny = user as any;
-  return (
-    uAny.department === "super_admin" ||
-    (Array.isArray(uAny.role_codes) && uAny.role_codes.includes("super_admin")) ||
-    (Array.isArray(uAny.roles) && uAny.roles.includes("super_admin"))
-  );
+  if (uAny.is_active === false || uAny.active === false) return [];
+
+  const portals = Array.isArray(user.portals)
+    ? user.portals
+    : Array.isArray(uAny.portal_access)
+    ? uAny.portal_access
+    : [];
+
+  const wpPortal = portals.find((p: any) => {
+    if (!p) return false;
+    const code =
+      p.portal_code ||
+      p.code ||
+      (typeof p.portal === "object" ? p.portal?.code || p.portal?.portal_code : p.portal);
+    return String(code || "").toLowerCase().trim() === "work_planner";
+  });
+
+  if (!wpPortal) {
+    if (uAny.wp_role) {
+      const r = String(uAny.wp_role).toLowerCase().trim();
+      return WORK_PLANNER_ROLES.includes(r as WorkPlannerRole) ? [r] : [];
+    }
+    return [];
+  }
+
+  const roles: string[] = Array.isArray(wpPortal.access_roles)
+    ? wpPortal.access_roles
+    : wpPortal.access_role
+    ? [wpPortal.access_role]
+    : Array.isArray((wpPortal as any).roles)
+    ? (wpPortal as any).roles
+    : [];
+
+  return roles
+    .map((r) => String(r || "").toLowerCase().trim())
+    .filter((r) => WORK_PLANNER_ROLES.includes(r as WorkPlannerRole));
 }
 
-/** Portal admin (or super_admin bypass). Sees all teams. */
+/** Portal admin role on work_planner portal only. */
 export function isWpAdmin(user: AuthUser | null | undefined): boolean {
   if (!user) return false;
-  if (isSuperAdminBypass(user)) return true;
   return getWpAccessRoles(user).includes("admin");
 }
 
-/** Portal manager only (not admin). Sees My Team (coordinators + executives). */
+/** Portal manager role on work_planner portal only. */
 export function isWpManager(user: AuthUser | null | undefined): boolean {
   if (!user) return false;
   if (isWpAdmin(user)) return false;
   return getWpAccessRoles(user).includes("manager");
 }
 
-/** Portal coordinator only (not admin or manager). Sees assigned executives. */
+/** Portal coordinator role on work_planner portal only. */
 export function isWpCoordinator(user: AuthUser | null | undefined): boolean {
   if (!user) return false;
   if (isWpAdmin(user) || isWpManager(user)) return false;
@@ -188,7 +230,7 @@ export function isManager(user: AuthUser | null | undefined): boolean {
 
 export function isExecutive(user: AuthUser | null | undefined): boolean {
   if (!user || isWpElevated(user)) return false;
-  return getWpAccessRoles(user).some((r) => r === "executive" || r === "sales");
+  return getWpAccessRoles(user).includes("executive");
 }
 
 export function roleLabel(user: AuthUser | null | undefined): string {

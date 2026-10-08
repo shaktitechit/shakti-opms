@@ -29,7 +29,7 @@ import {
   useGetMyTeamQuery,
   useGetEligibleManagersQuery,
 } from "@/store/api/workPlannerApiSlice";
-import { isWpAdmin, isWpCoordinator, isWpElevated, isWpManager, readSessionFromStorage } from "@/utils/authStorage";
+import { isWpAdmin, isWpCoordinator, isWpElevated, isWpManager, getWpAccessRoles, readSessionFromStorage } from "@/utils/authStorage";
 import { getUserWorkPlannerSettings } from "@/utils/userWorkPlannerSettings";
 import type {
   DayEndPayload,
@@ -85,34 +85,10 @@ function getFileIcon(mimeType?: string, fileName?: string) {
 
 function getWorkPlannerUserRole(u: any): "Admin" | "Manager" | "Coordinator" | null {
   if (!u) return null;
-  if (
-    u.department === "super_admin" ||
-    (Array.isArray(u.role_codes) && u.role_codes.includes("super_admin")) ||
-    (Array.isArray(u.roles) && u.roles.includes("super_admin"))
-  ) {
-    return "Admin";
-  }
-  if (u.wp_role === "admin" || u.wp_role === "super_admin") return "Admin";
-  if (u.wp_role === "manager") return "Manager";
-  if (u.wp_role === "coordinator") return "Coordinator";
-
-  if (!Array.isArray(u.portals) || u.portals.length === 0) {
-    return null;
-  }
-  const wpPortal = u.portals.find((p: any) => {
-    const code = p.portal_code || p.portal?.code || p.code;
-    return code === "work_planner";
-  });
-  if (!wpPortal) return null;
-  const roles: string[] = Array.isArray(wpPortal.access_roles)
-    ? wpPortal.access_roles
-    : (wpPortal as any).access_role
-      ? [(wpPortal as any).access_role]
-      : [];
-  const normalized = roles.map((r) => String(r).toLowerCase().trim());
-  if (normalized.includes("admin") || normalized.includes("super_admin")) return "Admin";
-  if (normalized.includes("manager")) return "Manager";
-  if (normalized.includes("coordinator")) return "Coordinator";
+  const roles = getWpAccessRoles(u);
+  if (roles.includes("admin")) return "Admin";
+  if (roles.includes("manager")) return "Manager";
+  if (roles.includes("coordinator")) return "Coordinator";
   return null;
 }
 

@@ -2645,8 +2645,8 @@ async function submitExpense(planId, expenseId, user) {
 }
 
 async function approveExpense(planId, expenseId, user) {
-  if (!isAdminDept(user)) {
-    throw new ApiError(403, 'Only manager can approve expenses');
+  if (!isWpAdmin(user) && !isWpManager(user)) {
+    throw new ApiError(403, 'Only managers and administrators can approve expenses');
   }
   const { WorkPlan, WorkPlanExpense } = getModels();
   const plan = await WorkPlan.findOne({ _id: planId, deletedAt: null });
@@ -2660,6 +2660,11 @@ async function approveExpense(planId, expenseId, user) {
   if (!expense) throw new ApiError(404, 'Expense not found');
   if (expense.status !== 'submitted') {
     throw new ApiError(400, 'Only submitted expenses can be approved');
+  }
+
+  const effectiveSalesUserId = String(expense.sales_user || plan.sales_user || '');
+  if (!isWpAdmin(user) && effectiveSalesUserId && String(userId(user)) === effectiveSalesUserId) {
+    throw new ApiError(403, 'Segregation of Duties: You cannot approve your own expense claim');
   }
 
   expense.status = 'approved';
@@ -2688,8 +2693,8 @@ async function approveExpense(planId, expenseId, user) {
 }
 
 async function rejectExpense(planId, expenseId, body, user) {
-  if (!isAdminDept(user)) {
-    throw new ApiError(403, 'Only manager can reject expenses');
+  if (!isWpAdmin(user) && !isWpManager(user)) {
+    throw new ApiError(403, 'Only managers and administrators can reject expenses');
   }
   const { WorkPlan, WorkPlanExpense } = getModels();
   const plan = await WorkPlan.findOne({ _id: planId, deletedAt: null });
@@ -2703,6 +2708,11 @@ async function rejectExpense(planId, expenseId, body, user) {
   if (!expense) throw new ApiError(404, 'Expense not found');
   if (expense.status !== 'submitted') {
     throw new ApiError(400, 'Only submitted expenses can be rejected');
+  }
+
+  const effectiveSalesUserId = String(expense.sales_user || plan.sales_user || '');
+  if (!isWpAdmin(user) && effectiveSalesUserId && String(userId(user)) === effectiveSalesUserId) {
+    throw new ApiError(403, 'Segregation of Duties: You cannot reject your own expense claim');
   }
 
   expense.status = 'rejected';
@@ -2783,12 +2793,17 @@ async function submitAllExpenses(planId, user) {
 }
 
 async function approveAllExpenses(planId, user) {
-  if (!isAdminDept(user)) {
-    throw new ApiError(403, 'Only manager can approve expenses');
+  if (!isWpAdmin(user) && !isWpManager(user)) {
+    throw new ApiError(403, 'Only managers and administrators can approve expenses');
   }
   const { WorkPlan, WorkPlanExpense } = getModels();
   const plan = await WorkPlan.findOne({ _id: planId, deletedAt: null });
   if (!plan) throw new ApiError(404, 'Work plan not found');
+
+  const effectiveSalesUserId = String(plan.sales_user || '');
+  if (!isWpAdmin(user) && effectiveSalesUserId && String(userId(user)) === effectiveSalesUserId) {
+    throw new ApiError(403, 'Segregation of Duties: You cannot approve your own expense claim');
+  }
 
   const submittedExpenses = await WorkPlanExpense.find({
     work_plan: planId,
@@ -2840,12 +2855,17 @@ async function approveAllExpenses(planId, user) {
 }
 
 async function rejectAllExpenses(planId, body, user) {
-  if (!isAdminDept(user)) {
-    throw new ApiError(403, 'Only manager can reject expenses');
+  if (!isWpAdmin(user) && !isWpManager(user)) {
+    throw new ApiError(403, 'Only managers and administrators can reject expenses');
   }
   const { WorkPlan, WorkPlanExpense } = getModels();
   const plan = await WorkPlan.findOne({ _id: planId, deletedAt: null });
   if (!plan) throw new ApiError(404, 'Work plan not found');
+
+  const effectiveSalesUserId = String(plan.sales_user || '');
+  if (!isWpAdmin(user) && effectiveSalesUserId && String(userId(user)) === effectiveSalesUserId) {
+    throw new ApiError(403, 'Segregation of Duties: You cannot reject your own expense claim');
+  }
 
   const reason = body.rejection_reason.trim();
   const submittedExpenses = await WorkPlanExpense.find({

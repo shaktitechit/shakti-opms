@@ -101,7 +101,7 @@ export function AssignedUsersPage({ mode = "my-team" }: { mode?: TeamDirectoryMo
 
   // rawUsers: for admins use auth API result; for managers use my-team members directly
   const rawUsers = useMemo(() => {
-    if (adminAccess) return (usersData as any[]) || [];
+    if (adminAccess) return Array.isArray(usersData) ? (usersData as any[]).filter(hasWorkPlannerPortalAccess) : [];
     // Manager mode: myTeamData.members comes from the WP backend with full user info
     return Array.isArray(myTeamData?.members) ? myTeamData.members : [];
   }, [adminAccess, usersData, myTeamData]);

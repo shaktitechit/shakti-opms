@@ -97,6 +97,19 @@ const workPlanExpenseSchema = new mongoose.Schema(
     approved_at: Date,
     rejection_reason: { type: String, trim: true },
     manager_remarks: { type: String, trim: true },
+    settled_amount: { type: Number, default: 0, min: 0 },
+    settlement_status: {
+      type: String,
+      enum: ["unsettled", "partially_settled", "settled"],
+      default: "unsettled",
+      index: true,
+    },
+    settlement_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "WorkPlanExpenseSettlement",
+      default: null,
+      index: true,
+    },
     authority_remarks: [
       {
         remark: { type: String, required: true, trim: true },

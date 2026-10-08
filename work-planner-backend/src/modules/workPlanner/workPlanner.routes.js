@@ -13,6 +13,7 @@ const controller = require('./workPlanner.controller');
 const notesController = require('./notes.controller');
 const teamController = require('./team.controller');
 const analyticsController = require('./workPlanAnalytics.controller');
+const expenseRoutes = require('./expense/expense.routes');
 const multer = require('multer');
 
 const upload = multer({
@@ -25,6 +26,9 @@ const adminRole = requireWorkPlannerRole('admin');
 
 router.use(requireAuth);
 router.use(requireWorkPlannerAccess);
+
+// Expense & Tour Advance Domain
+router.use('/expenses', expenseRoutes);
 
 // 360° AI Work Plan Analytics & Caliber Assessment (must be before /:id)
 router.get('/analytics/caliber', analyticsController.getCaliberAnalytics);

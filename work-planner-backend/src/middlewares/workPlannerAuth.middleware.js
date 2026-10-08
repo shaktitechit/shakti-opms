@@ -4,13 +4,13 @@
  */
 const { ApiError } = require('../utils/ApiError');
 const {
-  isManager,
   isExecutive,
   isWpAdmin,
   isWpManager,
+  isWpCoordinator,
   isWpElevated,
-  isSuperAdminBypass,
   getWorkPlannerAccessRoles,
+  hasWorkPlannerAccess,
 } = require('../modules/workPlanner/workPlanner.constants');
 
 /**
@@ -20,31 +20,20 @@ function requireWorkPlannerAccess(req, res, next) {
   if (!req.user) {
     return next(new ApiError(401, 'Authentication required'));
   }
-  if (isSuperAdminBypass(req.user)) {
-    return next();
-  }
-  const portalAccess = Array.isArray(req.user.portals)
-    ? req.user.portals.find((p) => p.portal_code === 'work_planner')
-    : null;
-
-  if (!portalAccess || !Array.isArray(portalAccess.access_roles) || portalAccess.access_roles.length === 0) {
+  if (!hasWorkPlannerAccess(req.user)) {
     return next(new ApiError(403, 'Access denied: work_planner portal access required'));
   }
   next();
 }
 
 /**
- * Requires one of the specified portal roles (e.g. 'manager', 'admin') on work_planner portal.
- * Super-admin bypass always allowed.
+ * Requires one of the specified portal roles (e.g. 'executive', 'coordinator', 'manager', 'admin') on work_planner portal.
  */
 function requireWorkPlannerRole(...allowedRoles) {
   const allowed = allowedRoles.map((r) => String(r).toLowerCase());
   return (req, res, next) => {
     if (!req.user) {
       return next(new ApiError(401, 'Authentication required'));
-    }
-    if (isSuperAdminBypass(req.user)) {
-      return next();
     }
 
     const portalRoles = getWorkPlannerAccessRoles(req.user);
@@ -63,10 +52,10 @@ function requireWorkPlannerRole(...allowedRoles) {
 }
 
 module.exports = {
-  isManager,
   isExecutive,
   isWpAdmin,
   isWpManager,
+  isWpCoordinator,
   isWpElevated,
   requireWorkPlannerAccess,
   requireWorkPlannerRole,

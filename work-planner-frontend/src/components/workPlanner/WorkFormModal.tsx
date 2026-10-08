@@ -9,6 +9,7 @@ import {
   isWpAdmin,
   isWpManager,
   isWpElevated,
+  hasWorkPlannerPortalAccess,
   readSessionFromStorage,
 } from "@/utils/authStorage";
 import { getUserWorkPlannerSettings, type CustomWorkTaskTemplate } from "@/utils/userWorkPlannerSettings";
@@ -42,57 +43,11 @@ interface ExecutiveUser {
   }>;
 }
 
-function hasWorkPlannerAccess(u: ExecutiveUser, sessionUserId?: string): boolean {
+function hasWorkPlannerAccess(u: ExecutiveUser | any, sessionUserId?: string): boolean {
   if (!u) return false;
   const uId = String(u._id || u.id || "");
   if (sessionUserId && uId === String(sessionUserId)) return true;
-
-  const uAny = u as any;
-  if (
-    uAny.department === "super_admin" ||
-    (Array.isArray(uAny.role_codes) && uAny.role_codes.includes("super_admin")) ||
-    (Array.isArray(uAny.roles) && uAny.roles.includes("super_admin"))
-  ) {
-    return true;
-  }
-
-  const portals = Array.isArray(u.portals)
-    ? u.portals
-    : Array.isArray(uAny.portal_access)
-    ? uAny.portal_access
-    : [];
-
-  if (portals.length === 0) {
-    return true;
-  }
-
-  const wpPortal = portals.find((p: any) => {
-    if (!p) return false;
-    const code = p.portal_code || p.portal?.code || p.code || p.portal;
-    return code === "work_planner";
-  });
-
-  if (!wpPortal) return false;
-
-  const roles: string[] = Array.isArray(wpPortal.access_roles)
-    ? wpPortal.access_roles
-    : (wpPortal as any).access_role
-      ? [(wpPortal as any).access_role]
-      : [];
-
-  if (roles.length === 0) return true;
-
-  return roles.some((r) => {
-    const normalized = String(r).toLowerCase().trim();
-    return (
-      normalized === "executive" ||
-      normalized === "coordinator" ||
-      normalized === "manager" ||
-      normalized === "admin" ||
-      normalized === "sales" ||
-      normalized === "super_admin"
-    );
-  });
+  return hasWorkPlannerPortalAccess(u);
 }
 
 const inputClass =
