@@ -482,8 +482,13 @@ async function completePlan(id, user, dayEndData = null) {
   const plan = await WorkPlan.findOne({ _id: id, deletedAt: null });
   if (!plan) throw new ApiError(404, 'Work plan not found');
   await assertCanView(plan, user);
-  if (!isOwner(plan, user) && !isWpElevated(user) && !isAdminDept(user)) {
-    throw new ApiError(403, 'Only the plan owner or authorized manager can complete this work plan');
+  if (!isOwner(plan, user)) {
+    if (!isWpElevated(user) && !isAdminDept(user)) {
+      throw new ApiError(403, 'Only the plan owner or authorized manager can complete this work plan');
+    }
+    if (!(await canAccessSalesUser(user, plan.sales_user))) {
+      throw new ApiError(403, 'You do not have permission to complete this work plan');
+    }
   }
   if (!['planned', 'approved', 'submitted', 'completed'].includes(plan.status)) {
     throw new ApiError(400, `Only active planned work plans can be completed (current status: "${plan.status}")`);
@@ -1024,8 +1029,13 @@ async function remove(id, user) {
   const plan = await WorkPlan.findOne({ _id: id, deletedAt: null });
   if (!plan) throw new ApiError(404, 'Work plan not found');
 
-  if (!isAdminDept(user) && !isWpElevated(user) && !isOwner(plan, user)) {
-    throw new ApiError(403, 'Only the plan owner or authorized manager can delete this work plan');
+  if (!isOwner(plan, user)) {
+    if (!isAdminDept(user) && !isWpElevated(user)) {
+      throw new ApiError(403, 'Only the plan owner or authorized manager can delete this work plan');
+    }
+    if (!(await canAccessSalesUser(user, plan.sales_user))) {
+      throw new ApiError(403, 'You do not have permission to delete this work plan');
+    }
   }
   if (plan.status === 'completed' && !isAdminDept(user) && !isWpElevated(user)) {
     throw new ApiError(400, 'Completed work plans cannot be deleted');
@@ -1071,8 +1081,13 @@ async function submit(id, user, body = {}) {
   const { WorkPlan, WorkPlanVisit, WorkPlanWork } = getModels();
   const plan = await WorkPlan.findOne({ _id: id, deletedAt: null });
   if (!plan) throw new ApiError(404, 'Work plan not found');
-  if (!isOwner(plan, user) && !isWpElevated(user) && !isAdminDept(user)) {
-    throw new ApiError(403, 'Only the plan owner or authorized manager can submit this work plan');
+  if (!isOwner(plan, user)) {
+    if (!isWpElevated(user) && !isAdminDept(user)) {
+      throw new ApiError(403, 'Only the plan owner or authorized manager can submit this work plan');
+    }
+    if (!(await canAccessSalesUser(user, plan.sales_user))) {
+      throw new ApiError(403, 'You do not have permission to submit this work plan');
+    }
   }
   if (!EDITABLE_PLAN_STATUSES.includes(plan.status)) {
     throw new ApiError(400, `Cannot submit a work plan in status "${plan.status}"`);
