@@ -14,6 +14,7 @@ const {
   JWT_SECRET,
   FRONTEND_URL,
 } = require('../../config/env');
+const { resolveEmailAttachments } = require('../../services/fileManagement');
 
 function getServiceToken() {
   return jwt.sign(
@@ -759,50 +760,8 @@ async function notifyWorkPlanCreated({ planId, actorUser, creationMailData = {} 
       </div>
     `;
 
-    let emailAttachments = [];
     const rawAtts = creationMailData.attachment_ids || creationMailData.attachmentIds || creationMailData.attachments;
-    if (Array.isArray(rawAtts) && rawAtts.length > 0) {
-      const { Attachment } = getModels();
-      const { getViewPresignedUrl } = require('../../services/fileManagement');
-      const attachmentDocs = await Attachment.find({ _id: { $in: rawAtts } }).lean();
-
-      emailAttachments = await Promise.all(
-        attachmentDocs.map(async (att) => {
-          const fileId = att.filename;
-          let freshUrl = att.url;
-          if (fileId && !String(fileId).includes('/')) {
-            try {
-              freshUrl = await getViewPresignedUrl(fileId);
-            } catch (err) {
-              logger.warn(`[AutoNotification] Failed to get fresh presigned URL for attachment ${att._id}: ${err.message}`);
-            }
-          }
-
-          if (freshUrl && freshUrl.startsWith('http')) {
-            try {
-              const fileRes = await axios.get(freshUrl, {
-                responseType: 'arraybuffer',
-                timeout: 20000,
-              });
-              const buffer = Buffer.from(fileRes.data);
-              return {
-                filename: att.original_name || att.filename || 'attachment.pdf',
-                content: buffer.toString('base64'),
-                contentType: att.mime_type || 'application/octet-stream',
-              };
-            } catch (dlErr) {
-              logger.error(`[AutoNotification] Could not download attachment content for ${att._id}: ${dlErr.message}`);
-            }
-          }
-
-          return {
-            filename: att.original_name || att.filename || 'attachment.pdf',
-            path: freshUrl,
-            contentType: att.mime_type || 'application/octet-stream',
-          };
-        })
-      );
-    }
+    const emailAttachments = await resolveEmailAttachments(rawAtts);
 
     await emailHelper.sendEmail(
       recipient,
@@ -1199,17 +1158,20 @@ async function notifyDayEndCompleted({ planId, actorUser, dayEndData = null }) {
       </div>
     `;
 
+    const rawAtts = dayEndData?.attachment_ids || dayEndData?.attachmentIds || dayEndData?.attachments || plan.day_end?.attachments;
+    const emailAttachments = await resolveEmailAttachments(rawAtts);
+
     await emailHelper.sendEmail(
       recipient,
       subject,
       '',
       emailHtml,
-      [],
+      emailAttachments,
       mailCc,
       fromAddress,
       'work_plan_completed'
     );
-    logger.info(`[AutoNotification] Sent Day End completion email to ${recipient} (CC: ${mailCc.join(', ')})`);
+    logger.info(`[AutoNotification] Sent Day End completion email to ${recipient} (CC: ${mailCc.join(', ')}, Attachments: ${emailAttachments.length})`);
   } catch (err) {
     logger.error(`[AutoNotification] Failed to dispatch Day End completion notification: ${err.message}`);
   }

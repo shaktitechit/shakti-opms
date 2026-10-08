@@ -6,6 +6,7 @@ const axios = require('axios');
 const { getModels } = require('../../data/mongoRegistry');
 const emailHelper = require('../messages/helpers/email.helper');
 const { logger } = require('../../utils/logger');
+const { resolveEmailAttachments } = require('../../services/fileManagement');
 
 /**
  * Finds all active users with manager/admin access to the work_planner portal.
@@ -385,51 +386,9 @@ async function sendCustomDayEndEmail(planId, executiveUser, dayEndData = {}) {
       ? providedCc.map((e) => String(e).trim()).filter(Boolean)
       : [];
 
-    // Resolve attachments if provided
-    let emailAttachments = [];
-    if (Array.isArray(dayEndData.attachment_ids) && dayEndData.attachment_ids.length > 0) {
-      const { Attachment } = getModels();
-      const { getViewPresignedUrl } = require('../../services/fileManagement');
-      const attachmentDocs = await Attachment.find({ _id: { $in: dayEndData.attachment_ids } }).lean();
-
-      emailAttachments = await Promise.all(
-        attachmentDocs.map(async (att) => {
-          const fileId = att.filename;
-          let freshUrl = att.url;
-          if (fileId && !String(fileId).includes('/')) {
-            try {
-              freshUrl = await getViewPresignedUrl(fileId);
-            } catch (err) {
-              logger.warn(`[WorkPlanNotification] Failed to get fresh presigned URL for attachment ${att._id}: ${err.message}`);
-            }
-          }
-
-          // Download binary buffer so the attachment in email is never corrupted or expired
-          if (freshUrl && freshUrl.startsWith('http')) {
-            try {
-              const fileRes = await axios.get(freshUrl, {
-                responseType: 'arraybuffer',
-                timeout: 20000,
-              });
-              const buffer = Buffer.from(fileRes.data);
-              return {
-                filename: att.original_name || att.filename || 'attachment.pdf',
-                content: buffer.toString('base64'),
-                contentType: att.mime_type || 'application/octet-stream',
-              };
-            } catch (dlErr) {
-              logger.error(`[WorkPlanNotification] Could not download attachment content for ${att._id}: ${dlErr.message}`);
-            }
-          }
-
-          return {
-            filename: att.original_name || att.filename || 'attachment.pdf',
-            path: freshUrl,
-            contentType: att.mime_type || 'application/octet-stream',
-          };
-        })
-      );
-    }
+    const htmlBody = dayEndData.body_html || dayEndData.bodyHtml || '';
+    const rawAtts = dayEndData.attachment_ids || dayEndData.attachmentIds || dayEndData.attachments;
+    const emailAttachments = await resolveEmailAttachments(rawAtts);
 
     await emailHelper.sendEmail(
       recipient,
@@ -553,49 +512,7 @@ async function sendCustomWorkPlanCreationEmail(planId, user, creationMailData = 
       workPlanUrl,
     };
 
-    let emailAttachments = [];
-    if (Array.isArray(rawAtts) && rawAtts.length > 0) {
-      const { Attachment } = getModels();
-      const { getViewPresignedUrl } = require('../../services/fileManagement');
-      const attachmentDocs = await Attachment.find({ _id: { $in: rawAtts } }).lean();
-
-      emailAttachments = await Promise.all(
-        attachmentDocs.map(async (att) => {
-          const fileId = att.filename;
-          let freshUrl = att.url;
-          if (fileId && !String(fileId).includes('/')) {
-            try {
-              freshUrl = await getViewPresignedUrl(fileId);
-            } catch (err) {
-              logger.warn(`[WorkPlanNotification] Failed to get fresh presigned URL for attachment ${att._id}: ${err.message}`);
-            }
-          }
-
-          if (freshUrl && freshUrl.startsWith('http')) {
-            try {
-              const fileRes = await axios.get(freshUrl, {
-                responseType: 'arraybuffer',
-                timeout: 20000,
-              });
-              const buffer = Buffer.from(fileRes.data);
-              return {
-                filename: att.original_name || att.filename || 'attachment.pdf',
-                content: buffer.toString('base64'),
-                contentType: att.mime_type || 'application/octet-stream',
-              };
-            } catch (dlErr) {
-              logger.error(`[WorkPlanNotification] Could not download attachment content for ${att._id}: ${dlErr.message}`);
-            }
-          }
-
-          return {
-            filename: att.original_name || att.filename || 'attachment.pdf',
-            path: freshUrl,
-            contentType: att.mime_type || 'application/octet-stream',
-          };
-        })
-      );
-    }
+    const emailAttachments = await resolveEmailAttachments(rawAtts);
 
     if (rawBody && rawBody.trim()) {
       await emailHelper.sendEmail(

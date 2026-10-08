@@ -738,6 +738,20 @@ export function DayEndMailModal({
     setAttachments((prev) => prev.filter((a) => a._id !== idToRemove));
   };
 
+function extractErrorMessage(err: unknown, fallbackMsg: string): string {
+  if (!err) return fallbackMsg;
+  if (typeof err === "string") return err;
+  if (typeof err === "object") {
+    const e = err as any;
+    if (e.data?.message && typeof e.data.message === "string") return e.data.message;
+    if (e.data?.error && typeof e.data.error === "string") return e.data.error;
+    if (e.message && typeof e.message === "string") return e.message;
+    if (e.error && typeof e.error === "string") return e.error;
+  }
+  if (err instanceof Error) return err.message;
+  return fallbackMsg;
+}
+
   // Handle final submission
   const handleSubmitDayEnd = async () => {
     if (!toEmail.trim()) {
@@ -769,7 +783,7 @@ export function DayEndMailModal({
       onCompleteSuccess();
       onClose();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to complete Day End";
+      const msg = extractErrorMessage(err, "Failed to complete Day End");
       toast.error(msg);
     } finally {
       setSubmitting(false);

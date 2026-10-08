@@ -200,11 +200,23 @@ function planDatePeriodMatch(query = {}, datePath = 'plan_date') {
 }
 
 function sameId(a, b) {
-  return String(a) === String(b);
+  if (!a || !b) return false;
+  return String(a).toLowerCase().trim() === String(b).toLowerCase().trim();
 }
 
 function isOwner(plan, user) {
-  return sameId(plan.sales_user?._id || plan.sales_user, userId(user));
+  if (!plan || !user) return false;
+  const currentUid = userId(user) || user.sub;
+  const planSalesUserId = plan.sales_user?._id || plan.sales_user?.id || plan.sales_user;
+  if (sameId(planSalesUserId, currentUid)) return true;
+
+  const planSalesEmail = plan.sales_user?.email || plan.sales_user_email;
+  const currentUserEmail = user.email;
+  if (planSalesEmail && currentUserEmail && String(planSalesEmail).toLowerCase().trim() === String(currentUserEmail).toLowerCase().trim()) {
+    return true;
+  }
+
+  return false;
 }
 
 async function assertCanView(plan, user) {
@@ -470,19 +482,22 @@ async function completePlan(id, user, dayEndData = null) {
   const plan = await WorkPlan.findOne({ _id: id, deletedAt: null });
   if (!plan) throw new ApiError(404, 'Work plan not found');
   await assertCanView(plan, user);
-  if (!isOwner(plan, user) && !isAdminDept(user)) {
-    throw new ApiError(403, 'Only the plan owner can complete this work plan');
+  if (!isOwner(plan, user) && !isWpElevated(user) && !isAdminDept(user)) {
+    throw new ApiError(403, 'Only the plan owner or authorized manager can complete this work plan');
   }
-  if (!['planned', 'approved'].includes(plan.status)) {
-    throw new ApiError(400, 'Only active planned work plans can be completed');
+  if (!['planned', 'approved', 'submitted', 'completed'].includes(plan.status)) {
+    throw new ApiError(400, `Only active planned work plans can be completed (current status: "${plan.status}")`);
   }
 
   plan.status = 'completed';
   plan.updated_by = userId(user);
 
   if (dayEndData && typeof dayEndData === 'object') {
-    const validAttachmentIds = Array.isArray(dayEndData.attachment_ids)
-      ? dayEndData.attachment_ids.filter((aid) => aid && mongoose.Types.ObjectId.isValid(aid))
+    const rawAtts = dayEndData.attachment_ids || dayEndData.attachmentIds || dayEndData.attachments;
+    const validAttachmentIds = Array.isArray(rawAtts)
+      ? rawAtts
+          .map((aid) => (typeof aid === 'object' && aid ? aid._id || aid.id : aid))
+          .filter((aid) => aid && mongoose.Types.ObjectId.isValid(aid))
       : [];
 
     plan.day_end = {
@@ -1009,10 +1024,10 @@ async function remove(id, user) {
   const plan = await WorkPlan.findOne({ _id: id, deletedAt: null });
   if (!plan) throw new ApiError(404, 'Work plan not found');
 
-  if (!isAdminDept(user) && !isOwner(plan, user)) {
-    throw new ApiError(403, 'Only the plan owner can delete this work plan');
+  if (!isAdminDept(user) && !isWpElevated(user) && !isOwner(plan, user)) {
+    throw new ApiError(403, 'Only the plan owner or authorized manager can delete this work plan');
   }
-  if (plan.status === 'completed' && !isAdminDept(user)) {
+  if (plan.status === 'completed' && !isAdminDept(user) && !isWpElevated(user)) {
     throw new ApiError(400, 'Completed work plans cannot be deleted');
   }
 
@@ -1056,8 +1071,8 @@ async function submit(id, user, body = {}) {
   const { WorkPlan, WorkPlanVisit, WorkPlanWork } = getModels();
   const plan = await WorkPlan.findOne({ _id: id, deletedAt: null });
   if (!plan) throw new ApiError(404, 'Work plan not found');
-  if (!isOwner(plan, user) && !isAdminDept(user)) {
-    throw new ApiError(403, 'Only the plan owner can submit this work plan');
+  if (!isOwner(plan, user) && !isWpElevated(user) && !isAdminDept(user)) {
+    throw new ApiError(403, 'Only the plan owner or authorized manager can submit this work plan');
   }
   if (!EDITABLE_PLAN_STATUSES.includes(plan.status)) {
     throw new ApiError(400, `Cannot submit a work plan in status "${plan.status}"`);

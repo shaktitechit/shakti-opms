@@ -544,6 +544,149 @@ async function streamFileToResponse(identifier, res, options = {}) {
   return res.status(200).send(FILE_NOT_FOUND_SVG);
 }
 
+/**
+ * Resolves attachment identifiers or objects to formatted email attachments
+ * with base64 encoded file content buffers for email providers (Microsoft Graph, Gmail, SMTP).
+ *
+ * @param {Array<string|object>} rawAtts - Array of attachment IDs, filenames, or attachment documents
+ * @returns {Promise<Array<{ filename: string, content: string, contentType: string, path?: string }>>}
+ */
+async function resolveEmailAttachments(rawAtts) {
+  if (!Array.isArray(rawAtts) || rawAtts.length === 0) return [];
+  const { Attachment } = getModels();
+  if (!Attachment) return [];
+
+  const rawIds = rawAtts
+    .map((item) => {
+      if (!item) return null;
+      if (typeof item === 'string') return item.trim();
+      if (typeof item === 'object') return String(item._id || item.id || item.filename || item.fileId || '');
+      return null;
+    })
+    .filter(Boolean);
+
+  if (rawIds.length === 0) return [];
+
+  const objectIds = rawIds
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+
+  const query = [];
+  if (objectIds.length > 0) {
+    query.push({ _id: { $in: objectIds } });
+  }
+  query.push({ filename: { $in: rawIds } });
+  query.push({ fileId: { $in: rawIds } });
+  query.push({ storage_path: { $in: rawIds } });
+
+  let attachmentDocs = [];
+  try {
+    attachmentDocs = await Attachment.find({ $or: query }).lean();
+  } catch (_err) {
+    try {
+      if (objectIds.length > 0) {
+        attachmentDocs = await Attachment.find({ _id: { $in: objectIds } }).lean();
+      }
+    } catch (_e) {}
+  }
+
+  // Deduplicate docs by _id or filename
+  const seenKeys = new Set();
+  const uniqueDocs = [];
+  for (const doc of attachmentDocs) {
+    const key = String(doc._id || doc.filename);
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      uniqueDocs.push(doc);
+    }
+  }
+
+  const emailAttachments = await Promise.all(
+    uniqueDocs.map(async (att) => {
+      const originalName = att.original_name || att.file_name || att.filename || 'attachment.pdf';
+      const mimeType = att.mime_type || 'application/octet-stream';
+
+      const candidates = resolveFileIdCandidateList(att);
+      let buffer = null;
+
+      // Try downloading via presigned URLs
+      for (const cid of candidates) {
+        try {
+          const presignedUrl = await getDownloadPresignedUrl(cid).catch(() => getViewPresignedUrl(cid));
+          if (presignedUrl) {
+            let res;
+            try {
+              res = await axios.get(presignedUrl, {
+                responseType: 'arraybuffer',
+                timeout: 20000,
+                headers: { 'User-Agent': 'WorkPlannerBackend/1.0' },
+              });
+            } catch (err) {
+              if (presignedUrl.includes('localhost') || presignedUrl.includes('127.0.0.1')) {
+                const altUrl = presignedUrl.replace(/localhost|127\.0\.0\.1/, 'host.docker.internal');
+                res = await axios.get(altUrl, {
+                  responseType: 'arraybuffer',
+                  timeout: 20000,
+                  headers: { 'User-Agent': 'WorkPlannerBackend/1.0' },
+                });
+              } else {
+                throw err;
+              }
+            }
+            if (res?.data) {
+              buffer = Buffer.from(res.data);
+              break;
+            }
+          }
+        } catch (_err) {}
+      }
+
+      // If presigned URL failed, try att.url if it's an HTTP URL
+      if (!buffer && att.url && /^https?:\/\//i.test(att.url)) {
+        try {
+          let res;
+          try {
+            res = await axios.get(att.url, {
+              responseType: 'arraybuffer',
+              timeout: 20000,
+            });
+          } catch (err) {
+            if (att.url.includes('localhost') || att.url.includes('127.0.0.1')) {
+              const altUrl = att.url.replace(/localhost|127\.0\.0\.1/, 'host.docker.internal');
+              res = await axios.get(altUrl, {
+                responseType: 'arraybuffer',
+                timeout: 20000,
+              });
+            } else {
+              throw err;
+            }
+          }
+          if (res?.data) {
+            buffer = Buffer.from(res.data);
+          }
+        } catch (_err) {}
+      }
+
+      if (buffer) {
+        return {
+          filename: originalName,
+          content: buffer.toString('base64'),
+          contentType: mimeType,
+        };
+      }
+
+      // Fallback: return path if URL available
+      return {
+        filename: originalName,
+        path: att.url || undefined,
+        contentType: mimeType,
+      };
+    })
+  );
+
+  return emailAttachments.filter((a) => a && (a.content || a.path));
+}
+
 module.exports = {
   uploadMulterFile,
   getFileMeta,
@@ -555,5 +698,6 @@ module.exports = {
   withFreshViewUrl,
   withFreshVisitSelfieUrls,
   withFreshExpenseAttachmentUrls,
+  resolveEmailAttachments,
 };
 

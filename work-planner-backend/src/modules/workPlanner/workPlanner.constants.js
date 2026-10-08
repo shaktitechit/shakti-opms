@@ -184,9 +184,19 @@ function isWpCoordinator(user) {
   return getWorkPlannerAccessRoles(user).includes('coordinator');
 }
 
+function isSuperAdminBypass(user) {
+  if (!user) return false;
+  if (user.is_super_admin || user.isSuperAdmin || user.is_admin) return true;
+  const role = String(user.role || '').toLowerCase();
+  if (role === 'super_admin' || role === 'admin' || role === 'superadmin') return true;
+  if (Array.isArray(user.role_codes) && user.role_codes.some((r) => ['super_admin', 'superadmin'].includes(String(r).toLowerCase()))) return true;
+  if (Array.isArray(user.roles) && user.roles.some((r) => ['super_admin', 'superadmin'].includes(String(r.code || r.name || r).toLowerCase()))) return true;
+  return false;
+}
+
 /** Admin, manager, or coordinator — elevated actions. */
 function isWpElevated(user) {
-  return isWpAdmin(user) || isWpManager(user) || isWpCoordinator(user);
+  return isSuperAdminBypass(user) || isWpAdmin(user) || isWpManager(user) || isWpCoordinator(user);
 }
 
 /** Work Planner executive: portal role `executive` only. */
@@ -197,7 +207,7 @@ function isExecutive(user) {
 }
 
 function hasWorkPlannerAccess(user) {
-  return getWorkPlannerAccessRoles(user).length > 0;
+  return isSuperAdminBypass(user) || getWorkPlannerAccessRoles(user).length > 0;
 }
 
 module.exports = {
@@ -222,6 +232,7 @@ module.exports = {
   isExpenseReceiptRequired,
   getWorkPlannerAccessRoles,
   hasWorkPlannerAccess,
+  isSuperAdminBypass,
   isWpAdmin,
   isAdminDept: isWpAdmin,
   isWpManager,
