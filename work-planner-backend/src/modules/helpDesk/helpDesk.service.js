@@ -199,6 +199,13 @@ async function createTicket(user, payload) {
     creator_snapshot: creatorSnapshot,
     company_id: user.company_id || creatorDoc?.company_id || null,
     tagged_users: taggedUsersData,
+    member_read_state: [
+      {
+        user: userId,
+        last_read_at: new Date(),
+        last_read_reply_id: null,
+      },
+    ],
     related_entity: payload.related_entity || { entity_type: 'none' },
     attachments: sanitizeAttachments(payload.attachments, userId, creatorSnapshot.name),
     due_date: payload.due_date ? new Date(payload.due_date) : null,
@@ -234,7 +241,7 @@ function isSuperAdmin(user) {
  * Strict Access Guard: Non-super-admin users can ONLY list tickets they created or are tagged in.
  */
 async function listTickets(user, query = {}) {
-  const { HelpTicket } = getModels();
+  const { HelpTicket, HelpTicketReply } = getModels();
   const userId = String(user._id || user.id);
   const superAdmin = isSuperAdmin(user);
 
@@ -300,6 +307,8 @@ async function listTickets(user, query = {}) {
         { description: regex },
         { 'creator_snapshot.name': regex },
         { 'tagged_users.name': regex },
+        { 'related_entity.entity_title': regex },
+        { 'related_entity.entity_code': regex },
       ],
     });
   }
@@ -315,8 +324,66 @@ async function listTickets(user, query = {}) {
       .lean(),
   ]);
 
+  const ticketIds = tickets.map((t) => t._id);
+  const replies = ticketIds.length > 0
+    ? await HelpTicketReply.find({ ticket: { $in: ticketIds } })
+        .sort({ createdAt: -1 })
+        .lean()
+    : [];
+
+  const repliesByTicket = {};
+  for (const r of replies) {
+    const tId = String(r.ticket);
+    if (!repliesByTicket[tId]) {
+      repliesByTicket[tId] = [];
+    }
+    repliesByTicket[tId].push(r);
+  }
+
   const hydratedTickets = await Promise.all(
-    toPlain(tickets).map((t) => hydrateTicketAttachments(t))
+    toPlain(tickets).map(async (t) => {
+      const tId = String(t._id);
+      const tReplies = repliesByTicket[tId] || [];
+      const myReadEntry = (t.member_read_state || []).find(
+        (s) => String(s.user?._id || s.user) === userId
+      );
+
+      let lastReadAt = myReadEntry?.last_read_at ? new Date(myReadEntry.last_read_at) : null;
+      if (!lastReadAt) {
+        if (String(t.created_by?._id || t.created_by) === userId) {
+          lastReadAt = new Date(t.createdAt);
+        } else {
+          const taggedRec = (t.tagged_users || []).find(
+            (tu) => String(tu.user?._id || tu.user) === userId
+          );
+          lastReadAt = taggedRec?.tagged_at ? new Date(taggedRec.tagged_at) : new Date(0);
+        }
+      }
+
+      // Calculate unseen messages (excluding messages posted by self)
+      const unseenCount = tReplies.filter((r) => {
+        const isMyMsg = String(r.user?._id || r.user) === userId;
+        if (isMyMsg) return false;
+        return new Date(r.createdAt) > lastReadAt;
+      }).length;
+
+      const latestReply = tReplies[0] || null;
+      const latestPreview = latestReply
+        ? {
+            message: latestReply.message,
+            user_name: latestReply.user_snapshot?.name || 'User',
+            createdAt: latestReply.createdAt,
+            reply_type: latestReply.reply_type,
+          }
+        : null;
+
+      const hydrated = await hydrateTicketAttachments(t);
+      return {
+        ...hydrated,
+        unseen_messages_count: unseenCount,
+        latest_reply_preview: latestPreview,
+      };
+    })
   );
 
   return {
@@ -329,7 +396,7 @@ async function listTickets(user, query = {}) {
 }
 
 /**
- * Gets a single ticket with full details, replies stream, and access flags.
+ * Gets a single ticket with full details, replies stream, read receipts, and access flags.
  * Strict Access Guard: Non-super-admins cannot view tickets they are not creator or tagged in.
  */
 async function getTicketById(user, ticketId) {
@@ -346,7 +413,7 @@ async function getTicketById(user, ticketId) {
     throw new Error('Help ticket not found');
   }
 
-  const isCreator = String(ticket.created_by) === userId;
+  const isCreator = String(ticket.created_by?._id || ticket.created_by) === userId;
   const isTagged = (ticket.tagged_users || []).some((t) => String(t.user?._id || t.user) === userId);
 
   // Strict Access Guard
@@ -361,8 +428,25 @@ async function getTicketById(user, ticketId) {
   const canAcknowledge = isTagged && ticket.status === 'open';
   const canReopen = isCreator && (ticket.status === 'solution_proposed' || ticket.status === 'resolved');
 
+  // Enhance tagged users with their member_read_state
+  const readStateMap = {};
+  for (const s of ticket.member_read_state || []) {
+    const sUserId = String(s.user?._id || s.user);
+    readStateMap[sUserId] = s.last_read_at;
+  }
+
+  const enhancedTaggedUsers = (ticket.tagged_users || []).map((tu) => {
+    const tuUserId = String(tu.user?._id || tu.user);
+    return {
+      ...tu,
+      last_read_at: readStateMap[tuUserId] || null,
+    };
+  });
+
   const combined = {
     ...toPlain(ticket),
+    tagged_users: enhancedTaggedUsers,
+    creator_last_read_at: readStateMap[String(ticket.created_by?._id || ticket.created_by)] || null,
     replies: toPlain(replies),
     permissions: {
       isCreator,
@@ -375,6 +459,85 @@ async function getTicketById(user, ticketId) {
   };
 
   return await hydrateTicketAttachments(combined);
+}
+
+/**
+ * Marks ticket and all messages as read for the current user.
+ */
+async function markTicketAsRead(user, ticketId) {
+  const { HelpTicket, HelpTicketReply } = getModels();
+  const userId = String(user._id || user.id);
+  const superAdmin = isSuperAdmin(user);
+
+  if (!mongoose.Types.ObjectId.isValid(ticketId)) {
+    throw new Error('Invalid ticket ID format');
+  }
+
+  const ticket = await HelpTicket.findOne({ _id: ticketId, deletedAt: null });
+  if (!ticket) {
+    throw new Error('Help ticket not found');
+  }
+
+  const isCreator = String(ticket.created_by?._id || ticket.created_by) === userId;
+  const isTagged = (ticket.tagged_users || []).some((t) => String(t.user?._id || t.user) === userId);
+
+  if (!isCreator && !isTagged && !superAdmin) {
+    throw new Error('Access denied');
+  }
+
+  const now = new Date();
+
+  // Find latest reply ID
+  const latestReply = await HelpTicketReply.findOne({ ticket: ticketId })
+    .sort({ createdAt: -1 })
+    .select('_id')
+    .lean();
+
+  if (!Array.isArray(ticket.member_read_state)) {
+    ticket.member_read_state = [];
+  }
+
+  const existingIdx = ticket.member_read_state.findIndex(
+    (s) => String(s.user?._id || s.user) === userId
+  );
+
+  if (existingIdx >= 0) {
+    ticket.member_read_state[existingIdx].last_read_at = now;
+    ticket.member_read_state[existingIdx].last_read_reply_id = latestReply?._id || null;
+  } else {
+    ticket.member_read_state.push({
+      user: userId,
+      last_read_at: now,
+      last_read_reply_id: latestReply?._id || null,
+    });
+  }
+
+  await ticket.save();
+
+  // Update all replies where user is not yet in read_by
+  await HelpTicketReply.updateMany(
+    {
+      ticket: ticketId,
+      'read_by.user': { $ne: userId },
+    },
+    {
+      $push: {
+        read_by: {
+          user: userId,
+          name: user.name || 'User',
+          role: user.role || user.wp_role || '',
+          read_at: now,
+        },
+      },
+    }
+  );
+
+  return {
+    success: true,
+    ticket_id: ticketId,
+    last_read_at: now,
+    unseen_count: 0,
+  };
 }
 
 /**
@@ -394,7 +557,7 @@ async function addReply(user, ticketId, payload) {
     throw new Error('Help ticket not found');
   }
 
-  const isCreator = String(ticket.created_by) === userId;
+  const isCreator = String(ticket.created_by?._id || ticket.created_by) === userId;
   const isTagged = (ticket.tagged_users || []).some((t) => String(t.user?._id || t.user) === userId);
 
   // Strict Access Guard
@@ -411,6 +574,7 @@ async function addReply(user, ticketId, payload) {
   };
 
   const replyType = payload.reply_type || 'comment';
+  const now = new Date();
 
   const reply = await HelpTicketReply.create({
     ticket: ticketId,
@@ -420,6 +584,14 @@ async function addReply(user, ticketId, payload) {
     reply_type: replyType,
     attachments: sanitizeAttachments(payload.attachments, userId, userSnapshot.name),
     metadata: payload.metadata || {},
+    read_by: [
+      {
+        user: userId,
+        name: userSnapshot.name,
+        role: userSnapshot.role,
+        read_at: now,
+      },
+    ],
   });
 
   // If ticket was open and tagged user is replying, move to in_progress
@@ -427,8 +599,26 @@ async function addReply(user, ticketId, payload) {
     ticket.status = 'in_progress';
   }
 
+  // Update author's read state
+  if (!Array.isArray(ticket.member_read_state)) {
+    ticket.member_read_state = [];
+  }
+  const existingIdx = ticket.member_read_state.findIndex(
+    (s) => String(s.user?._id || s.user) === userId
+  );
+  if (existingIdx >= 0) {
+    ticket.member_read_state[existingIdx].last_read_at = now;
+    ticket.member_read_state[existingIdx].last_read_reply_id = reply._id;
+  } else {
+    ticket.member_read_state.push({
+      user: userId,
+      last_read_at: now,
+      last_read_reply_id: reply._id,
+    });
+  }
+
   ticket.replies_count = (ticket.replies_count || 0) + 1;
-  ticket.last_activity_at = new Date();
+  ticket.last_activity_at = now;
   await ticket.save();
 
   const plainReply = toPlain(reply);
@@ -862,6 +1052,7 @@ module.exports = {
   createTicket,
   listTickets,
   getTicketById,
+  markTicketAsRead,
   addReply,
   tagUsers,
   acknowledgeTicket,

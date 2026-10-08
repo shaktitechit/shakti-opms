@@ -247,7 +247,7 @@ export function HelpDeskPage() {
               <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted" />
               <input
                 type="text"
-                placeholder="Search ticket #, title, user..."
+                placeholder="Search title, project, client, #ticket, user..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);

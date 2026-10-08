@@ -53,6 +53,14 @@ export interface HelpTicketTaggedUser {
   role?: string;
   tagged_at: string;
   acknowledged_at?: string | null;
+  last_read_at?: string | null;
+}
+
+export interface HelpTicketReplyReadReceipt {
+  user: string | { _id: string; name?: string; email?: string };
+  name: string;
+  role?: string;
+  read_at: string;
 }
 
 export interface HelpTicketReply {
@@ -76,6 +84,7 @@ export interface HelpTicketReply {
     rating?: number;
     reason?: string;
   };
+  read_by?: HelpTicketReplyReadReceipt[];
   createdAt: string;
   updatedAt?: string;
 }
@@ -103,6 +112,12 @@ export interface HelpTicketReopenItem {
   reason?: string;
 }
 
+export interface HelpTicketMemberReadState {
+  user: string | { _id: string; name?: string };
+  last_read_at: string;
+  last_read_reply_id?: string | null;
+}
+
 export interface HelpTicketRecord {
   _id: string;
   id?: string;
@@ -121,10 +136,20 @@ export interface HelpTicketRecord {
   };
   company_id?: string;
   tagged_users: HelpTicketTaggedUser[];
+  member_read_state?: HelpTicketMemberReadState[];
+  creator_last_read_at?: string | null;
+  unseen_messages_count?: number;
+  latest_reply_preview?: {
+    message: string;
+    user_name: string;
+    createdAt: string;
+    reply_type: string;
+  } | null;
   related_entity?: {
-    entity_type: 'work_plan' | 'visit' | 'work_task' | 'project' | 'expense' | 'none';
+    entity_type: 'work_plan' | 'visit' | 'work_task' | 'project' | 'expense' | 'lead' | 'client' | 'none';
     entity_id?: string;
     entity_title?: string;
+    entity_code?: string;
   };
   attachments: HelpTicketAttachment[];
   proposed_solution?: HelpTicketProposedSolution;
@@ -153,6 +178,7 @@ export interface HelpDeskStats {
   resolved_this_month: number;
   urgent_count: number;
   total_all_open: number;
+  total_unseen_count?: number;
 }
 
 export interface CreateHelpTicketPayload {

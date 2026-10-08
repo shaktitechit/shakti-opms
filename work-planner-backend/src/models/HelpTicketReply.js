@@ -53,6 +53,19 @@ const helpTicketReplySchema = new mongoose.Schema(
       new_status: { type: String, default: null },
       newly_tagged_names: [{ type: String }],
     },
+    // Granular read receipts per individual tagged / creator member
+    read_by: [
+      {
+        user: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          required: true,
+        },
+        name: { type: String, default: '' },
+        role: { type: String, default: '' },
+        read_at: { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true }
 );

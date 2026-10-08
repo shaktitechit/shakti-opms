@@ -36,6 +36,7 @@ router.get('/users', controller.listUsers);
 router.get('/tickets', controller.listTickets);
 router.post('/tickets', controller.createTicket);
 router.get('/tickets/:id', controller.getTicketById);
+router.post('/tickets/:id/read', controller.markTicketAsRead);
 
 // Replies & Collaboration
 router.post('/tickets/:id/replies', controller.addReply);

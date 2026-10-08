@@ -83,15 +83,28 @@ const helpTicketSchema = new mongoose.Schema(
         acknowledged_at: { type: Date, default: null },
       },
     ],
+    // Read state per member for fast unread count tracking & participant status
+    member_read_state: [
+      {
+        user: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          required: true,
+        },
+        last_read_at: { type: Date, default: Date.now },
+        last_read_reply_id: { type: mongoose.Schema.Types.ObjectId, ref: 'HelpTicketReply', default: null },
+      },
+    ],
     // Optional linkage to work planner entities
     related_entity: {
       entity_type: {
         type: String,
-        enum: ['work_plan', 'visit', 'work_task', 'project', 'expense', 'none'],
+        enum: ['work_plan', 'visit', 'work_task', 'project', 'expense', 'lead', 'client', 'none'],
         default: 'none',
       },
       entity_id: { type: String, default: '' },
       entity_title: { type: String, default: '' },
+      entity_code: { type: String, default: '' },
     },
     attachments: [
       {

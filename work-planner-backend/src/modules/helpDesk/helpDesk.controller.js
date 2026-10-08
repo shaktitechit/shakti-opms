@@ -53,6 +53,20 @@ async function getTicketById(req, res) {
   }
 }
 
+async function markTicketAsRead(req, res) {
+  try {
+    const result = await helpDeskService.markTicketAsRead(req.user, req.params.id);
+    return res.json({
+      success: true,
+      message: 'Ticket and messages marked as read.',
+      data: result,
+    });
+  } catch (err) {
+    logger.error(`[HelpDeskController] markTicketAsRead error: ${err.message}`);
+    return res.status(400).json({ success: false, message: err.message });
+  }
+}
+
 async function addReply(req, res) {
   try {
     const reply = await helpDeskService.addReply(req.user, req.params.id, req.body);
@@ -241,6 +255,7 @@ module.exports = {
   createTicket,
   listTickets,
   getTicketById,
+  markTicketAsRead,
   addReply,
   tagUsers,
   acknowledgeTicket,

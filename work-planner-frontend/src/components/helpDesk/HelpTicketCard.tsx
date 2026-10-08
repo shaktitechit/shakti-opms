@@ -29,7 +29,7 @@ export function formatCategoryTitle(cat?: string) {
   const map: Record<string, string> = {
     work_plan_support: "Work Plan",
     visit_assistance: "Field Visit",
-    client_lead_requirement: "Client Req",
+    client_lead_requirement: "Lead / Client",
     product_pricing_query: "Pricing",
     expense_account_query: "Expense",
     technical_portal_issue: "Technical",
@@ -38,6 +38,22 @@ export function formatCategoryTitle(cat?: string) {
     other: "Other",
   };
   return map[cat || ""] || cat || "General";
+}
+
+export function formatEntityLabel(entity?: { entity_type?: string; entity_title?: string; entity_code?: string }) {
+  if (!entity || !entity.entity_type || entity.entity_type === "none") return null;
+  const typeMap: Record<string, string> = {
+    work_plan: "Plan",
+    visit: "Visit",
+    work_task: "Task",
+    project: "Project",
+    expense: "Expense",
+    lead: "Lead",
+    client: "Client",
+  };
+  const label = typeMap[entity.entity_type] || entity.entity_type;
+  const name = entity.entity_title || entity.entity_code || "";
+  return { label, name };
 }
 
 export function renderStatusPill(status: HelpTicketStatus) {
@@ -135,27 +151,26 @@ export function HelpTicketCard({
   const needsAcknowledgment = isTagged && ticket.status === "open" && !myTaggedRecord?.acknowledged_at;
   const waitingMyResolution = isCreator && ticket.status === "solution_proposed";
 
+  const unseenCount = ticket.unseen_messages_count || 0;
   const repliesCount = ticket.replies_count ?? (ticket.replies?.length || 0);
   const attachmentsCount = ticket.attachments?.length || 0;
-
-  const timeStr = new Date(ticket.last_activity_at || ticket.createdAt).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
+  const entityInfo = formatEntityLabel(ticket.related_entity);
 
   return (
     <div
       onClick={() => onClick(ticket)}
       className={`group relative flex flex-col justify-between rounded-2xl border bg-card p-3.5 sm:p-5 transition-all duration-200 cursor-pointer select-none active:scale-[0.99] hover:shadow-md ${
-        waitingMyResolution
+        unseenCount > 0
+          ? "border-primary/60 ring-2 ring-primary/20 bg-primary/[0.02]"
+          : waitingMyResolution
           ? "border-purple-500/50 ring-2 ring-purple-500/20 bg-purple-500/[0.03]"
           : needsAcknowledgment
-            ? "border-amber-500/40 ring-1 ring-amber-500/20 bg-amber-500/[0.02]"
-            : "border-border hover:border-border/90"
+          ? "border-amber-500/40 ring-1 ring-amber-500/20 bg-amber-500/[0.02]"
+          : "border-border hover:border-border/90"
       }`}
     >
       <div className="space-y-2.5">
-        {/* Card Header: Ticket # + Priority + Category + Status */}
+        {/* Card Header: Ticket # + Priority + Category + Unseen Badge + Status */}
         <div className="flex items-center justify-between gap-1.5 border-b border-border/50 pb-2.5">
           <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
             <span className="rounded-lg bg-surface-muted px-2 py-0.5 font-mono text-[11px] font-bold text-foreground shrink-0">
@@ -166,10 +181,26 @@ export function HelpTicketCard({
               {formatCategoryTitle(ticket.category)}
             </span>
           </div>
-          <div>{renderStatusPill(ticket.status)}</div>
+          <div className="flex items-center gap-1.5">
+            {unseenCount > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/15 border border-rose-500/30 px-2 py-0.5 text-[9px] sm:text-[10px] font-black text-rose-600 dark:text-rose-400 animate-pulse shadow-xs">
+                <span className="h-1.5 w-1.5 rounded-full bg-rose-500" />
+                {unseenCount} NEW
+              </span>
+            )}
+            <div>{renderStatusPill(ticket.status)}</div>
+          </div>
         </div>
 
-        {/* Title & Preview */}
+        {/* Entity Identification Breadcrumb (if linked to project, lead, client, etc.) */}
+        {entityInfo && (
+          <div className="flex items-center gap-1 text-[10px] text-primary/90 font-semibold bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-md w-fit max-w-full truncate">
+            <span className="uppercase text-[8px] font-black tracking-wider text-primary/70">{entityInfo.label}:</span>
+            <span className="truncate">{entityInfo.name || "Linked Entity"}</span>
+          </div>
+        )}
+
+        {/* Title & Requirement Summary */}
         <div className="space-y-1">
           <h3 className="text-xs sm:text-sm font-bold text-foreground group-hover:text-primary transition line-clamp-1">
             {ticket.title}
@@ -178,6 +209,19 @@ export function HelpTicketCard({
             {ticket.description}
           </p>
         </div>
+
+        {/* Latest Activity / Message Preview Snippet */}
+        {ticket.latest_reply_preview && (
+          <div className="rounded-xl bg-surface-muted/60 border border-border/60 p-2 text-[11px] flex items-start gap-1.5 text-muted leading-snug">
+            <MessageSquare className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1 truncate">
+              <span className="font-bold text-foreground mr-1">
+                {ticket.latest_reply_preview.user_name}:
+              </span>
+              <span className="truncate">{ticket.latest_reply_preview.message}</span>
+            </div>
+          </div>
+        )}
 
         {/* Action Banner for Solution Proposed / Awaiting Creator Confirmation */}
         {waitingMyResolution && (

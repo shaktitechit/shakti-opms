@@ -190,6 +190,34 @@ export const helpDeskApiSlice = baseApi.injectEndpoints({
       transformResponse: (res: { success: boolean; data: HelpTicketAttachment }) => res.data,
     }),
 
+    markTicketAsRead: builder.mutation<{ success: boolean; ticket_id: string; last_read_at: string; unseen_count: number }, string>({
+      query: (ticketId) => ({
+        url: `/help-desk/tickets/${ticketId}/read`,
+        method: "POST",
+      }),
+      async onQueryStarted(ticketId, { dispatch, queryFulfilled }) {
+        // Optimistically update tickets list to set unseen_messages_count to 0
+        const patchResult = dispatch(
+          helpDeskApiSlice.util.updateQueryData("getHelpTickets", undefined as any, (draft) => {
+            if (draft?.data) {
+              const ticket = draft.data.find((t) => t._id === ticketId);
+              if (ticket) {
+                ticket.unseen_messages_count = 0;
+              }
+            }
+          })
+        );
+        try {
+          await queryFulfilled;
+        } catch {
+          patchResult.undo();
+        }
+      },
+      invalidatesTags: (result, error, ticketId) => [
+        { type: "HelpDesk", id: ticketId },
+      ],
+    }),
+
     getHelpDeskUsers: builder.query<
       Array<{
         _id: string;
@@ -225,6 +253,7 @@ export const {
   useReopenHelpTicketMutation,
   useCancelHelpTicketMutation,
   useUploadHelpDeskAttachmentMutation,
+  useMarkTicketAsReadMutation,
   useGetHelpDeskUsersQuery,
 } = helpDeskApiSlice;
 

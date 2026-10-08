@@ -22,6 +22,7 @@ import {
   ChevronRight,
   RefreshCw,
   Flame,
+  Check,
   CheckCheck,
   Building2,
   Trash2,
@@ -43,6 +44,7 @@ import {
   useReopenHelpTicketMutation,
   useCancelHelpTicketMutation,
   useUploadHelpDeskAttachmentMutation,
+  useMarkTicketAsReadMutation,
   useGetHelpDeskUsersQuery,
 } from "@/store/api/helpDeskApiSlice";
 import { FilePreviewModal, useFilePreview } from "@/components/workPlanner/FilePreviewModal";
@@ -54,6 +56,21 @@ import type {
   HelpTicketStatus,
 } from "@/types/helpDesk";
 import { readSessionFromStorage } from "@/utils/authStorage";
+
+function formatRelativeTime(dateStr?: string | null): string {
+  if (!dateStr) return "Never";
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
+  if (diffSec < 60) return "Just now";
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDays = Math.floor(diffHr / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 
 function getUserDepartmentName(u: any): string {
   if (!u || !u.department) return "";
@@ -252,6 +269,14 @@ export function HelpTicketDetailModal({
   const [cancelTicket, { isLoading: isCancelling }] =
     useCancelHelpTicketMutation();
   const [uploadAttachmentMut] = useUploadHelpDeskAttachmentMutation();
+  const [markTicketAsRead] = useMarkTicketAsReadMutation();
+
+  // Automatically mark ticket as read for the current user when modal opens or ticket refreshes
+  useEffect(() => {
+    if (isOpen && ticketId && ticket?._id) {
+      markTicketAsRead(ticketId).catch(() => {});
+    }
+  }, [isOpen, ticketId, ticket?._id, markTicketAsRead]);
 
   // Scroll to bottom when replies load or change
   useEffect(() => {
@@ -937,6 +962,13 @@ export function HelpTicketDetailModal({
                         );
                       }
 
+                      const otherReaders = (rep.read_by || []).filter(
+                        (r) =>
+                          String(typeof r.user === "object" ? r.user?._id : r.user) !==
+                          currentUserId
+                      );
+                      const hasSeenByOthers = otherReaders.length > 0;
+
                       return (
                         <div
                           key={rep._id}
@@ -993,6 +1025,38 @@ export function HelpTicketDetailModal({
                               )}
                               {rep.message}
                             </div>
+
+                            {/* Granular Read Receipts / Delivery Status */}
+                            {isMyReply && (
+                              <div className="flex items-center gap-1.5 px-1 text-[9px]">
+                                {hasSeenByOthers ? (
+                                  <div
+                                    className="flex items-center gap-1 text-emerald-500 dark:text-emerald-400 font-semibold cursor-help"
+                                    title={`Seen by: ${otherReaders
+                                      .map(
+                                        (r) =>
+                                          `${r.name} (${new Date(
+                                            r.read_at
+                                          ).toLocaleTimeString([], {
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                          })})`
+                                      )
+                                      .join(", ")}`}
+                                  >
+                                    <CheckCheck className="h-3 w-3 text-emerald-500 dark:text-emerald-400" />
+                                    <span>
+                                      Seen by {otherReaders.map((r) => r.name).join(", ")}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-1 text-muted">
+                                    <Check className="h-3 w-3 text-muted" />
+                                    <span>Sent</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
 
                             {/* ATTACHMENTS IN REPLY */}
                             {rep.attachments && rep.attachments.length > 0 && (
@@ -1221,43 +1285,64 @@ export function HelpTicketDetailModal({
                     </button>
                   </div>
 
-                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1 overscroll-contain">
+                  <div className="space-y-2 max-h-64 overflow-y-auto pr-1 overscroll-contain">
                     {ticket.tagged_users?.map((tu, idx) => {
                       const isAck = Boolean(tu.acknowledged_at);
+                      const hasRead = Boolean(tu.last_read_at);
                       return (
                         <div
                           key={idx}
-                          className="flex items-center justify-between rounded-xl border border-border/70 bg-surface-muted/40 p-2.5 text-xs"
+                          className="flex flex-col gap-1 rounded-xl border border-border/70 bg-surface-muted/40 p-2.5 text-xs"
                         >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/20 text-primary font-bold text-xs shrink-0">
-                              {tu.name?.charAt(0) || "U"}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/20 text-primary font-bold text-xs shrink-0">
+                                {tu.name?.charAt(0) || "U"}
+                              </div>
+                              <div className="min-w-0">
+                                <span className="font-semibold text-foreground truncate block text-xs">
+                                  {tu.name}
+                                </span>
+                                <span className="text-[10px] text-muted truncate block">
+                                  {tu.department || tu.role || "Team Member"}
+                                </span>
+                              </div>
                             </div>
-                            <div className="min-w-0">
-                              <span className="font-semibold text-foreground truncate block text-xs">
-                                {tu.name}
+
+                            {isAck ? (
+                              <span
+                                title={`Acknowledged on ${new Date(
+                                  tu.acknowledged_at!
+                                ).toLocaleString()}`}
+                                className="flex items-center gap-1 text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full shrink-0 border border-emerald-500/20"
+                              >
+                                <CheckCheck className="h-3 w-3" />
+                                Active
                               </span>
-                              <span className="text-[10px] text-muted truncate block">
-                                {tu.department || tu.role || "Team Member"}
+                            ) : (
+                              <span className="text-[9px] font-medium text-muted bg-surface-muted px-2 py-0.5 rounded-full shrink-0">
+                                Notified
                               </span>
-                            </div>
+                            )}
                           </div>
 
-                          {isAck ? (
-                            <span
-                              title={`Acknowledged on ${new Date(
-                                tu.acknowledged_at!
-                              ).toLocaleString()}`}
-                              className="flex items-center gap-1 text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full shrink-0 border border-emerald-500/20"
-                            >
-                              <CheckCheck className="h-3 w-3" />
-                              Active
+                          <div className="flex items-center justify-between pt-1 border-t border-border/40 text-[9px] text-muted">
+                            <span className="flex items-center gap-1">
+                              <Eye className="h-2.5 w-2.5 text-muted" />
+                              {hasRead ? (
+                                <span className="text-emerald-400 font-medium">
+                                  Seen {formatRelativeTime(tu.last_read_at)}
+                                </span>
+                              ) : (
+                                <span className="text-muted/70">Not opened yet</span>
+                              )}
                             </span>
-                          ) : (
-                            <span className="text-[9px] font-medium text-muted bg-surface-muted px-2 py-0.5 rounded-full shrink-0">
-                              Notified
-                            </span>
-                          )}
+                            {tu.tagged_at && (
+                              <span className="text-muted/60">
+                                Tagged {formatRelativeTime(tu.tagged_at)}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
