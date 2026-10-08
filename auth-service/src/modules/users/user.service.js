@@ -174,8 +174,11 @@ async function listRoles() {
 async function create(body, actor) {
   const email = String(body.email).toLowerCase().trim();
 
-  const dup = await User.findOne({ email }).lean();
-  if (dup) throw new ApiError(409, 'Email already registered');
+  const isCreatingActive = body.is_active !== false;
+  if (isCreatingActive) {
+    const dup = await User.findOne({ email, is_active: { $ne: false } }).lean();
+    if (dup) throw new ApiError(409, 'Email already registered to an active user');
+  }
 
   const department = await assertDepartmentExists(body.department);
 
@@ -235,14 +238,27 @@ async function update(id, body, actor) {
   const user = await User.findById(id);
   if (!user) throw new ApiError(404, 'User not found');
 
-  const email =
-    body.email !== undefined ? String(body.email).toLowerCase().trim() : undefined;
-  if (email !== undefined) {
-    const dup = await User.findOne({ email, _id: { $ne: id } })
+  const willBeActive =
+    body.is_active !== undefined ? Boolean(body.is_active) : user.is_active !== false;
+  const targetEmail =
+    body.email !== undefined ? String(body.email).toLowerCase().trim() : user.email;
+
+  if (
+    willBeActive &&
+    (body.email !== undefined || (body.is_active === true && user.is_active === false))
+  ) {
+    const dup = await User.findOne({
+      email: targetEmail,
+      _id: { $ne: id },
+      is_active: { $ne: false },
+    })
       .select('_id')
       .lean();
-    if (dup) throw new ApiError(409, 'Email already registered');
-    user.email = email;
+    if (dup) throw new ApiError(409, 'Email already registered to another active user');
+  }
+
+  if (body.email !== undefined) {
+    user.email = targetEmail;
   }
   if (body.name !== undefined) user.name = body.name;
   if (body.phone !== undefined) user.phone = body.phone;

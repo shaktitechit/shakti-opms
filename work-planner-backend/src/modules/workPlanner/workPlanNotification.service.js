@@ -341,7 +341,8 @@ async function sendWorkPlanCompletedEmail(planId, executiveUser) {
         },
         [],
         ccList,
-        fromAddress
+        fromAddress,
+        'work_plan_completed'
       );
       logger.info(
         `[WorkPlanNotification] Sent single work plan completion email to ${primaryRecipient} (CC: ${ccList.join(', ') || 'none'}) from ${fromAddress}`
@@ -437,7 +438,8 @@ async function sendCustomDayEndEmail(planId, executiveUser, dayEndData = {}) {
       htmlBody,
       emailAttachments,
       ccList,
-      fromAddress
+      fromAddress,
+      'work_plan_completed'
     );
 
     logger.info(
@@ -603,7 +605,8 @@ async function sendCustomWorkPlanCreationEmail(planId, user, creationMailData = 
         rawBody,
         emailAttachments,
         ccList,
-        fromAddress
+        fromAddress,
+        'work_plan_created'
       );
       logger.info(
         `[WorkPlanNotification] Sent Work Plan creation custom email to ${recipient} (CC: ${ccList.join(', ') || 'none'}, Attachments: ${emailAttachments.length}) from ${fromAddress}`
@@ -615,7 +618,8 @@ async function sendCustomWorkPlanCreationEmail(planId, user, creationMailData = 
         templateData,
         emailAttachments,
         ccList,
-        fromAddress
+        fromAddress,
+        'work_plan_created'
       );
       logger.info(
         `[WorkPlanNotification] Sent Work Plan creation template email to ${recipient} (CC: ${ccList.join(', ') || 'none'}, Attachments: ${emailAttachments.length}) from ${fromAddress}`

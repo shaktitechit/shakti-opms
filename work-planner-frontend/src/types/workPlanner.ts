@@ -755,4 +755,42 @@ export interface MarkNotesConvertedPayload {
   work_plan_date?: string;
 }
 
+export interface UserEmailPreferences {
+  user?: string;
+  master_email_enabled: boolean;
+
+  // 1. Work Plan Lifecycle
+  work_plan_created: boolean;
+  work_plan_completed: boolean;
+  work_plan_approved: boolean;
+  work_plan_rejected: boolean;
+
+  // 2. Directives, Remarks & Collaboration
+  directive_assigned: boolean;
+  directive_resolved: boolean;
+
+  // 3. Scheduled Reminders & Daily Digests
+  morning_plan_reminder: boolean;
+  morning_manager_digest: boolean;
+  evening_day_end_reminder: boolean;
+  evening_manager_digest: boolean;
+  personal_note_reminder: boolean;
+
+  // 4. Expenses, Advances & Settlements
+  expense_submitted: boolean;
+  expense_status_update: boolean;
+  tour_advance_requested: boolean;
+  tour_advance_status: boolean;
+  tour_advance_disbursed: boolean;
+  expense_settlement: boolean;
+
+  // 5. Help Desk & Support Requests
+  help_ticket_tagged: boolean;
+  help_ticket_reply: boolean;
+  help_ticket_solution: boolean;
+  help_ticket_status: boolean;
+
+  updatedAt?: string;
+}
+
 

@@ -1,11 +1,29 @@
 const mongoose = require('mongoose');
 const app = require('./app');
 const { PORT, MONGO_URI } = require('./config/env');
+const User = require('./models/User');
 const departmentService = require('./modules/departments/department.service');
 const userService = require('./modules/users/user.service');
 
+async function syncUserIndexes() {
+  try {
+    const indexes = await User.collection.indexes();
+    const legacyEmailIndex = indexes.find(
+      (idx) => idx.name === 'email_1' && !idx.partialFilterExpression
+    );
+    if (legacyEmailIndex) {
+      await User.collection.dropIndex('email_1');
+      console.log('[auth-service] Dropped legacy email_1 index to enable partial unique index');
+    }
+    await User.syncIndexes();
+  } catch (err) {
+    console.warn('[auth-service] User index sync notice:', err?.message || err);
+  }
+}
+
 async function ensureDefaults() {
   try {
+    await syncUserIndexes();
     const deptResults = await departmentService.seedDefaultDepartments();
     const roleResults = await userService.seedDefaultRoles();
     const createdDepts = deptResults.filter((r) => r.status === 'created').length;

@@ -811,7 +811,8 @@ async function notifyWorkPlanCreated({ planId, actorUser, creationMailData = {} 
       emailHtml,
       emailAttachments,
       mailCc,
-      fromAddress
+      fromAddress,
+      'work_plan_created'
     );
     logger.info(`[AutoNotification] Sent Work Plan creation email to ${recipient} (CC: ${mailCc.join(', ')}, Attachments: ${emailAttachments.length})`);
   } catch (err) {
@@ -1068,7 +1069,11 @@ async function notifyAuthorityRemarkAdded({ planId, visitId = null, workId = nul
         salesUser.email,
         subject,
         cleanRemarkText,
-        emailHtml
+        emailHtml,
+        [],
+        [],
+        null,
+        'directive_assigned'
       ).catch((err) => {
         logger.warn(`[AutoNotification] Failed sending senior remark email to ${salesUser.email}: ${err.message}`);
       });
@@ -1201,7 +1206,8 @@ async function notifyDayEndCompleted({ planId, actorUser, dayEndData = null }) {
       emailHtml,
       [],
       mailCc,
-      fromAddress
+      fromAddress,
+      'work_plan_completed'
     );
     logger.info(`[AutoNotification] Sent Day End completion email to ${recipient} (CC: ${mailCc.join(', ')})`);
   } catch (err) {
@@ -1268,7 +1274,7 @@ async function notifyWorkPlanApproved({ planId, actorUser }) {
         </div>
       `;
 
-      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml, [], [], null, 'work_plan_approved').catch((err) => {
         logger.warn(`[AutoNotification] Failed sending approval email to ${salesUser.email}: ${err.message}`);
       });
     }
@@ -1340,7 +1346,7 @@ async function notifyWorkPlanRejected({ planId, actorUser, reason }) {
         </div>
       `;
 
-      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml, [], [], null, 'work_plan_rejected').catch((err) => {
         logger.warn(`[AutoNotification] Failed sending rejection email to ${salesUser.email}: ${err.message}`);
       });
     }
@@ -1423,7 +1429,7 @@ async function notifyJuniorFollowupAdded({ targetType, targetId, remark, followu
         </div>
       `;
 
-      await emailHelper.sendEmail(seniorUser.email, subject, '', emailHtml).catch((err) => {
+      await emailHelper.sendEmail(seniorUser.email, subject, '', emailHtml, [], [], null, 'directive_resolved').catch((err) => {
         logger.warn(`[AutoNotification] Failed sending followup email to ${seniorUser.email}: ${err.message}`);
       });
     }
@@ -1491,7 +1497,7 @@ async function notifyDirectiveResolved({ targetType, targetId, doc, remark, acto
         </div>
       `;
 
-      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml, [], [], null, 'directive_resolved').catch((err) => {
         logger.warn(`[AutoNotification] Failed sending resolution email to ${salesUser.email}: ${err.message}`);
       });
     }
@@ -1583,7 +1589,7 @@ async function notifyExpenseSubmitted({ planId, count = 1, totalAmount = 0, acto
         .map((e) => String(e).trim())
         .filter((e) => e && e.toLowerCase() !== primaryRecipientEmail.toLowerCase());
 
-      await emailHelper.sendEmail(primaryRecipientEmail, subject, '', emailHtml, [], mailCc).catch((err) => {
+      await emailHelper.sendEmail(primaryRecipientEmail, subject, '', emailHtml, [], mailCc, null, 'expense_submitted').catch((err) => {
         logger.warn(`[AutoNotification] Failed sending expense submission email: ${err.message}`);
       });
     }
@@ -1637,7 +1643,7 @@ async function notifyExpenseApproved({ planId, count = 1, totalAmount = 0, actor
         </div>
       `;
 
-      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml, [], [], null, 'expense_status_update').catch((err) => {
         logger.warn(`[AutoNotification] Failed sending expense approval email: ${err.message}`);
       });
     }
@@ -1695,7 +1701,7 @@ async function notifyExpenseRejected({ planId, count = 1, totalAmount = 0, reaso
         </div>
       `;
 
-      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml, [], [], null, 'expense_status_update').catch((err) => {
         logger.warn(`[AutoNotification] Failed sending expense rejection email: ${err.message}`);
       });
     }
@@ -1804,7 +1810,7 @@ async function notifyTourAdvanceRequested({ advanceDoc, actorUser, selectedCcEma
         .map((e) => String(e).trim())
         .filter((e) => e && e.toLowerCase() !== primaryRecipientEmail.toLowerCase());
 
-      await emailHelper.sendEmail(primaryRecipientEmail, subject, '', emailHtml, [], mailCc).catch((err) => {
+      await emailHelper.sendEmail(primaryRecipientEmail, subject, '', emailHtml, [], mailCc, null, 'tour_advance_requested').catch((err) => {
         logger.warn(`[AutoNotification] Failed sending tour advance request email: ${err.message}`);
       });
     }
@@ -1865,7 +1871,7 @@ async function notifyTourAdvanceApproved({ advanceDoc, actorUser }) {
         </div>
       `;
 
-      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml, [], [], null, 'tour_advance_status').catch((err) => {
         logger.warn(`[AutoNotification] Failed sending tour advance approval email: ${err.message}`);
       });
     }
@@ -1927,7 +1933,7 @@ async function notifyTourAdvanceRejected({ advanceDoc, reason, actorUser }) {
         </div>
       `;
 
-      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml, [], [], null, 'tour_advance_status').catch((err) => {
         logger.warn(`[AutoNotification] Failed sending tour advance rejection email: ${err.message}`);
       });
     }
@@ -2027,7 +2033,7 @@ async function notifyTourAdvanceDisbursed({ advanceDoc, actorUser }) {
         </div>
       `;
 
-      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml, [], [], null, 'tour_advance_disbursed').catch((err) => {
         logger.warn(`[AutoNotification] Failed sending tour advance disbursement email: ${err.message}`);
       });
     }
@@ -2109,7 +2115,7 @@ async function notifyTourAdvanceRefunded({ advanceDoc, refundItem, actorUser }) 
         </div>
       `;
 
-      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml, [], [], null, 'tour_advance_disbursed').catch((err) => {
         logger.warn(`[AutoNotification] Failed sending tour advance refund email: ${err.message}`);
       });
     }
@@ -2234,7 +2240,7 @@ async function notifyExpenseSettlementCompleted({ settlementDoc, actorUser }) {
         </div>
       `;
 
-      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml).catch((err) => {
+      await emailHelper.sendEmail(salesUser.email, subject, '', emailHtml, [], [], null, 'expense_settlement').catch((err) => {
         logger.warn(`[AutoNotification] Failed sending expense settlement voucher email: ${err.message}`);
       });
     }
@@ -2330,7 +2336,9 @@ async function sendPendingWorkPlanMorningReminder(pendingUsers, dateStr, timeZon
           '',
           emailHtml,
           [],
-          mgrCc
+          mgrCc,
+          null,
+          'morning_plan_reminder'
         ).catch((err) => {
           logger.warn(`[AutoNotification] Failed sending 11:30 AM email to ${exec.email}: ${err.message}`);
         });
@@ -2420,7 +2428,9 @@ async function sendPendingWorkPlanMorningReminder(pendingUsers, dateStr, timeZon
           '',
           digestHtml,
           [],
-          adminCcEmails
+          adminCcEmails,
+          null,
+          'morning_manager_digest'
         ).catch((err) => {
           logger.warn(`[AutoNotification] Failed sending 11:30 AM digest to manager ${manager.email}: ${err.message}`);
         });
@@ -2519,7 +2529,9 @@ async function sendPendingDayEndEveningReminder(pendingPlansWithUsers, dateStr, 
           '',
           emailHtml,
           [],
-          mgrCc
+          mgrCc,
+          null,
+          'evening_day_end_reminder'
         ).catch((err) => {
           logger.warn(`[AutoNotification] Failed sending 6:30 PM email to ${exec.email}: ${err.message}`);
         });
@@ -2609,7 +2621,9 @@ async function sendPendingDayEndEveningReminder(pendingPlansWithUsers, dateStr, 
           '',
           digestHtml,
           [],
-          adminCcEmails
+          adminCcEmails,
+          null,
+          'evening_manager_digest'
         ).catch((err) => {
           logger.warn(`[AutoNotification] Failed sending 6:30 PM digest to manager ${manager.email}: ${err.message}`);
         });

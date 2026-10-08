@@ -4,7 +4,7 @@ const userSchema = new mongoose.Schema(
   {
     company_id: { type: mongoose.Schema.Types.ObjectId, index: true },
     name: { type: String, required: true, trim: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    email: { type: String, required: true, lowercase: true, trim: true },
     phone: { type: String, trim: true },
     password: { type: String, required: true, select: false },
     department: {
@@ -24,6 +24,14 @@ const userSchema = new mongoose.Schema(
     last_login_at: Date,
   },
   { timestamps: true }
+);
+
+userSchema.index(
+  { email: 1 },
+  {
+    unique: true,
+    partialFilterExpression: { is_active: true },
+  }
 );
 
 module.exports = mongoose.models.User || mongoose.model("User", userSchema);

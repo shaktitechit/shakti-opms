@@ -18,6 +18,7 @@ import {
 } from "@/store/api/authApiSlice";
 import { resolveRoleLabels } from "@/utils/resolveRoleLabels";
 import { PasswordChangePanel } from "@/components/profile/PasswordChangePanel";
+import { EmailPreferencesPanel } from "@/components/profile/EmailPreferencesPanel";
 import { UserSettingsPage } from "@/components/workPlanner/UserSettingsPage";
 import type { AuthUser, UserSession } from "@/types/workPlanner";
 
@@ -29,7 +30,7 @@ function formatLabel(code: string): string {
     .join(" ");
 }
 
-type Tab = "overview" | "work_planner" | "password";
+type Tab = "overview" | "work_planner" | "email_notifications" | "password";
 
 export default function ProfilePage() {
   const [tab, setTab] = useState<Tab>("overview");
@@ -98,7 +99,7 @@ export default function ProfilePage() {
         </div>
       </div>
 
-      <div className="flex gap-1 rounded-xl border border-border bg-card p-1 w-fit">
+      <div className="flex flex-wrap gap-1 rounded-xl border border-border bg-card p-1 w-fit">
         <button
           type="button"
           onClick={() => setTab("overview")}
@@ -110,6 +111,18 @@ export default function ProfilePage() {
         >
           <User className="h-3.5 w-3.5" />
           Overview
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("email_notifications")}
+          className={`inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold transition ${
+            tab === "email_notifications"
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "text-muted hover:text-foreground hover:bg-surface-muted"
+          }`}
+        >
+          <Mail className="h-3.5 w-3.5" />
+          Email Preferences
         </button>
         <button
           type="button"
@@ -143,6 +156,8 @@ export default function ProfilePage() {
             await changePassword({ currentPassword, newPassword }).unwrap();
           }}
         />
+      ) : tab === "email_notifications" ? (
+        <EmailPreferencesPanel user={user} />
       ) : tab === "work_planner" ? (
         <UserSettingsPage
           userId={String(user._id || (user as any).id || "")}

@@ -18,6 +18,7 @@ import type {
   ExecutiveBalanceItem,
   ExecutivePassbookData,
   ExpenseKpiSummaryData,
+  UserEmailPreferences,
 } from "@/types/workPlanner";
 
 function normalizePaginatedResponse<T>(res: any): {
@@ -1054,6 +1055,28 @@ export const workPlannerApiSlice = baseApi.injectEndpoints({
       }),
       invalidatesTags: [{ type: "UserNotes", id: "LIST" }],
     }),
+    getMyEmailPreferences: builder.query<UserEmailPreferences, void>({
+      query: () => `${WORK_PLANNER_SERVICE_URL}/api/work-planner/email-preferences/me`,
+      transformResponse: (res: any) => res?.data ?? res,
+      providesTags: [{ type: "UserEmailPreferences" as any, id: "ME" }],
+    }),
+    updateMyEmailPreferences: builder.mutation<UserEmailPreferences, Partial<UserEmailPreferences>>({
+      query: (body) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/email-preferences/me`,
+        method: "PUT",
+        body,
+      }),
+      transformResponse: (res: any) => res?.data ?? res,
+      invalidatesTags: [{ type: "UserEmailPreferences" as any, id: "ME" }],
+    }),
+    resetMyEmailPreferences: builder.mutation<UserEmailPreferences, void>({
+      query: () => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/email-preferences/me/reset`,
+        method: "POST",
+      }),
+      transformResponse: (res: any) => res?.data ?? res,
+      invalidatesTags: [{ type: "UserEmailPreferences" as any, id: "ME" }],
+    }),
   }),
 });
 
@@ -1163,4 +1186,8 @@ export const {
   useToggleCompleteNoteMutation,
   useBulkConvertToWorkPlanMutation,
   useMarkNotesConvertedMutation,
+  useGetMyEmailPreferencesQuery,
+  useLazyGetMyEmailPreferencesQuery,
+  useUpdateMyEmailPreferencesMutation,
+  useResetMyEmailPreferencesMutation,
 } = workPlannerApiSlice;

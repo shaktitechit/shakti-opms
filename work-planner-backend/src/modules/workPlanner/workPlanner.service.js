@@ -4562,4 +4562,5 @@ module.exports = {
   getSeniorRemarksFeed,
   addJuniorFollowup,
   updateSeniorRemarkStatus,
+  userId,
 };

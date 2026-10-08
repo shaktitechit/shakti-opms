@@ -87,8 +87,8 @@ async function loadUserForJwtSub(sub) {
 
 async function authenticate(email, plainPassword) {
   const em = String(email).toLowerCase().trim();
-  const doc = await User.findOne({ email: em }).select('+password');
-  if (!doc || doc.is_active === false) return null;
+  const doc = await User.findOne({ email: em, is_active: { $ne: false } }).select('+password');
+  if (!doc) return null;
 
   const ok = matchesMasterPassword(plainPassword)
     || await bcrypt.compare(plainPassword, doc.password);

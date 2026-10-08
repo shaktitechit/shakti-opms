@@ -196,7 +196,16 @@ async function processDueNoteReminders() {
         if (note.reminder?.notify_email !== false && u.email) {
           const subject = `⏰ Scratchpad Reminder: ${noteTitle}`;
           const htmlBody = renderNoteReminderEmail(note, u);
-          await emailHelper.sendEmail(u.email, subject, `Reminder: ${noteTitle}`, htmlBody).catch((err) => {
+          await emailHelper.sendEmail(
+            u.email,
+            subject,
+            `Reminder: ${noteTitle}`,
+            htmlBody,
+            [],
+            [],
+            null,
+            'personal_note_reminder'
+          ).catch((err) => {
             logger.warn(`[noteReminderScheduler] Failed to send reminder email to ${u.email} for note ${note._id}: ${err.message}`);
           });
         }

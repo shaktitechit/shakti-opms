@@ -407,7 +407,11 @@ async function dispatchTicketCreatedNotification(ticket) {
           tagged.email,
           `[Help Desk] ${creatorName} tagged you: "${title}" (#${ticketNum})`,
           `${creatorName} tagged you for help on ticket #${ticketNum}: "${title}". View it here: ${deepLink}`,
-          emailHtml
+          emailHtml,
+          [],
+          [],
+          null,
+          'help_ticket_tagged'
         );
       } catch (err) {
         logger.warn(`[HelpDeskNotification] Failed to send creation email to ${tagged.email}: ${err.message}`);
@@ -490,7 +494,11 @@ async function dispatchReplyNotification(ticket, reply, newlyTaggedUsers = []) {
           recipient.email,
           `[Help Desk Update] ${authorName} replied on #${ticketNum} - "${ticket.title}"`,
           `${authorName} posted a reply on #${ticketNum}. View it here: ${deepLink}`,
-          emailHtml
+          emailHtml,
+          [],
+          [],
+          null,
+          'help_ticket_reply'
         );
       } catch (err) {
         logger.warn(`[HelpDeskNotification] Failed to send reply email to ${recipient.email}: ${err.message}`);
@@ -550,7 +558,11 @@ async function dispatchSolutionProposedNotification(ticket, solution) {
         creatorEmail,
         `[Action Required] Solution proposed for your Help Request #${ticketNum}`,
         `Solution proposed for #${ticketNum} by ${proposedByName}. Please review and confirm resolution: ${deepLink}`,
-        emailHtml
+        emailHtml,
+        [],
+        [],
+        null,
+        'help_ticket_solution'
       );
     } catch (err) {
       logger.warn(`[HelpDeskNotification] Failed to send solution proposed email: ${err.message}`);
@@ -609,7 +621,11 @@ async function dispatchTicketResolvedNotification(ticket, resolverName) {
           tagged.email,
           `[Help Desk Resolved] #${ticketNum} marked Resolved by ${resolverName}`,
           `Ticket #${ticketNum} has been resolved by ${resolverName}. View it here: ${deepLink}`,
-          emailHtml
+          emailHtml,
+          [],
+          [],
+          null,
+          'help_ticket_status'
         );
       } catch (err) {
         logger.warn(`[HelpDeskNotification] Failed to send resolution email to ${tagged.email}: ${err.message}`);
@@ -664,7 +680,11 @@ async function dispatchTicketReopenedNotification(ticket, reopenerName, reason) 
           tagged.email,
           `[Help Desk Reopened] ${reopenerName} requested changes on #${ticketNum}`,
           `Ticket #${ticketNum} reopened with feedback: "${reason}". View it here: ${deepLink}`,
-          emailHtml
+          emailHtml,
+          [],
+          [],
+          null,
+          'help_ticket_status'
         );
       } catch (err) {
         logger.warn(`[HelpDeskNotification] Failed to send reopened email to ${tagged.email}: ${err.message}`);

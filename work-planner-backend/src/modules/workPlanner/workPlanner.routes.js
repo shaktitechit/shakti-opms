@@ -12,6 +12,7 @@ const {
 const controller = require('./workPlanner.controller');
 const notesController = require('./notes.controller');
 const teamController = require('./team.controller');
+const emailPreferenceController = require('./emailPreference.controller');
 const analyticsController = require('./workPlanAnalytics.controller');
 const expenseRoutes = require('./expense/expense.routes');
 const multer = require('multer');
@@ -26,6 +27,11 @@ const adminRole = requireWorkPlannerRole('admin');
 
 router.use(requireAuth);
 router.use(requireWorkPlannerAccess);
+
+// Email notification preferences (per profile)
+router.get('/email-preferences/me', emailPreferenceController.getMyEmailPreferences);
+router.put('/email-preferences/me', emailPreferenceController.updateMyEmailPreferences);
+router.post('/email-preferences/me/reset', emailPreferenceController.resetMyEmailPreferences);
 
 // Expense & Tour Advance Domain
 router.use('/expenses', expenseRoutes);

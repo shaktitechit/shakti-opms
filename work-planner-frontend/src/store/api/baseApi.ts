@@ -132,6 +132,7 @@ export const baseApi = createApi({
     "SeniorRemarks",
     "UserNotes",
     "HelpDesk",
+    "UserEmailPreferences",
   ],
   endpoints: () => ({}),
 });

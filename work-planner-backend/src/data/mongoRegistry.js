@@ -1177,6 +1177,10 @@ function registerModels() {
   if (!mongoose.models.HelpTicketReply) {
     require('../models/HelpTicketReply');
   }
+  if (!mongoose.models.UserEmailPreference) {
+    const { userEmailPreferenceSchema } = require('../models/UserEmailPreference');
+    mongoose.model('UserEmailPreference', userEmailPreferenceSchema);
+  }
 
   _cached = {
     User: mongoose.model('User'),
@@ -1196,6 +1200,7 @@ function registerModels() {
     HelpTicket: mongoose.model('HelpTicket'),
     HelpTicketReply: mongoose.model('HelpTicketReply'),
     UserWorkPlannerSettings: mongoose.model('UserWorkPlannerSettings'),
+    UserEmailPreference: mongoose.model('UserEmailPreference'),
     WorkPlannerReportingEdge: mongoose.model('WorkPlannerReportingEdge'),
     WorkPlanAnalyticsCache: mongoose.model('WorkPlanAnalyticsCache'),
     Project: mongoose.model('Project'),
