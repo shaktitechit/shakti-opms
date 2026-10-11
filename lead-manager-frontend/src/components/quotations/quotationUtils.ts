@@ -12,12 +12,17 @@ export function formatCurrencyINR(amount: number): string {
   }).format(amount);
 }
 
-import { isAdmin, isManager, isExecutive, readSessionFromStorage } from "@/utils/authStorage";
+import { isAdmin, isCoordinator, isManager, isExecutive, readSessionFromStorage } from "@/utils/authStorage";
+
+/** Read-only quotation module access (list, detail, follow-ups, self-scoped reports). */
+export function canViewQuotations(user?: any): boolean {
+  return isAdmin(user) || isManager(user) || isCoordinator(user) || isExecutive(user);
+}
 
 export function canManageQuotations(
   user?: any
 ): boolean {
-  return isAdmin(user) || isManager(user);
+  return isAdmin(user) || isManager(user) || isCoordinator(user);
 }
 
 export function canConvertQuotation(
@@ -27,7 +32,7 @@ export function canConvertQuotation(
     const s = readSessionFromStorage();
     user = s?.user || null;
   }
-  return isAdmin(user) || isManager(user);
+  return isAdmin(user) || isManager(user) || isCoordinator(user);
 }
 
 export function canCreateQuotation(
@@ -72,8 +77,10 @@ export type QuotationLike = {
   sales_person_designation?: string;
 };
 
+import { getLeadManagerPortalRole } from "@/components/leads/leadUtils";
+
 /**
- * Filter users who belong to the Sales department and have sales roles.
+ * Filter users who belong to the Sales/Lead Management department or have sales/coordinator/manager roles.
  */
 export function isSalesDepartmentUser(user?: {
   _id?: string;
@@ -86,15 +93,25 @@ export function isSalesDepartmentUser(user?: {
 } | null): boolean {
   if (!user || user.is_active === false) return false;
 
+  const roleBadge = getLeadManagerPortalRole(user as any);
+  if (roleBadge) return true;
+
   const dept = String(user.department || "").toLowerCase().trim();
   const role = String(user.role || "").toLowerCase().trim();
 
-  const isSalesDept = dept === "sales";
+  const isSalesDept = dept === "sales" || dept.includes("sales") || dept.includes("lead");
   const isSalesRole =
     role === "sales" ||
     role.includes("sales") ||
+    role.includes("coordinator") ||
+    role.includes("lead") ||
     role === "sales_executive" ||
     role === "sales_manager" ||
+    role === "sales_coordinator" ||
+    role === "coordinator" ||
+    role === "executive" ||
+    role === "manager" ||
+    role === "admin" ||
     role === "sales_rep" ||
     role === "sales_officer";
 
@@ -102,17 +119,30 @@ export function isSalesDepartmentUser(user?: {
     Array.isArray(user.roles) &&
     user.roles.some((r: any) => {
       const rName = typeof r === "string" ? r : r?.name || r?.code || "";
-      return String(rName).toLowerCase().includes("sales");
+      const lower = String(rName).toLowerCase();
+      return (
+        lower.includes("sales") ||
+        lower.includes("coordinator") ||
+        lower.includes("lead") ||
+        lower.includes("manager") ||
+        lower.includes("executive") ||
+        lower.includes("admin")
+      );
     });
 
   const hasSalesPortal =
     Array.isArray(user.portals) &&
     user.portals.some((p) => {
       const code = String(p?.portal_code || (p as any)?.portal || "").toLowerCase();
-      return code === "sales" || code === "lead_manager";
+      const roles = (p?.access_roles || []).map((r) => String(r).toLowerCase());
+      return (
+        code === "sales" ||
+        code === "lead_manager" ||
+        roles.some((r) => ["admin", "manager", "coordinator", "executive", "sales"].includes(r))
+      );
     });
 
-  return isSalesDept || isSalesRole || hasSalesInRoles || (isSalesDept && hasSalesPortal);
+  return isSalesDept || isSalesRole || hasSalesInRoles || hasSalesPortal;
 }
 
 export function isStrictSignatory(
@@ -236,6 +266,26 @@ export function isQuotationCreator(
   return false;
 }
 
+export function isQuotationSalesRepresentative(
+  user?: QuotationUserRef | null,
+  quotation?: QuotationLike | null
+): boolean {
+  if (!user || !quotation) return false;
+  const userId = user._id || (user as any).id;
+  const sp = quotation.sales_person_user;
+  const spId =
+    sp && typeof sp === "object" ? sp._id || (sp as any).id : (sp as string | undefined);
+  if (spId && userId && String(spId) === String(userId)) return true;
+  if (
+    quotation.sales_person_email &&
+    user.email &&
+    quotation.sales_person_email.toLowerCase().trim() === user.email.toLowerCase().trim()
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function isQuotationVisible(
   user?: QuotationUserRef | null,
   quotation?: (QuotationLike & { created_by?: string | QuotationUserRef | null }) | null
@@ -243,15 +293,28 @@ export function isQuotationVisible(
   if (!quotation) return false;
   if (!user) return false;
 
-  if (isAdmin(user as any)) {
+  if (canManageQuotations(user as any)) {
     return true;
   }
 
-  if (isManager(user as any)) {
-    return isQuotationCreator(user, quotation) || isStrictSignatory(user, quotation);
-  }
+  return (
+    isQuotationCreator(user, quotation) ||
+    isStrictSignatory(user, quotation) ||
+    isQuotationSalesRepresentative(user, quotation)
+  );
+}
 
-  return false;
+/** Mark accepted / on hold / resume — managers or anyone tied to the quote as creator or sales rep. */
+export function canUpdateQuotationStatus(
+  user?: QuotationUserRef | null,
+  quotation?: (QuotationLike & { created_by?: string | QuotationUserRef | null }) | null
+): boolean {
+  if (!user || !quotation) return false;
+  return (
+    canManageQuotations(user as any) ||
+    isQuotationCreator(user, quotation) ||
+    isQuotationSalesRepresentative(user, quotation)
+  );
 }
 
 export function canSubmitForApproval(
@@ -285,15 +348,15 @@ export function isQuotationRosterVisible(
   }
   if (!user) return false;
 
-  if (isAdmin(user as any)) {
+  if (canManageQuotations(user as any)) {
     return true;
   }
 
-  if (isManager(user as any)) {
-    return isQuotationCreator(user, quotation) || isStrictSignatory(user, quotation);
-  }
-
-  return false;
+  return (
+    isQuotationCreator(user, quotation) ||
+    isStrictSignatory(user, quotation) ||
+    isQuotationSalesRepresentative(user, quotation)
+  );
 }
 
 export function isQuotationExpired(

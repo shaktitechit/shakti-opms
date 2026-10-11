@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronDown, LogOut, Menu, Moon, Sun, User } from "lucide-react";
 import type { UserSession, ThemeColor } from "@/types/leadManager";
-import { isAdmin, isManager } from "@/utils/authStorage";
+import { isAdmin, isCoordinator, isManager } from "@/utils/authStorage";
 import { NotificationBell } from "./NotificationBell";
 
 export function Topbar({
@@ -33,6 +33,7 @@ export function Topbar({
   const user = session?.user;
   const adminRole = isAdmin(user);
   const managerRole = isManager(user);
+  const coordinatorRole = isCoordinator(user);
 
   const getPageHeader = () => {
     if (pathname.startsWith("/dashboard/profile")) {
@@ -49,7 +50,13 @@ export function Topbar({
 
   const header = getPageHeader();
 
-  const userRoleBadge = adminRole ? "LEAD ADMIN" : managerRole ? "LEAD MANAGER" : "LEAD EXECUTIVE";
+  const userRoleBadge = adminRole
+    ? "LEAD ADMIN"
+    : managerRole
+    ? "LEAD MANAGER"
+    : coordinatorRole
+    ? "LEAD COORDINATOR"
+    : "LEAD EXECUTIVE";
 
   return (
     <header className="relative z-30 flex shrink-0 items-center justify-between border-b border-border bg-card px-4 py-3 sm:px-6">
@@ -107,8 +114,15 @@ export function Topbar({
               <div className="px-3 py-2 border-b border-border">
                 <p className="text-xs font-bold text-foreground">{user?.name}</p>
                 <p className="text-[11px] text-muted truncate">{user?.email}</p>
-                <div className="mt-1 inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[9px] font-bold text-primary uppercase">
-                  {user?.department || "Field Staff"}
+                <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                  <span className="inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[9px] font-bold text-primary uppercase">
+                    {userRoleBadge}
+                  </span>
+                  {user?.department && (
+                    <span className="inline-block rounded-full bg-surface-muted px-2 py-0.5 text-[9px] font-semibold text-muted uppercase">
+                      {user.department}
+                    </span>
+                  )}
                 </div>
               </div>
 

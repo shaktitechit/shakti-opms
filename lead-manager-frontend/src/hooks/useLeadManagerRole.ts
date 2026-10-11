@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { AuthUser, UserSession } from "@/types/leadManager";
-import { isAdmin, isExecutive, isManager, readSessionFromStorage } from "@/utils/authStorage";
+import { isAdmin, isCoordinator, isExecutive, isManager, readSessionFromStorage } from "@/utils/authStorage";
 
 export interface LeadManagerRoleState {
   user: AuthUser | null;
@@ -10,6 +10,7 @@ export interface LeadManagerRoleState {
   loading: boolean;
   isAdmin: boolean;
   isManager: boolean;
+  isCoordinator: boolean;
   isExecutive: boolean;
   roleLabel: string;
 }
@@ -27,6 +28,7 @@ export function useLeadManagerRole(): LeadManagerRoleState {
   const user = session?.user || null;
   const admin = isAdmin(user);
   const manager = isManager(user);
+  const coordinator = isCoordinator(user);
   const executive = isExecutive(user);
 
   return {
@@ -35,7 +37,16 @@ export function useLeadManagerRole(): LeadManagerRoleState {
     loading,
     isAdmin: admin,
     isManager: manager,
+    isCoordinator: coordinator,
     isExecutive: executive,
-    roleLabel: admin ? "Admin" : manager ? "Manager" : executive ? "Executive" : "User",
+    roleLabel: admin
+      ? "Admin"
+      : manager
+      ? "Manager"
+      : coordinator
+      ? "Coordinator"
+      : executive
+      ? "Executive"
+      : "User",
   };
 }

@@ -83,6 +83,7 @@ app.use('/api/product-groups', proxyToProductService);
 app.use('/api/product-subgroups', proxyToProductService);
 app.use('/api/product-brands', proxyToProductService);
 app.use('/api/product-manufacturers', proxyToProductService);
+app.use('/api/product-units', proxyToProductService);
 app.use('/api/product-kit-items', proxyToProductService);
 
 app.use('/api/parties', proxyToPartyService);

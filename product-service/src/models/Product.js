@@ -5,17 +5,6 @@
 
 import mongoose from "mongoose";
 
-const PRODUCT_UNIT_ENUM = [
-  "pcs",
-  "box",
-  "kg",
-  "ltr",
-  "meter",
-  "set",
-  "kit",
-  "bottle",
-];
-
 const PRODUCT_TYPE_ENUM = ["individual", "kit"];
 
 const productSchema = new mongoose.Schema(
@@ -123,9 +112,9 @@ const productSchema = new mongoose.Schema(
      * ----------------------------------------------------- */
 
     unit: {
-      type: String,
-      enum: PRODUCT_UNIT_ENUM,
-      default: "pcs",
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ProductUnit",
+      index: true,
     },
 
     /**

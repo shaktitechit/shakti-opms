@@ -10,9 +10,21 @@ const emailHelper = require('../messages/helpers/email.helper');
 const notificationHelper = require('../../utils/notificationHelper');
 const microsoftGraph = require('../../config/microsoftGraph');
 const { logger } = require('../../utils/logger');
-const { isAdmin, isManager } = require('../../middlewares/leadManagerAuth.middleware');
+const {
+  isAdmin,
+  isManager,
+  isCoordinator,
+  isExecutive,
+  isLeadManagerElevated,
+} = require('../../middlewares/leadManagerAuth.middleware');
+const { getVisibleLeadUserIds, asObjectId } = require('../team/teamVisibility.service');
 const authService = require('../../services/authService');
 const { generateOrderNo } = require('../../utils/generateOrderNo');
+const { resolveSalesRepFromQuotation } = require('../../utils/followUpSalesRep');
+const {
+  ACTIVE_PIPELINE_STATUSES,
+  isActivePipelineStatus,
+} = require('./quotation.constants');
 
 const TEMPLATE_APPROVAL_REQUEST = 'lead_quotation_approval_request';
 const TEMPLATE_APPROVED = 'lead_quotation_approved';
@@ -22,8 +34,35 @@ const TEMPLATE_REJECTED = 'lead_quotation_rejected';
  * Checks whether user has permission to manage quotations (Admin portal role).
  */
 function isQuotationManager(user) {
-  if (!user) return false;
-  return isAdmin(user);
+  return isLeadManagerElevated(user);
+}
+
+function isQuotationCreator(user, quotation) {
+  if (!user || !quotation) return false;
+  const creatorId = userIdOf(quotation.created_by);
+  return Boolean(creatorId && String(creatorId) === String(user._id));
+}
+
+function isQuotationSalesPerson(user, quotation) {
+  if (!user || !quotation) return false;
+  const spId = userIdOf(quotation.sales_person_user);
+  if (spId && String(spId) === String(user._id)) return true;
+  const spEmail = String(quotation.sales_person_email || '')
+    .toLowerCase()
+    .trim();
+  const userEmail = String(user.email || '')
+    .toLowerCase()
+    .trim();
+  return Boolean(spEmail && userEmail && spEmail === userEmail);
+}
+
+/** Pipeline actions (status, submit for approval) for reps and managers on their quotes. */
+function canActOnQuotationPipeline(user, quotation) {
+  return (
+    isQuotationManager(user) ||
+    isQuotationCreator(user, quotation) ||
+    isQuotationSalesPerson(user, quotation)
+  );
 }
 
 function userIdOf(ref) {
@@ -43,6 +82,7 @@ function quotationCommonParams(quotation, extras = {}) {
     customerName: quotation.customer_name || 'Customer',
     quotationSubject: quotation.subject || 'Quotation Proposal',
     grandTotal: formatGrandTotal(quotation.grand_total),
+    salesPersonName: resolveSalesRepFromQuotation(quotation),
     ...extras,
   };
 }
@@ -565,33 +605,88 @@ function advanceLeadToQuotationStatus(lead) {
 /**
  * Build visibility filter for quotation queries.
  * - Admin: sees all quotations.
- * - Manager: sees quotations where user is Creator OR assigned Signatory.
- * - Executive: zero quotation access.
+ * - Manager / Coordinator: quotations created by, sold by, or signed by anyone in their reporting downline (incl. self).
+ * - Executive: own sales rep / creator / signatory quotes and quotes on leads assigned to them.
  */
-function buildQuotationVisibilityFilter(user) {
+async function buildQuotationVisibilityFilter(user) {
   if (!user || !user._id) return { _id: null };
 
   if (isAdmin(user)) {
     return {};
   }
 
-  if (isManager(user)) {
+  if (isExecutive(user) && !isManager(user) && !isCoordinator(user)) {
+    const { Lead } = getModels();
+    const uid = asObjectId(user._id);
+    const assignedLeads = await Lead.find({ assigned_to: uid, deletedAt: null }).select('_id').lean();
+    const leadIds = assignedLeads.map((l) => l._id);
     const userEmail = (user.email || '').toLowerCase().trim();
+    const emailClause = userEmail
+      ? [{ signatory_email: new RegExp(`^${userEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')}$`, 'i') }]
+      : [];
+    const orClause = [
+      { created_by: uid },
+      { sales_person_user: uid },
+      { signatory_user: uid },
+      ...emailClause,
+    ];
+    if (leadIds.length > 0) {
+      orClause.push({ lead: { $in: leadIds } });
+    }
+    return { $or: orClause };
+  }
+
+  if (isManager(user) || isCoordinator(user)) {
+    const visibleIds = await getVisibleLeadUserIds(user);
+    const userEmail = (user.email || '').toLowerCase().trim();
+    const emailClause = userEmail
+      ? [{ signatory_email: new RegExp(`^${userEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')}$`, 'i') }]
+      : [];
+
+    if (visibleIds && visibleIds.length > 0) {
+      const objIds = visibleIds.map((id) => asObjectId(id)).filter(Boolean);
+      return {
+        $or: [
+          { created_by: { $in: objIds } },
+          { sales_person_user: { $in: objIds } },
+          { signatory_user: { $in: objIds } },
+          ...emailClause,
+        ],
+      };
+    }
+
     return {
       $or: [
         { created_by: user._id },
-        {
-          $or: [
-            { signatory_user: user._id },
-            ...(userEmail ? [{ signatory_email: new RegExp(`^${userEmail.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&')}$`, 'i') }] : []),
-          ],
-        },
+        { sales_person_user: user._id },
+        { signatory_user: user._id },
+        ...emailClause,
       ],
     };
   }
 
-  // Executives have zero quotation visibility
   return { _id: null };
+}
+
+async function assertQuotationVisible(quotationId, user) {
+  const visibilityFilter = await buildQuotationVisibilityFilter(user);
+  if (visibilityFilter._id === null) {
+    throw new ApiError(403, 'You do not have permission to view this quotation');
+  }
+  if (Object.keys(visibilityFilter).length === 0) {
+    return;
+  }
+  const { LeadQuotation } = getModels();
+  const found = await LeadQuotation.findOne({
+    _id: quotationId,
+    deletedAt: null,
+    $and: [visibilityFilter],
+  })
+    .select('_id')
+    .lean();
+  if (!found) {
+    throw new ApiError(404, 'Quotation not found');
+  }
 }
 
 /**
@@ -704,7 +799,7 @@ async function listAll(query = {}, user) {
   const filter = { deletedAt: null };
   const conditions = [];
 
-  const visibilityFilter = buildQuotationVisibilityFilter(user);
+  const visibilityFilter = await buildQuotationVisibilityFilter(user);
   if (Object.keys(visibilityFilter).length > 0) {
     conditions.push(visibilityFilter);
   }
@@ -713,7 +808,12 @@ async function listAll(query = {}, user) {
     filter.lead = query.lead;
   }
   if (query.status) {
-    filter.status = query.status;
+    const statusParam = String(query.status).trim();
+    if (statusParam === 'in_negotiation' || statusParam === 'active_pipeline' || statusParam === 'quoted') {
+      filter.status = { $in: ACTIVE_PIPELINE_STATUSES };
+    } else {
+      filter.status = statusParam;
+    }
   }
   if (query.search && String(query.search).trim()) {
     const searchRegex = new RegExp(String(query.search).trim(), 'i');
@@ -738,8 +838,9 @@ async function listAll(query = {}, user) {
   const [total, quotations] = await Promise.all([
     LeadQuotation.countDocuments(filter),
     LeadQuotation.find(filter)
-      .populate('lead', 'lead_no organization_name first_name last_name status')
+      .populate('lead', 'lead_no organization_name first_name last_name status assigned_to')
       .populate('created_by', 'name email department')
+      .populate('sales_person_user', 'name email department phone designation')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -771,7 +872,7 @@ async function listByLead(leadId, user) {
     deletedAt: null,
   };
 
-  const visibilityFilter = buildQuotationVisibilityFilter(user);
+  const visibilityFilter = await buildQuotationVisibilityFilter(user);
   if (Object.keys(visibilityFilter).length > 0) {
     filter.$and = [visibilityFilter];
   }
@@ -822,19 +923,22 @@ async function create(leadIdOrBody, bodyOrUser, userParam) {
   }
 
   if (!isQuotationManager(user)) {
-    throw new ApiError(403, 'Only administrators can create quotations');
+    throw new ApiError(
+      403,
+      'Only administrators, managers, coordinators, and executives can create quotations'
+    );
   }
 
-  // Resolve assigned user (must be admin, super_admin, or finance; excluding sales)
+  // Resolve assigned user (must be admin or finance department; excluding sales)
   let assignedUser = null;
   if (lead && lead.assigned_to) {
     const leadUser = await User.findById(lead.assigned_to).lean();
-    if (leadUser && ['admin', 'super_admin', 'finance'].includes(leadUser.department)) {
+    if (leadUser && ['admin', 'finance'].includes(leadUser.department)) {
       assignedUser = leadUser;
     }
   }
   if (!assignedUser) {
-    assignedUser = await User.findOne({ department: { $in: ['admin', 'super_admin', 'finance'] }, is_active: true }).lean();
+    assignedUser = await User.findOne({ department: { $in: ['admin', 'finance'] }, is_active: true }).lean();
   }
   const defaultSignatory = assignedUser || user;
 
@@ -1007,6 +1111,7 @@ async function getById(id, user) {
     .lean();
 
   if (!quotation) throw new ApiError(404, 'Quotation not found');
+  await assertQuotationVisible(id, user);
   return quotation;
 }
 
@@ -1022,13 +1127,7 @@ async function update(id, body, user) {
     throw new ApiError(400, 'No further actions allowed: this quotation has already been converted to an order');
   }
 
-  const isCreator =
-    quotation.created_by &&
-    String(quotation.created_by._id || quotation.created_by) === String(user._id);
-
-  if (!isAdmin(user) && !isCreator) {
-    throw new ApiError(403, 'Only administrators and quotation creators can edit quotations');
-  }
+  const isCreator = isQuotationCreator(user, quotation);
 
   // Detect if this is a content update (form edit) versus a status-only transition (e.g. marking accepted/on_hold)
   const isContentUpdate = Boolean(
@@ -1045,6 +1144,18 @@ async function update(id, body, user) {
     body.valid_until ||
     body.ref_no
   );
+
+  if (isContentUpdate) {
+    if (!isAdmin(user) && !isCreator) {
+      throw new ApiError(403, 'Only administrators and quotation creators can edit quotations');
+    }
+  } else if (body.status !== undefined || body.approval_status !== undefined) {
+    if (!canActOnQuotationPipeline(user, quotation)) {
+      throw new ApiError(403, 'You do not have permission to update this quotation status');
+    }
+  } else if (!isAdmin(user) && !isCreator) {
+    throw new ApiError(403, 'Only administrators and quotation creators can edit quotations');
+  }
 
   const previousStatus = quotation.status;
   const previousApprovalStatus = quotation.approval_status;
@@ -1257,6 +1368,14 @@ async function submitForApproval(id, user) {
     throw new ApiError(400, 'No further actions allowed: this quotation has already been converted to an order');
   }
 
+  await assertQuotationVisible(id, user);
+  if (!canActOnQuotationPipeline(user, quotation)) {
+    throw new ApiError(403, 'You do not have permission to submit this quotation for approval');
+  }
+  if (quotation.status !== 'draft') {
+    throw new ApiError(400, 'Only draft quotations can be submitted for approval');
+  }
+
   quotation.approval_status = 'pending_approval';
   quotation.status = 'pending_approval';
   quotation.updated_by = user._id;
@@ -1293,7 +1412,10 @@ async function remove(id, user) {
   }
 
   if (!isQuotationManager(user)) {
-    throw new ApiError(403, 'Only administrators can delete quotations');
+    throw new ApiError(
+      403,
+      'Only administrators, managers, coordinators, and executives can delete quotations'
+    );
   }
 
   quotation.deletedAt = new Date();
@@ -1424,6 +1546,7 @@ async function reject(id, reason, user) {
  */
 async function scheduleFollowUp(quotationId, body, user) {
   const { Lead, LeadQuotation, LeadFollowUp } = getModels();
+  await assertQuotationVisible(quotationId, user);
   const quotation = await LeadQuotation.findOne({ _id: quotationId, deletedAt: null });
   if (!quotation) throw new ApiError(404, 'Quotation not found');
 
@@ -1487,6 +1610,7 @@ async function scheduleFollowUp(quotationId, body, user) {
  */
 async function listFollowUps(quotationId, user) {
   const { LeadQuotation, LeadFollowUp } = getModels();
+  await assertQuotationVisible(quotationId, user);
   const quotation = await LeadQuotation.findOne({ _id: quotationId, deletedAt: null });
   if (!quotation) throw new ApiError(404, 'Quotation not found');
 
@@ -1506,6 +1630,10 @@ async function completeFollowUp(followUpId, body, user) {
   const { Lead, LeadQuotation, LeadFollowUp } = getModels();
   const fu = await LeadFollowUp.findOne({ _id: followUpId, deletedAt: null });
   if (!fu) throw new ApiError(404, 'Follow-up not found');
+
+  if (fu.quotation) {
+    await assertQuotationVisible(fu.quotation, user);
+  }
 
   const quotation = await LeadQuotation.findOne({ _id: fu.quotation, deletedAt: null });
   const isConverted = quotation && quotation.status === 'converted';
@@ -1671,25 +1799,29 @@ async function reviseQuotation(quotationId, user) {
  */
 async function getDashboardStats(query = {}, user) {
   const { LeadQuotation } = getModels();
-  const { isLeadAdmin } = require('../leads/lead.service');
-  const q = { deletedAt: null };
+  const andConditions = [{ deletedAt: null }];
 
-  if (user && !isLeadAdmin(user)) {
-    q.created_by = user._id;
+  const visibilityFilter = user ? await buildQuotationVisibilityFilter(user) : {};
+  if (Object.keys(visibilityFilter).length > 0) {
+    andConditions.push(visibilityFilter);
   }
 
   // Period / Date filter
   if (query.from || query.to) {
-    q.quotation_date = {};
-    if (query.from) q.quotation_date.$gte = new Date(`${query.from}T00:00:00.000Z`);
-    if (query.to) q.quotation_date.$lte = new Date(`${query.to}T23:59:59.999Z`);
+    const dateCond = {};
+    if (query.from) dateCond.$gte = new Date(`${query.from}T00:00:00.000Z`);
+    if (query.to) dateCond.$lte = new Date(`${query.to}T23:59:59.999Z`);
+    andConditions.push({ quotation_date: dateCond });
   } else if (query.startDate || query.endDate || query.start_date || query.end_date) {
     const s = query.startDate || query.start_date;
     const e = query.endDate || query.end_date;
-    q.quotation_date = {};
-    if (s) q.quotation_date.$gte = new Date(s);
-    if (e) q.quotation_date.$lte = new Date(e);
+    const dateCond = {};
+    if (s) dateCond.$gte = new Date(s);
+    if (e) dateCond.$lte = new Date(e);
+    andConditions.push({ quotation_date: dateCond });
   }
+
+  const q = andConditions.length > 1 ? { $and: andConditions } : andConditions[0];
 
   const allQuotes = await LeadQuotation.find(q)
     .select('quotation_no version status approval_status grand_total total_discount items valid_until quotation_date customer_name')
@@ -1701,6 +1833,7 @@ async function getDashboardStats(query = {}, user) {
   let approvedCount = 0;
   let sentCount = 0;
   let inNegotiationCount = 0;
+  let activePipelineCount = 0;
   let acceptedCount = 0;
   let rejectedCount = 0;
   let expiredCount = 0;
@@ -1729,10 +1862,8 @@ async function getDashboardStats(query = {}, user) {
       approvedCount += 1;
     } else if (st === 'sent') {
       sentCount += 1;
-      totalQuotedValue += gTotal;
     } else if (st === 'in_negotiation') {
       inNegotiationCount += 1;
-      totalQuotedValue += gTotal;
     } else if (st === 'accepted') {
       acceptedCount += 1;
       totalWonValue += gTotal;
@@ -1741,11 +1872,16 @@ async function getDashboardStats(query = {}, user) {
     } else if (st === 'draft') {
       draftCount += 1;
     }
+
+    if (isActivePipelineStatus(st)) {
+      activePipelineCount += 1;
+      totalQuotedValue += gTotal;
+    }
   }
 
   const avgDiscountPercent = totalGrossValue > 0 ? Math.round((totalDiscountValue / totalGrossValue) * 100 * 10) / 10 : 0;
-  const winRate = (sentCount + inNegotiationCount + acceptedCount) > 0
-    ? Math.round((acceptedCount / (sentCount + inNegotiationCount + acceptedCount)) * 100)
+  const winRate = (activePipelineCount + acceptedCount) > 0
+    ? Math.round((acceptedCount / (activePipelineCount + acceptedCount)) * 100)
     : 0;
 
   return {
@@ -1755,6 +1891,8 @@ async function getDashboardStats(query = {}, user) {
     approved_count: approvedCount,
     sent_count: sentCount,
     in_negotiation_count: inNegotiationCount,
+    active_pipeline_count: activePipelineCount,
+    active_pipeline_value: totalQuotedValue,
     accepted_count: acceptedCount,
     rejected_count: rejectedCount,
     expired_count: expiredCount,
@@ -1775,8 +1913,11 @@ async function convert(id, body = {}, user) {
   const quotation = await LeadQuotation.findOne({ _id: id, deletedAt: null }).populate('lead');
   if (!quotation) throw new ApiError(404, 'Quotation not found');
 
-  if (!isAdmin(user) && !isManager(user)) {
-    throw new ApiError(403, 'Only administrators and managers can convert quotations to orders');
+  if (!isLeadManagerElevated(user)) {
+    throw new ApiError(
+      403,
+      'Only administrators, managers, coordinators, and executives can convert quotations to orders'
+    );
   }
 
   if (quotation.status === 'converted') {
@@ -2238,12 +2379,11 @@ async function extendValidity(id, body = {}, user) {
     throw new ApiError(400, 'No further actions allowed: this quotation has already been converted to an order');
   }
 
-  const isCreator =
-    quotation.created_by &&
-    String(quotation.created_by._id || quotation.created_by) === String(user._id);
-
-  if (!isAdmin(user) && !isCreator && !isManager(user)) {
-    throw new ApiError(403, 'Only administrators, managers, and the quotation creator can extend quotation validity');
+  if (!canActOnQuotationPipeline(user, quotation)) {
+    throw new ApiError(
+      403,
+      'Only administrators, managers, coordinators, the quotation creator, or assigned sales representative can extend quotation validity'
+    );
   }
 
   const previousValidUntil = quotation.valid_until;

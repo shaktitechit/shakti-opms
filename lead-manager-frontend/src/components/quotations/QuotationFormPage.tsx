@@ -57,8 +57,9 @@ import { formatCurrencyINR, canCreateQuotation, canManageQuotations, isSalesDepa
 import { RichTextEditor } from "./RichTextEditor";
 import { RichTextDisplay } from "./RichTextDisplay";
 import { getFieldText } from "@/components/leads/LeadFormPage";
-import { getLeadManagerPortalRole } from "@/components/leads/leadUtils";
+import { buildQuotationSignatoryUsers, getLeadManagerPortalRole } from "@/components/leads/leadUtils";
 import { isAdmin, isManager, readSessionFromStorage } from "@/utils/authStorage";
+import { useLeadManagerTeamScope } from "@/hooks/useLeadManagerTeamScope";
 
 type Props = {
   mode: "create" | "edit";
@@ -835,6 +836,8 @@ export function QuotationFormPage({
   const reduxUser = useAppSelector((state) => state.auth.user);
   const sessionUser = useMemo(() => readSessionFromStorage()?.user || null, []);
   const authUser = (reduxUser || sessionUser) as any;
+  const { filterByTeam, withSelfInList, isManager, isCoordinator } = useLeadManagerTeamScope();
+  const teamScopedPickers = isManager || isCoordinator;
 
   const isEditing = mode === "edit" && Boolean(quotationId);
 
@@ -872,18 +875,27 @@ export function QuotationFormPage({
     ) as Array<Record<string, unknown>>;
   }, [usersData]);
 
-  // Filter users who have lead_manager portal assigned AND access role is admin or manager
+  // Signatories: all portal admins + team-scoped managers/coordinators
   const managerUsers = useMemo(() => {
-    return usersList.filter((u: any) => {
-      const role = getLeadManagerPortalRole(u);
-      return role === "Admin" || role === "Manager";
+    const selfRow = authUser?._id
+      ? usersList.find((u: any) => String(u._id) === String(authUser._id))
+      : undefined;
+    return buildQuotationSignatoryUsers(usersList as Parameters<typeof buildQuotationSignatoryUsers>[0], {
+      filterByTeam,
+      withSelfInList,
+      selfUser: selfRow as Parameters<typeof buildQuotationSignatoryUsers>[1]["selfUser"],
     });
-  }, [usersList]);
+  }, [usersList, filterByTeam, withSelfInList, authUser]);
 
-  // Filter users who belong to sales department / sales roles
+  // Sales rep picker: sales roster limited to the same team scope
   const salesUsers = useMemo(() => {
-    return usersList.filter((u: any) => isSalesDepartmentUser(u));
-  }, [usersList]);
+    const sales = usersList.filter((u: any) => isSalesDepartmentUser(u));
+    const scoped = filterByTeam(sales as Array<{ _id?: string; id?: string }>);
+    const selfRow = authUser?._id
+      ? sales.find((u: any) => String(u._id) === String(authUser._id))
+      : undefined;
+    return withSelfInList(scoped, selfRow as { _id?: string; id?: string } | undefined);
+  }, [usersList, filterByTeam, withSelfInList, authUser]);
 
   // Master Terms & Conditions sets list for multi-selection
   const { data: masterTermsData } = useListTermsAndConditionsQuery({ limit: 100 });
@@ -1611,7 +1623,7 @@ export function QuotationFormPage({
           Manager Access Required
         </h2>
         <p className="mt-2 text-xs text-slate-500 max-w-sm">
-          Only authorized Lead Manager role users are permitted to generate or edit sales quotations.
+          Creating and editing quotations is limited to administrators, managers, and coordinators. You can view your assigned proposals from the quotations list.
         </p>
         <Link
           href={`${portalHome}/quotations`}
@@ -2352,6 +2364,7 @@ export function QuotationFormPage({
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5">
                 Assign the sales department representative responsible for this account. Kept for internal operations and automatically assigns the sales person when converting to an Order.
+                {teamScopedPickers ? " Only members of your reporting team are listed." : ""}
               </p>
             </div>
 
@@ -2468,7 +2481,7 @@ export function QuotationFormPage({
                 Signatory &amp; Admin Representative (Printed on PDF Letterhead)
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Select an authorized signatory from the dropdown (only active Lead Managers and Admins are listed). Signatory details are auto-filled and locked; only designation can be edited.
+                Select an authorized signatory from the dropdown. All Lead Manager portal admins are always listed; managers and coordinators from your reporting team are included as well. Signatory details are auto-filled and locked; only designation can be edited.
               </p>
             </div>
 

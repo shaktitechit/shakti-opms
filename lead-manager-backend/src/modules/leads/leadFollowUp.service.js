@@ -7,7 +7,8 @@ const { toPlain } = require('../../utils/mongoJson');
 const { ApiError } = require('../../utils/ApiError');
 const activityService = require('../activity/activity.service');
 const notificationService = require('../notifications/notification.service');
-const { isLeadAdmin, isLeadManager } = require('./lead.service');
+const { isLeadAdmin, isLeadManager, isLeadCoordinator, isLeadExecutive } = require('./lead.service');
+const { getVisibleLeadUserIds } = require('../team/teamVisibility.service');
 
 /**
  * Schedule a new follow-up for a lead.
@@ -99,6 +100,11 @@ async function complete(followUpId, body, user) {
   const { Lead, LeadFollowUp } = getModels();
   const fu = await LeadFollowUp.findOne({ _id: followUpId, deletedAt: null });
   if (!fu) throw new ApiError(404, 'Follow-up not found');
+
+  if (fu.quotation) {
+    const quotationService = require('../quotations/quotation.service');
+    return quotationService.completeFollowUp(followUpId, body, user);
+  }
 
   const lead = await Lead.findOne({ _id: fu.lead, deletedAt: null });
   if (!lead) throw new ApiError(404, 'Associated lead not found');
@@ -202,8 +208,13 @@ async function getCalendar(query = {}, user) {
 
   const isAdmin = isLeadAdmin(user);
   const isMgr = isLeadManager(user);
-  const hasQuotationAccess = isAdmin || isMgr;
+  const isCoord = isLeadCoordinator(user);
+  const isExec = isLeadExecutive(user);
+  const hasQuotationAccess = isAdmin || isMgr || isCoord || isExec;
   const userIdStr = String(user._id);
+  const teamIds = !isAdmin && (isMgr || isCoord) ? await getVisibleLeadUserIds(user) : null;
+  const teamSet = new Set((teamIds || []).map(String));
+  teamSet.add(userIdStr);
 
   if (!hasQuotationAccess) {
     q.quotation = null;
@@ -226,9 +237,10 @@ async function getCalendar(query = {}, user) {
     })
     .populate({
       path: 'quotation',
-      select: 'quotation_no version grand_total status customer_name kind_attn phone email subject party_id created_by sales_person_name sales_person_user lead',
+      select: 'quotation_no version grand_total status customer_name kind_attn phone email subject party_id created_by signatory_user sales_person_name sales_person_user lead',
       populate: [
         { path: 'sales_person_user', select: 'name email department' },
+        { path: 'signatory_user', select: 'name email department' },
         { path: 'party_id', select: 'party_name legal_name' },
       ],
     })
@@ -239,30 +251,39 @@ async function getCalendar(query = {}, user) {
 
   // Filter based on user scope
   if (!isAdmin) {
-    if (isMgr) {
-      // Manager: quotation follow-ups on own created quotations, lead follow-ups on own assigned leads
+    if (isMgr || isCoord) {
+      // Manager / Coordinator: own + downline team. Quotations only for managers.
       return rows
         .filter((r) => {
           const fuCreator = r.created_by?._id ? String(r.created_by._id) : (r.created_by ? String(r.created_by) : null);
           if (r.quotation) {
             const qCreator = r.quotation?.created_by?._id ? String(r.quotation.created_by._id) : (r.quotation?.created_by ? String(r.quotation.created_by) : null);
             const qRep = r.quotation?.sales_person_user?._id ? String(r.quotation.sales_person_user._id) : (r.quotation?.sales_person_user ? String(r.quotation.sales_person_user) : null);
-            return qCreator === userIdStr || qRep === userIdStr || fuCreator === userIdStr;
+            return teamSet.has(qCreator) || teamSet.has(qRep) || teamSet.has(fuCreator);
           }
           if (r.lead) {
             const leadAssignee = r.lead?.assigned_to?._id ? String(r.lead.assigned_to._id) : (r.lead?.assigned_to ? String(r.lead.assigned_to) : null);
-            return leadAssignee === userIdStr || fuCreator === userIdStr;
+            return teamSet.has(leadAssignee) || teamSet.has(fuCreator);
           }
-          return fuCreator === userIdStr;
+          return teamSet.has(fuCreator);
         })
         .map(toPlain);
     } else {
-      // Executive: strictly see their assigned or created lead follow-ups (no quotations)
+      // Executive: own lead follow-ups + quotation follow-ups where they are rep/creator/assignee
       return rows
         .filter((r) => {
-          if (r.quotation) return false;
-          const assignedId = r.lead?.assigned_to?._id ? String(r.lead.assigned_to._id) : (r.lead?.assigned_to ? String(r.lead.assigned_to) : null);
           const fuCreator = r.created_by?._id ? String(r.created_by._id) : (r.created_by ? String(r.created_by) : null);
+          const assignedId = r.lead?.assigned_to?._id ? String(r.lead.assigned_to._id) : (r.lead?.assigned_to ? String(r.lead.assigned_to) : null);
+          if (r.quotation) {
+            const qCreator = r.quotation?.created_by?._id ? String(r.quotation.created_by._id) : (r.quotation?.created_by ? String(r.quotation.created_by) : null);
+            const qRep = r.quotation?.sales_person_user?._id ? String(r.quotation.sales_person_user._id) : (r.quotation?.sales_person_user ? String(r.quotation.sales_person_user) : null);
+            return (
+              qCreator === userIdStr ||
+              qRep === userIdStr ||
+              fuCreator === userIdStr ||
+              assignedId === userIdStr
+            );
+          }
           return assignedId === userIdStr || fuCreator === userIdStr;
         })
         .map(toPlain);
@@ -341,9 +362,15 @@ async function getUrgentSummary(user, timeZone = 'Asia/Kolkata') {
   const filtered = allPending.filter((fu) => {
     if (isAdmin) return true;
     const leadAssignee = fu.lead?.assigned_to?._id ? String(fu.lead.assigned_to._id) : (fu.lead?.assigned_to ? String(fu.lead.assigned_to) : null);
-    const qCreator = fu.quotation?.created_by ? String(fu.quotation.created_by) : null;
-    const fuCreator = fu.created_by ? String(fu.created_by) : null;
-    return leadAssignee === userStr || qCreator === userStr || fuCreator === userStr;
+    const qCreator = fu.quotation?.created_by?._id ? String(fu.quotation.created_by._id) : (fu.quotation?.created_by ? String(fu.quotation.created_by) : null);
+    const qRep = fu.quotation?.sales_person_user?._id ? String(fu.quotation.sales_person_user._id) : (fu.quotation?.sales_person_user ? String(fu.quotation.sales_person_user) : null);
+    const fuCreator = fu.created_by?._id ? String(fu.created_by._id) : (fu.created_by ? String(fu.created_by) : null);
+    return (
+      leadAssignee === userStr ||
+      qCreator === userStr ||
+      qRep === userStr ||
+      fuCreator === userStr
+    );
   });
 
   const overdue = [];

@@ -19,6 +19,8 @@ const emailHelper = require('../messages/helpers/email.helper');
 const microsoftGraph = require('../../config/microsoftGraph');
 const { logger } = require('../../utils/logger');
 const { ALLOWED_STATUS_TRANSITIONS } = require('./lead.constants');
+const { getVisibleLeadUserIds, asObjectId, canAccessLeadUser } = require('../team/teamVisibility.service');
+const { resolveSalesRepFromLead } = require('../../utils/followUpSalesRep');
 
 const TEMPLATE_LEAD_ASSIGNED = 'lead_assigned';
 
@@ -103,6 +105,7 @@ async function notifyLeadAssignee({
         partyCompany,
         priority,
         actorName,
+        salesRepName: recipientName || resolveSalesRepFromLead(lead),
         headerSubtitle: isReassignment
           ? 'A lead has been reassigned to you'
           : 'A new lead has been assigned to you',
@@ -126,6 +129,14 @@ function userIsLeadAssignee(lead, userId) {
   return refId(lead.assigned_to) === String(userId);
 }
 
+const {
+  isAdmin: portalIsAdmin,
+  isManager: portalIsManager,
+  isCoordinator: portalIsCoordinator,
+  isExecutive: portalIsExecutive,
+  isLeadManagerElevated,
+} = require('../../middlewares/leadManagerAuth.middleware');
+
 function getPortalAccess(user, portalCode) {
   if (!user) return null;
   const portals = Array.isArray(user.portals)
@@ -136,38 +147,20 @@ function getPortalAccess(user, portalCode) {
   return portals.find((p) => p && (p.portal_code === portalCode || p.portal === portalCode)) || null;
 }
 
-/**
- * Checks whether user has admin access on lead_manager portal.
- * Strictly checks `admin` inside portal access_roles.
- */
 function isLeadAdmin(user) {
-  const portalAccess = getPortalAccess(user, 'lead_manager');
-  if (portalAccess && Array.isArray(portalAccess.access_roles)) {
-    return portalAccess.access_roles.includes('admin');
-  }
-  return false;
+  return portalIsAdmin(user);
 }
 
-/**
- * Checks whether user has manager access role on lead_manager portal.
- */
 function isLeadManager(user) {
-  const portalAccess = getPortalAccess(user, 'lead_manager');
-  if (portalAccess && Array.isArray(portalAccess.access_roles)) {
-    return portalAccess.access_roles.includes('manager');
-  }
-  return false;
+  return portalIsManager(user);
 }
 
-/**
- * Checks whether user has executive access role on lead_manager portal.
- */
+function isLeadCoordinator(user) {
+  return portalIsCoordinator(user);
+}
+
 function isLeadExecutive(user) {
-  const portalAccess = getPortalAccess(user, 'lead_manager');
-  if (portalAccess && Array.isArray(portalAccess.access_roles)) {
-    return portalAccess.access_roles.includes('executive');
-  }
-  return false;
+  return portalIsExecutive(user);
 }
 
 /** Work Planner managers may search another executive's assigned leads when planning visits. */
@@ -180,10 +173,12 @@ function isWorkPlannerManager(user) {
   );
 }
 
-/** Visibility: portal admins see all leads; managers and executives only leads assigned to them. */
-function assertCanAccessLead(lead, user, action = 'view') {
+/** Visibility: portal admins see all leads; managers and executives only leads assigned to them or their team. */
+async function assertCanAccessLead(lead, user, action = 'view') {
   if (isLeadAdmin(user)) return;
   if (userIsLeadAssignee(lead, user._id)) return;
+  const visible = await getVisibleLeadUserIds(user);
+  if (visible && lead.assigned_to && visible.includes(String(lead.assigned_to))) return;
   throw new ApiError(403, `You do not have permission to ${action} this lead`);
 }
 
@@ -295,6 +290,53 @@ async function list(query = {}, user) {
         { assigned_to: String(query.assigned_to) },
       ],
     });
+  } else if (isLeadManager(user) || isLeadCoordinator(user)) {
+    // Lead Manager managers & coordinators: see self + all direct and indirect team reports
+    const visibleIds = await getVisibleLeadUserIds(user);
+    const scope = String(query.scope || '').toLowerCase();
+
+    if (query.assigned_to && query.assigned_to !== 'all') {
+      if (query.assigned_to === 'unassigned') {
+        andConditions.push({ assigned_to: null });
+      } else {
+        const reqId = String(query.assigned_to);
+        if (visibleIds && !visibleIds.includes(reqId)) {
+          andConditions.push({ assigned_to: { $in: [] } });
+        } else {
+          const assignedObjId = mongoose.Types.ObjectId.isValid(reqId)
+            ? new mongoose.Types.ObjectId(reqId)
+            : reqId;
+          andConditions.push({
+            $or: [
+              { assigned_to: assignedObjId },
+              { assigned_to: reqId },
+            ],
+          });
+        }
+      }
+    } else if (scope === 'mine') {
+      andConditions.push({
+        $or: [
+          { assigned_to: userObjectId },
+          { assigned_to: String(user._id) },
+        ],
+      });
+    } else if (visibleIds && visibleIds.length > 0) {
+      const oids = visibleIds.map(asObjectId).filter(Boolean);
+      andConditions.push({
+        $or: [
+          { assigned_to: { $in: oids } },
+          { assigned_to: { $in: visibleIds } },
+        ],
+      });
+    } else {
+      andConditions.push({
+        $or: [
+          { assigned_to: userObjectId },
+          { assigned_to: String(user._id) },
+        ],
+      });
+    }
   } else {
     // Executives: only leads assigned to THIS user.
     andConditions.push({
@@ -429,7 +471,7 @@ async function get(id, user) {
   const row = await Lead.findOne({ _id: id, deletedAt: null }).populate(LEAD_POPULATE).lean();
   if (!row) throw new ApiError(404, 'Lead not found');
 
-  assertCanAccessLead(row, user, 'view');
+  await assertCanAccessLead(row, user, 'view');
 
   return toPlain(row);
 }
@@ -444,6 +486,16 @@ async function create(body, user) {
   let assigned_to = undefined;
   if (canManageAll) {
     assigned_to = body.assigned_to ? body.assigned_to : null;
+  } else if (isLeadManager(user) || isLeadCoordinator(user)) {
+    if (body.assigned_to) {
+      const allowed = await canAccessLeadUser(user, body.assigned_to);
+      if (!allowed) {
+        throw new ApiError(403, 'You can only assign leads to members of your team');
+      }
+      assigned_to = body.assigned_to;
+    } else {
+      assigned_to = user._id;
+    }
   } else {
     assigned_to = user._id;
   }
@@ -534,11 +586,11 @@ async function update(id, body, user) {
   const lead = await Lead.findOne({ _id: id, deletedAt: null });
   if (!lead) throw new ApiError(404, 'Lead not found');
 
-  if (!isSuperAdminUser(user)) {
+  if (!isLeadAdmin(user)) {
     if (['won', 'lost', 'converted'].includes(lead.status)) {
       throw new ApiError(400, 'Cannot edit a closed (won/lost/converted) lead');
     }
-    assertCanAccessLead(lead, user, 'update');
+    await assertCanAccessLead(lead, user, 'update');
   }
 
   const allowedUpdates = [
@@ -578,6 +630,13 @@ async function update(id, body, user) {
       if (field === 'assigned_to') {
         const nextAssigned = body.assigned_to ? body.assigned_to : null;
         nextAssignedId = nextAssigned ? String(nextAssigned) : null;
+        if (
+          nextAssignedId &&
+          !isLeadAdmin(user) &&
+          !(await canAccessLeadUser(user, nextAssignedId))
+        ) {
+          throw new ApiError(403, 'You can only assign leads to members of your team');
+        }
         assignmentChanged = nextAssignedId !== oldAssignedTo;
         lead.assigned_to = nextAssigned;
         if (assignmentChanged) {
@@ -704,15 +763,15 @@ async function changeStatus(id, { status, remarks }, user) {
   const lead = await Lead.findOne({ _id: id, deletedAt: null });
   if (!lead) throw new ApiError(404, 'Lead not found');
 
-  const canOverrideTransitions = isSuperAdminUser(user);
-  assertCanAccessLead(lead, user, 'change status on');
+  const canOverrideTransitions = isLeadAdmin(user);
+  await assertCanAccessLead(lead, user, 'change status on');
 
   const currentStatus = lead.status;
   if (currentStatus === status) {
     return toPlain(await Lead.findById(id).populate(LEAD_POPULATE).lean());
   }
 
-  // Validate transitions unless super_admin
+  // Validate transitions unless lead_manager portal admin
   if (!canOverrideTransitions) {
     const allowed = ALLOWED_STATUS_TRANSITIONS[currentStatus] || [];
     if (!allowed.includes(status)) {
@@ -838,8 +897,11 @@ async function convert(id, body = {}, user) {
   const lead = await Lead.findOne({ _id: id, deletedAt: null });
   if (!lead) throw new ApiError(404, 'Lead not found');
 
-  if (!isLeadAdmin(user) && !isLeadManager(user)) {
-    throw new ApiError(403, 'Only administrators and managers can convert leads to customers / orders');
+  if (!isLeadManagerElevated(user)) {
+    throw new ApiError(
+      403,
+      'Only administrators, managers, coordinators, and executives can convert leads to customers / orders'
+    );
   }
 
   if (lead.status === 'converted') {
@@ -1421,7 +1483,9 @@ async function bulkCreate(body, user) {
 module.exports = {
   isLeadAdmin,
   isLeadManager,
+  isLeadCoordinator,
   isLeadExecutive,
+  isLeadManagerElevated,
   assertCanAccessLead,
   list,
   get,

@@ -45,7 +45,7 @@ import {
 } from "@/store/api";
 import { useAppSelector } from "@/store/hooks";
 import { toast } from "@/lib/toast";
-import { isAdmin, isManager, readSessionFromStorage } from "@/utils/authStorage";
+import { isAdmin, isCoordinator, isManager, readSessionFromStorage } from "@/utils/authStorage";
 import {
   formatCurrencyINR,
   isAssignedSignatory,
@@ -54,9 +54,11 @@ import {
   canEmailQuotation,
   canEditQuotation,
   canManageQuotations,
-  canSubmitForApproval,
-  isDraftVisible,
+  canViewQuotations,
   isQuotationRosterVisible,
+  canSubmitForApproval,
+  canUpdateQuotationStatus,
+  isDraftVisible,
   canConvertQuotation,
   isQuotationExpired,
   isQuotationExpiringSoon,
@@ -74,6 +76,28 @@ type Props = {
   portalLabel?: string;
 };
 
+function salesRepresentativeDisplay(q: QuotationRecord): {
+  name: string;
+  designation: string;
+  email: string;
+} {
+  const userRef = q.sales_person_user;
+  const fromUser =
+    typeof userRef === "object" && userRef !== null
+      ? {
+          name: userRef.name || "",
+          email: userRef.email || "",
+          designation: (userRef as { designation?: string }).designation || "",
+        }
+      : null;
+  return {
+    name: q.sales_person_name?.trim() || fromUser?.name || "—",
+    designation:
+      q.sales_person_designation?.trim() || fromUser?.designation || "Sales Representative",
+    email: q.sales_person_email?.trim() || fromUser?.email || "",
+  };
+}
+
 const STATUS_OPTIONS: Array<{ value: string; label: string; badgeClass: string }> = [
   { value: "all", label: "All Statuses", badgeClass: "" },
   { value: "converted", label: "Converted to Order", badgeClass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300" },
@@ -81,7 +105,11 @@ const STATUS_OPTIONS: Array<{ value: string; label: string; badgeClass: string }
   { value: "approved", label: "Approved", badgeClass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300" },
   { value: "draft", label: "Draft", badgeClass: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" },
   { value: "sent", label: "Sent", badgeClass: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300" },
-  { value: "in_negotiation", label: "In Negotiation", badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300" },
+  {
+    value: "in_negotiation",
+    label: "Quoted / In Negotiation",
+    badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300",
+  },
   { value: "accepted", label: "Accepted", badgeClass: "bg-teal-100 text-teal-700 dark:bg-teal-950/60 dark:text-teal-300" },
   { value: "rejected", label: "Rejected", badgeClass: "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300" },
   { value: "on_hold", label: "On Hold", badgeClass: "bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300" },
@@ -124,6 +152,9 @@ export function ListQuotationsPage({
     }
     const currentUser = authUser || (typeof window !== "undefined" ? readSessionFromStorage()?.user : null);
     if (!currentUser) return list;
+    if (canManageQuotations(currentUser) || canViewQuotations(currentUser)) {
+      return list;
+    }
     return list.filter((q) => isQuotationRosterVisible(currentUser as any, q as any));
   }, [rawQuotations, authUser]);
 
@@ -261,7 +292,9 @@ export function ListQuotationsPage({
             Quotation Master
           </h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            View, generate, track, and manage all customer quotations across department operations.
+            {canManageQuotations(authUser)
+              ? "View, generate, track, and manage all customer quotations across department operations."
+              : "View and track quotations and proposals assigned to you as sales representative."}
           </p>
         </div>
 
@@ -285,7 +318,7 @@ export function ListQuotationsPage({
             Export Excel (.xlsx)
           </button>
 
-          {(isAdmin(authUser as any) || isManager(authUser as any)) && (
+          {canViewQuotations(authUser) && (
             <Link
               href={`${portalHome}/quotations/reports`}
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 shadow-xs hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer"
@@ -295,7 +328,7 @@ export function ListQuotationsPage({
             </Link>
           )}
 
-          {(isAdmin(authUser as any) || isManager(authUser as any)) && (
+          {(isAdmin(authUser as any) || isManager(authUser as any) || isCoordinator(authUser as any)) && (
             <Link
               href={`${portalHome}/quotations/terms`}
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 shadow-xs hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer"
@@ -414,6 +447,7 @@ export function ListQuotationsPage({
                 <th className="px-5 py-3.5 text-right">Grand Total</th>
                 <th className="px-5 py-3.5">Status</th>
                 <th className="px-5 py-3.5">Signatory</th>
+                <th className="px-5 py-3.5">Sales Representative</th>
                 <th className="px-5 py-3.5">Created By</th>
                 <th className="px-5 py-3.5 text-right">Actions</th>
               </tr>
@@ -421,14 +455,14 @@ export function ListQuotationsPage({
             <tbody className="divide-y divide-slate-100 dark:divide-white/10">
               {isLoading ? (
                 <tr>
-                  <td colSpan={9} className="px-5 py-12 text-center text-slate-400">
+                  <td colSpan={10} className="px-5 py-12 text-center text-slate-400">
                     <RefreshCw className="mx-auto h-6 w-6 animate-spin text-primary mb-2" />
                     Loading quotations...
                   </td>
                 </tr>
               ) : quotations.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-5 py-12 text-center text-slate-500">
+                  <td colSpan={10} className="px-5 py-12 text-center text-slate-500">
                     <FileText className="mx-auto h-10 w-10 text-slate-300 dark:text-slate-600 mb-3" />
                     <p className="font-semibold text-slate-700 dark:text-slate-300">No Quotations Found</p>
                     <p className="text-xs text-slate-400 mt-1">Generate a new direct or lead-linked quotation to get started.</p>
@@ -438,6 +472,7 @@ export function ListQuotationsPage({
                 quotations.map((q) => {
                   const leadInfo = typeof q.lead === "object" && q.lead !== null ? q.lead : null;
                   const createdByInfo = q.created_by;
+                  const salesRep = salesRepresentativeDisplay(q);
 
                   const statusOpt = STATUS_OPTIONS.find((s) => s.value === q.status) || {
                     badgeClass: "bg-slate-100 text-slate-700",
@@ -599,6 +634,19 @@ export function ListQuotationsPage({
                         )}
                       </td>
 
+                      {/* Sales Representative */}
+                      <td className="px-5 py-4 text-xs text-slate-700 dark:text-slate-300">
+                        <div className="font-semibold text-slate-900 dark:text-white">
+                          {salesRep.name}
+                        </div>
+                        <div className="text-[11px] text-slate-500">{salesRep.designation}</div>
+                        {salesRep.email && (
+                          <div className="text-[10px] text-slate-400 truncate max-w-[120px]">
+                            {salesRep.email}
+                          </div>
+                        )}
+                      </td>
+
                       {/* Created By */}
                       <td className="px-5 py-4 text-xs text-slate-600 dark:text-slate-400">
                         <div className="font-medium">{createdByInfo?.name || "System"}</div>
@@ -669,7 +717,8 @@ export function ListQuotationsPage({
                               )}
 
                               {/* Approved / Sent / On Hold: Status Action Buttons (Accept / Hold / Reject) */}
-                              {(q.status === "approved" || q.status === "sent" || q.status === "on_hold") && (
+                              {(q.status === "approved" || q.status === "sent" || q.status === "on_hold") &&
+                                canUpdateQuotationStatus(authUser, q) && (
                                 <div className="flex items-center gap-1 mr-1 border-r border-slate-200 dark:border-white/10 pr-1.5">
                                   <button
                                     type="button"

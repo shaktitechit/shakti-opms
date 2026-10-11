@@ -131,6 +131,7 @@ export const baseApi = createApi({
     "Quotation",
     "TermsAndConditions",
     "Notifications",
+    "LeadTeam",
   ],
   endpoints: () => ({}),
 });

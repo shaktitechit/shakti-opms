@@ -320,7 +320,7 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-white/5"
             >
               <BarChart3 className="h-3.5 w-3.5 text-indigo-500" />
-              {isAdmin ? "Funnel & Reports" : "My Reports"}
+              My Reports
             </Link>
 
             <Link

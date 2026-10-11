@@ -225,9 +225,9 @@ function registerModels() {
         index: true,
       },
       unit: {
-        type: String,
-        enum: ["pcs", "box", "kg", "ltr", "meter", "set", "kit", "bottle"],
-        default: "pcs",
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "ProductUnit",
+        index: true,
       },
       base_price: {
         type: Number,

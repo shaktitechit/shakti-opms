@@ -1091,7 +1091,7 @@ function registerModels() {
       { timestamps: true }
     );
     reportingEdgeSchema.index(
-      { subordinate: 1 },
+      { subordinate: 1, manager: 1 },
       { unique: true, partialFilterExpression: { is_active: true } }
     );
     mongoose.model('WorkPlannerReportingEdge', reportingEdgeSchema);
@@ -1236,6 +1236,18 @@ async function fixWorkPlanIndexes() {
       } catch (e) {
         // collection or index might not exist yet, safe to ignore
       }
+    }
+
+    // Clean up legacy single-manager unique index on workplannerreportingedges
+    try {
+      const edgeCol = db.collection('workplannerreportingedges');
+      const edgeIndexes = await edgeCol.indexes();
+      const oldSubIdx = edgeIndexes.find((idx) => idx.name === 'subordinate_1');
+      if (oldSubIdx) {
+        await edgeCol.dropIndex('subordinate_1');
+      }
+    } catch (e) {
+      // safe to ignore
     }
   } catch (err) {
     // safe to ignore

@@ -225,9 +225,9 @@ function registerModels() {
         index: true,
       },
       unit: {
-        type: String,
-        enum: ["pcs", "box", "kg", "ltr", "meter", "set", "kit", "bottle"],
-        default: "pcs",
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "ProductUnit",
+        index: true,
       },
       base_price: {
         type: Number,
@@ -517,6 +517,23 @@ function registerModels() {
   );
   productManufacturerSchema.plugin(softDeletePlugin);
   mongoose.model("ProductManufacturer", productManufacturerSchema);
+
+  const productUnitSchema = new mongoose.Schema(
+    {
+      company_id: { type: mongoose.Schema.Types.ObjectId, ref: "CompanyInfo", index: true },
+      name: { type: String, required: true, unique: true, trim: true, index: true },
+      description: { type: String, trim: true },
+      is_default: { type: Boolean, default: false, index: true },
+      is_active: { type: Boolean, default: true, index: true },
+      is_featured: { type: Boolean, default: false, index: true },
+      deletedAt: { type: Date, default: null, index: true },
+      created_by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    },
+    { timestamps: true },
+  );
+  productUnitSchema.plugin(softDeletePlugin);
+  mongoose.model("ProductUnit", productUnitSchema);
 
 
 
@@ -2820,6 +2837,7 @@ function registerModels() {
     ProductBrand: mongoose.models.ProductBrand || mongoose.model('ProductBrand', productBrandSchema),
     ProductManufacturer:
       mongoose.models.ProductManufacturer || mongoose.models.ProductManufecturer || mongoose.model('ProductManufacturer', productManufacturerSchema),
+    ProductUnit: mongoose.models.ProductUnit || mongoose.model('ProductUnit', productUnitSchema),
     TransportAgent:
       mongoose.models.TransportAgent || mongoose.model('TransportAgent', transportAgentSchema),
     Vehicle: mongoose.models.Vehicle || mongoose.model('Vehicle', vehicleSchema),

@@ -11,6 +11,7 @@ const productGroupRoutes = require('./modules/productGroups/productGroup.routes'
 const productSubgroupRoutes = require('./modules/productSubgroups/productSubgroup.routes');
 const productBrandRoutes = require('./modules/productBrands/productBrand.routes');
 const productManufacturerRoutes = require('./modules/productManufacturers/productManufacturer.routes');
+const productUnitRoutes = require('./modules/productUnits/productUnit.routes');
 const productKitItemRoutes = require('./modules/productKitItems/productKitItem.routes');
 
 const app = express();
@@ -30,6 +31,7 @@ app.use('/api/product-groups', productGroupRoutes);
 app.use('/api/product-subgroups', productSubgroupRoutes);
 app.use('/api/product-brands', productBrandRoutes);
 app.use('/api/product-manufacturers', productManufacturerRoutes);
+app.use('/api/product-units', productUnitRoutes);
 app.use('/api/product-kit-items', productKitItemRoutes);
 
 app.use(notFound);

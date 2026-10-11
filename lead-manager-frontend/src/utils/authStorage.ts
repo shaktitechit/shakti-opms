@@ -119,11 +119,9 @@ export function isAdmin(user: AuthUser | null | undefined): boolean {
     (p: any) => p && (p.portal_code === "lead_manager" || p.portal === "lead_manager")
   );
 
-  return Boolean(
-    portalAccess &&
-      Array.isArray(portalAccess.access_roles) &&
-      portalAccess.access_roles.includes("admin")
-  );
+  if (!portalAccess || !Array.isArray(portalAccess.access_roles)) return false;
+  const roles = portalAccess.access_roles.map((r: unknown) => String(r).toLowerCase().trim());
+  return roles.includes("admin") || roles.includes("super_admin");
 }
 
 export function isManager(user: AuthUser | null | undefined): boolean {
@@ -171,10 +169,44 @@ export function isExecutive(user: AuthUser | null | undefined): boolean {
     (p: any) => p && (p.portal_code === "lead_manager" || p.portal === "lead_manager")
   );
 
+  if (!portalAccess || !Array.isArray(portalAccess.access_roles)) return false;
+  const roles: string[] = portalAccess.access_roles.map((r: unknown) =>
+    String(r).toLowerCase().trim()
+  );
+  if (roles.includes("executive")) return true;
+  if (roles.some((r: string) => ["sales", "sales_executive", "account_executive"].includes(r)))
+    return true;
+  if (roles.some((r: string) => r.includes("executive"))) return true;
+  const codes = Array.isArray((user as any).role_codes)
+    ? (user as any).role_codes.map((c: string) => String(c).toLowerCase())
+    : [];
+  if (codes.some((c: string) => c.includes("executive") || c === "sales_executive")) return true;
+  return false;
+}
+
+export function isCoordinator(user: AuthUser | null | undefined): boolean {
+  const uParam = user as any;
+  if (!user || (!uParam?._id && !uParam?.id && !uParam?.email)) {
+    const s = readSessionFromStorage();
+    user = s?.user || null;
+  }
+  if (!user) return false;
+
+  const uAny = user as any;
+  const portals = Array.isArray(user.portals)
+    ? user.portals
+    : Array.isArray(uAny.portal_access)
+    ? uAny.portal_access
+    : [];
+
+  const portalAccess = portals.find(
+    (p: any) => p && (p.portal_code === "lead_manager" || p.portal === "lead_manager")
+  );
+
   return Boolean(
     portalAccess &&
       Array.isArray(portalAccess.access_roles) &&
-      portalAccess.access_roles.includes("executive")
+      portalAccess.access_roles.includes("coordinator")
   );
 }
 

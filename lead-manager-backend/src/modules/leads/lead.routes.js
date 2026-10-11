@@ -3,7 +3,8 @@ const { requireAuth } = require('../../middlewares/auth.middleware');
 const {
   requireLeadManagerAccess,
   requireLeadManagerOrWorkPlannerAccess,
-  requireLeadManagerRole,
+  requireLeadManagerSalesTeamRole,
+  requireLeadManagerElevatedRole,
 } = require('../../middlewares/leadManagerAuth.middleware');
 const controller = require('./lead.controller');
 const quotationController = require('./leadQuotation.controller');
@@ -38,15 +39,15 @@ router.post('/follow-ups/reminders/overdue', controller.runOverdueFollowUpRemind
 router.put('/follow-ups/:followUpId/complete', controller.completeFollowUp);
 
 /* --- Lead Quotations --- */
-router.get('/quotations/default-terms', requireLeadManagerRole('admin', 'manager'), quotationController.getDefaultTerms);
-router.get('/quotations/:quotationId', requireLeadManagerRole('admin', 'manager'), quotationController.getById);
-router.patch('/quotations/:quotationId', requireLeadManagerRole('admin', 'manager'), quotationController.update);
-router.post('/quotations/:quotationId/submit-for-approval', requireLeadManagerRole('admin', 'manager'), quotationController.submitForApproval);
-router.post('/quotations/:quotationId/approve', requireLeadManagerRole('admin', 'manager'), quotationController.approve);
-router.post('/quotations/:quotationId/reject', requireLeadManagerRole('admin', 'manager'), quotationController.reject);
-router.post('/quotations/:quotationId/convert', requireLeadManagerRole('admin', 'manager'), quotationController.convert);
-router.post('/quotations/:quotationId/extend-validity', requireLeadManagerRole('admin', 'manager'), quotationController.extendValidity);
-router.delete('/quotations/:quotationId', requireLeadManagerRole('admin', 'manager'), quotationController.remove);
+router.get('/quotations/default-terms', requireLeadManagerSalesTeamRole, quotationController.getDefaultTerms);
+router.get('/quotations/:quotationId', requireLeadManagerSalesTeamRole, quotationController.getById);
+router.patch('/quotations/:quotationId', requireLeadManagerSalesTeamRole, quotationController.update);
+router.post('/quotations/:quotationId/submit-for-approval', requireLeadManagerSalesTeamRole, quotationController.submitForApproval);
+router.post('/quotations/:quotationId/approve', requireLeadManagerSalesTeamRole, quotationController.approve);
+router.post('/quotations/:quotationId/reject', requireLeadManagerSalesTeamRole, quotationController.reject);
+router.post('/quotations/:quotationId/convert', requireLeadManagerElevatedRole, quotationController.convert);
+router.post('/quotations/:quotationId/extend-validity', requireLeadManagerSalesTeamRole, quotationController.extendValidity);
+router.delete('/quotations/:quotationId', requireLeadManagerElevatedRole, quotationController.remove);
 
 /* --- Leads CRUD --- */
 router.post('/', controller.create);
@@ -71,7 +72,7 @@ router.get('/:id/follow-ups', controller.listFollowUps);
 router.post('/:id/follow-ups', controller.createFollowUp);
 
 /* --- Lead Quotations per Lead --- */
-router.get('/:id/quotations', requireLeadManagerRole('admin', 'manager'), quotationController.list);
-router.post('/:id/quotations', requireLeadManagerRole('admin', 'manager'), quotationController.create);
+router.get('/:id/quotations', requireLeadManagerSalesTeamRole, quotationController.list);
+router.post('/:id/quotations', requireLeadManagerElevatedRole, quotationController.create);
 
 module.exports = router;

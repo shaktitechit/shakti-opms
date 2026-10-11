@@ -59,7 +59,7 @@ type ProductRow = {
   product_subgroup?: ProductRef;
   brand?: ProductRef;
   manufacturer?: ProductRef;
-  unit: "pcs" | "box" | "kg" | "ltr" | "meter" | "set" | "kit" | "bottle";
+  unit?: ProductRef;
   base_price: number;
   minimum_sale_rate: number;
   mrp?: number;
@@ -95,7 +95,7 @@ const COLUMNS: { key: keyof ProductRow; label: string; headerLetter: string; rea
   { key: "minimum_sale_rate", label: "Min Sale Rate*", headerLetter: "J", type: "number" },
   { key: "mrp", label: "MRP", headerLetter: "K", type: "number" },
   { key: "gst_percent", label: "GST %", headerLetter: "L", type: "number" },
-  { key: "unit", label: "Unit", headerLetter: "M", type: "select", options: ["pcs", "box", "kg", "ltr", "meter", "set", "kit", "bottle"] },
+  { key: "unit", label: "Unit", headerLetter: "M", type: "text" },
   { key: "warranty_months", label: "Warranty Months", headerLetter: "N", type: "number" },
   { key: "aliases", label: "Aliases", headerLetter: "O", type: "text" },
   { key: "tags", label: "Tags", headerLetter: "P", type: "text" },
@@ -375,6 +375,21 @@ export function GoogleSheetProductsModal({
     () => dedupeMetaOptionsByName(metaOptions?.manufacturers),
     [metaOptions?.manufacturers],
   );
+  const metaUnits = useMemo(
+    () => dedupeMetaOptionsByName(metaOptions?.units),
+    [metaOptions?.units],
+  );
+  const uniqueUnits = useMemo(() => {
+    const values = new Set<string>();
+    localRows.forEach(r => {
+      const u = refName(r.unit).trim();
+      if (u) values.add(u);
+    });
+    metaUnits.forEach(u => {
+      if (u?.name?.trim()) values.add(u.name.trim());
+    });
+    return Array.from(values).sort();
+  }, [localRows, metaUnits]);
   const [patchProduct] = usePatchProductMutation();
   const [createProduct, { isLoading: isCreating }] = useCreateProductMutation();
   const [deleteProduct, { isLoading: isDeleting }] = useDeleteProductMutation();
@@ -418,7 +433,8 @@ export function GoogleSheetProductsModal({
           key === "brand" ||
           key === "manufacturer" ||
           key === "product_group" ||
-          key === "product_subgroup"
+          key === "product_subgroup" ||
+          key === "unit"
             ? refName(val)
             : val !== undefined && val !== null
               ? String(val)
@@ -506,7 +522,8 @@ export function GoogleSheetProductsModal({
       colKey === "brand" ||
       colKey === "manufacturer" ||
       colKey === "product_group" ||
-      colKey === "product_subgroup"
+      colKey === "product_subgroup" ||
+      colKey === "unit"
         ? refName(orig)
         : orig;
     if (areEqual(origVal, parsedVal)) return;
@@ -539,7 +556,7 @@ export function GoogleSheetProductsModal({
         product_type: "individual",
         base_price: 0,
         minimum_sale_rate: 0,
-        unit: "pcs"
+        unit: "Pcs"
       }).unwrap();
 
       toast.success("Added new product row!");
@@ -579,6 +596,7 @@ export function GoogleSheetProductsModal({
           refName(r.manufacturer).toLowerCase().includes(query) ||
           refName(r.product_group).toLowerCase().includes(query) ||
           refName(r.product_subgroup).toLowerCase().includes(query) ||
+          refName(r.unit).toLowerCase().includes(query) ||
           r.description?.toLowerCase().includes(query) ||
           (Array.isArray(r.aliases) ? r.aliases.join(", ") : String(r.aliases || "")).toLowerCase().includes(query) ||
           (Array.isArray(r.tags) ? r.tags.join(", ") : String(r.tags || "")).toLowerCase().includes(query)
@@ -610,7 +628,7 @@ export function GoogleSheetProductsModal({
 
     // 4. Unit Filter
     if (filterUnit !== "all") {
-      rows = rows.filter(r => r.unit === filterUnit);
+      rows = rows.filter(r => refName(r.unit).trim() === filterUnit);
     }
 
     // 5. Min Price Filter
@@ -663,7 +681,7 @@ export function GoogleSheetProductsModal({
 
     // Apply sorting
     if (sortConfig) {
-      const refKeys = new Set(["brand", "manufacturer", "product_group", "product_subgroup"]);
+      const refKeys = new Set(["brand", "manufacturer", "product_group", "product_subgroup", "unit"]);
       rows.sort((a, b) => {
         const rawA = a[sortConfig.key];
         const rawB = b[sortConfig.key];
@@ -1089,8 +1107,8 @@ function onEdit(e) {
                           className="w-full rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-850 px-2.5 py-1.5 text-slate-800 dark:text-slate-100 outline-none focus:border-emerald-500"
                         >
                           <option value="all">All units</option>
-                          {COLUMNS.find(c => c.key === "unit")?.options?.map(opt => (
-                            <option key={opt} value={opt}>{opt}</option>
+                          {uniqueUnits.map((u, i) => (
+                            <option key={`filter-unit:${u}:${i}`} value={u}>{u}</option>
                           ))}
                         </select>
                       </div>
@@ -1402,7 +1420,8 @@ function onEdit(e) {
                           col.key === "brand" ||
                           col.key === "manufacturer" ||
                           col.key === "product_group" ||
-                          col.key === "product_subgroup"
+                          col.key === "product_subgroup" ||
+                          col.key === "unit"
                             ? refName(rawCellVal)
                             : rawCellVal;
                         const isSelected = selectedCell?.productId === row._id && selectedCell?.colKey === col.key;
@@ -1468,7 +1487,7 @@ function onEdit(e) {
                                       className="h-4 w-4 rounded border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-emerald-600 focus:ring-emerald-500 focus:ring-offset-0 focus:ring-offset-transparent cursor-pointer"
                                     />
                                   </div>
-                                ) : ["product_group", "product_subgroup", "brand", "manufacturer"].includes(col.key) ? (
+                                ) : ["product_group", "product_subgroup", "brand", "manufacturer", "unit"].includes(col.key) ? (
                                   <select
                                     value={String(cellVal || "")}
                                     onChange={e => {
@@ -1499,6 +1518,11 @@ function onEdit(e) {
                                     {col.key === "manufacturer" && metaManufacturers.map((m, mi) => (
                                       <option key={metaOptionKey("mfr", m, mi)} value={m.name} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100">
                                         {m.name}
+                                      </option>
+                                    ))}
+                                    {col.key === "unit" && metaUnits.map((u, ui) => (
+                                      <option key={metaOptionKey("unit", u, ui)} value={u.name} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100">
+                                        {u.name}
                                       </option>
                                     ))}
                                   </select>
@@ -1533,7 +1557,8 @@ function onEdit(e) {
                                       col.key === "product_group" ? "grid-group-options" :
                                       col.key === "product_subgroup" ? "grid-subgroup-options" :
                                       col.key === "brand" ? "grid-brand-options" :
-                                      col.key === "manufacturer" ? "grid-manufacturer-options" : undefined
+                                      col.key === "manufacturer" ? "grid-manufacturer-options" :
+                                      col.key === "unit" ? "grid-unit-options" : undefined
                                     }
                                     value={cellVal !== undefined && cellVal !== null ? String(cellVal) : ""}
                                     onChange={e => {

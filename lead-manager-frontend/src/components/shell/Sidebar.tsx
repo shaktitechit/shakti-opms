@@ -12,6 +12,7 @@ import {
   ChevronRight,
   FileText,
   LayoutGrid,
+  Network,
   TrendingUp,
   Users,
   X,
@@ -31,7 +32,7 @@ export function Sidebar({
   companyInfo?: any;
 }) {
   const pathname = usePathname();
-  const { isAdmin, isManager, isExecutive, roleLabel } = useLeadManagerRole();
+  const { isAdmin, isManager, isCoordinator, isExecutive, roleLabel } = useLeadManagerRole();
   const lgW = desktopCollapsed ? "lg:w-[64px] lg:min-w-[64px]" : "lg:w-[14.5rem] lg:min-w-[14.5rem]";
 
   const companyLogoUrl = companyInfo?.logo_url || process.env.NEXT_PUBLIC_COMPANY_LOGO_URL || "";
@@ -44,6 +45,11 @@ export function Sidebar({
   const isQuotationsActive = pathname.startsWith("/dashboard/quotations") && !pathname.includes("terms") && !pathname.includes("reports");
   const isQuotationReportsActive = pathname.startsWith("/dashboard/quotations/reports");
   const isTermsActive = pathname.startsWith("/dashboard/quotations/terms");
+  const isTeamManagerActive = pathname.startsWith("/dashboard/team-manager");
+
+  /** Lead pipeline reports at /dashboard/leads/reports (distinct from Quote Reports). */
+  const showLeadReportsNav = isAdmin || isManager || isCoordinator || isExecutive;
+  const leadReportsNavLabel = "My Reports";
 
   return (
     <>
@@ -115,6 +121,8 @@ export function Sidebar({
                 ? "bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/20"
                 : isManager
                 ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                : isCoordinator
+                ? "bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20"
                 : "bg-primary/15 text-primary border border-primary/20"
             }`}>
               {roleLabel}
@@ -166,23 +174,24 @@ export function Sidebar({
             {!desktopCollapsed && <span>Follow-Ups</span>}
           </Link>
 
-          {/* Reports — team analytics for Admin, own data for Manager & Executive */}
-          <Link
-            href="/dashboard/leads/reports"
-            onClick={() => setMobileNavOpen(false)}
-            className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
-              isReportsActive
-                ? "bg-primary/15 border border-primary/30 text-primary font-bold shadow-xs"
-                : "text-muted hover:bg-surface-muted hover:text-foreground border border-transparent"
-            }`}
-            title={isAdmin ? "Sales Reports" : "My Reports"}
-          >
-            <BarChart3 className={`h-4 w-4 shrink-0 ${isReportsActive ? "text-primary" : ""}`} />
-            {!desktopCollapsed && <span>{isAdmin ? "Sales Reports" : "My Reports"}</span>}
-          </Link>
+          {showLeadReportsNav && (
+            <Link
+              href="/dashboard/leads/reports"
+              onClick={() => setMobileNavOpen(false)}
+              className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+                isReportsActive
+                  ? "bg-primary/15 border border-primary/30 text-primary font-bold shadow-xs"
+                  : "text-muted hover:bg-surface-muted hover:text-foreground border border-transparent"
+              }`}
+              title="Lead pipeline reports"
+            >
+              <BarChart3 className={`h-4 w-4 shrink-0 ${isReportsActive ? "text-primary" : ""}`} />
+              {!desktopCollapsed && <span>{leadReportsNavLabel}</span>}
+            </Link>
+          )}
 
-          {/* Quotations (Admin & Manager Only) */}
-          {(isAdmin || isManager) && (
+          {/* Quotations (incl. executives — view & follow-ups) */}
+          {(isAdmin || isManager || isCoordinator || isExecutive) && (
             <Link
               href="/dashboard/quotations"
               onClick={() => setMobileNavOpen(false)}
@@ -198,8 +207,8 @@ export function Sidebar({
             </Link>
           )}
 
-          {/* Quotation Reports & Analytics (Admin & Manager) */}
-          {(isAdmin || isManager) && (
+          {/* Quotation Reports (self-scoped for executives) */}
+          {(isAdmin || isManager || isCoordinator || isExecutive) && (
             <Link
               href="/dashboard/quotations/reports"
               onClick={() => setMobileNavOpen(false)}
@@ -215,8 +224,8 @@ export function Sidebar({
             </Link>
           )}
 
-          {/* Master Terms & Conditions (Admin & Manager) */}
-          {(isAdmin || isManager) && (
+          {/* Master Terms & Conditions (Admin, Manager & Coordinator) */}
+          {(isAdmin || isManager || isCoordinator) && (
             <Link
               href="/dashboard/quotations/terms"
               onClick={() => setMobileNavOpen(false)}
@@ -229,6 +238,23 @@ export function Sidebar({
             >
               <BookOpen className={`h-4 w-4 shrink-0 ${isTermsActive ? "text-primary" : ""}`} />
               {!desktopCollapsed && <span>Terms &amp; Conditions</span>}
+            </Link>
+          )}
+
+          {/* Team Manager (Admin, Manager & Coordinator) */}
+          {(isAdmin || isManager || isCoordinator) && (
+            <Link
+              href="/dashboard/team-manager"
+              onClick={() => setMobileNavOpen(false)}
+              className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+                isTeamManagerActive
+                  ? "bg-primary/15 border border-primary/30 text-primary font-bold shadow-xs"
+                  : "text-muted hover:bg-surface-muted hover:text-foreground border border-transparent"
+              }`}
+              title="Team Hierarchy & Matrix"
+            >
+              <Network className={`h-4 w-4 shrink-0 ${isTeamManagerActive ? "text-primary" : ""}`} />
+              {!desktopCollapsed && <span>Team Manager</span>}
             </Link>
           )}
         </div>

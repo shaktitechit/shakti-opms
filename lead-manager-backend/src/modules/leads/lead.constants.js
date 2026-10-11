@@ -41,7 +41,7 @@ const CONVERSION_TYPES = Object.freeze([
 
 /**
  * Valid lifecycle transitions for standard sales workflows.
- * Admin and super_admin may override these transitions.
+ * Lead Manager portal admins may override these transitions.
  */
 const ALLOWED_STATUS_TRANSITIONS = Object.freeze({
   new: ['assigned', 'follow_up', 'quotation', 'won', 'lost', 'converted'],

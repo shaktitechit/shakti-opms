@@ -18,6 +18,7 @@ function registerModels() {
         phone: { type: String, trim: true },
         department: { type: String, trim: true },
         is_active: { type: Boolean, default: true },
+        portals: { type: mongoose.Schema.Types.Mixed },
       },
       { timestamps: true }
     );
@@ -655,6 +656,44 @@ function registerModels() {
     mongoose.model('Order', orderSchema);
   }
 
+  // LeadReportingEdge schema — who reports to whom in lead_manager portal
+  if (!mongoose.models.LeadReportingEdge) {
+    const reportingEdgeSchema = new mongoose.Schema(
+      {
+        subordinate: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          required: true,
+        },
+        manager: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: 'User',
+          required: true,
+          index: true,
+        },
+        subordinate_role: {
+          type: String,
+          enum: ['executive', 'coordinator', 'manager'],
+          required: true,
+        },
+        manager_role: {
+          type: String,
+          enum: ['coordinator', 'manager', 'admin'],
+          required: true,
+        },
+        is_active: { type: Boolean, default: true, index: true },
+        created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        updated_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      },
+      { timestamps: true }
+    );
+    reportingEdgeSchema.index(
+      { subordinate: 1, manager: 1 },
+      { unique: true, partialFilterExpression: { is_active: true } }
+    );
+    mongoose.model('LeadReportingEdge', reportingEdgeSchema);
+  }
+
   _cached = {
     User: mongoose.model('User'),
     CompanyInfo: mongoose.models.CompanyInfo || null,
@@ -672,6 +711,7 @@ function registerModels() {
     TermsText: mongoose.model('TermsText'),
     Product: mongoose.model('Product'),
     Order: mongoose.model('Order'),
+    LeadReportingEdge: mongoose.model('LeadReportingEdge'),
   };
 
   return _cached;

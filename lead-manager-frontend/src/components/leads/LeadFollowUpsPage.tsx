@@ -46,6 +46,7 @@ import {
 } from "@/store/api";
 import { useAppSelector } from "@/store/hooks";
 import { useLeadManagerRole } from "@/hooks/useLeadManagerRole";
+import { useLeadManagerTeamScope } from "@/hooks/useLeadManagerTeamScope";
 import { toast } from "@/lib/toast";
 import { mutationRejectedMessage } from "@/lib/mutationMessages";
 import {
@@ -54,10 +55,13 @@ import {
   formatLeadDateTime,
   isUserInLeadManagerPortal,
   getLeadManagerPortalRole,
+  getFollowUpSalesRepName,
   isLeadAdmin,
   isLeadManagerRole,
 } from "./leadUtils";
 import { CompleteFollowUpModal } from "./CompleteFollowUpModal";
+import { CompleteQuotationFollowUpModal } from "@/components/quotations/CompleteQuotationFollowUpModal";
+import type { LeadQuotationRecord } from "@/store/api";
 import { DownloadFollowUpsPreviewModal } from "./DownloadFollowUpsPreviewModal";
 import { CalendarMonthGrid } from "./calendar/CalendarMonthGrid";
 import { CalendarWeekTimeline } from "./calendar/CalendarWeekTimeline";
@@ -120,8 +124,10 @@ function FollowUpTypeBadge({ type }: { type: LeadFollowUpType }) {
 
 export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
   const currentUser = useAppSelector((state) => state.auth.user);
-  const { isAdmin, isManager } = useLeadManagerRole();
-  const hasQuotationAccess = isAdmin || isManager;
+  const { isAdmin, isManager, isCoordinator, isExecutive, user } = useLeadManagerRole();
+  const { filterByTeam, withSelfInList } = useLeadManagerTeamScope();
+  const canFilterRep = isAdmin || isManager || isCoordinator;
+  const hasQuotationAccess = canFilterRep || isExecutive;
 
   const [datePreset, setDatePreset] = useState<DateFilterPreset>("all");
   const [customFrom, setCustomFrom] = useState<string>("");
@@ -166,8 +172,19 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
   }
 
   const { data: usersData } = useListUsersQuery(undefined, {
-    skip: !isAdmin,
+    skip: !canFilterRep,
   });
+
+  const assignableUsers = useMemo(() => {
+    const raw = Array.isArray(usersData)
+      ? usersData
+      : (usersData as { data?: Array<{ _id: string; name: string; portals?: Array<{ portal_code?: string; access_roles?: string[] }> }> })?.data || [];
+    let filtered = raw.filter(isUserInLeadManagerPortal);
+    if (filtered.length === 0) filtered = raw;
+    const scoped = filterByTeam(filtered);
+    const selfRow = user?._id ? raw.find((u) => String(u._id) === String(user._id)) : undefined;
+    return withSelfInList(scoped, selfRow);
+  }, [usersData, filterByTeam, withSelfInList, user]);
 
   // Available entity tabs based on quotation access
   const availableEntityTabs = useMemo(() => {
@@ -287,25 +304,6 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
       // Overdue preset filter
       if (datePreset === "overdue" && !isOverdue) return false;
 
-      // Non-admin: only assigned leads or created follow-ups
-      if (!isAdmin) {
-        const assignedId = leadObj?.assigned_to?._id
-          ? String(leadObj.assigned_to._id)
-          : typeof leadObj?.assigned_to === "string"
-          ? leadObj.assigned_to
-          : "";
-        const creatorId = fu.created_by?._id
-          ? String(fu.created_by._id)
-          : typeof fu.created_by === "string"
-          ? fu.created_by
-          : "";
-        const userId = String(currentUser?._id);
-        if (assignedId !== userId && creatorId !== userId) {
-          return false;
-        }
-      }
-
-      // Assignee filter (Admin only)
       if (assignedFilter !== "all") {
         const assignedId = leadObj?.assigned_to?._id
           ? String(leadObj.assigned_to._id)
@@ -319,7 +317,23 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
             : typeof qRep === "string"
             ? qRep
             : "";
-        if (assignedId !== assignedFilter && qRepId !== assignedFilter) {
+        const qCreator =
+          typeof quoteObj?.created_by === "object" && quoteObj.created_by !== null && "_id" in quoteObj.created_by
+            ? String((quoteObj.created_by as { _id?: string })._id || "")
+            : typeof quoteObj?.created_by === "string"
+            ? quoteObj.created_by
+            : "";
+        const fuCreator = fu.created_by?._id
+          ? String(fu.created_by._id)
+          : typeof fu.created_by === "string"
+          ? fu.created_by
+          : "";
+        if (
+          assignedId !== assignedFilter &&
+          qRepId !== assignedFilter &&
+          qCreator !== assignedFilter &&
+          fuCreator !== assignedFilter
+        ) {
           return false;
         }
       }
@@ -350,10 +364,8 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
     assignedFilter,
     search,
     todayStr,
-    isAdmin,
     hasQuotationAccess,
     effectiveEntityType,
-    currentUser?._id,
   ]);
 
   // Summary counts
@@ -363,19 +375,7 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
     let completed = 0;
     let todayCount = 0;
 
-    const userFollowUps = !isAdmin
-      ? followUps.filter((fu) => {
-          const leadObj = typeof fu.lead === "object" && fu.lead !== null ? fu.lead : null;
-          const assignedId = leadObj?.assigned_to?._id
-            ? String(leadObj.assigned_to._id)
-            : typeof leadObj?.assigned_to === "string"
-            ? leadObj.assigned_to
-            : "";
-          return assignedId === String(currentUser?._id);
-        })
-      : followUps;
-
-    for (const fu of userFollowUps) {
+    for (const fu of followUps) {
       const fuDate = fu.follow_up_date ? fu.follow_up_date.split("T")[0] : "";
       const isDone = fu.status === "completed";
       if (isDone) {
@@ -387,11 +387,11 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
       }
     }
 
-    const total = userFollowUps.length;
+    const total = followUps.length;
     const rate = total > 0 ? Math.round((completed / total) * 100) : 0;
 
     return { total, pending, overdue, completed, todayCount, rate };
-  }, [followUps, todayStr, isAdmin, currentUser?._id]);
+  }, [followUps, todayStr]);
 
   // Groupings for Agenda View
   const groupedAgenda = useMemo(() => {
@@ -444,10 +444,7 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
       const phone = quoteObj?.phone || leadObj?.phone || "";
       const email = quoteObj?.email || leadObj?.email || "";
 
-      const repName =
-        (typeof fu.created_by === "object" && fu.created_by !== null ? (fu.created_by as any).name : "") ||
-        (leadObj?.assigned_to && typeof leadObj.assigned_to === "object" ? leadObj.assigned_to.name : "") ||
-        "Unassigned";
+      const repName = getFollowUpSalesRepName(fu);
 
       const fuDate = fu.follow_up_date ? fu.follow_up_date.split("T")[0] : "";
       const isDone = fu.status === "completed";
@@ -805,26 +802,22 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
               </select>
             </div>
 
-            {/* Sales rep filter (for Admin / Super Admin) */}
-            {isAdmin ? (
+            {canFilterRep ? (
               <div>
                 <select
                   value={assignedFilter}
                   onChange={(e) => setAssignedFilter(e.target.value)}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-white/10 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
                 >
-                  <option value="all">All Users</option>
-                  {Array.isArray(usersData) &&
-                    usersData
-                      .filter(isUserInLeadManagerPortal)
-                      .map((u: any) => {
-                        const roleBadge = getLeadManagerPortalRole(u);
-                        return (
-                          <option key={u._id || u.id} value={u._id || u.id}>
-                            {u.name} {roleBadge ? `(${roleBadge})` : ""}
-                          </option>
-                        );
-                      })}
+                  <option value="all">{isAdmin ? "All Sales Reps" : "All Team Members"}</option>
+                  {assignableUsers.map((u) => {
+                    const roleBadge = getLeadManagerPortalRole(u);
+                    return (
+                      <option key={u._id} value={u._id}>
+                        {u.name} {roleBadge ? `(${roleBadge})` : ""}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             ) : (
@@ -970,7 +963,7 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
                   <th className="px-4 py-3">Channel</th>
                   <th className="px-4 py-3">Lead & Organization</th>
                   <th className="px-4 py-3">Contact</th>
-                  <th className="px-4 py-3">Executive</th>
+                  <th className="px-4 py-3">Sales Rep</th>
                   <th className="px-4 py-3 min-w-[200px]">Agenda / Notes</th>
                   <th className="px-4 py-3 text-center">Status</th>
                   <th className="px-4 py-3 text-right">Actions</th>
@@ -985,7 +978,7 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
                   const companyName = leadObj?.company_name;
                   const phone = leadObj?.phone;
                   const email = leadObj?.email;
-                  const repName = leadObj?.assigned_to?.name || fu.created_by?.name || "Unassigned";
+                  const repName = getFollowUpSalesRepName(fu);
                   const isDone = fu.status === "completed";
                   const fuDate = fu.follow_up_date ? fu.follow_up_date.split("T")[0] : "";
                   const isOverdue = !isDone && fuDate < todayStr;
@@ -1123,17 +1116,31 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
       )}
 
       {/* ── MODAL: RECORD OUTCOME & COMPLETE ── */}
-      {completeTarget && (
-        <CompleteFollowUpModal
-          followUp={completeTarget}
-          open={!!completeTarget}
-          onClose={() => setCompleteTarget(null)}
-          onSuccess={() => {
-            setCompleteTarget(null);
-            refetch();
-          }}
-        />
-      )}
+      {completeTarget &&
+        typeof completeTarget.quotation === "object" &&
+        completeTarget.quotation !== null && (
+          <CompleteQuotationFollowUpModal
+            followUp={completeTarget as any}
+            quotation={completeTarget.quotation as LeadQuotationRecord}
+            open
+            onClose={() => {
+              setCompleteTarget(null);
+              refetch();
+            }}
+          />
+        )}
+      {completeTarget &&
+        !(typeof completeTarget.quotation === "object" && completeTarget.quotation !== null) && (
+          <CompleteFollowUpModal
+            followUp={completeTarget}
+            open={!!completeTarget}
+            onClose={() => setCompleteTarget(null)}
+            onSuccess={() => {
+              setCompleteTarget(null);
+              refetch();
+            }}
+          />
+        )}
 
       {/* ── MODAL: EXPORT PREVIEW ── */}
       {downloadModalOpen && (
@@ -1166,7 +1173,7 @@ function FollowUpCard({
   const companyName = leadObj?.company_name;
   const phone = leadObj?.phone;
   const email = leadObj?.email;
-  const repName = leadObj?.assigned_to?.name || followUp.created_by?.name || "Unassigned";
+  const repName = getFollowUpSalesRepName(followUp);
   const isDone = followUp.status === "completed";
 
   return (

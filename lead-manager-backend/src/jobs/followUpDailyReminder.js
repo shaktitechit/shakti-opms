@@ -9,6 +9,10 @@ const { getModels } = require('../data/mongoRegistry');
 const notificationHelper = require('../utils/notificationHelper');
 const emailHelper = require('../modules/messages/helpers/email.helper');
 const { logger } = require('../utils/logger');
+const {
+  resolveSalesRepFromFollowUp,
+  resolveFollowUpOwnerUserId,
+} = require('../utils/followUpSalesRep');
 
 const CLOSED_LEAD_STATUSES = new Set(['won', 'lost', 'converted']);
 const CLOSED_QUOTATION_STATUSES = new Set(['accepted', 'rejected', 'expired']);
@@ -155,15 +159,16 @@ function formatNotifLine(fu, opts) {
   const when = whenLabel(fu, opts);
   const type = fu.type || 'call';
   const party = partyName(fu);
+  const rep = resolveSalesRepFromFollowUp(fu);
   if (fu.quotation) {
     const qNo = fu.quotation.quotation_no || 'Quotation';
     const total = formatCurrencyINR(fu.quotation.grand_total || 0);
-    return `${when} · ${type} · Quotation #${qNo} (${total}) · ${party}`;
+    return `${when} · ${type} · Quotation #${qNo} (${total}) · ${party} · Rep: ${rep}`;
   }
   const lead = fu.lead || {};
   const leadNo = lead.lead_no ? `#${lead.lead_no}` : 'Lead';
   const req = formatRequirementsOrValue(fu);
-  return `${when} · ${type} · ${leadNo} · ${party} · ${req}`;
+  return `${when} · ${type} · ${leadNo} · ${party} · ${req} · Rep: ${rep}`;
 }
 
 function truncateSubject(text) {
@@ -217,7 +222,7 @@ function buildFollowUpsRows(followUps, { timeZone, includeDate }) {
       const req = escapeHtml(formatRequirementsOrValue(fu));
       const type = escapeHtml(fu.type || 'call');
       const when = escapeHtml(whenLabel(fu, { timeZone, includeDate }));
-      const notes = escapeHtml(fu.notes || '—');
+      const salesRep = escapeHtml(resolveSalesRepFromFollowUp(fu));
 
       const phone = contactPhone(fu);
       const cleanPhone = phone.replace(/[^0-9]/g, '');
@@ -242,6 +247,7 @@ function buildFollowUpsRows(followUps, { timeZone, includeDate }) {
                 <td class="req">${req}</td>
                 <td><span style="text-transform:capitalize;">${type}</span></td>
                 <td><strong>${when}</strong></td>
+                <td>${salesRep}</td>
                 <td>${actions || '<span class="muted">—</span>'}</td>
               </tr>`;
     })
@@ -256,6 +262,7 @@ function getUserRole(user) {
   if (!p || !Array.isArray(p.access_roles)) return 'executive';
   if (p.access_roles.includes('admin')) return 'admin';
   if (p.access_roles.includes('manager')) return 'manager';
+  if (p.access_roles.includes('coordinator')) return 'coordinator';
   return 'executive';
 }
 
@@ -272,10 +279,7 @@ function groupByAssignee(rows) {
       if (qStatus && CLOSED_QUOTATION_STATUSES.has(qStatus)) continue;
     }
 
-    const assigneeId = fu.lead?.assigned_to ? String(fu.lead.assigned_to) : null;
-    const qCreatorId = fu.quotation?.created_by ? String(fu.quotation.created_by) : null;
-    const fallbackId = fu.created_by ? String(fu.created_by) : null;
-    const userId = assigneeId || qCreatorId || fallbackId;
+    const userId = resolveFollowUpOwnerUserId(fu);
     if (!userId) continue;
     if (!byUser.has(userId)) byUser.set(userId, []);
     byUser.get(userId).push(fu);
@@ -311,13 +315,18 @@ async function sendGroupedDigest({
       path: 'lead',
       select:
         'lead_no name company_name phone email status priority assigned_to requirement products party_id contacts billing_address',
-      populate: { path: 'party_id', select: 'party_name legal_name' },
+      populate: [
+        { path: 'party_id', select: 'party_name legal_name' },
+        { path: 'assigned_to', select: 'name email' },
+      ],
     })
     .populate({
       path: 'quotation',
       select:
-        'quotation_no version grand_total status customer_name kind_attn phone email subject party_id created_by lead',
+        'quotation_no version grand_total status customer_name kind_attn phone email subject party_id created_by lead sales_person_name sales_person_user',
+      populate: { path: 'sales_person_user', select: 'name email' },
     })
+    .populate('created_by', 'name email')
     .sort({ follow_up_date: 1, follow_up_time: 1 })
     .lean();
 

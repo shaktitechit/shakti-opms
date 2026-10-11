@@ -46,12 +46,16 @@ import {
   FOLLOWUP_TYPE_CONFIG,
   LEAD_STATUS_CONFIG,
   canViewLeadPricing,
+  getFollowUpSalesRepName,
 } from "./leadUtils";
+import { canViewQuotations } from "@/components/quotations/quotationUtils";
 import { useAppSelector } from "@/store/hooks";
 
 type LeadManagerStatsWidgetsProps = {
   portalHome: "/sales" | "/admin" | "/super_admin" | string;
   assigned_to?: string;
+  isExecutive?: boolean;
+  isTeamScope?: boolean;
 } & DashboardPeriodQuery;
 
 type StatCard = {
@@ -88,6 +92,8 @@ function FollowUpTypeIcon({ type }: { type: LeadFollowUpType }) {
 export default function LeadManagerStatsWidgets({
   portalHome,
   assigned_to,
+  isExecutive = false,
+  isTeamScope = false,
   dateFilter,
   customDateFrom,
   customDateTo,
@@ -97,6 +103,7 @@ export default function LeadManagerStatsWidgets({
   const [showFollowUpsTable, setShowFollowUpsTable] = useState(true);
   const authUser = useAppSelector((state) => state.auth.user);
   const showPricing = canViewLeadPricing(authUser, portalHome);
+  const showQuotationsModule = canViewQuotations(authUser);
 
   const hasPeriod =
     dateFilter != null || selectedYears != null || selectedMonths != null;
@@ -114,9 +121,7 @@ export default function LeadManagerStatsWidgets({
     return base;
   }, [dateFilter, customDateFrom, customDateTo, selectedYears, selectedMonths, assigned_to]);
 
-  const { data, isFetching } = useGetLeadDashboardStatsQuery(
-    hasPeriod || assigned_to ? statsQuery : undefined
-  );
+  const { data, isFetching } = useGetLeadDashboardStatsQuery(statsQuery);
 
   const todayYmd = useMemo(() => {
     const now = new Date();
@@ -184,9 +189,11 @@ export default function LeadManagerStatsWidgets({
     },
     {
       key: "quotation",
-      label: "Quotations",
+      label: showQuotationsModule ? "Quotation Stage" : "Quotations",
       value: data?.quotationLeads ?? 0,
-      href: `${portalHome}/leads?status=quotation`,
+      href: showQuotationsModule
+        ? `${portalHome}/quotations`
+        : `${portalHome}/leads?status=quotation`,
       accent: "bg-purple-500",
       iconWrap: "bg-purple-50 dark:bg-purple-950/30",
       iconTone: "text-purple-600 dark:text-purple-400",
@@ -276,7 +283,7 @@ export default function LeadManagerStatsWidgets({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Leads & Inquiries Manager
+            {isExecutive ? "My leads & follow-ups" : isTeamScope ? "Team pipeline KPIs" : "Leads & inquiries"}
           </h3>
           {hasPeriod ? (
             <PeriodHeadingCaption
@@ -430,9 +437,9 @@ export default function LeadManagerStatsWidgets({
                 <thead className="border-b border-slate-100 bg-slate-50/80 font-bold uppercase text-slate-500 dark:border-white/5 dark:bg-slate-800/40 dark:text-slate-400">
                   <tr>
                     <th className="px-3.5 py-2.5">Time / Type</th>
-                    <th className="px-3.5 py-2.5">Lead & Contact</th>
+                    <th className="px-3.5 py-2.5">Lead / Quotation</th>
                     <th className="px-3.5 py-2.5">Phone / Email</th>
-                    <th className="px-3.5 py-2.5">Executive</th>
+                    <th className="px-3.5 py-2.5">Sales rep</th>
                     <th className="px-3.5 py-2.5 min-w-[200px]">Agenda & Objectives</th>
                     <th className="px-3.5 py-2.5 text-center w-28">Status</th>
                     <th className="px-3.5 py-2.5 text-right w-24">Action</th>
@@ -444,18 +451,26 @@ export default function LeadManagerStatsWidgets({
                       typeof fu.lead === "object" && fu.lead !== null
                         ? fu.lead
                         : null;
+                    const quoteObj =
+                      typeof fu.quotation === "object" && fu.quotation !== null
+                        ? fu.quotation
+                        : null;
+                    const isQuoteFollowUp = Boolean(quoteObj);
                     const leadId = leadObj?._id || (typeof fu.lead === "string" ? fu.lead : "");
+                    const quoteId = quoteObj?._id || (typeof fu.quotation === "string" ? fu.quotation : "");
                     const leadNo = leadObj?.lead_no || "Lead";
                     const leadName = leadObj?.name || "—";
                     const companyName = leadObj?.company_name;
-                    const phone = leadObj?.phone;
-                    const email = leadObj?.email;
+                    const quoteNo = quoteObj?.quotation_no || "Quote";
+                    const customerName = quoteObj?.customer_name || quoteObj?.kind_attn || companyName;
+                    const phone =
+                      leadObj?.phone ||
+                      (quoteObj as { phone?: string; cell?: string })?.phone ||
+                      (quoteObj as { cell?: string })?.cell;
+                    const email = leadObj?.email || (quoteObj as { email?: string })?.email;
                     const typeLabel =
                       FOLLOWUP_TYPE_CONFIG[fu.type]?.label || fu.type;
-                    const repName =
-                      leadObj?.assigned_to?.name ||
-                      fu.created_by?.name ||
-                      "Unassigned";
+                    const repName = getFollowUpSalesRepName(fu);
 
                     const isDone = fu.status === "completed";
 
@@ -482,9 +497,19 @@ export default function LeadManagerStatsWidgets({
                           </div>
                         </td>
 
-                        {/* Lead Info */}
+                        {/* Lead / Quotation */}
                         <td className="px-3.5 py-2.5">
-                          {leadId ? (
+                          {isQuoteFollowUp && quoteId ? (
+                            <Link
+                              href={`${portalHome}/quotations/${quoteId}`}
+                              className="font-bold text-slate-900 hover:text-indigo-600 dark:text-white dark:hover:text-indigo-400"
+                            >
+                              {customerName || "Customer"}
+                              <div className="text-[10px] font-mono text-indigo-600 dark:text-indigo-400">
+                                Quote #{quoteNo}
+                              </div>
+                            </Link>
+                          ) : leadId ? (
                             <Link
                               href={`${portalHome}/leads/${leadId}`}
                               className="font-bold text-slate-900 hover:text-blue-600 dark:text-white dark:hover:text-blue-400"
@@ -558,7 +583,15 @@ export default function LeadManagerStatsWidgets({
 
                         {/* Action */}
                         <td className="px-3.5 py-2.5 text-right">
-                          {leadId ? (
+                          {isQuoteFollowUp && quoteId ? (
+                            <Link
+                              href={`${portalHome}/quotations/${quoteId}`}
+                              className="inline-flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-800 shadow-sm hover:bg-indigo-100 dark:border-indigo-900/40 dark:bg-indigo-950/50 dark:text-indigo-200"
+                            >
+                              <span>Quote</span>
+                              <ExternalLink className="h-2.5 w-2.5" />
+                            </Link>
+                          ) : leadId ? (
                             <Link
                               href={`${portalHome}/leads/${leadId}`}
                               className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"

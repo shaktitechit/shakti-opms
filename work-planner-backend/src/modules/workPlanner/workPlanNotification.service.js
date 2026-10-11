@@ -7,6 +7,7 @@ const { getModels } = require('../../data/mongoRegistry');
 const emailHelper = require('../messages/helpers/email.helper');
 const { logger } = require('../../utils/logger');
 const { resolveEmailAttachments } = require('../../services/fileManagement');
+const { resolveReportingStakeholderEmails } = require('./workPlannerTeamReporting.service');
 
 /**
  * Finds all active users with manager/admin access to the work_planner portal.
@@ -285,9 +286,15 @@ async function sendWorkPlanCompletedEmail(planId, executiveUser) {
 
     const expensesTotal = expenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 
-    const managers = await getWorkPlannerManagers();
-    if (!managers || managers.length === 0) {
-      logger.warn(`[WorkPlanNotification] No work planner managers found to receive notification for plan ${planId}`);
+    const salesUserId = plan.sales_user?._id || plan.sales_user || executiveUser._id || executiveUser.id;
+    const {
+      directManager,
+      primaryRecipientEmail,
+      ccList,
+    } = await resolveReportingStakeholderEmails(salesUserId, plan);
+
+    if (!primaryRecipientEmail) {
+      logger.warn(`[WorkPlanNotification] No reporting manager email found for plan ${planId}`);
       return;
     }
 
@@ -321,16 +328,10 @@ async function sendWorkPlanCompletedEmail(planId, executiveUser) {
       workPlanUrl,
     };
 
-    const managerEmails = managers.map((m) => m.email).filter(Boolean);
-    if (managerEmails.length === 0) {
-      logger.warn(`[WorkPlanNotification] No manager email addresses found for plan ${planId}`);
-      return;
-    }
-
-    const primaryRecipient = managerEmails[0];
-    const ccList = managerEmails.slice(1);
-    const primaryManager = managers.find((m) => m.email === primaryRecipient);
-    const recipientName = primaryManager ? (primaryManager.name || primaryRecipient.split('@')[0]) : 'Manager';
+    const primaryRecipient = primaryRecipientEmail;
+    const recipientName = directManager
+      ? (directManager.name || primaryRecipient.split('@')[0])
+      : 'Manager';
 
     try {
       await emailHelper.sendTemplateEmail(
@@ -447,21 +448,22 @@ async function sendCustomWorkPlanCreationEmail(planId, user, creationMailData = 
       : [];
 
     if (!recipient) {
-      const managers = await getWorkPlannerManagers();
-      const managerEmails = managers.map((m) => m.email).filter(Boolean);
+      const salesUserId = plan.sales_user?._id || plan.sales_user || senderUser._id || senderUser.id;
+      const { primaryRecipientEmail } = await resolveReportingStakeholderEmails(salesUserId, plan);
+      recipient = primaryRecipientEmail || '';
 
-      const targetUserObj = plan.sales_user && typeof plan.sales_user === 'object' ? plan.sales_user : null;
-      if (targetUserObj && targetUserObj.email && String(targetUserObj._id || targetUserObj.id) !== String(senderUser._id || senderUser.id)) {
-        recipient = targetUserObj.email;
-      } else if (plan.is_discussed_with_manager && plan.discussed_manager_id) {
-        const discussedManager = managers.find((m) => String(m._id || m.id) === String(plan.discussed_manager_id));
-        if (discussedManager && discussedManager.email) {
+      if (!recipient && plan.is_discussed_with_manager && plan.discussed_manager_id) {
+        const { User } = getModels();
+        const discussedId =
+          typeof plan.discussed_manager_id === 'object'
+            ? plan.discussed_manager_id._id || plan.discussed_manager_id.id
+            : plan.discussed_manager_id;
+        const discussedManager = discussedId
+          ? await User.findOne({ _id: discussedId, is_active: { $ne: false } }).lean()
+          : null;
+        if (discussedManager?.email) {
           recipient = discussedManager.email;
         }
-      }
-
-      if (!recipient && managerEmails.length > 0) {
-        recipient = managerEmails[0];
       }
     }
 

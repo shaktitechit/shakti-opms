@@ -6,7 +6,7 @@ const express = require('express');
 const { requireAuth } = require('../../middlewares/auth.middleware');
 const {
   requireLeadManagerAccess,
-  requireLeadManagerRole,
+  requireLeadManagerElevatedRole,
 } = require('../../middlewares/leadManagerAuth.middleware');
 const controller = require('./terms_and_conditions.controller');
 
@@ -17,13 +17,13 @@ router.use(requireLeadManagerAccess);
 
 router.get('/default', controller.getDefault);
 router.get('/', controller.list);
-router.post('/', requireLeadManagerRole('admin', 'manager'), controller.create);
+router.post('/', requireLeadManagerElevatedRole, controller.create);
 router.get('/:id', controller.getById);
-router.put('/:id', requireLeadManagerRole('admin', 'manager'), controller.update);
-router.delete('/:id', requireLeadManagerRole('admin', 'manager'), controller.remove);
+router.put('/:id', requireLeadManagerElevatedRole, controller.update);
+router.delete('/:id', requireLeadManagerElevatedRole, controller.remove);
 
-router.post('/:id/text', requireLeadManagerRole('admin', 'manager'), controller.addText);
-router.put('/text/:textId', requireLeadManagerRole('admin', 'manager'), controller.updateText);
-router.delete('/text/:textId', requireLeadManagerRole('admin', 'manager'), controller.deleteText);
+router.post('/:id/text', requireLeadManagerElevatedRole, controller.addText);
+router.put('/text/:textId', requireLeadManagerElevatedRole, controller.updateText);
+router.delete('/text/:textId', requireLeadManagerElevatedRole, controller.deleteText);
 
 module.exports = router;

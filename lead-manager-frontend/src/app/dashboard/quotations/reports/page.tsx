@@ -7,14 +7,14 @@ import { QuotationReportsDashboard } from "@/components/quotations/QuotationRepo
 import { ShieldAlert, ArrowLeft } from "lucide-react";
 
 export default function QuotationReportsPage() {
-  const { isAdmin, isManager, isExecutive, loading } = useLeadManagerRole();
+  const { isAdmin, isManager, isCoordinator, isExecutive, loading } = useLeadManagerRole();
 
   if (loading) {
     return null;
   }
 
-  // Quotation Reports available to Admin, Manager, and Executive roles
-  if (!isAdmin && !isManager && !isExecutive) {
+  // Quotation Reports available to Admin, Manager, Coordinator, and Executive roles
+  if (!isAdmin && !isManager && !isCoordinator && !isExecutive) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center p-6 text-center">
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-500 mb-4 border border-amber-500/20">

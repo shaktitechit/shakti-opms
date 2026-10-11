@@ -128,7 +128,7 @@ export function BulkUploadProductsModal({
       const product_subgroup = raw.product_subgroup || raw.subgroup || "";
       const brand = raw.brand || "";
       const manufacturer = raw.manufacturer || "";
-      const unit = raw.unit || "pcs";
+      const unit = raw.unit ? String(raw.unit).trim() : "Pcs";
       const mrp = raw.mrp || "";
       const gst = raw.gst_percent || raw.gst_rate || "18";
       const warranty_months = raw.warranty_months || raw.warranty || "";
@@ -163,9 +163,6 @@ export function BulkUploadProductsModal({
             } else if (warranty_months !== "" && (isNaN(Number(warranty_months)) || Number(warranty_months) < 0 || !Number.isInteger(Number(warranty_months)))) {
               status = "invalid";
               reason = "Warranty must be non-negative integer";
-            } else if (unit && !["pcs", "box", "kg", "ltr", "meter", "set", "kit", "bottle"].includes(unit.toLowerCase())) {
-              status = "invalid";
-              reason = "Invalid unit value";
             }
           }
         }
@@ -219,7 +216,7 @@ export function BulkUploadProductsModal({
             const product_subgroup = String(item.product_subgroup ?? item.subgroup ?? "");
             const brand = String(item.brand ?? "");
             const manufacturer = String(item.manufacturer ?? "");
-            const unit = String(item.unit ?? "pcs");
+            const unit = item.unit != null && String(item.unit).trim() ? String(item.unit).trim() : "Pcs";
             const mrp = String(item.mrp ?? "");
             const gst = String(item.gst_percent ?? item.gst_rate ?? "18");
             const warranty_months = String(item.warranty_months ?? item.warranty ?? "");
@@ -253,9 +250,6 @@ export function BulkUploadProductsModal({
                   } else if (warranty_months !== "" && (isNaN(Number(warranty_months)) || Number(warranty_months) < 0 || !Number.isInteger(Number(warranty_months)))) {
                     status = "invalid";
                     reason = "Warranty must be non-negative integer";
-                  } else if (unit && !["pcs", "box", "kg", "ltr", "meter", "set", "kit", "bottle"].includes(unit.toLowerCase())) {
-                    status = "invalid";
-                    reason = "Invalid unit value";
                   }
                 }
               }

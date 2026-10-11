@@ -15,6 +15,10 @@ const {
   FRONTEND_URL,
 } = require('../../config/env');
 const { resolveEmailAttachments } = require('../../services/fileManagement');
+const {
+  resolveDirectReportingManager,
+  resolveReportingStakeholderEmails,
+} = require('./workPlannerTeamReporting.service');
 
 function getServiceToken() {
   return jwt.sign(
@@ -172,98 +176,26 @@ async function sendInAppNotification(userId, { title, message, type = 'info', en
  * - Configured CC Emails
  */
 async function resolveStakeholders(salesUserId, planDoc = null) {
-  const { User, UserWorkPlannerSettings, WorkPlannerReportingEdge } = getModels();
+  const { User } = getModels();
   const salesUser = await User.findOne({ _id: salesUserId, is_active: { $ne: false } }).lean();
+  const {
+    directManager,
+    uplineManagers,
+    primaryRecipientEmail,
+    ccList,
+    inAppUserIds,
+  } = await resolveReportingStakeholderEmails(salesUserId, planDoc);
+
   const allManagers = await getWorkPlannerManagers();
-
-  let directManager = null;
-  let settingsCcEmails = [];
-
-  // Check UserWorkPlannerSettings
-  const settings = await UserWorkPlannerSettings.findOne({ user: salesUserId }).lean();
-  if (settings) {
-    if (settings.assigned_manager) {
-      directManager = allManagers.find(
-        (m) => String(m._id) === String(settings.assigned_manager)
-      );
-      if (!directManager) {
-        directManager = await User.findOne({ _id: settings.assigned_manager, is_active: { $ne: false } }).lean();
-      }
-    }
-
-    // Match plan type settings if available
-    const planType = planDoc?.plan_type || 'Visits';
-    const ptSetting = Array.isArray(settings.plan_type_settings)
-      ? settings.plan_type_settings.find((p) => p.plan_type === planType)
-      : null;
-
-    if (ptSetting?.assigned_manager) {
-      const ptMgr = allManagers.find((m) => String(m._id) === String(ptSetting.assigned_manager));
-      if (ptMgr) directManager = ptMgr;
-    }
-
-    if (Array.isArray(ptSetting?.cc_emails) && ptSetting.cc_emails.length > 0) {
-      settingsCcEmails = ptSetting.cc_emails;
-    } else if (Array.isArray(settings.cc_emails) && settings.cc_emails.length > 0) {
-      settingsCcEmails = settings.cc_emails;
-    }
-  }
-
-  // Check WorkPlannerReportingEdge if no direct manager from settings
-  if (!directManager) {
-    const edge = await WorkPlannerReportingEdge.findOne({
-      subordinate: salesUserId,
-      is_active: { $ne: false },
-    }).populate('manager').lean();
-    if (edge?.manager) {
-      directManager = edge.manager;
-    }
-  }
-
-  // Check discussed manager from plan
-  if (!directManager && planDoc?.discussed_manager_id) {
-    directManager = allManagers.find(
-      (m) => String(m._id) === String(planDoc.discussed_manager_id)
-    );
-  }
-
-  // Fallback direct manager to first portal manager
-  if (!directManager && allManagers.length > 0) {
-    directManager = allManagers[0];
-  }
-
-  // Build manager emails and CC list
-  const managerEmails = allManagers.map((m) => m.email).filter(Boolean);
-  const primaryRecipientEmail = directManager?.email || managerEmails[0] || '';
-
-  const ccSet = new Set(
-    settingsCcEmails
-      .map((e) => String(e).trim().toLowerCase())
-      .filter((e) => e && e !== primaryRecipientEmail.toLowerCase())
-  );
-
-  // Add other managers to CC
-  for (const m of allManagers) {
-    if (m.email && m.email.toLowerCase() !== primaryRecipientEmail.toLowerCase()) {
-      ccSet.add(m.email.toLowerCase());
-    }
-  }
-
-  // Distinct in-app user IDs
-  const inAppUserIds = new Set();
-  if (salesUserId) inAppUserIds.add(String(salesUserId));
-  if (directManager?._id) inAppUserIds.add(String(directManager._id));
-  for (const m of allManagers) {
-    if (m._id) inAppUserIds.add(String(m._id));
-  }
 
   return {
     salesUser,
     directManager,
+    uplineManagers,
     allManagers,
     primaryRecipientEmail,
-    ccList: Array.from(ccSet),
-    inAppUserIds: Array.from(inAppUserIds),
+    ccList,
+    inAppUserIds,
   };
 }
 
@@ -275,66 +207,12 @@ async function resolveStakeholders(salesUserId, planDoc = null) {
  * - In-App: Direct Manager + All Admins
  */
 async function resolveDirectManagerAndAdmins(salesUserId, planDoc = null) {
-  const { User, UserWorkPlannerSettings, WorkPlannerReportingEdge } = getModels();
+  const { User } = getModels();
   const salesUser = await User.findOne({ _id: salesUserId, is_active: { $ne: false } }).lean();
   const allManagers = await getWorkPlannerManagers();
   const allAdmins = await getWorkPlannerAdmins();
 
-  let directManager = null;
-  let settingsCcEmails = [];
-
-  // Check UserWorkPlannerSettings
-  const settings = await UserWorkPlannerSettings.findOne({ user: salesUserId }).lean();
-  if (settings) {
-    if (settings.assigned_manager) {
-      directManager = allManagers.find(
-        (m) => String(m._id) === String(settings.assigned_manager)
-      );
-      if (!directManager) {
-        directManager = await User.findOne({ _id: settings.assigned_manager, is_active: { $ne: false } }).lean();
-      }
-    }
-
-    // Match plan type settings if available
-    const planType = planDoc?.plan_type || 'Visits';
-    const ptSetting = Array.isArray(settings.plan_type_settings)
-      ? settings.plan_type_settings.find((p) => p.plan_type === planType)
-      : null;
-
-    if (ptSetting?.assigned_manager) {
-      const ptMgr = allManagers.find((m) => String(m._id) === String(ptSetting.assigned_manager));
-      if (ptMgr) directManager = ptMgr;
-    }
-
-    if (Array.isArray(ptSetting?.cc_emails) && ptSetting.cc_emails.length > 0) {
-      settingsCcEmails = ptSetting.cc_emails;
-    } else if (Array.isArray(settings.cc_emails) && settings.cc_emails.length > 0) {
-      settingsCcEmails = settings.cc_emails;
-    }
-  }
-
-  // Check WorkPlannerReportingEdge if no direct manager from settings
-  if (!directManager) {
-    const edge = await WorkPlannerReportingEdge.findOne({
-      subordinate: salesUserId,
-      is_active: { $ne: false },
-    }).populate('manager').lean();
-    if (edge?.manager) {
-      directManager = edge.manager;
-    }
-  }
-
-  // Check discussed manager from plan
-  if (!directManager && planDoc?.discussed_manager_id) {
-    directManager = allManagers.find(
-      (m) => String(m._id) === String(planDoc.discussed_manager_id)
-    );
-  }
-
-  // Disallow user from being their own direct manager
-  if (directManager && String(directManager._id) === String(salesUserId)) {
-    directManager = null;
-  }
+  const { directManager, settingsCcEmails } = await resolveDirectReportingManager(salesUserId, planDoc);
 
   const adminEmails = allAdmins.map((a) => a.email).filter(Boolean);
   const managerEmails = allManagers.map((m) => m.email).filter(Boolean);
@@ -345,13 +223,11 @@ async function resolveDirectManagerAndAdmins(salesUserId, planDoc = null) {
   );
 
   const inAppUserIds = new Set();
-  // Admins always receive in-app alerts
   for (const a of allAdmins) {
     if (a._id) inAppUserIds.add(String(a._id));
   }
 
   if (directManager && directManager.email) {
-    // 1. Direct Manager exists -> Send TO direct manager, and CC admins
     primaryRecipientEmail = directManager.email;
     if (directManager._id) inAppUserIds.add(String(directManager._id));
 
@@ -360,22 +236,18 @@ async function resolveDirectManagerAndAdmins(salesUserId, planDoc = null) {
         ccEmails.add(adminEmail.toLowerCase());
       }
     }
-  } else {
-    // 2. No Direct Manager -> Send TO Portal Admins
-    if (adminEmails.length > 0) {
-      primaryRecipientEmail = adminEmails[0];
-      for (let i = 1; i < adminEmails.length; i++) {
-        ccEmails.add(adminEmails[i].toLowerCase());
-      }
-    } else if (managerEmails.length > 0) {
-      // Fallback to elevated managers if no admin found
-      primaryRecipientEmail = managerEmails[0];
-      for (let i = 1; i < managerEmails.length; i++) {
-        ccEmails.add(managerEmails[i].toLowerCase());
-      }
-      for (const m of allManagers) {
-        if (m._id) inAppUserIds.add(String(m._id));
-      }
+  } else if (adminEmails.length > 0) {
+    primaryRecipientEmail = adminEmails[0];
+    for (let i = 1; i < adminEmails.length; i++) {
+      ccEmails.add(adminEmails[i].toLowerCase());
+    }
+  } else if (managerEmails.length > 0) {
+    primaryRecipientEmail = managerEmails[0];
+    for (let i = 1; i < managerEmails.length; i++) {
+      ccEmails.add(managerEmails[i].toLowerCase());
+    }
+    for (const m of allManagers) {
+      if (m._id) inAppUserIds.add(String(m._id));
     }
   }
 
@@ -2255,7 +2127,7 @@ async function sendPendingWorkPlanMorningReminder(pendingUsers, dateStr, timeZon
 
     for (const exec of verifiedPendingUsers) {
       const execName = exec.name || exec.email.split('@')[0];
-      const { directManager, allManagers } = await resolveStakeholders(exec._id);
+      const { directManager } = await resolveStakeholders(exec._id);
 
       // In-App Notification to Executive
       await sendInAppNotification(exec._id, {
@@ -2307,11 +2179,10 @@ async function sendPendingWorkPlanMorningReminder(pendingUsers, dateStr, timeZon
       }
 
       // Add to manager digest bucket
-      const targetMgr = directManager || (allManagers.length > 0 ? allManagers[0] : null);
-      if (targetMgr) {
-        const mgrId = String(targetMgr._id);
+      if (directManager) {
+        const mgrId = String(directManager._id);
         if (!managerDigestMap.has(mgrId)) {
-          managerDigestMap.set(mgrId, { manager: targetMgr, pendingExecs: [] });
+          managerDigestMap.set(mgrId, { manager: directManager, pendingExecs: [] });
         }
         managerDigestMap.get(mgrId).pendingExecs.push(exec);
       }
@@ -2447,7 +2318,7 @@ async function sendPendingDayEndEveningReminder(pendingPlansWithUsers, dateStr, 
       const exec = item.user;
       const plan = item.plan;
       const execName = exec.name || exec.email.split('@')[0];
-      const { directManager, allManagers } = await resolveStakeholders(exec._id, plan);
+      const { directManager } = await resolveStakeholders(exec._id, plan);
 
       // In-App Notification to Executive
       await sendInAppNotification(exec._id, {
@@ -2500,11 +2371,10 @@ async function sendPendingDayEndEveningReminder(pendingPlansWithUsers, dateStr, 
       }
 
       // Add to manager digest bucket
-      const targetMgr = directManager || (allManagers.length > 0 ? allManagers[0] : null);
-      if (targetMgr) {
-        const mgrId = String(targetMgr._id);
+      if (directManager) {
+        const mgrId = String(directManager._id);
         if (!managerDigestMap.has(mgrId)) {
-          managerDigestMap.set(mgrId, { manager: targetMgr, pendingItems: [] });
+          managerDigestMap.set(mgrId, { manager: directManager, pendingItems: [] });
         }
         managerDigestMap.get(mgrId).pendingItems.push({ user: exec, plan });
       }

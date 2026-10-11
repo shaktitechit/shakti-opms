@@ -20,11 +20,12 @@ import {
   LayoutGrid,
   Layers,
   Sparkles,
+  TrendingUp,
 } from "lucide-react";
 
 export default function DashboardPage() {
-  const { user, isAdmin, isManager, isExecutive, roleLabel } = useLeadManagerRole();
-  const canAccessQuotations = isAdmin || isManager;
+  const { user, isAdmin, isManager, isCoordinator, isExecutive, roleLabel } = useLeadManagerRole();
+  const canAccessQuotations = isAdmin || isManager || isCoordinator || isExecutive;
 
   const [activeSection, setActiveSection] = useState<"all" | "leads" | "quotations">("all");
 
@@ -43,6 +44,8 @@ export default function DashboardPage() {
                   ? "bg-purple-400 text-slate-900"
                   : isManager
                   ? "bg-amber-400 text-slate-900"
+                  : isCoordinator
+                  ? "bg-indigo-400 text-slate-900"
                   : "bg-blue-400 text-slate-900"
               }`}
             >
@@ -54,7 +57,9 @@ export default function DashboardPage() {
               ? "Lead Admin Control Center — Comprehensive pipeline tracking, quotation commercial approvals, and sales conversion analytics."
               : isManager
               ? "Manager Lead & Commercial Hub — Oversee assigned leads, manage pricing proposals, and drive deal negotiations."
-              : "Executive Lead Center — Manage your assigned leads, execute scheduled follow-ups, and track acquisition performance."}
+              : isCoordinator
+              ? "Coordinator Operations Hub — Coordinate sales representatives, oversee team follow-ups, and track lead progression."
+              : "Executive Lead Center — Manage assigned leads, view your quotations and proposals, execute follow-ups, and track performance."}
           </p>
         </div>
 
@@ -77,11 +82,18 @@ export default function DashboardPage() {
                 Quotations Hub
               </Link>
               <Link
+                href="/dashboard/quotations/reports"
+                className="flex items-center gap-1.5 rounded-xl bg-white/10 backdrop-blur-md px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20 border border-white/20 transition"
+              >
+                <TrendingUp className="h-4 w-4" />
+                Quote Reports
+              </Link>
+              <Link
                 href="/dashboard/leads/reports"
                 className="flex items-center gap-1.5 rounded-xl bg-white text-primary px-3.5 py-2 text-xs font-bold hover:bg-white/90 shadow-md transition"
               >
                 <BarChart3 className="h-4 w-4" />
-                Analytics
+                My Reports
               </Link>
             </>
           ) : isManager ? (
@@ -107,6 +119,58 @@ export default function DashboardPage() {
                 <CalendarDays className="h-4 w-4" />
                 Follow-Ups
               </Link>
+              <Link
+                href="/dashboard/quotations/reports"
+                className="flex items-center gap-1.5 rounded-xl bg-white/10 backdrop-blur-md px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20 border border-white/20 transition"
+              >
+                <TrendingUp className="h-4 w-4" />
+                Quote Reports
+              </Link>
+              <Link
+                href="/dashboard/leads/reports"
+                className="flex items-center gap-1.5 rounded-xl bg-white/10 backdrop-blur-md px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20 border border-white/20 transition"
+              >
+                <BarChart3 className="h-4 w-4" />
+                My Reports
+              </Link>
+            </>
+          ) : isCoordinator ? (
+            <>
+              <Link
+                href="/dashboard/leads/new"
+                className="flex items-center gap-1.5 rounded-xl bg-white text-primary px-3.5 py-2 text-xs font-bold hover:bg-white/90 shadow-md transition"
+              >
+                <Plus className="h-4 w-4" />
+                Create Lead
+              </Link>
+              <Link
+                href="/dashboard/quotations"
+                className="flex items-center gap-1.5 rounded-xl bg-white/10 backdrop-blur-md px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20 border border-white/20 transition"
+              >
+                <FileText className="h-4 w-4" />
+                My Quotations
+              </Link>
+              <Link
+                href="/dashboard/leads/follow-ups"
+                className="flex items-center gap-1.5 rounded-xl bg-white/10 backdrop-blur-md px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20 border border-white/20 transition"
+              >
+                <CalendarDays className="h-4 w-4" />
+                Follow-Ups
+              </Link>
+              <Link
+                href="/dashboard/quotations/reports"
+                className="flex items-center gap-1.5 rounded-xl bg-white/10 backdrop-blur-md px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20 border border-white/20 transition"
+              >
+                <TrendingUp className="h-4 w-4" />
+                Quote Reports
+              </Link>
+              <Link
+                href="/dashboard/leads/reports"
+                className="flex items-center gap-1.5 rounded-xl bg-white/10 backdrop-blur-md px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20 border border-white/20 transition"
+              >
+                <BarChart3 className="h-4 w-4" />
+                My Reports
+              </Link>
             </>
           ) : (
             <>
@@ -118,11 +182,32 @@ export default function DashboardPage() {
                 Create Lead
               </Link>
               <Link
+                href="/dashboard/quotations"
+                className="flex items-center gap-1.5 rounded-xl bg-white/10 backdrop-blur-md px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20 border border-white/20 transition"
+              >
+                <FileText className="h-4 w-4" />
+                My Quotations
+              </Link>
+              <Link
                 href="/dashboard/leads/follow-ups"
                 className="flex items-center gap-1.5 rounded-xl bg-white/10 backdrop-blur-md px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20 border border-white/20 transition"
               >
                 <CalendarDays className="h-4 w-4" />
                 My Follow-Ups
+              </Link>
+              <Link
+                href="/dashboard/quotations/reports"
+                className="flex items-center gap-1.5 rounded-xl bg-white/10 backdrop-blur-md px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20 border border-white/20 transition"
+              >
+                <TrendingUp className="h-4 w-4" />
+                Quote Reports
+              </Link>
+              <Link
+                href="/dashboard/leads/reports"
+                className="flex items-center gap-1.5 rounded-xl bg-white/10 backdrop-blur-md px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20 border border-white/20 transition"
+              >
+                <BarChart3 className="h-4 w-4" />
+                My Reports
               </Link>
             </>
           )}
@@ -184,12 +269,15 @@ export default function DashboardPage() {
       {(activeSection === "all" || activeSection === "leads") && (
         <LeadsDashboardSection
           portalHome="/dashboard"
-          assigned_to={isAdmin ? undefined : user?._id}
+          assigned_to={isExecutive ? user?._id : undefined}
           isAdmin={isAdmin}
+          isManager={isManager}
+          isCoordinator={isCoordinator}
+          isExecutive={isExecutive}
         />
       )}
 
-      {/* SECTION 2: Quotations Commercial Hub (Visible to Manager & Admin) */}
+      {/* SECTION 2: Quotations Commercial Hub */}
       {canAccessQuotations && (activeSection === "all" || activeSection === "quotations") && (
         <QuotationsDashboardSection portalHome="/dashboard" />
       )}

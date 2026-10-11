@@ -41,6 +41,7 @@ import ListProductGroupsPage from "./ListProductGroupsPage";
 import ListProductSubgroupsPage from "./ListProductSubgroupsPage";
 import ListProductBrandsPage from "./ListProductBrandsPage";
 import ListProductManufacturersPage from "./ListProductManufacturersPage";
+import ListProductUnitsPage from "./ListProductUnitsPage";
 import GroupProductsPage from "./GroupProductsPage";
 import SubgroupProductsPage from "./SubgroupProductsPage";
 import BrandProductsPage from "./BrandProductsPage";
@@ -419,6 +420,9 @@ export default function ListProductsPage({
   if (view === "manufacturers") {
     return <ListProductManufacturersPage portalHome={portalHome} />;
   }
+  if (view === "units") {
+    return <ListProductUnitsPage portalHome={portalHome} />;
+  }
   if (view === "group-products") {
     return <GroupProductsPage portalHome={portalHome} />;
   }
@@ -640,7 +644,7 @@ export default function ListProductsPage({
                     const generic = p.generic_name?.trim() || "";
                     const sku = p.sku?.trim() || "";
 
-                    const unit = p.unit || "pcs";
+                    const unitLabel = productRefLabel(p.unit) || "—";
                     const productType =
                       p.product_type === "kit" ? "kit" : "individual";
                     const basePrice = formatMoney(p.base_price);
@@ -690,7 +694,7 @@ export default function ListProductsPage({
                                   {productType}
                                 </span>
                                 <span className="inline-flex items-center rounded-md bg-slate-50 px-1.5 py-0.5 text-2xs font-semibold text-slate-600 ring-1 ring-inset ring-slate-500/10 dark:bg-white/5 dark:text-slate-400 dark:ring-white/10 capitalize">
-                                  {unit}
+                                  {unitLabel}
                                 </span>
                               </div>
                               <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-2xs text-slate-500 dark:text-slate-400">

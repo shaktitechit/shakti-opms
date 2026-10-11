@@ -6,45 +6,48 @@ const express = require('express');
 const { requireAuth } = require('../../middlewares/auth.middleware');
 const {
   requireLeadManagerAccess,
-  requireLeadManagerRole,
+  requireLeadManagerSalesTeamRole,
+  requireLeadManagerElevatedRole,
 } = require('../../middlewares/leadManagerAuth.middleware');
 const controller = require('./quotation.controller');
 const reportsController = require('./quotationReports.controller');
 
 const router = express.Router();
 
+const elevatedRoles = requireLeadManagerElevatedRole;
+const allSalesRoles = requireLeadManagerSalesTeamRole;
+
 router.use(requireAuth);
 router.use(requireLeadManagerAccess);
-router.use(requireLeadManagerRole('admin', 'manager'));
 
 // Reports & Analytics (Must precede /:id)
-router.get('/reports/summary', reportsController.getSummaryReport);
-router.get('/reports/sales-performance', reportsController.getSalesPerformance);
-router.get('/reports/monthly-trends', reportsController.getMonthlyTrends);
-router.get('/reports/product-breakdown', reportsController.getProductBreakdown);
-router.get('/reports/funnel', reportsController.getConversionFunnel);
+router.get('/reports/summary', allSalesRoles, reportsController.getSummaryReport);
+router.get('/reports/sales-performance', allSalesRoles, reportsController.getSalesPerformance);
+router.get('/reports/monthly-trends', allSalesRoles, reportsController.getMonthlyTrends);
+router.get('/reports/product-breakdown', allSalesRoles, reportsController.getProductBreakdown);
+router.get('/reports/funnel', allSalesRoles, reportsController.getConversionFunnel);
 
-router.get('/default-terms', controller.getDefaultTerms);
-router.get('/dashboard-stats', controller.getDashboardStats);
-router.post('/auto-expire', controller.triggerAutoExpiry);
-router.get('/', controller.list);
-router.post('/', controller.create);
-router.get('/:id', controller.getById);
-router.patch('/:id', controller.update);
-router.put('/:id', controller.update);
-router.post('/:id/submit-for-approval', controller.submitForApproval);
-router.post('/:id/approve', controller.approve);
-router.post('/:id/reject', controller.reject);
-router.post('/:id/convert', controller.convert);
-router.post('/:id/extend-validity', controller.extendValidity);
-router.post('/:id/proforma', controller.saveProforma);
-router.post('/:id/proforma-issued', controller.markProformaIssued);
-router.delete('/:id', controller.remove);
+router.get('/default-terms', allSalesRoles, controller.getDefaultTerms);
+router.get('/dashboard-stats', allSalesRoles, controller.getDashboardStats);
+router.post('/auto-expire', elevatedRoles, controller.triggerAutoExpiry);
+router.get('/', allSalesRoles, controller.list);
+router.post('/', elevatedRoles, controller.create);
+router.get('/:id', allSalesRoles, controller.getById);
+router.patch('/:id', allSalesRoles, controller.update);
+router.put('/:id', allSalesRoles, controller.update);
+router.post('/:id/submit-for-approval', allSalesRoles, controller.submitForApproval);
+router.post('/:id/approve', allSalesRoles, controller.approve);
+router.post('/:id/reject', allSalesRoles, controller.reject);
+router.post('/:id/convert', elevatedRoles, controller.convert);
+router.post('/:id/extend-validity', allSalesRoles, controller.extendValidity);
+router.post('/:id/proforma', elevatedRoles, controller.saveProforma);
+router.post('/:id/proforma-issued', elevatedRoles, controller.markProformaIssued);
+router.delete('/:id', elevatedRoles, controller.remove);
 
 // Quotation Follow-ups & Revisions
-router.get('/:id/follow-ups', controller.listFollowUps);
-router.post('/:id/follow-ups', controller.scheduleFollowUp);
-router.patch('/follow-ups/:id/complete', controller.completeFollowUp);
-router.post('/:id/revise', controller.reviseQuotation);
+router.get('/:id/follow-ups', allSalesRoles, controller.listFollowUps);
+router.post('/:id/follow-ups', allSalesRoles, controller.scheduleFollowUp);
+router.patch('/follow-ups/:id/complete', allSalesRoles, controller.completeFollowUp);
+router.post('/:id/revise', elevatedRoles, controller.reviseQuotation);
 
 module.exports = router;

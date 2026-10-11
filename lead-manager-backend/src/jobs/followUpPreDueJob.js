@@ -8,6 +8,18 @@ const { getModels } = require('../data/mongoRegistry');
 const notificationHelper = require('../utils/notificationHelper');
 const emailHelper = require('../modules/messages/helpers/email.helper');
 const { logger } = require('../utils/logger');
+const {
+  resolveSalesRepFromFollowUp,
+  resolveFollowUpOwnerUserId,
+} = require('../utils/followUpSalesRep');
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 
 function ymdInTz(date, timeZone) {
   return new Intl.DateTimeFormat('en-CA', {
@@ -69,12 +81,18 @@ async function runPreDueFollowUpCheck(options = {}) {
     .populate({
       path: 'lead',
       select: 'lead_no name company_name phone email status priority assigned_to requirement products party_id',
-      populate: { path: 'party_id', select: 'party_name legal_name' },
+      populate: [
+        { path: 'party_id', select: 'party_name legal_name' },
+        { path: 'assigned_to', select: 'name email' },
+      ],
     })
     .populate({
       path: 'quotation',
-      select: 'quotation_no version grand_total status customer_name kind_attn phone email subject party_id created_by',
+      select:
+        'quotation_no version grand_total status customer_name kind_attn phone email subject party_id created_by sales_person_name sales_person_user',
+      populate: { path: 'sales_person_user', select: 'name email' },
     })
+    .populate('created_by', 'name email')
     .lean();
 
   let sentCount = 0;
@@ -88,10 +106,7 @@ async function runPreDueFollowUpCheck(options = {}) {
     const diff = itemMinutes - currentMinutes;
     if (diff < -10 || diff > 35) continue;
 
-    const assigneeId = fu.lead?.assigned_to ? String(fu.lead.assigned_to) : null;
-    const qCreatorId = fu.quotation?.created_by ? String(fu.quotation.created_by) : null;
-    const fallbackId = fu.created_by ? String(fu.created_by) : null;
-    const userId = assigneeId || qCreatorId || fallbackId;
+    const userId = resolveFollowUpOwnerUserId(fu);
     if (!userId) continue;
 
     // Check idempotency in FollowUpReminderLog
@@ -118,8 +133,9 @@ async function runPreDueFollowUpCheck(options = {}) {
       ? `Quotation #${fu.quotation.quotation_no} (${formatCurrencyINR(fu.quotation.grand_total || 0)})`
       : `Lead #${fu.lead?.lead_no || ''}`;
 
+    const salesRep = resolveSalesRepFromFollowUp(fu);
     const title = `⏰ Follow-up in ${Math.max(0, diff)}m: ${party}`;
-    const message = `${fu.type || 'Call'} scheduled at ${fu.follow_up_time} for ${ref}. Click to review details.`;
+    const message = `${fu.type || 'Call'} scheduled at ${fu.follow_up_time} for ${ref} (Sales rep: ${salesRep}). Click to review details.`;
 
     try {
       // 1. In-App Notification
@@ -161,6 +177,10 @@ async function runPreDueFollowUpCheck(options = {}) {
               <tr>
                 <td style="padding:8px 0;color:#64748b;">Customer/Party:</td>
                 <td style="padding:8px 0;font-weight:700;color:#0f172a;">${escapeHtml(party)}</td>
+              </tr>
+              <tr>
+                <td style="padding:8px 0;color:#64748b;">Sales representative:</td>
+                <td style="padding:8px 0;font-weight:700;color:#0f172a;">${escapeHtml(salesRep)}</td>
               </tr>
               ${phone ? `<tr>
                 <td style="padding:8px 0;color:#64748b;">Phone:</td>

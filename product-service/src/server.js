@@ -11,6 +11,9 @@ async function startServer() {
     getModels();
     console.log('[product-service] Connected to MongoDB');
 
+    const { bootstrapProductUnits } = require('./modules/productUnits/productUnit.bootstrap');
+    await bootstrapProductUnits();
+
     app.listen(PORT, () => {
       console.log(`[product-service] Server running on port ${PORT}`);
     });

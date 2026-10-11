@@ -42,7 +42,8 @@ import { formatCurrencyINR, canCreateQuotation, canManageQuotations, isSalesDepa
 import { RichTextEditor } from "./RichTextEditor";
 import { RichTextDisplay } from "./RichTextDisplay";
 import { getFieldText } from "@/components/leads/LeadFormPage";
-import { getLeadManagerPortalRole } from "@/components/leads/leadUtils";
+import { buildQuotationSignatoryUsers, getLeadManagerPortalRole } from "@/components/leads/leadUtils";
+import { useLeadManagerTeamScope } from "@/hooks/useLeadManagerTeamScope";
 import { isAdmin, isManager } from "@/utils/authStorage";
 
 type Props = {
@@ -631,6 +632,7 @@ export function QuotationFormModal({
 }: Props) {
   const isEditing = Boolean(quotation?._id);
   const authUser = useAppSelector((state) => state.auth.user);
+  const { filterByTeam, withSelfInList } = useLeadManagerTeamScope();
 
   const { data: productsData } = useListProductsQuery({ limit: "500" });
   const products = (
@@ -660,11 +662,15 @@ export function QuotationFormModal({
   }, [usersData]);
 
   const managerUsers = useMemo(() => {
-    return usersList.filter((u: any) => {
-      const role = getLeadManagerPortalRole(u);
-      return role === "Admin" || role === "Manager";
+    const selfRow = authUser?._id
+      ? usersList.find((u) => String(u._id) === String(authUser._id))
+      : undefined;
+    return buildQuotationSignatoryUsers(usersList, {
+      filterByTeam,
+      withSelfInList,
+      selfUser: selfRow,
     });
-  }, [usersList]);
+  }, [usersList, filterByTeam, withSelfInList, authUser]);
 
   const salesUsers = useMemo(() => {
     return usersList.filter((u: any) => isSalesDepartmentUser(u));

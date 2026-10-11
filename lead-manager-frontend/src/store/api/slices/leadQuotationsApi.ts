@@ -644,6 +644,8 @@ export const leadQuotationsApi = medicaApi.injectEndpoints({
         approved_count: number;
         sent_count: number;
         in_negotiation_count: number;
+        active_pipeline_count?: number;
+        active_pipeline_value?: number;
         accepted_count: number;
         rejected_count: number;
         expired_count?: number;

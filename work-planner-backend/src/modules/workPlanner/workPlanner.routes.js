@@ -63,6 +63,10 @@ router.get('/team/members', elevatedRoles, teamController.getMembers);
 router.get('/team/edges', elevatedRoles, teamController.listEdges);
 router.put('/team/edges', adminRole, teamController.upsertEdge);
 router.delete('/team/edges/:subordinateId', adminRole, teamController.removeEdge);
+router.delete('/team/edges/:subordinateId/:managerId', adminRole, (req, res, next) => {
+  if (req.params.managerId) req.query.manager = req.params.managerId;
+  return teamController.removeEdge(req, res, next);
+});
 
 router.get('/drafts', controller.getDraft);
 router.put('/drafts', controller.saveDraft);

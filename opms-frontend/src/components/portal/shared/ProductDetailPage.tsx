@@ -299,7 +299,7 @@ export default function ProductDetailPage({ id, portalHome }: ProductDetailPageP
               {/* Unit of Measurement */}
               <div className="space-y-1">
                 <label className={labelClass}>Unit of Measurement</label>
-                <div className={`${valueClass} uppercase`}>{p.unit || "—"}</div>
+                <div className={valueClass}>{productRefLabel(p.unit) || "—"}</div>
               </div>
 
               {/* Warranty */}

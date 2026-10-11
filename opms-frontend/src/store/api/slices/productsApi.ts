@@ -73,6 +73,7 @@ export const productsApi = medicaApi.injectEndpoints({
       subgroups: { _id: string; name: string; group: string }[];
       brands: { _id: string; name: string }[];
       manufacturers: { _id: string; name: string }[];
+      units: { _id: string; name: string; is_default?: boolean }[];
     }, void>({
       query: () => "products/meta-options",
       transformResponse: (raw: ApiEnvelope<any>) => unwrapEnvelope(raw),

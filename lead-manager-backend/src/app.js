@@ -15,6 +15,7 @@ const leadMasterRoutes = require('./modules/leads/leadMaster.routes');
 const quotationRoutes = require('./modules/quotations/quotation.routes');
 const attachmentRoutes = require('./modules/attachments/attachment.routes');
 const termsAndConditionsRoutes = require('./modules/terms_and_conditions/terms_and_conditions.routes');
+const teamRoutes = require('./modules/team/team.routes');
 const { proxyToMessageService } = require('./utils/proxyToMessageService');
 const { proxyToNotificationService } = require('./utils/proxyToNotificationService');
 
@@ -33,6 +34,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 });
 
 app.use('/api/leads', leadRoutes);
+app.use('/api/team', teamRoutes);
 app.use('/api/lead-masters', leadMasterRoutes);
 app.use('/api/quotations', quotationRoutes);
 app.use('/api/attachments', attachmentRoutes);

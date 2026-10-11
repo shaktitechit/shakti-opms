@@ -756,16 +756,25 @@ export const workPlannerApiSlice = baseApi.injectEndpoints({
         { type: "WorkPlan" as const, id: `USER_SETTINGS_${arg.subordinate}` },
       ],
     }),
-    removeTeamEdge: builder.mutation<any, string>({
-      query: (subordinateId) => ({
-        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/team/edges/${subordinateId}`,
-        method: "DELETE",
-      }),
+    removeTeamEdge: builder.mutation<any, string | { subordinateId: string; managerId?: string }>({
+      query: (arg) => {
+        const subordinateId = typeof arg === "string" ? arg : arg.subordinateId;
+        const managerId = typeof arg === "object" ? arg.managerId : undefined;
+        return {
+          url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/team/edges/${subordinateId}${
+            managerId ? `?manager=${encodeURIComponent(managerId)}` : ""
+          }`,
+          method: "DELETE",
+        };
+      },
       transformResponse: (res: any) => res.data || res,
-      invalidatesTags: (_result, _error, subordinateId) => [
-        "WorkPlannerTeam",
-        { type: "WorkPlan" as const, id: `USER_SETTINGS_${subordinateId}` },
-      ],
+      invalidatesTags: (_result, _error, arg) => {
+        const subordinateId = typeof arg === "string" ? arg : arg.subordinateId;
+        return [
+          "WorkPlannerTeam",
+          { type: "WorkPlan" as const, id: `USER_SETTINGS_${subordinateId}` },
+        ];
+      },
     }),
     addWorkPlanAuthorityRemark: builder.mutation<WorkPlanRecord, { planId: string; body: { manager_remarks: string } }>({
       query: ({ planId, body }) => ({

@@ -45,10 +45,15 @@ import { readSessionFromStorage } from "@/utils/authStorage";
 import {
   isLeadAdmin,
   isLeadManagerRole,
+  isLeadCoordinatorRole,
+  isUserInLeadManagerPortal,
+  getLeadManagerPortalRole,
   formatCurrencyINR,
   formatLeadDate,
   FOLLOWUP_TYPE_CONFIG,
 } from "./leadUtils";
+import { useLeadManagerRole } from "@/hooks/useLeadManagerRole";
+import { useLeadManagerTeamScope } from "@/hooks/useLeadManagerTeamScope";
 import { toast } from "@/lib/toast";
 import { TablePaginationBar } from "@/components/portal/shared/pagination/TablePaginationBar";
 import { PortalBusyOverlay } from "@/components/portal/shared/PortalBusyOverlay";
@@ -84,8 +89,13 @@ export function FollowUpReportsDashboard({ portalHome = "/dashboard" }: Props) {
   const reduxUser = useAppSelector((state) => state.auth.user);
   const sessionUser = useMemo(() => (typeof window !== "undefined" ? readSessionFromStorage()?.user || null : null), []);
   const authUser = (reduxUser || sessionUser) as any;
-  const isAdmin = isLeadAdmin(authUser, portalHome);
-  const hasQuotationAccess = isAdmin || isLeadManagerRole(authUser, portalHome);
+  const { isAdmin, isManager, isCoordinator, user } = useLeadManagerRole();
+  const { filterByTeam, withSelfInList } = useLeadManagerTeamScope();
+  const canFilterRep = isAdmin || isManager || isCoordinator;
+  const hasQuotationAccess =
+    isLeadAdmin(authUser, portalHome) ||
+    isLeadManagerRole(authUser, portalHome) ||
+    isLeadCoordinatorRole(authUser, portalHome);
 
   // Available entity tabs based on quotation permission
   const availableEntityTabs = useMemo(() => {
@@ -118,7 +128,15 @@ export function FollowUpReportsDashboard({ portalHome = "/dashboard" }: Props) {
   const { data: usersData } = useListUsersQuery();
   const users = (Array.isArray(usersData)
     ? usersData
-    : (usersData as { data?: Array<{ _id: string; name: string; department?: string }> })?.data || []) as Array<{ _id: string; name: string; department?: string }>;
+    : (usersData as { data?: Array<{ _id: string; name: string; department?: string; portals?: Array<{ portal_code?: string; access_roles?: string[] }> }> })?.data || []) as Array<{ _id: string; name: string; department?: string; portals?: Array<{ portal_code?: string; access_roles?: string[] }> }>;
+
+  const assignableUsers = useMemo(() => {
+    let filtered = users.filter(isUserInLeadManagerPortal);
+    if (filtered.length === 0) filtered = users;
+    const scoped = filterByTeam(filtered);
+    const selfRow = user?._id ? users.find((u) => String(u._id) === String(user._id)) : undefined;
+    return withSelfInList(scoped, selfRow);
+  }, [users, filterByTeam, withSelfInList, user]);
 
   const effectiveEntityType = hasQuotationAccess ? entityType : "lead";
 
@@ -130,9 +148,9 @@ export function FollowUpReportsDashboard({ portalHome = "/dashboard" }: Props) {
       entity_type: effectiveEntityType !== "all" ? effectiveEntityType : undefined,
       type: channelType !== "all" ? channelType : undefined,
       status: statusFilter !== "all" ? statusFilter : undefined,
-      assigned_to: isAdmin && repFilter !== "all" ? repFilter : undefined,
+      assigned_to: canFilterRep && repFilter !== "all" ? repFilter : undefined,
     };
-  }, [period, fromDate, toDate, effectiveEntityType, channelType, statusFilter, repFilter, isAdmin]);
+  }, [period, fromDate, toDate, effectiveEntityType, channelType, statusFilter, repFilter, canFilterRep]);
 
   const {
     data: reportData,
@@ -528,8 +546,7 @@ export function FollowUpReportsDashboard({ portalHome = "/dashboard" }: Props) {
               </select>
             </div>
 
-            {/* Sales Rep Filter (Admin only) */}
-            {isAdmin && (
+            {canFilterRep && (
               <div>
                 <label className="block text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-1">
                   Sales Representative
@@ -542,12 +559,15 @@ export function FollowUpReportsDashboard({ portalHome = "/dashboard" }: Props) {
                   }}
                   className="w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 dark:border-white/10 dark:bg-slate-900 dark:text-white"
                 >
-                  <option value="all">All Representatives</option>
-                  {users.map((u) => (
-                    <option key={u._id} value={u._id}>
-                      {u.name}
-                    </option>
-                  ))}
+                  <option value="all">{isAdmin ? "All Representatives" : "All Team Members"}</option>
+                  {assignableUsers.map((u) => {
+                    const roleBadge = getLeadManagerPortalRole(u);
+                    return (
+                      <option key={u._id} value={u._id}>
+                        {u.name} {roleBadge ? `(${roleBadge})` : ""}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             )}

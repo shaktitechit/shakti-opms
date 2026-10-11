@@ -4,6 +4,7 @@
  */
 const mongoose = require('mongoose');
 const { getModels } = require('../../data/mongoRegistry');
+const { legacySlugToUnitName } = require('../productUnits/productUnit.constants');
 
 function isObjectId(id) {
   if (!id) return false;
@@ -43,6 +44,7 @@ const PRODUCT_REF_FIELDS = Object.freeze([
   { key: 'product_subgroup', modelKey: 'ProductSubgroup' },
   { key: 'brand', modelKey: 'ProductBrand' },
   { key: 'manufacturer', modelKey: 'ProductManufacturer' },
+  { key: 'unit', modelKey: 'ProductUnit' },
 ]);
 
 /**
@@ -76,7 +78,10 @@ async function attachProductRefs(rows) {
         continue;
       }
 
-      const name = refDisplayName(val);
+      let name = refDisplayName(val);
+      if (key === 'unit' && typeof val === 'string' && !refIdString(val)) {
+        name = legacySlugToUnitName(val) || name || val.trim();
+      }
       if (name) nameSets[key].add(name);
     }
   }

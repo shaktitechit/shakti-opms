@@ -51,6 +51,7 @@ import {
   getLeadManagerPortalRole,
 } from "./leadUtils";
 import { isAdmin as checkIsAdmin, readSessionFromStorage } from "@/utils/authStorage";
+import { useLeadManagerTeamScope } from "@/hooks/useLeadManagerTeamScope";
 
 type Props = {
   mode: "create" | "edit";
@@ -250,6 +251,7 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
   const authUser = (reduxUser || sessionUser) as any;
   const isAdmin = checkIsAdmin(authUser);
   const isSales = !isAdmin;
+  const { filterByTeam, withSelfInList, canAssignWithinTeam } = useLeadManagerTeamScope();
 
   // Fetch lead data if edit mode
   const { data: existingLead, isLoading: loadingLead } = useGetLeadQuery(
@@ -409,10 +411,15 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
     portals?: Array<{ portal_code: string; access_roles?: string[] }>;
   }>;
 
-  const users = useMemo(() => {
+  const assignableUsers = useMemo(() => {
     const filtered = rawUsers.filter(isUserInLeadManagerPortal);
-    return filtered.length > 0 ? filtered : rawUsers;
-  }, [rawUsers]);
+    const base = filtered.length > 0 ? filtered : rawUsers;
+    const scoped = filterByTeam(base);
+    const selfRow = authUser?._id
+      ? base.find((u) => String(u._id) === String(authUser._id))
+      : undefined;
+    return withSelfInList(scoped, selfRow);
+  }, [rawUsers, filterByTeam, withSelfInList, authUser]);
 
   const sourcesList =
     Array.isArray(sourcesData) && sourcesData.length > 0
@@ -585,7 +592,13 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
     }
 
     const assignmentFields = {
-      assigned_to: isAdmin ? (assignedTo ? assignedTo : null) : undefined,
+      assigned_to: canAssignWithinTeam
+        ? assignedTo
+          ? assignedTo
+          : isAdmin
+            ? null
+            : undefined
+        : undefined,
     };
 
     const payload: LeadInputPayload = {
@@ -1289,18 +1302,20 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
             </div>
 
             {/* Assign To — single assignee selection */}
-            {isAdmin && (
+            {canAssignWithinTeam && (
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Assigned To
+                  Assigned To {isAdmin ? "" : "(your team)"}
                 </label>
                 <select
                   value={assignedTo}
                   onChange={(e) => setAssignedTo(e.target.value)}
                   className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white"
                 >
-                  <option value="">Unassigned...</option>
-                  {users.map((u) => {
+                  <option value="">
+                    {isAdmin ? "Unassigned..." : "Assign to myself (default)..."}
+                  </option>
+                  {assignableUsers.map((u) => {
                     const roleBadge = getLeadManagerPortalRole(u);
                     return (
                       <option key={u._id} value={u._id}>

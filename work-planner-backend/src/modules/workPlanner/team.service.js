@@ -21,8 +21,37 @@ const {
 const ALLOWED_PAIRS = Object.freeze({
   executive: ['coordinator', 'manager'],
   coordinator: ['manager', 'admin'],
-  manager: ['admin'],
+  manager: ['manager', 'admin'],
 });
+
+async function detectCycle(subordinateId, proposedManagerId) {
+  const { WorkPlannerReportingEdge } = getModels();
+  const visited = new Set([String(proposedManagerId)]);
+  let currentLevel = [asObjectId(proposedManagerId)].filter(Boolean);
+  let depth = 0;
+  while (currentLevel.length > 0 && depth < 25) {
+    const parentEdges = await WorkPlannerReportingEdge.find({
+      subordinate: { $in: currentLevel },
+      is_active: true,
+    })
+      .select('manager')
+      .lean();
+
+    currentLevel = [];
+    for (const e of parentEdges) {
+      const mid = String(e.manager);
+      if (mid === String(subordinateId)) {
+        return true;
+      }
+      if (!visited.has(mid)) {
+        visited.add(mid);
+        currentLevel.push(asObjectId(mid));
+      }
+    }
+    depth++;
+  }
+  return false;
+}
 
 function normalizeRolesFromUserDoc(doc) {
   if (!doc) return [];
@@ -148,20 +177,20 @@ async function upsertEdge(body, actor) {
 
   const { WorkPlannerReportingEdge } = getModels();
 
-  // Block reverse edge
-  const reverse = await WorkPlannerReportingEdge.findOne({
-    subordinate: asObjectId(managerId),
-    manager: asObjectId(subordinateId),
-    is_active: true,
-  }).lean();
-  if (reverse) {
-    throw new ApiError(400, 'Reverse reporting relationship already exists');
+  // Block circular reporting
+  const isCycle = await detectCycle(subordinateId, managerId);
+  if (isCycle) {
+    throw new ApiError(400, 'Circular reporting detected: cannot report to your own subordinate');
   }
 
   const edge = await WorkPlannerReportingEdge.findOneAndUpdate(
-    { subordinate: asObjectId(subordinateId) },
+    {
+      subordinate: asObjectId(subordinateId),
+      manager: asObjectId(managerId),
+    },
     {
       $set: {
+        subordinate: asObjectId(subordinateId),
         manager: asObjectId(managerId),
         subordinate_role: subRole,
         manager_role: mgrRole,
@@ -183,21 +212,48 @@ async function upsertEdge(body, actor) {
   return toPlain(edge);
 }
 
-async function removeEdge(subordinateId, actor) {
+async function removeEdge(subordinateId, managerId, actor) {
   if (!isWpAdmin(actor)) {
     throw new ApiError(403, 'Only Work Planner admins can unmap reporting relationships');
   }
   const { WorkPlannerReportingEdge } = getModels();
-  const edge = await WorkPlannerReportingEdge.findOneAndUpdate(
-    { subordinate: asObjectId(subordinateId), is_active: true },
-    { $set: { is_active: false, updated_by: userId(actor) } },
-    { new: true },
-  ).lean();
-  if (!edge) throw new ApiError(404, 'Reporting relationship not found');
+  const filter = { subordinate: asObjectId(subordinateId), is_active: true };
+  if (managerId) {
+    filter.manager = asObjectId(managerId);
+  }
 
-  await syncAssignedManagerSettings(subordinateId, null, actor);
+  if (managerId) {
+    const edge = await WorkPlannerReportingEdge.findOneAndUpdate(
+      filter,
+      { $set: { is_active: false, updated_by: userId(actor) } },
+      { new: true },
+    ).lean();
+    if (!edge) throw new ApiError(404, 'Reporting relationship not found');
+  } else {
+    await WorkPlannerReportingEdge.updateMany(
+      filter,
+      { $set: { is_active: false, updated_by: userId(actor) } },
+    );
+  }
 
-  return { success: true, subordinate: String(subordinateId) };
+  const remainingEdge = await WorkPlannerReportingEdge.findOne({
+    subordinate: asObjectId(subordinateId),
+    is_active: true,
+  })
+    .sort({ updatedAt: -1 })
+    .lean();
+
+  await syncAssignedManagerSettings(
+    subordinateId,
+    remainingEdge ? remainingEdge.manager : null,
+    actor
+  );
+
+  return {
+    success: true,
+    subordinate: String(subordinateId),
+    manager: managerId ? String(managerId) : null,
+  };
 }
 
 async function listEdges(actor) {
@@ -240,22 +296,27 @@ async function getTree(actor) {
       .lean(),
   ]);
 
-  const edgeBySub = new Map(edges.map((e) => [String(e.subordinate), e]));
+  const managersBySub = new Map();
   const childrenByMgr = new Map();
   for (const e of edges) {
+    const sid = String(e.subordinate);
     const mid = String(e.manager);
+    if (!managersBySub.has(sid)) managersBySub.set(sid, []);
+    managersBySub.get(sid).push(mid);
+
     if (!childrenByMgr.has(mid)) childrenByMgr.set(mid, []);
-    childrenByMgr.get(mid).push(String(e.subordinate));
+    childrenByMgr.get(mid).push(sid);
   }
 
   const enriched = users.map((u) => {
     const id = String(u._id);
     const role = primaryWpRole(u);
-    const edge = edgeBySub.get(id);
+    const mgrIds = managersBySub.get(id) || [];
     return {
       ...toPlain(u),
       wp_role: role,
-      reports_to: edge ? String(edge.manager) : null,
+      reports_to: mgrIds[0] || null,
+      manager_ids: mgrIds,
       report_ids: childrenByMgr.get(id) || [],
     };
   });
@@ -264,9 +325,9 @@ async function getTree(actor) {
   const managers = enriched.filter((u) => u.wp_role === 'manager');
   const coordinators = enriched.filter((u) => u.wp_role === 'coordinator');
   const executives = enriched.filter((u) => u.wp_role === 'executive');
-  const unassignedManagers = managers.filter((m) => !m.reports_to);
-  const unassignedCoordinators = coordinators.filter((c) => !c.reports_to);
-  const unassignedExecutives = executives.filter((e) => !e.reports_to);
+  const unassignedManagers = managers.filter((m) => (m.manager_ids || []).length === 0);
+  const unassignedCoordinators = coordinators.filter((c) => (c.manager_ids || []).length === 0);
+  const unassignedExecutives = executives.filter((e) => (e.manager_ids || []).length === 0);
 
   return {
     users: enriched,

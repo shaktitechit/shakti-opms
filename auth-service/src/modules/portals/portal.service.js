@@ -19,7 +19,7 @@ const DEFAULT_PORTALS = [
     name: 'Lead Manager Portal',
     code: 'lead_manager',
     description: 'Lead generation and CRM pipeline management',
-    access_roles: ['super_admin', 'admin', 'manager', 'executive'],
+    access_roles: ['super_admin', 'admin', 'manager', 'coordinator', 'executive'],
   },
 ];
 

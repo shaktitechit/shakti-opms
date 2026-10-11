@@ -11,7 +11,9 @@ const activityService = require('../activity/activity.service');
 const { isObjectId, findProductsLean } = require('./productRefs');
 
 const nf = 'Product not found';
-const { PRODUCT_UNITS, PRODUCT_TYPES } = require('./product.validation');
+const { PRODUCT_TYPES } = require('./product.validation');
+const { legacySlugToUnitName } = require('../productUnits/productUnit.constants');
+const { getDefaultProductUnit } = require('../productUnits/productUnit.service');
 
 const PATCHABLE_KEYS = Object.freeze([
   'product_name',
@@ -116,7 +118,43 @@ async function resolveProductRefs(payload, user, existing = null) {
   }
 }
 
+async function resolveUnitInPayload(payload, user, existing = null) {
+  const { ProductUnit } = getModels();
+  const hasUnitKey = Object.prototype.hasOwnProperty.call(payload, 'unit');
+
+  if (!hasUnitKey && !existing) {
+    const def = await getDefaultProductUnit();
+    if (def) payload.unit = def._id;
+    return;
+  }
+  if (!hasUnitKey) return;
+
+  if (payload.unit === null || payload.unit === '') {
+    payload.unit = null;
+    return;
+  }
+
+  const normalized = normalizeRefInput(payload.unit);
+  if (normalized == null) {
+    payload.unit = null;
+    return;
+  }
+
+  if (isObjectId(normalized)) {
+    const doc = await ProductUnit.findOne({ _id: normalized, deletedAt: null });
+    if (!doc) throw new ApiError(400, 'Unknown unit');
+    payload.unit = doc._id;
+    return;
+  }
+
+  const unitName = legacySlugToUnitName(normalized) || normalized;
+  const doc = await findOrCreateNamedRef(ProductUnit, unitName, { user });
+  payload.unit = doc._id;
+}
+
 async function _resolveProductRefs(payload, user, existing = null) {
+  await resolveUnitInPayload(payload, user, existing);
+
   const { ProductGroup, ProductSubgroup, ProductBrand, ProductManufacturer } = getModels();
 
   const fields = [
@@ -213,7 +251,14 @@ function sanitizePatch(patch) {
       continue;
     }
 
-    if (k === 'generic_name' || k === 'product_group' || k === 'product_subgroup' || k === 'brand' || k === 'manufacturer') {
+    if (
+      k === 'generic_name' ||
+      k === 'product_group' ||
+      k === 'product_subgroup' ||
+      k === 'brand' ||
+      k === 'manufacturer' ||
+      k === 'unit'
+    ) {
       if (v === null || v === '') {
         out[k] = null;
         continue;
@@ -243,13 +288,6 @@ function sanitizePatch(patch) {
         continue;
       }
       out[k] = typeof v === 'string' ? v.trim() : String(v).trim();
-      continue;
-    }
-
-    if (k === 'unit') {
-      const u = typeof v === 'string' ? v.trim() : String(v ?? '').trim();
-      if (!PRODUCT_UNITS.has(u)) throw new ApiError(400, 'Invalid unit');
-      out[k] = u;
       continue;
     }
 
@@ -437,9 +475,6 @@ async function create(body, user) {
     throw new ApiError(400, 'Invalid minimum_sale_rate');
   }
 
-  const unitRaw = body.unit != null && String(body.unit).trim() ? String(body.unit).trim() : 'pcs';
-  if (!PRODUCT_UNITS.has(unitRaw)) throw new ApiError(400, 'Invalid unit');
-
   const typeRaw =
     body.product_type != null && String(body.product_type).trim()
       ? String(body.product_type).trim()
@@ -456,7 +491,7 @@ async function create(body, user) {
     product_subgroup: body.product_subgroup,
     brand: body.brand,
     manufacturer: body.manufacturer,
-    unit: unitRaw,
+    unit: body.unit,
     base_price: basePrice,
     minimum_sale_rate: minSaleRate,
     gst_percent: gstPercent,
@@ -585,7 +620,7 @@ async function bulkCreate(items, user) {
 
     const skuTrim = item.sku != null ? String(item.sku).trim().toUpperCase() : '';
     const gstPercent = Number(item.gst_percent ?? item.default_gst_rate ?? item.gst_rate ?? 18);
-    const unitRaw = item.unit != null && String(item.unit).trim() ? String(item.unit).trim() : 'pcs';
+    const unitVal = item.unit != null && String(item.unit).trim() ? String(item.unit).trim() : undefined;
     const typeRaw =
       item.product_type != null && String(item.product_type).trim()
         ? String(item.product_type).trim().toLowerCase()
@@ -604,7 +639,7 @@ async function bulkCreate(items, user) {
       product_subgroup: item.product_subgroup,
       brand: brandName || undefined,
       manufacturer: mfrName || undefined,
-      unit: ['pcs', 'box', 'kg', 'ltr', 'meter', 'set', 'kit', 'bottle'].includes(unitRaw) ? unitRaw : 'pcs',
+      unit: unitVal,
       base_price: basePrice,
       minimum_sale_rate: minSaleRate,
       gst_percent: gstPercent,
@@ -719,7 +754,8 @@ async function syncFromGoogleSheet(row) {
   const wmRaw = row.warranty_months ?? row.warranty;
   const warrantyMonths = wmRaw !== undefined && wmRaw !== '' ? Math.floor(Number(wmRaw)) : undefined;
 
-  const unitRaw = row.unit ? String(row.unit).trim().toLowerCase() : undefined;
+  const unitFromRow =
+    row.unit != null && String(row.unit).trim() ? legacySlugToUnitName(row.unit) || String(row.unit).trim() : undefined;
   const typeRaw = row.product_type
     ? String(row.product_type).trim().toLowerCase()
     : undefined;
@@ -750,8 +786,8 @@ async function syncFromGoogleSheet(row) {
   if (row.brand !== undefined) payload.brand = String(row.brand ?? '').trim();
   if (row.manufacturer !== undefined) payload.manufacturer = String(row.manufacturer ?? '').trim();
 
-  if (unitRaw && ['pcs', 'box', 'kg', 'ltr', 'meter', 'set', 'kit', 'bottle'].includes(unitRaw)) {
-    payload.unit = unitRaw;
+  if (unitFromRow) {
+    payload.unit = unitFromRow;
   }
 
   if (typeRaw && PRODUCT_TYPES.has(typeRaw)) {
@@ -789,7 +825,10 @@ async function syncFromGoogleSheet(row) {
   if (!payload.product_name) payload.product_name = 'New Sheet Product';
   if (payload.base_price === undefined) payload.base_price = 0;
   if (payload.minimum_sale_rate === undefined) payload.minimum_sale_rate = payload.base_price;
-  if (payload.unit === undefined) payload.unit = 'pcs';
+  if (payload.unit === undefined) {
+    const def = await getDefaultProductUnit();
+    if (def) payload.unit = def._id;
+  }
   if (payload.product_type === undefined) payload.product_type = 'individual';
   if (payload.gst_percent === undefined) payload.gst_percent = 18;
 
@@ -799,13 +838,16 @@ async function syncFromGoogleSheet(row) {
 }
 
 async function getMetaOptions() {
-  const { ProductGroup, ProductSubgroup, ProductBrand, ProductManufacturer } = getModels();
+  const { ProductGroup, ProductSubgroup, ProductBrand, ProductManufacturer, ProductUnit } = getModels();
+  const { ensureProductUnitsSeeded } = require('../productUnits/productUnit.service');
+  await ensureProductUnitsSeeded();
 
-  const [groups, subgroups, brands, manufacturers] = await Promise.all([
+  const [groups, subgroups, brands, manufacturers, units] = await Promise.all([
     ProductGroup.find({ deletedAt: null }).sort({ name: 1 }).lean(),
     ProductSubgroup.find({ deletedAt: null }).sort({ name: 1 }).lean(),
     ProductBrand.find({ deletedAt: null }).sort({ name: 1 }).lean(),
     ProductManufacturer.find({ deletedAt: null }).sort({ name: 1 }).lean(),
+    ProductUnit.find({ deletedAt: null, is_active: { $ne: false } }).sort({ name: 1 }).lean(),
   ]);
 
   return {
@@ -813,6 +855,7 @@ async function getMetaOptions() {
     subgroups: subgroups.map(toPlain),
     brands: brands.map(toPlain),
     manufacturers: manufacturers.map(toPlain),
+    units: units.map(toPlain),
   };
 }
 

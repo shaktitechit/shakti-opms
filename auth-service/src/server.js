@@ -4,6 +4,7 @@ const { PORT, MONGO_URI } = require('./config/env');
 const User = require('./models/User');
 const departmentService = require('./modules/departments/department.service');
 const userService = require('./modules/users/user.service');
+const portalService = require('./modules/portals/portal.service');
 
 async function syncUserIndexes() {
   try {
@@ -29,6 +30,7 @@ async function ensureDefaults() {
     await syncUserIndexes();
     const deptResults = await departmentService.seedDefaultDepartments();
     const roleResults = await userService.seedDefaultRoles();
+    await portalService.seedDefaultPortals();
     const createdDepts = deptResults.filter((r) => r.status === 'created').length;
     const createdRoles = roleResults.filter((r) => r.status === 'created').length;
     if (createdDepts || createdRoles) {

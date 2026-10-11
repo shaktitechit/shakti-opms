@@ -26,8 +26,13 @@ exports.upsertEdge = asyncHandler(async (req, res) => {
 });
 
 exports.removeEdge = asyncHandler(async (req, res) => {
+  const managerId =
+    req.query.manager ||
+    req.query.manager_id ||
+    req.body?.manager ||
+    req.body?.manager_id;
   res.json({
     success: true,
-    data: await teamService.removeEdge(req.params.subordinateId, req.user),
+    data: await teamService.removeEdge(req.params.subordinateId, managerId, req.user),
   });
 });

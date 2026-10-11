@@ -15,21 +15,36 @@ function toObjectId(id) {
 /**
  * Builds quotation filter based on date ranges, sales rep filter, and user visibility permissions.
  */
-function buildReportFilter(query = {}, user) {
+async function buildReportFilter(query = {}, user) {
   const q = { deletedAt: null };
   const andConditions = [];
 
-  // Role visibility: Admins see all quotations. Managers/Sales see their own or assigned quotations.
+  // Role visibility: Admins see all quotations. Managers/Coordinators see their downline team.
   if (user && !isLeadAdmin(user)) {
-    const userId = toObjectId(user._id);
-    andConditions.push({
-      $or: [
-        { created_by: userId },
-        { sales_person_user: userId },
-        { signatory_user: userId },
-      ],
-    });
-  } else if (query.sales_person && query.sales_person !== 'all') {
+    const { getVisibleLeadUserIds } = require('../team/teamVisibility.service');
+    const visibleIds = await getVisibleLeadUserIds(user);
+    if (visibleIds && Array.isArray(visibleIds) && visibleIds.length > 0) {
+      const objIds = visibleIds.map(toObjectId);
+      andConditions.push({
+        $or: [
+          { created_by: { $in: objIds } },
+          { sales_person_user: { $in: objIds } },
+          { signatory_user: { $in: objIds } },
+        ],
+      });
+    } else {
+      const userId = toObjectId(user._id);
+      andConditions.push({
+        $or: [
+          { created_by: userId },
+          { sales_person_user: userId },
+          { signatory_user: userId },
+        ],
+      });
+    }
+  }
+
+  if (query.sales_person && query.sales_person !== 'all') {
     const spId = toObjectId(query.sales_person);
     andConditions.push({
       $or: [
@@ -117,7 +132,7 @@ function buildReportFilter(query = {}, user) {
  */
 async function getQuotationSummaryReport(query = {}, user) {
   const { LeadQuotation } = getModels();
-  const filter = buildReportFilter(query, user);
+  const filter = await buildReportFilter(query, user);
 
   const quotes = await LeadQuotation.find(filter)
     .select('quotation_no version status approval_status grand_total subtotal total_discount total_gst items valid_until quotation_date customer_name created_by conversion sales_person_user sales_person_name')
@@ -234,7 +249,7 @@ async function getQuotationSummaryReport(query = {}, user) {
  */
 async function getQuotationSalesPerformance(query = {}, user) {
   const { LeadQuotation, User } = getModels();
-  const filter = buildReportFilter(query, user);
+  const filter = await buildReportFilter(query, user);
 
   const quotes = await LeadQuotation.find(filter)
     .populate('sales_person_user', 'name email department phone designation')
@@ -357,7 +372,7 @@ async function getQuotationSalesPerformance(query = {}, user) {
  */
 async function getQuotationMonthlyTrends(query = {}, user) {
   const { LeadQuotation } = getModels();
-  const filter = buildReportFilter(query, user);
+  const filter = await buildReportFilter(query, user);
 
   const quotes = await LeadQuotation.find(filter)
     .select('quotation_date createdAt status grand_total total_discount')
@@ -417,7 +432,7 @@ async function getQuotationMonthlyTrends(query = {}, user) {
  */
 async function getQuotationProductBreakdown(query = {}, user) {
   const { LeadQuotation } = getModels();
-  const filter = buildReportFilter(query, user);
+  const filter = await buildReportFilter(query, user);
 
   const quotes = await LeadQuotation.find(filter)
     .select('items status quotation_date grand_total')

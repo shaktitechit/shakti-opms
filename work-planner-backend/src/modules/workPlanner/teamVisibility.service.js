@@ -36,36 +36,40 @@ async function getVisibleSalesUserIds(user) {
 
   const { WorkPlannerReportingEdge, UserWorkPlannerSettings } = getModels();
 
-  if (isWpManager(user)) {
-    // 1. Direct reports (coordinators and direct executives)
-    const directEdges = await WorkPlannerReportingEdge.find({
-      manager: asObjectId(uid),
-      is_active: true,
-    })
-      .select('subordinate')
-      .lean();
-    const directIds = directEdges.map((e) => String(e.subordinate)).filter(Boolean);
+  if (isWpManager(user) || isWpCoordinator(user)) {
+    const visited = new Set();
+    let currentLevel = [asObjectId(uid)].filter(Boolean);
+    let depth = 0;
+    const maxDepth = isWpManager(user) ? 10 : 2;
 
-    // 2. Indirect reports (executives reporting to those coordinators)
-    let indirectIds = [];
-    if (directIds.length > 0) {
-      const indirectEdges = await WorkPlannerReportingEdge.find({
-        manager: { $in: directIds.map(asObjectId).filter(Boolean) },
+    while (currentLevel.length > 0 && depth < maxDepth) {
+      const edges = await WorkPlannerReportingEdge.find({
+        manager: { $in: currentLevel },
         is_active: true,
       })
         .select('subordinate')
         .lean();
-      indirectIds = indirectEdges.map((e) => String(e.subordinate)).filter(Boolean);
+
+      const nextLevel = [];
+      for (const e of edges) {
+        const sid = String(e.subordinate);
+        if (sid && !visited.has(sid)) {
+          visited.add(sid);
+          nextLevel.push(asObjectId(sid));
+        }
+      }
+      currentLevel = nextLevel;
+      depth++;
     }
 
-    // 3. Subordinates assigned in UserWorkPlannerSettings
+    // Subordinates assigned in UserWorkPlannerSettings
     let settingsIds = [];
     if (UserWorkPlannerSettings) {
       const userOid = asObjectId(uid);
       const settings = await UserWorkPlannerSettings.find({
         $or: [
           { assigned_manager: userOid },
-          { 'plan_types.assigned_manager': userOid },
+          { 'plan_type_settings.assigned_manager': userOid },
         ],
       })
         .select('user')
@@ -73,34 +77,7 @@ async function getVisibleSalesUserIds(user) {
       settingsIds = settings.map((s) => String(s.user)).filter(Boolean);
     }
 
-    return [...new Set([uid, ...directIds, ...indirectIds, ...settingsIds])];
-  }
-
-  if (isWpCoordinator(user)) {
-    // Direct reports (executives reporting to this coordinator)
-    const edges = await WorkPlannerReportingEdge.find({
-      manager: asObjectId(uid),
-      is_active: true,
-    })
-      .select('subordinate')
-      .lean();
-    const reportIds = edges.map((e) => String(e.subordinate)).filter(Boolean);
-
-    let settingsIds = [];
-    if (UserWorkPlannerSettings) {
-      const userOid = asObjectId(uid);
-      const settings = await UserWorkPlannerSettings.find({
-        $or: [
-          { assigned_manager: userOid },
-          { 'plan_types.assigned_manager': userOid },
-        ],
-      })
-        .select('user')
-        .lean();
-      settingsIds = settings.map((s) => String(s.user)).filter(Boolean);
-    }
-
-    return [...new Set([uid, ...reportIds, ...settingsIds])];
+    return [...new Set([uid, ...Array.from(visited), ...settingsIds])];
   }
 
   return [uid];

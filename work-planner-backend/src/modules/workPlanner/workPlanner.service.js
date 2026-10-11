@@ -31,6 +31,7 @@ const {
   notifyExpenseRejected,
   notifyDayEndCompleted,
 } = require('./workPlannerAutoNotification.service');
+const { resolveReportingStakeholderEmails } = require('./workPlannerTeamReporting.service');
 const {
   EDITABLE_PLAN_STATUSES,
   EDITABLE_EXPENSE_STATUSES,
@@ -541,16 +542,38 @@ async function getDayEndDraft(id, user) {
     loadExpenses(id),
   ]);
 
-  const managers = await getWorkPlannerManagers();
-  const managerList = managers.map((m) => ({
-    _id: String(m._id),
-    name: m.name || m.email.split('@')[0],
-    email: m.email,
-    department: m.department || '',
-  }));
-
   const planType = plan.plan_type || 'Visits';
   const targetUserId = plan.sales_user?._id || plan.sales_user || user._id;
+  const planLean = typeof plan.toObject === 'function' ? plan.toObject() : plan;
+
+  const {
+    directManager,
+    uplineManagers,
+    primaryRecipientEmail,
+    ccList: reportingCcList,
+  } = await resolveReportingStakeholderEmails(targetUserId, planLean);
+
+  const managers = await getWorkPlannerManagers();
+  const reportingChain = [directManager, ...(uplineManagers || [])].filter(Boolean);
+  const reportingIds = new Set(reportingChain.map((m) => String(m._id)));
+  const managerList = [
+    ...reportingChain.map((m) => ({
+      _id: String(m._id),
+      name: m.name || m.email.split('@')[0],
+      email: m.email,
+      department: m.department || '',
+      isReportingManager: true,
+    })),
+    ...managers
+      .filter((m) => m.email && !reportingIds.has(String(m._id)))
+      .map((m) => ({
+        _id: String(m._id),
+        name: m.name || m.email.split('@')[0],
+        email: m.email,
+        department: m.department || '',
+        isReportingManager: false,
+      })),
+  ];
 
   let userSettings = null;
   try {
@@ -563,26 +586,19 @@ async function getDayEndDraft(id, user) {
   const ptsManagerEmail = pts?.assignedManagerEmail;
   const globalManagerEmail = userSettings?.assignedManagerEmail;
 
-  // Primary recipient priority:
-  // 1. Plan-type assigned manager email
-  // 2. Global assigned manager email
-  // 3. Discussed manager email
-  // 4. First manager in roster
   let firstManagerEmail =
+    primaryRecipientEmail ||
     ptsManagerEmail ||
     globalManagerEmail ||
     (plan.discussed_manager_id && plan.discussed_manager_id.email ? plan.discussed_manager_id.email : '') ||
     (managerList.length > 0 ? managerList[0].email : '');
 
-  // CC list priority:
-  // 1. Plan-type CC emails (if non-empty)
-  // 2. Global CC emails (if non-empty)
   const ptsCc = pts?.ccEmails || [];
   const globalCc = userSettings?.ccEmails || [];
   const configuredCc = ptsCc.length > 0 ? ptsCc : globalCc;
 
-  const ccEmails = configuredCc.filter(
-    (email) => email && email.toLowerCase() !== firstManagerEmail.toLowerCase()
+  const ccEmails = [...new Set([...configuredCc, ...(reportingCcList || [])])].filter(
+    (email) => email && email.toLowerCase() !== String(firstManagerEmail || '').toLowerCase()
   );
 
   const executiveName = user.name || user.email?.split('@')[0] || 'Executive';

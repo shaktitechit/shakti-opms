@@ -30,17 +30,6 @@ const labelClass = "text-xs font-medium text-slate-700 dark:text-slate-300";
 const btnSecondaryClass =
   "rounded-lg border border-slate-200/95 px-3 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-50 disabled:opacity-50 dark:border-white/15 dark:text-slate-100 dark:hover:bg-white/5";
 
-const UNIT_OPTIONS = [
-  "pcs",
-  "box",
-  "kg",
-  "ltr",
-  "meter",
-  "set",
-  "kit",
-  "bottle",
-] as const;
-
 const PRODUCT_TYPE_OPTIONS = ["individual", "kit"] as const;
 
 function stringField(v: unknown): string {
@@ -71,7 +60,7 @@ type ProductState = {
   product_subgroup: string;
   brand: string;
   manufacturer: string;
-  unit: "pcs" | "box" | "kg" | "ltr" | "meter" | "set" | "kit" | "bottle";
+  unit: string;
   base_price: string;
   minimum_sale_rate: string;
   mrp: string;
@@ -93,7 +82,7 @@ const defaultProductState = (): ProductState => ({
   product_subgroup: "",
   brand: "",
   manufacturer: "",
-  unit: "pcs",
+  unit: "Pcs",
   base_price: "",
   minimum_sale_rate: "",
   mrp: "",
@@ -127,9 +116,7 @@ function productToFormState(
     product_subgroup: productRefLabel(p.product_subgroup),
     brand: productRefLabel(p.brand),
     manufacturer: productRefLabel(p.manufacturer),
-    unit: UNIT_OPTIONS.includes(p.unit as (typeof UNIT_OPTIONS)[number])
-      ? (p.unit as ProductState["unit"])
-      : "pcs",
+    unit: productRefLabel(p.unit) || "Pcs",
     base_price: numField(p.base_price),
     minimum_sale_rate: numField(p.minimum_sale_rate),
     mrp: numField(p.mrp),
@@ -322,7 +309,8 @@ export function ProductDetailModal({
 
         if (!valsEqual(form.brand.trim(), oldBrand)) patch.brand = form.brand.trim() || null;
         if (!valsEqual(form.manufacturer.trim(), oldManufacturer)) patch.manufacturer = form.manufacturer.trim() || null;
-        if (form.unit !== pObj.unit) patch.unit = form.unit;
+        const oldUnit = productRefLabel(pObj.unit);
+        if (!valsEqual(form.unit.trim(), oldUnit)) patch.unit = form.unit.trim() || null;
         if (bp !== pObj.base_price) patch.base_price = bp;
         if (msr !== pObj.minimum_sale_rate) patch.minimum_sale_rate = msr;
         
@@ -592,18 +580,23 @@ export function ProductDetailModal({
 
               <div className="space-y-1">
                 <label className={labelClass}>Unit of Measurement</label>
-                <select
+                <input
+                  type="text"
+                  list="unit-options"
                   className={inputClass}
+                  placeholder="e.g. Pcs, Kg, Ltr"
                   value={form.unit}
-                  onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value as any }))}
+                  onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}
                   disabled={isSaving}
-                >
-                  {UNIT_OPTIONS.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt.toUpperCase()}
-                    </option>
+                />
+                <datalist id="unit-options">
+                  {metaOptions?.units?.map((u, i) => (
+                    <option key={`unit:${String(u._id ?? u.name)}:${i}`} value={u.name} />
                   ))}
-                </select>
+                </datalist>
+                <p className="text-2xs text-slate-500 dark:text-slate-400">
+                  Pick a catalog unit or type a new name to create it on save.
+                </p>
               </div>
 
               <div className="space-y-1 md:col-span-2">

@@ -55,6 +55,7 @@ import {
 } from "@/store/api";
 import { useAppSelector } from "@/store/hooks";
 import { useLeadManagerRole } from "@/hooks/useLeadManagerRole";
+import { useLeadManagerTeamScope } from "@/hooks/useLeadManagerTeamScope";
 import {
   formatCurrencyINR,
   canViewLeadPricing,
@@ -80,7 +81,10 @@ const PERIOD_OPTIONS = [
 
 export function LeadReportsDashboard({ portalHome = "/dashboard" }: Props) {
   const authUser = useAppSelector((state) => state.auth.user);
-  const { isAdmin, user } = useLeadManagerRole();
+  const { isAdmin, isManager, isCoordinator, isExecutive, user } = useLeadManagerRole();
+  const { filterByTeam, withSelfInList } = useLeadManagerTeamScope();
+  const canFilterRep = isAdmin || isManager || isCoordinator;
+  const isTeamLeadReports = isAdmin || isManager || isCoordinator;
   const [period, setPeriod] = useState<string>("all_time");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
@@ -88,8 +92,6 @@ export function LeadReportsDashboard({ portalHome = "/dashboard" }: Props) {
   const [activeTab, setActiveTab] = useState<"funnel" | "reps" | "trends" | "sources" | "products">("funnel");
   const [detailsExecutive, setDetailsExecutive] = useState<LeadSalesPerformance | null>(null);
 
-  /** Admin → all leads (optional assignee filter). Manager & Executive → own assigned leads only. */
-  const isPersonalView = !isAdmin;
   const showPricing = canViewLeadPricing(authUser, portalHome);
 
   // Filter params
@@ -102,21 +104,23 @@ export function LeadReportsDashboard({ portalHome = "/dashboard" }: Props) {
       if (endDate) params.endDate = endDate;
     }
 
-    if (isAdmin && selectedUser !== "all") {
+    if (canFilterRep && selectedUser !== "all") {
       params.assigned_to = selectedUser;
     }
     return params;
-  }, [period, startDate, endDate, selectedUser, isAdmin]);
+  }, [period, startDate, endDate, selectedUser, canFilterRep]);
 
-  // Fetch users for admin rep filtering
-  const { data: usersData } = useListUsersQuery(undefined, { skip: isPersonalView });
+  const { data: usersData } = useListUsersQuery(undefined, { skip: !canFilterRep });
   const users = (Array.isArray(usersData)
     ? usersData
     : (usersData as { data?: Array<{ _id: string; name: string; department?: string; portals?: Array<{ portal_code?: string; access_roles?: string[] }> }> })?.data || []) as Array<{ _id: string; name: string; department?: string; portals?: Array<{ portal_code?: string; access_roles?: string[] }> }>;
   const assignableUsers = useMemo(() => {
-    const filtered = users.filter(isUserInLeadManagerPortal);
-    return filtered.length > 0 ? filtered : users;
-  }, [users]);
+    let filtered = users.filter(isUserInLeadManagerPortal);
+    if (filtered.length === 0) filtered = users;
+    const scoped = filterByTeam(filtered);
+    const selfRow = user?._id ? users.find((u) => String(u._id) === String(user._id)) : undefined;
+    return withSelfInList(scoped, selfRow);
+  }, [users, filterByTeam, withSelfInList, user]);
 
   // RTK Query endpoints
   const {
@@ -536,14 +540,15 @@ export function LeadReportsDashboard({ portalHome = "/dashboard" }: Props) {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-black text-slate-900 dark:text-white">
-                  Lead Analytics &amp; Reports
+                  {isTeamLeadReports || isExecutive ? "My Reports" : "Lead Analytics & Reports"}
                 </h1>
                 <span className="rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-[10px] font-extrabold uppercase text-primary">
-                  {isAdmin ? "Organization View" : "My Dashboard"}
+                  {isAdmin ? "All Leads" : isManager || isCoordinator ? "Team Leads" : "My Leads"}
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Pipeline generation, conversion funnel, executive scorecards, monthly trends, and product demand.
+                Lead pipeline analytics — conversion funnel, rep scorecards, monthly trends, sources, and product demand.
+                {isTeamLeadReports ? " Quotation commercial reports live under Quote Reports in the sidebar." : ""}
               </p>
             </div>
           </div>
@@ -584,15 +589,15 @@ export function LeadReportsDashboard({ portalHome = "/dashboard" }: Props) {
               </div>
             )}
 
-            {/* Sales Executive Filter for Admins */}
-            {isAdmin && (
+            {canFilterRep && (
               <div className="relative">
                 <select
                   value={selectedUser}
                   onChange={(e) => setSelectedUser(e.target.value)}
                   className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-xs focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 cursor-pointer max-w-[180px] truncate"
+                  title={isAdmin ? "Filter by assignee" : "Filter by team member"}
                 >
-                  <option value="all">All Sales Reps</option>
+                  <option value="all">{isAdmin ? "All Sales Reps" : "All Team Members"}</option>
                   {assignableUsers.map((u) => {
                     const roleBadge = getLeadManagerPortalRole(u);
                     return (
