@@ -5,6 +5,20 @@
 const mongoose = require('mongoose');
 const { ApiError } = require('../../utils/ApiError');
 const { QUOTATION_STATUSES } = require('./quotation.constants');
+const { parseQuotationLineQuantity } = require('./quotationLineMath');
+
+function assertLineItemQuantities(items) {
+  if (!items || !Array.isArray(items)) return;
+  items.forEach((item, index) => {
+    const qty = parseQuotationLineQuantity(item?.quantity, NaN);
+    if (!Number.isFinite(qty) || qty === 0) {
+      throw new ApiError(
+        400,
+        `Line ${index + 1}: quantity must be non-zero (negative allowed for returns/replacements)`,
+      );
+    }
+  });
+}
 
 function assertObjectId(value, fieldName = 'id') {
   if (!value || !mongoose.Types.ObjectId.isValid(value)) {
@@ -28,6 +42,7 @@ function assertCreate(body) {
   if (body.items && !Array.isArray(body.items)) {
     throw new ApiError(400, 'Items must be an array');
   }
+  assertLineItemQuantities(body.items);
 }
 
 function assertUpdate(body) {
@@ -46,6 +61,7 @@ function assertUpdate(body) {
   if (body.items && !Array.isArray(body.items)) {
     throw new ApiError(400, 'Items must be an array');
   }
+  assertLineItemQuantities(body.items);
 }
 
 module.exports = {

@@ -39,6 +39,12 @@ import { useAppSelector } from "@/store/hooks";
 import { toast } from "@/lib/toast";
 import { mutationRejectedMessage } from "@/lib/mutationMessages";
 import { formatCurrencyINR, canCreateQuotation, canManageQuotations, isSalesDepartmentUser } from "./quotationUtils";
+import {
+  computeQuotationLineAmounts,
+  computeQuotationTotals,
+  isValidQuotationLineQuantity,
+  parseQuotationLineQuantity,
+} from "./quotationLineMath";
 import { RichTextEditor } from "./RichTextEditor";
 import { RichTextDisplay } from "./RichTextDisplay";
 import { getFieldText } from "@/components/leads/LeadFormPage";
@@ -1175,30 +1181,10 @@ export function QuotationFormModal({
     );
   };
 
-  // Calculations
   const calculations = useMemo(() => {
-    const computedItems = items.map((item) => {
-      const qty = Number(item.quantity) || 0;
-      const rate = Number(item.rate) || 0;
-      const gross = Math.round(qty * rate * 100) / 100;
-
-      let discPercent = Number(item.discount_percent) || 0;
-      let discAmt = Number(item.discount_amount) || 0;
-      if (discPercent > 0) {
-        discAmt = Math.round(((gross * discPercent) / 100) * 100) / 100;
-      } else if (discAmt > 0 && gross > 0) {
-        discPercent = Math.round(((discAmt / gross) * 100) * 100) / 100;
-      } else {
-        discPercent = 0;
-        discAmt = 0;
-      }
-
-      const taxable = Math.max(0, Math.round((gross - discAmt) * 100) / 100);
-      const gstRate = Number(item.gst_rate) || 0;
-      const gstAmt = Math.round(((taxable * gstRate) / 100) * 100) / 100;
-      const lineTotal = Math.round((taxable + gstAmt) * 100) / 100;
-
-      return {
+    const totals = computeQuotationTotals(items);
+    return {
+      items: totals.computedItems.map(({ item, gross, discPercent, discAmt, taxable, gstAmt, lineTotal }) => ({
         ...item,
         gross,
         discPercent,
@@ -1206,25 +1192,13 @@ export function QuotationFormModal({
         taxable,
         gstAmt,
         lineTotal,
-      };
-    });
-
-    const totalGross = Math.round(computedItems.reduce((acc, it) => acc + it.gross, 0) * 100) / 100;
-    const totalDiscount = Math.round(computedItems.reduce((acc, it) => acc + it.discAmt, 0) * 100) / 100;
-    const subtotal = Math.round(computedItems.reduce((acc, it) => acc + it.taxable, 0) * 100) / 100;
-    const totalGst = Math.round(computedItems.reduce((acc, it) => acc + it.gstAmt, 0) * 100) / 100;
-    const rawGrandTotal = subtotal + totalGst;
-    const grandTotal = Math.round(rawGrandTotal);
-    const roundOff = Math.round((grandTotal - rawGrandTotal) * 100) / 100;
-
-    return {
-      items: computedItems,
-      totalGross,
-      totalDiscount,
-      subtotal,
-      totalGst,
-      roundOff,
-      grandTotal,
+      })),
+      totalGross: totals.totalGross,
+      totalDiscount: totals.totalDiscount,
+      subtotal: totals.subtotal,
+      totalGst: totals.totalGst,
+      roundOff: totals.roundOff,
+      grandTotal: totals.grandTotal,
     };
   }, [items]);
 
@@ -1447,8 +1421,8 @@ export function QuotationFormModal({
       return;
     }
 
-    if (items.some((i) => Number(i.quantity) <= 0)) {
-      toast.error("Item quantity must be greater than 0");
+    if (items.some((i) => !isValidQuotationLineQuantity(parseQuotationLineQuantity(i.quantity, NaN)))) {
+      toast.error("Each line needs a non-zero quantity (use negative qty for returns or replacements)");
       return;
     }
 
@@ -1484,7 +1458,7 @@ export function QuotationFormModal({
         product_name: i.product_name.trim(),
         description: i.description.trim(),
         hsn_code: i.hsn_code.trim() || "9018",
-        quantity: Number(i.quantity) || 1,
+        quantity: parseQuotationLineQuantity(i.quantity, 1),
         unit: i.unit.trim() || "Nos",
         rate: Number(i.rate) || 0,
         discount_percent: Number(i.discount_percent) || 0,
@@ -2054,14 +2028,21 @@ export function QuotationFormModal({
                           <div className="flex gap-1">
                             <input
                               type="number"
-                              min="1"
-                              value={it.quantity}
-                              onChange={(e) =>
+                              step="any"
+                              title="Negative qty = return / replacement credit"
+                              value={Number.isFinite(Number(it.quantity)) ? it.quantity : ""}
+                              onChange={(e) => {
+                                const raw = e.target.value;
+                                const nextQty = raw === "" ? NaN : Number(raw);
                                 setItems((prev) =>
-                                  prev.map((x, i) => (i === idx ? { ...x, quantity: Number(e.target.value) } : x))
-                                )
-                              }
-                              className="w-16 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-900 dark:border-white/10 dark:bg-slate-900 dark:text-white"
+                                  prev.map((x, i) => (i === idx ? { ...x, quantity: nextQty as number } : x))
+                                );
+                              }}
+                              className={`w-16 rounded-lg border bg-white px-2 py-1.5 text-xs font-bold dark:bg-slate-900 dark:text-white ${
+                                Number(it.quantity) < 0
+                                  ? "border-amber-400 text-amber-900 dark:border-amber-600 dark:text-amber-200"
+                                  : "border-slate-200 text-slate-900 dark:border-white/10"
+                              }`}
                             />
                             <input
                               type="text"
@@ -2109,8 +2090,11 @@ export function QuotationFormModal({
                             value={it.discount_percent ?? 0}
                             onChange={(e) => {
                               const p = Math.min(100, Math.max(0, Number(e.target.value) || 0));
-                              const gross = (Number(it.quantity) || 1) * (Number(it.rate) || 0);
-                              const amt = Math.round(((gross * p) / 100) * 100) / 100;
+                              const amt = computeQuotationLineAmounts({
+                                ...it,
+                                discount_percent: p,
+                                discount_amount: 0,
+                              }).discAmt;
                               setItems((prev) =>
                                 prev.map((x, i) => (i === idx ? { ...x, discount_percent: p, discount_amount: amt } : x))
                               );

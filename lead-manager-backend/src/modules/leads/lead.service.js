@@ -178,7 +178,8 @@ async function assertCanAccessLead(lead, user, action = 'view') {
   if (isLeadAdmin(user)) return;
   if (userIsLeadAssignee(lead, user._id)) return;
   const visible = await getVisibleLeadUserIds(user);
-  if (visible && lead.assigned_to && visible.includes(String(lead.assigned_to))) return;
+  const assigneeId = refId(lead.assigned_to);
+  if (visible && assigneeId && visible.includes(assigneeId)) return;
   throw new ApiError(403, `You do not have permission to ${action} this lead`);
 }
 
@@ -1481,6 +1482,7 @@ async function bulkCreate(body, user) {
 }
 
 module.exports = {
+  refId,
   isLeadAdmin,
   isLeadManager,
   isLeadCoordinator,

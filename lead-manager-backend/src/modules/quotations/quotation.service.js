@@ -25,6 +25,7 @@ const {
   ACTIVE_PIPELINE_STATUSES,
   isActivePipelineStatus,
 } = require('./quotation.constants');
+const { computeQuotationLineAmounts } = require('./quotationLineMath');
 
 const TEMPLATE_APPROVAL_REQUEST = 'lead_quotation_approval_request';
 const TEMPLATE_APPROVED = 'lead_quotation_approved';
@@ -308,7 +309,11 @@ function numberToIndianWords(num) {
   if (paise > 0) {
     str += ' and ' + convertTwoDigits(paise) + ' Paise';
   }
-  return str + ' Only';
+  str += ' Only';
+  if (num < 0) {
+    return 'Minus ' + str;
+  }
+  return str;
 }
 
 /**
@@ -464,24 +469,15 @@ function computeTotals(items) {
   let totalDiscount = 0;
 
   const computedItems = (items || []).map((item) => {
-    const qty = Number(item.quantity) || 1;
-    const rate = Number(item.rate) || 0;
-    const grossAmount = Math.round(qty * rate * 100) / 100;
-
-    let discountPercent = Number(item.discount_percent) || 0;
-    let discountAmount = Number(item.discount_amount) || 0;
-
-    if (discountPercent > 0) {
-      discountAmount = Math.round(((grossAmount * discountPercent) / 100) * 100) / 100;
-    } else if (discountAmount > 0 && grossAmount > 0) {
-      discountPercent = Math.round(((discountAmount / grossAmount) * 100) * 100) / 100;
-    } else {
-      discountPercent = 0;
-      discountAmount = 0;
-    }
-
-    const taxableAmount = Math.max(0, Math.round((grossAmount - discountAmount) * 100) / 100);
-    const gstRate = Number(item.gst_rate) || 0;
+    const {
+      qty,
+      rate,
+      grossAmount,
+      discountPercent,
+      discountAmount,
+      taxableAmount,
+      gstRate,
+    } = computeQuotationLineAmounts(item);
 
     let cgstRate = 0;
     let cgstAmount = 0;
@@ -2102,19 +2098,17 @@ async function convert(id, body = {}, user) {
         productId = createdProduct._id;
       }
 
-      const gross = unitPrice * qty;
-      let discPct = Number(prodItem.discount_percent) || 0;
-      let discAmt = Number(prodItem.discount_amount) || 0;
-      if (discPct > 0) {
-        discAmt = Math.round(((gross * discPct) / 100) * 100) / 100;
-      } else if (discAmt > 0 && gross > 0) {
-        discPct = Math.round(((discAmt / gross) * 100) * 100) / 100;
-      } else {
-        discPct = 0;
-        discAmt = 0;
-      }
-      discAmt = Math.min(gross, discAmt);
-      const taxable = Math.max(0, Math.round((gross - discAmt) * 100) / 100);
+      const lineAmounts = computeQuotationLineAmounts({
+        quantity: qty,
+        rate: unitPrice,
+        discount_percent: prodItem.discount_percent,
+        discount_amount: prodItem.discount_amount,
+        gst_percent: gstPct,
+      });
+      const gross = lineAmounts.grossAmount;
+      const discPct = lineAmounts.discountPercent;
+      const discAmt = lineAmounts.discountAmount;
+      const taxable = lineAmounts.taxableAmount;
       const gst = Math.round(((taxable * gstPct) / 100) * 100) / 100;
       const total = Math.round((taxable + gst) * 100) / 100;
 
