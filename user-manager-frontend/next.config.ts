@@ -14,10 +14,14 @@ function resolveSessionAuthDir(appRootDir: string): string {
 }
 
 const sessionAuthDir = resolveSessionAuthDir(appDir);
+const sessionAuthInApp = sessionAuthDir.startsWith(appDir + path.sep);
+const turbopackRoot = sessionAuthInApp ? appDir : path.join(appDir, "..");
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  outputFileTracingRoot: sessionAuthInApp ? undefined : path.join(appDir, ".."),
   turbopack: {
+    root: turbopackRoot,
     resolveAlias: {
       "@session-auth": sessionAuthDir,
     },
