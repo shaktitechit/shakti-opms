@@ -128,6 +128,8 @@ services:
         session_auth: ./session-auth-client
       args:
         NEXT_PUBLIC_API_ORIGIN: ${NEXT_PUBLIC_API_ORIGIN}
+        NEXT_PUBLIC_AUTH_SERVICE_URL: ${NEXT_PUBLIC_AUTH_SERVICE_URL:-http://localhost:7003}
+        NEXT_PUBLIC_AUTH_ORIGIN: ${NEXT_PUBLIC_AUTH_ORIGIN:-http://localhost:7003}
         NEXT_PUBLIC_PRODUCT_SERVICE_URL: ${NEXT_PUBLIC_PRODUCT_SERVICE_URL:-}
         NEXT_PUBLIC_PARTY_SERVICE_URL: ${NEXT_PUBLIC_PARTY_SERVICE_URL:-}
         NEXT_PUBLIC_COMPANY_NAME: ${NEXT_PUBLIC_COMPANY_NAME:-}
@@ -138,6 +140,9 @@ services:
       - "${OPMS_FRONTEND_PORT:-7002}:3000"
     environment:
       NEXT_PUBLIC_API_ORIGIN: ${NEXT_PUBLIC_API_ORIGIN}
+      NEXT_PUBLIC_AUTH_SERVICE_URL: ${NEXT_PUBLIC_AUTH_SERVICE_URL:-http://localhost:7003}
+      NEXT_PUBLIC_AUTH_ORIGIN: ${NEXT_PUBLIC_AUTH_ORIGIN:-http://localhost:7003}
+      AUTH_SERVICE_URL: ${AUTH_SERVICE_URL:-http://auth-service:7003}
       NEXT_PUBLIC_PRODUCT_SERVICE_URL: ${NEXT_PUBLIC_PRODUCT_SERVICE_URL:-}
       NEXT_PUBLIC_PARTY_SERVICE_URL: ${NEXT_PUBLIC_PARTY_SERVICE_URL:-}
       NEXT_PUBLIC_COMPANY_NAME: ${NEXT_PUBLIC_COMPANY_NAME:-}
@@ -145,6 +150,8 @@ services:
       NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
     depends_on:
       opms-backend:
+        condition: service_healthy
+      auth-service:
         condition: service_healthy
 
 volumes:

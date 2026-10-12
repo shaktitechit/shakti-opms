@@ -113,6 +113,8 @@ services:
         session_auth: ./session-auth-client
       args:
         NEXT_PUBLIC_API_ORIGIN: ${NEXT_PUBLIC_API_ORIGIN:-http://localhost:7001}
+        NEXT_PUBLIC_AUTH_SERVICE_URL: ${NEXT_PUBLIC_AUTH_SERVICE_URL:-http://localhost:7003}
+        NEXT_PUBLIC_AUTH_ORIGIN: ${NEXT_PUBLIC_AUTH_ORIGIN:-http://localhost:7003}
         NEXT_PUBLIC_PRODUCT_SERVICE_URL: ${NEXT_PUBLIC_PRODUCT_SERVICE_URL:-http://localhost:7005}
         NEXT_PUBLIC_PARTY_SERVICE_URL: ${NEXT_PUBLIC_PARTY_SERVICE_URL:-http://localhost:7006}
         NEXT_PUBLIC_COMPANY_NAME: ${NEXT_PUBLIC_COMPANY_NAME:-}
@@ -122,6 +124,9 @@ services:
       NODE_ENV: development
       WATCHPACK_POLLING: "true"
       NEXT_PUBLIC_API_ORIGIN: ${NEXT_PUBLIC_API_ORIGIN:-http://localhost:7001}
+      NEXT_PUBLIC_AUTH_SERVICE_URL: ${NEXT_PUBLIC_AUTH_SERVICE_URL:-http://localhost:7003}
+      NEXT_PUBLIC_AUTH_ORIGIN: ${NEXT_PUBLIC_AUTH_ORIGIN:-http://localhost:7003}
+      AUTH_SERVICE_URL: ${AUTH_SERVICE_URL:-http://auth-service:7003}
       NEXT_PUBLIC_PRODUCT_SERVICE_URL: ${NEXT_PUBLIC_PRODUCT_SERVICE_URL:-http://localhost:7005}
       NEXT_PUBLIC_PARTY_SERVICE_URL: ${NEXT_PUBLIC_PARTY_SERVICE_URL:-http://localhost:7006}
       NEXT_PUBLIC_COMPANY_NAME: ${NEXT_PUBLIC_COMPANY_NAME:-}
@@ -132,6 +137,9 @@ services:
       - ./opms-frontend/public:/app/public:ro
       - ./session-auth-client:/app/session-auth-client:ro
     command: ["npm", "run", "dev"]
+    depends_on:
+      auth-service:
+        condition: service_started
     healthcheck:
       disable: true
 

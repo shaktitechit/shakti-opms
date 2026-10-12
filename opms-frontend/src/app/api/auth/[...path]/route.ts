@@ -5,8 +5,13 @@ import { proxyAuthRequest } from "@session-auth/nextAuthProxy";
 type RouteCtx = { params: Promise<{ path: string[] }> };
 
 async function handle(request: NextRequest, ctx: RouteCtx) {
-  const { path } = await ctx.params;
-  return proxyAuthRequest(request, path);
+  try {
+    const { path } = await ctx.params;
+    return await proxyAuthRequest(request, path);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Auth proxy error";
+    return Response.json({ success: false, message }, { status: 500 });
+  }
 }
 
 export const GET = handle;

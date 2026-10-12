@@ -4,6 +4,7 @@ export function resolveAuthServiceUrl(): string {
   return (
     process.env.AUTH_SERVICE_URL ||
     process.env.NEXT_PUBLIC_AUTH_SERVICE_URL ||
+    process.env.NEXT_PUBLIC_AUTH_ORIGIN ||
     "http://localhost:7003"
   ).replace(/\/+$/, "");
 }
@@ -29,11 +30,25 @@ export async function proxyAuthRequest(
       ? await request.arrayBuffer()
       : undefined;
 
-  const upstream = await fetch(target, {
-    method: request.method,
-    headers,
-    body: body && body.byteLength > 0 ? body : undefined,
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetch(target, {
+      method: request.method,
+      headers,
+      body: body && body.byteLength > 0 ? body : undefined,
+    });
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Auth service unreachable";
+    return Response.json(
+      {
+        success: false,
+        message: `Auth proxy failed: ${message}`,
+        details: { target },
+      },
+      { status: 502 },
+    );
+  }
 
   const responseHeaders = new Headers();
   const contentType = upstream.headers.get("content-type");
