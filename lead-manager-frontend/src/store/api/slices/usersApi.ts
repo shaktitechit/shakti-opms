@@ -1,18 +1,17 @@
 import { medicaApi } from "../baseApi";
 import { unwrapEnvelope, type ApiEnvelope } from "../unwrap";
-import { AUTH_SERVICE_URL } from "@/lib/env";
 
-/** User service API — RBAC catalogue + roster from Auth User Service. */
+/** User service API — RBAC catalogue + roster (via lead-manager-backend → auth). */
 export const usersApi = medicaApi.injectEndpoints({
   overrideExisting: true,
   endpoints: (build) => ({
     listRoles: build.query<unknown, void>({
-      query: () => ({ url: `${AUTH_SERVICE_URL}/api/users/roles`, method: "GET" }),
+      query: () => ({ url: "users/roles", method: "GET" }),
       transformResponse: (raw: ApiEnvelope<unknown>) => unwrapEnvelope(raw),
       providesTags: [{ type: "Users", id: "roles" }],
     }),
     listPermissions: build.query<unknown, void>({
-      query: () => ({ url: `${AUTH_SERVICE_URL}/api/users/permissions`, method: "GET" }),
+      query: () => ({ url: "users/permissions", method: "GET" }),
       transformResponse: (raw: ApiEnvelope<unknown>) => unwrapEnvelope(raw),
       providesTags: [{ type: "Users", id: "permissions" }],
     }),
@@ -21,19 +20,19 @@ export const usersApi = medicaApi.injectEndpoints({
       Record<string, string | undefined> | void
     >({
       query: (params) => ({
-        url: `${AUTH_SERVICE_URL}/api/users`,
+        url: "users",
         params: params ?? {},
       }),
       transformResponse: (raw: ApiEnvelope<unknown>) => unwrapEnvelope(raw),
       providesTags: [{ type: "Users", id: "LIST" }],
     }),
     getUser: build.query<unknown, string>({
-      query: (id) => `${AUTH_SERVICE_URL}/api/users/${id}`,
+      query: (id) => `users/${id}`,
       transformResponse: (raw: ApiEnvelope<unknown>) => unwrapEnvelope(raw),
       providesTags: (_r, _e, id) => [{ type: "Users", id }],
     }),
     createUser: build.mutation<unknown, Record<string, unknown>>({
-      query: (body) => ({ url: `${AUTH_SERVICE_URL}/api/users`, method: "POST", body }),
+      query: (body) => ({ url: "users", method: "POST", body }),
       transformResponse: (raw: ApiEnvelope<unknown>) => unwrapEnvelope(raw),
       invalidatesTags: ["Users"],
     }),
@@ -42,7 +41,7 @@ export const usersApi = medicaApi.injectEndpoints({
       { id: string; patch: Record<string, unknown> }
     >({
       query: ({ id, patch }) => ({
-        url: `${AUTH_SERVICE_URL}/api/users/${id}`,
+        url: `users/${id}`,
         method: "PATCH",
         body: patch,
       }),
@@ -54,7 +53,7 @@ export const usersApi = medicaApi.injectEndpoints({
     }),
     deleteUser: build.mutation<unknown, string>({
       query: (id) => ({
-        url: `${AUTH_SERVICE_URL}/api/users/${id}`,
+        url: `users/${id}`,
         method: "DELETE",
       }),
       transformResponse: (raw: ApiEnvelope<unknown>) => unwrapEnvelope(raw),
