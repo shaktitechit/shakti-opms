@@ -7,26 +7,18 @@ import {
   readJwtClaims,
   resolveHomeFromUser,
 } from "@/constants/dashboardAccess";
+import {
+  applyAuthSessionCookies,
+  clearAuthCookies,
+  effectiveAccessToken,
+  isRefreshCookieExpired,
+} from "@session-auth/middlewareAuth";
 
 type IssuedSession = {
   token: string;
   refreshToken?: string;
   refreshExpiresIn?: number;
 };
-
-function jwtMaxAge(token: string): number {
-  try {
-    const part = token.split(".")[1];
-    if (!part) return 60;
-    const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
-    const json = Buffer.from(padded, "base64").toString("utf8");
-    const left = Math.floor(Number(JSON.parse(json).exp) - Date.now() / 1000);
-    return left > 0 ? left : 60;
-  } catch {
-    return 60;
-  }
-}
 
 function authServiceBase(): string {
   return (
@@ -96,36 +88,16 @@ function redirectUrl(request: NextRequest, targetPath: string): URL {
   return url;
 }
 
-const LEGACY_COOKIES = ["shakti_session", "medica_session", "shakti_department", "shakti_roles"];
-
-function applySessionCookies(response: NextResponse, session: string | IssuedSession) {
-  const token = typeof session === "string" ? session : session.token;
-  const refreshToken = typeof session === "string" ? undefined : session.refreshToken;
-  const refreshExpiresIn = typeof session === "string" ? undefined : session.refreshExpiresIn;
-  response.cookies.set("access_token", token, {
-    path: "/",
-    maxAge: jwtMaxAge(token),
-    sameSite: "lax",
-  });
-  if (refreshToken) {
-    const refreshMax =
-      refreshExpiresIn && refreshExpiresIn > 0
-        ? refreshExpiresIn
-        : 30 * 24 * 60 * 60; // 30 days default
-    response.cookies.set("refresh_token", refreshToken, {
-      path: "/",
-      maxAge: Math.max(refreshMax, 60),
-      sameSite: "lax",
-    });
-  }
-  for (const name of LEGACY_COOKIES) {
-    response.cookies.set(name, "", { path: "/", maxAge: 0 });
-  }
-}
-
 export async function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
-  let cookieToken = request.cookies.get("access_token")?.value;
+
+  if (isRefreshCookieExpired(request)) {
+    const response = NextResponse.redirect(redirectUrl(request, "/"));
+    clearAuthCookies(response);
+    return response;
+  }
+
+  let cookieToken = effectiveAccessToken(request);
   const cookieRefreshToken = request.cookies.get("refresh_token")?.value;
   const urlToken = searchParams.get("token")?.trim() || "";
   const handoffCode = searchParams.get("handoff")?.trim() || "";
@@ -141,6 +113,13 @@ export async function middleware(request: NextRequest) {
     refreshedSession = await refreshSession(cookieRefreshToken);
     if (refreshedSession) {
       cookieToken = refreshedSession.token;
+    } else {
+      const isProtectedRoute = pathname.startsWith("/dashboard");
+      const response = isProtectedRoute
+        ? NextResponse.redirect(redirectUrl(request, "/"))
+        : NextResponse.next();
+      clearAuthCookies(response);
+      return response;
     }
   }
 
@@ -165,7 +144,7 @@ export async function middleware(request: NextRequest) {
     clean.searchParams.delete("token");
     const target = isAuthRoute ? home : `${clean.pathname}${clean.search}`;
     const response = NextResponse.redirect(redirectUrl(request, target));
-    applySessionCookies(response, exchanged || exchangedToken!);
+    applyAuthSessionCookies(response, exchanged || exchangedToken!);
     return response;
   }
 
@@ -179,13 +158,13 @@ export async function middleware(request: NextRequest) {
     const response = isAuthRoute
       ? NextResponse.redirect(redirectUrl(request, home))
       : NextResponse.next();
-    applySessionCookies(response, refreshedSession);
+    applyAuthSessionCookies(response, refreshedSession);
     return response;
   }
 
   if (isProtectedRoute && urlToken) {
     const response = NextResponse.next();
-    applySessionCookies(response, urlToken);
+    applyAuthSessionCookies(response, urlToken);
     return response;
   }
 
@@ -222,7 +201,7 @@ export async function middleware(request: NextRequest) {
       }) || (department ? `/dashboard/${department}` : "/dashboard");
     const response = NextResponse.redirect(redirectUrl(request, home));
     if (urlToken && !cookieToken) {
-      applySessionCookies(response, urlToken);
+      applyAuthSessionCookies(response, urlToken);
     }
     return response;
   }

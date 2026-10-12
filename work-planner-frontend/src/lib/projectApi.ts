@@ -11,8 +11,7 @@ import type {
   ActionStepStatus,
 } from '../types/project';
 
-import { refreshAccessToken } from '../store/api/baseApi';
-import { readSessionFromStorage } from '../utils/authStorage';
+import { refreshAccessToken, invalidateLocalSession, readSessionFromStorage } from '../utils/authStorage';
 
 const BASE_URL = `${WORK_PLANNER_SERVICE_URL.replace(/\/+$/, '')}/api/projects`;
 
@@ -45,6 +44,8 @@ async function apiFetch(
     if (ok) {
       activeToken = readSessionFromStorage()?.token || null;
       res = await fetch(url, { ...init, headers: buildHeaders(activeToken) });
+    } else {
+      invalidateLocalSession("/");
     }
   }
   return res;

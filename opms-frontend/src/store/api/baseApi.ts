@@ -7,17 +7,72 @@ import {
 } from "@reduxjs/toolkit/query/react";
 
 import { publicApiOrigin } from "@/lib/env";
-import { clearSessionMarks } from "@/lib/sessionCookie";
+import { invalidateOpmsClientSession, readRefreshExpiresAtFromCookies } from "@/lib/sessionCookie";
+import {
+  createRefreshAccessToken,
+  type RefreshedSessionPayload,
+} from "@session-auth/createRefreshAccessToken";
 import { logout, setCredentials, type AuthUser } from "@/store/slices/authSlice";
 
 type AuthSnap = {
-  auth?: { token?: string | null; refreshToken?: string | null; user?: AuthUser | null };
+  auth?: {
+    token?: string | null;
+    refreshToken?: string | null;
+    refreshExpiresAt?: number | null;
+    user?: AuthUser | null;
+  };
 };
+
+type StoreLike = {
+  getState: () => unknown;
+  dispatch: (action: unknown) => unknown;
+};
+
+let boundStore: StoreLike | null = null;
+
+function authFromStore(): NonNullable<AuthSnap["auth"]> {
+  if (!boundStore) return {};
+  return ((boundStore.getState() as AuthSnap).auth ?? {}) as NonNullable<AuthSnap["auth"]>;
+}
+
+function ensureStore(api: StoreLike): StoreLike {
+  boundStore ??= api;
+  return boundStore;
+}
+
+const refreshAccessToken = createRefreshAccessToken({
+  authRefreshUrl: `${publicApiOrigin()}/api/auth/refresh`,
+  getRefreshToken: () => {
+    const fromState = authFromStore().refreshToken;
+    if (fromState) return fromState;
+    if (typeof document === "undefined") return null;
+    const match = document.cookie.match(/(?:^| )refresh_token=([^;]+)/);
+    return match ? decodeURIComponent(match[1]) : null;
+  },
+  getRefreshExpiresAt: () =>
+    authFromStore().refreshExpiresAt ?? readRefreshExpiresAtFromCookies(),
+  readFallbackUser: () => authFromStore().user ?? null,
+  saveRefreshedSession: (payload: RefreshedSessionPayload) => {
+    boundStore?.dispatch(
+      setCredentials({
+        token: payload.token,
+        refreshToken: payload.refreshToken,
+        refreshExpiresAt: payload.refreshExpiresAt,
+        user: payload.user as AuthUser,
+      }),
+    );
+  },
+  invalidateSession: () => {
+    boundStore?.dispatch(logout());
+    invalidateOpmsClientSession("/login");
+  },
+});
 
 const rawBaseQuery = fetchBaseQuery({
   baseUrl: `${publicApiOrigin()}/api`,
   prepareHeaders(headers, api) {
-    const token = (api.getState() as AuthSnap).auth?.token;
+    ensureStore(api as unknown as StoreLike);
+    const token = authFromStore().token;
     if (token) headers.set("Authorization", `Bearer ${token}`);
     return headers;
   },
@@ -31,53 +86,10 @@ function skipRefresh(url: string): boolean {
   return url.includes("auth/login") || url.includes("auth/refresh");
 }
 
-let refreshInFlight: Promise<boolean> | null = null;
-
-async function refreshAccessToken(api: {
-  getState: () => unknown;
-  dispatch: (action: unknown) => unknown;
-}): Promise<boolean> {
-  const session = (api.getState() as AuthSnap).auth;
-  if (!session?.refreshToken) return false;
-  try {
-    const res = await fetch(`${publicApiOrigin()}/api/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken: session.refreshToken }),
-    });
-    if (!res.ok) return false;
-    const data = (await res.json()) as {
-      token?: string;
-      refreshToken?: string;
-      refreshExpiresIn?: number;
-      user?: AuthUser;
-      data?: { token?: string; refreshToken?: string; refreshExpiresIn?: number; user?: AuthUser };
-    };
-    const token = data.token || data.data?.token;
-    const refreshToken = data.refreshToken || data.data?.refreshToken;
-    const refreshExpiresIn = data.refreshExpiresIn || data.data?.refreshExpiresIn;
-    const user = data.user || data.data?.user || session.user;
-    if (!token || !refreshToken || !user) return false;
-    api.dispatch(
-      setCredentials({
-        token,
-        refreshToken,
-        refreshExpiresAt: refreshExpiresIn ? Date.now() + refreshExpiresIn * 1000 : null,
-        user,
-      }),
-    );
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function forceLogout(api: { dispatch: (action: unknown) => unknown }): void {
+function forceLogout(api: StoreLike): void {
+  ensureStore(api);
   api.dispatch(logout());
-  clearSessionMarks();
-  if (typeof window !== "undefined" && window.location.pathname !== "/login") {
-    window.location.assign("/login");
-  }
+  invalidateOpmsClientSession("/login");
 }
 
 const baseQueryWithAuth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> = async (
@@ -85,19 +97,14 @@ const baseQueryWithAuth: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQuery
   api,
   extraOptions,
 ) => {
+  ensureStore(api as unknown as StoreLike);
   let result = await rawBaseQuery(args, api, extraOptions);
   if (result.error?.status === 401 && !skipRefresh(requestUrl(args))) {
-    if (!refreshInFlight) {
-      refreshInFlight = refreshAccessToken(api).finally(() => {
-        refreshInFlight = null;
-      });
-    }
-    const ok = await refreshInFlight;
+    const ok = await refreshAccessToken();
     if (ok) {
-      // Retry original request with renewed token
       result = await rawBaseQuery(args, api, extraOptions);
     } else {
-      forceLogout(api);
+      forceLogout(api as unknown as StoreLike);
     }
   }
   return result;

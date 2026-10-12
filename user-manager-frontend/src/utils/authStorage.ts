@@ -1,5 +1,18 @@
 import type { AuthUser, UserSession } from "@/types/userManager";
 import { API_BASE } from "@/utils/apiHelpers";
+import { createRefreshAccessToken } from "@session-auth/createRefreshAccessToken";
+import { REFRESH_EXPIRES_COOKIE } from "@session-auth/constants";
+import { isJwtExpired, jwtMaxAgeSeconds } from "@session-auth/jwt";
+import { isRefreshExpired, refreshCookieMaxAgeSeconds } from "@session-auth/refreshExpiry";
+import {
+  broadcastAuthLogout,
+  isSessionTerminated,
+  markSessionTerminated,
+  resetSessionTerminated,
+  subscribeAuthLogout,
+} from "@session-auth/sessionTerminator";
+
+const apiRoot = API_BASE.replace(/\/+$/, "");
 
 const SESSION_STORAGE_KEY = "shakti.user_manager.session";
 const ALL_SESSION_KEYS = [
@@ -19,26 +32,12 @@ const LEGACY_COOKIES = [
   "medica_opms_roles",
   "medica_department_hint",
 ];
-const ALL_COOKIES = [ACCESS_COOKIE, REFRESH_COOKIE, ...LEGACY_COOKIES];
+const ALL_COOKIES = [ACCESS_COOKIE, REFRESH_COOKIE, REFRESH_EXPIRES_COOKIE, ...LEGACY_COOKIES];
 
 function getCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
   const match = document.cookie.match(new RegExp("(^| )" + name + "=([^;]+)"));
   return match ? decodeURIComponent(match[2]) : null;
-}
-
-function jwtMaxAgeSeconds(token: string): number {
-  try {
-    const part = token.split(".")[1];
-    if (!part) return 60;
-    const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
-    const exp = Number(JSON.parse(atob(padded)).exp);
-    const left = Math.floor(exp - Date.now() / 1000);
-    return left > 0 ? left : 60;
-  } catch {
-    return 60;
-  }
 }
 
 function setCookieMaxAge(name: string, value: string, maxAgeSeconds: number) {
@@ -93,6 +92,41 @@ function parseJwtUser(token: string): AuthUser | null {
   }
 }
 
+export function getRefreshExpiresAt(): number | null {
+  if (typeof window === "undefined") return null;
+  const raw = getCookie(REFRESH_EXPIRES_COOKIE);
+  if (raw) {
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  try {
+    const stored = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (stored) {
+      const parsed = JSON.parse(stored) as UserSession;
+      if (parsed?.refreshExpiresAt) return parsed.refreshExpiresAt;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+export function clearSessionFromStorage(): void {
+  saveSessionToStorage(null);
+}
+
+export function invalidateLocalSession(redirectTo = "/"): void {
+  if (isSessionTerminated()) return;
+  markSessionTerminated();
+  broadcastAuthLogout();
+  clearSessionFromStorage();
+  if (typeof window !== "undefined" && window.location.pathname !== redirectTo) {
+    window.location.assign(redirectTo);
+  }
+}
+
+export { isSessionTerminated };
+
 export function getRefreshToken(): string | null {
   if (typeof window === "undefined") return null;
   const cookieVal = getCookie(REFRESH_COOKIE);
@@ -112,6 +146,13 @@ export function getRefreshToken(): string | null {
 export function readSessionFromStorage(): UserSession | null {
   if (typeof window === "undefined") return null;
   try {
+    if (isSessionTerminated()) return null;
+    if (isRefreshExpired(getRefreshExpiresAt())) {
+      clearSessionFromStorage();
+      markSessionTerminated();
+      return null;
+    }
+
     // 0. Check URL query token parameter (SSO handoff)
     const urlParams = new URLSearchParams(window.location.search);
     const urlToken = urlParams.get("token");
@@ -131,8 +172,10 @@ export function readSessionFromStorage(): UserSession | null {
       return session;
     }
 
-    const accessToken = getCookie(ACCESS_COOKIE);
+    let accessToken = getCookie(ACCESS_COOKIE);
+    if (accessToken && isJwtExpired(accessToken)) accessToken = null;
     const refreshToken = getRefreshToken() || undefined;
+    const refreshExpiresAt = getRefreshExpiresAt() ?? undefined;
 
     let storedSession: UserSession | null = null;
     try {
@@ -148,7 +191,7 @@ export function readSessionFromStorage(): UserSession | null {
         return {
           token: accessToken,
           refreshToken: refreshToken || storedSession?.refreshToken,
-          refreshExpiresAt: storedSession?.refreshExpiresAt,
+          refreshExpiresAt: refreshExpiresAt ?? storedSession?.refreshExpiresAt,
           user: userFromJwt,
         };
       }
@@ -158,7 +201,7 @@ export function readSessionFromStorage(): UserSession | null {
       return {
         token: storedSession.token || "",
         refreshToken: refreshToken || storedSession.refreshToken,
-        refreshExpiresAt: storedSession.refreshExpiresAt,
+        refreshExpiresAt: refreshExpiresAt ?? storedSession.refreshExpiresAt,
         user: storedSession.user,
       };
     }
@@ -183,21 +226,35 @@ export function saveSessionToStorage(session: UserSession | null): void {
       deleteCookie(cookieName);
     }
   } else {
+    resetSessionTerminated();
     try {
       window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
     } catch {
       /* ignore */
     }
     if (session.token) {
-      setCookieMaxAge(ACCESS_COOKIE, session.token, jwtMaxAgeSeconds(session.token));
+      const accessMax = jwtMaxAgeSeconds(session.token);
+      if (accessMax > 0) {
+        setCookieMaxAge(ACCESS_COOKIE, session.token, accessMax);
+      } else {
+        deleteCookie(ACCESS_COOKIE);
+      }
     }
     if (session.refreshToken) {
-      const refreshMax = session.refreshExpiresAt
-        ? Math.floor((session.refreshExpiresAt - Date.now()) / 1000)
-        : 30 * 24 * 60 * 60; // Default 30 days fallback for refresh token
-      setCookieMaxAge(REFRESH_COOKIE, session.refreshToken, Math.max(refreshMax, 60));
+      const refreshMax = refreshCookieMaxAgeSeconds(session.refreshExpiresAt);
+      setCookieMaxAge(REFRESH_COOKIE, session.refreshToken, refreshMax);
+      if (session.refreshExpiresAt) {
+        setCookieMaxAge(
+          REFRESH_EXPIRES_COOKIE,
+          String(session.refreshExpiresAt),
+          refreshMax,
+        );
+      } else {
+        deleteCookie(REFRESH_EXPIRES_COOKIE);
+      }
     } else {
       deleteCookie(REFRESH_COOKIE);
+      deleteCookie(REFRESH_EXPIRES_COOKIE);
     }
     for (const name of LEGACY_COOKIES) deleteCookie(name);
   }
@@ -207,7 +264,7 @@ export function saveSessionToStorage(session: UserSession | null): void {
 export async function revokeRefreshToken(refreshToken?: string | null): Promise<void> {
   if (!refreshToken) return;
   try {
-    await fetch(`${API_BASE.replace(/\/+$/, "")}/api/auth/logout`, {
+    await fetch(`${apiRoot}/api/auth/logout`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refreshToken }),
@@ -215,4 +272,30 @@ export async function revokeRefreshToken(refreshToken?: string | null): Promise<
   } catch {
     /* local session is still cleared by the caller */
   }
+}
+
+export const refreshAccessToken = createRefreshAccessToken({
+  authRefreshUrl: `${apiRoot}/api/auth/refresh`,
+  getRefreshToken: () => getRefreshToken(),
+  getRefreshExpiresAt: () => getRefreshExpiresAt(),
+  readFallbackUser: () => readSessionFromStorage()?.user ?? null,
+  saveRefreshedSession: (payload) => {
+    const existing = readSessionFromStorage();
+    saveSessionToStorage({
+      token: payload.token,
+      refreshToken: payload.refreshToken,
+      refreshExpiresAt: payload.refreshExpiresAt,
+      user: (payload.user as AuthUser) || existing?.user,
+    });
+  },
+  invalidateSession: () => invalidateLocalSession("/"),
+});
+
+if (typeof window !== "undefined") {
+  subscribeAuthLogout(() => {
+    if (isSessionTerminated()) return;
+    markSessionTerminated();
+    clearSessionFromStorage();
+    if (window.location.pathname !== "/") window.location.assign("/");
+  });
 }

@@ -9,29 +9,18 @@ import {
 } from "@/constants/dashboardAccess";
 import { ACCESS_COOKIE_NAME } from "@/lib/sessionCookie";
 import { getOpmsAccessRoles } from "@/lib/opmsAuth";
+import {
+  applyAuthSessionCookies,
+  clearAuthCookies,
+  effectiveAccessToken,
+  isRefreshCookieExpired,
+} from "@session-auth/middlewareAuth";
 
 type IssuedSession = {
   token: string;
   refreshToken?: string;
   refreshExpiresIn?: number;
 };
-
-function jwtMaxAge(token: string): number {
-  try {
-    const part = token.split(".")[1];
-    if (!part) return 60;
-    const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
-    const json =
-      typeof atob === "function"
-        ? atob(padded)
-        : Buffer.from(padded, "base64").toString("utf8");
-    const left = Math.floor(Number(JSON.parse(json).exp) - Date.now() / 1000);
-    return left > 0 ? left : 60;
-  } catch {
-    return 60;
-  }
-}
 
 function authServiceBase(): string {
   return (
@@ -132,39 +121,17 @@ function redirectReq(targetPath: string, req: NextRequest) {
   return NextResponse.redirect(url);
 }
 
-const LEGACY_COOKIES = ["medica_session", "medica_opms_roles", "shakti_session", "shakti_department", "shakti_roles"];
-
-function applySessionCookies(res: NextResponse, session?: string | IssuedSession) {
-  if (!session) return;
-  const token = typeof session === "string" ? session : session.token;
-  const refreshToken = typeof session === "string" ? undefined : session.refreshToken;
-  const refreshExpiresIn = typeof session === "string" ? undefined : session.refreshExpiresIn;
-  res.cookies.set(ACCESS_COOKIE_NAME, token, {
-    path: "/",
-    maxAge: jwtMaxAge(token),
-    sameSite: "lax",
-  });
-  if (refreshToken) {
-    const refreshMax =
-      refreshExpiresIn && refreshExpiresIn > 0
-        ? refreshExpiresIn
-        : 30 * 24 * 60 * 60; // 30 days default
-    res.cookies.set("refresh_token", refreshToken, {
-      path: "/",
-      maxAge: Math.max(refreshMax, 60),
-      sameSite: "lax",
-    });
-  }
-  for (const name of LEGACY_COOKIES) {
-    res.cookies.set(name, "", { path: "/", maxAge: 0 });
-  }
-}
-
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   const dashRedirect = redirectDashboardLegacy(pathname, req);
   if (dashRedirect) return dashRedirect;
+
+  if (isRefreshCookieExpired(req)) {
+    const res = redirectReq("/login", req);
+    clearAuthCookies(res);
+    return res;
+  }
 
   const handoffCode = req.nextUrl.searchParams.get("handoff")?.trim() || "";
   let exchanged: IssuedSession | null = null;
@@ -181,7 +148,7 @@ export async function middleware(req: NextRequest) {
           ? resolveHomeFromRoles(roles) ?? "/login"
           : `${clean.pathname}${clean.search}`;
       const res = redirectReq(targetPath, req);
-      applySessionCookies(res, exchanged);
+      applyAuthSessionCookies(res, exchanged);
       return res;
     }
   }
@@ -191,7 +158,7 @@ export async function middleware(req: NextRequest) {
 
   const isLoginRoute = pathname === "/login";
   const isRootRoute = pathname === "/";
-  let accessToken = req.cookies.get(ACCESS_COOKIE_NAME)?.value?.trim() || "";
+  let accessToken = effectiveAccessToken(req) || "";
   const cookieRefreshToken = req.cookies.get("refresh_token")?.value?.trim() || "";
 
   let refreshedSession: IssuedSession | null = null;
@@ -199,6 +166,12 @@ export async function middleware(req: NextRequest) {
     refreshedSession = await refreshSession(cookieRefreshToken);
     if (refreshedSession) {
       accessToken = refreshedSession.token;
+    } else {
+      const res = isProtectedPortalPath(pathname)
+        ? redirectReq("/login", req)
+        : NextResponse.next();
+      clearAuthCookies(res);
+      return res;
     }
   }
 
@@ -227,13 +200,13 @@ export async function middleware(req: NextRequest) {
       pathAllowed(pathOnly)
     ) {
       const res = redirectReq(pathOnly, req);
-      if (ssoRoles.length) applySessionCookies(res, ssoToken);
-      else if (refreshedSession) applySessionCookies(res, refreshedSession);
+      if (ssoRoles.length) applyAuthSessionCookies(res, ssoToken);
+      else if (refreshedSession) applyAuthSessionCookies(res, refreshedSession);
       return res;
     }
     const res = redirectReq(homeUrl(), req);
-    if (ssoRoles.length) applySessionCookies(res, ssoToken);
-    else if (refreshedSession) applySessionCookies(res, refreshedSession);
+    if (ssoRoles.length) applyAuthSessionCookies(res, ssoToken);
+    else if (refreshedSession) applyAuthSessionCookies(res, refreshedSession);
     return res;
   }
 
@@ -247,19 +220,19 @@ export async function middleware(req: NextRequest) {
   if (protectionHit && sessionOk) {
     if (!pathAllowed(pathname)) {
       const res = redirectReq(homeUrl(), req);
-      if (ssoRoles.length) applySessionCookies(res, ssoToken);
-      else if (refreshedSession) applySessionCookies(res, refreshedSession);
+      if (ssoRoles.length) applyAuthSessionCookies(res, ssoToken);
+      else if (refreshedSession) applyAuthSessionCookies(res, refreshedSession);
       return res;
     }
     const res = NextResponse.next();
-    if (ssoRoles.length) applySessionCookies(res, ssoToken);
-    else if (refreshedSession) applySessionCookies(res, refreshedSession);
+    if (ssoRoles.length) applyAuthSessionCookies(res, ssoToken);
+    else if (refreshedSession) applyAuthSessionCookies(res, refreshedSession);
     return res;
   }
 
   if (refreshedSession) {
     const res = NextResponse.next();
-    applySessionCookies(res, refreshedSession);
+    applyAuthSessionCookies(res, refreshedSession);
     return res;
   }
 

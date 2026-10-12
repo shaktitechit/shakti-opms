@@ -109,6 +109,8 @@ services:
     build:
       context: ./opms-frontend
       dockerfile: Dockerfile.dev
+      additional_contexts:
+        session_auth: ./session-auth-client
       args:
         NEXT_PUBLIC_API_ORIGIN: ${NEXT_PUBLIC_API_ORIGIN:-http://localhost:7001}
         NEXT_PUBLIC_PRODUCT_SERVICE_URL: ${NEXT_PUBLIC_PRODUCT_SERVICE_URL:-http://localhost:7005}
@@ -128,6 +130,7 @@ services:
     volumes:
       - ./opms-frontend/src:/app/src:ro
       - ./opms-frontend/public:/app/public:ro
+      - ./session-auth-client:/app/session-auth-client:ro
     command: ["npm", "run", "dev"]
     healthcheck:
       disable: true
@@ -136,6 +139,8 @@ services:
     build:
       context: ./user-manager-frontend
       dockerfile: Dockerfile.dev
+      additional_contexts:
+        session_auth: ./session-auth-client
       args:
         NEXT_PUBLIC_AUTH_SERVICE_URL: ${NEXT_PUBLIC_AUTH_SERVICE_URL:-http://localhost:7003}
         NEXT_PUBLIC_COMPANY_NAME: ${NEXT_PUBLIC_COMPANY_NAME:-}
@@ -150,6 +155,7 @@ services:
     volumes:
       - ./user-manager-frontend/src:/app/src:ro
       - ./user-manager-frontend/public:/app/public:ro
+      - ./session-auth-client:/app/session-auth-client:ro
     command: ["npm", "run", "dev"]
     healthcheck:
       disable: true
@@ -158,6 +164,8 @@ services:
     build:
       context: ./work-planner-frontend
       dockerfile: Dockerfile.dev
+      additional_contexts:
+        session_auth: ./session-auth-client
       args:
         NEXT_PUBLIC_AUTH_SERVICE_URL: ${NEXT_PUBLIC_AUTH_SERVICE_URL:-http://localhost:7003}
         NEXT_PUBLIC_WORK_PLANNER_SERVICE_URL: ${NEXT_PUBLIC_WORK_PLANNER_SERVICE_URL:-http://localhost:7007}
@@ -174,6 +182,7 @@ services:
     volumes:
       - ./work-planner-frontend/src:/app/src:ro
       - ./work-planner-frontend/public:/app/public:ro
+      - ./session-auth-client:/app/session-auth-client:ro
     command: ["npm", "run", "dev"]
     healthcheck:
       disable: true
@@ -182,6 +191,8 @@ services:
     build:
       context: ./lead-manager-frontend
       dockerfile: Dockerfile.dev
+      additional_contexts:
+        session_auth: ./session-auth-client
       args:
         NEXT_PUBLIC_AUTH_SERVICE_URL: ${NEXT_PUBLIC_AUTH_SERVICE_URL:-http://localhost:7003}
         NEXT_PUBLIC_LEAD_MANAGER_SERVICE_URL: ${NEXT_PUBLIC_LEAD_MANAGER_SERVICE_URL:-http://localhost:7009}
@@ -202,6 +213,7 @@ services:
     volumes:
       - ./lead-manager-frontend/src:/app/src:ro
       - ./lead-manager-frontend/public:/app/public:ro
+      - ./session-auth-client:/app/session-auth-client:ro
     command: ["npm", "run", "dev"]
     healthcheck:
       disable: true
@@ -210,6 +222,8 @@ services:
     build:
       context: ./app-frontend
       dockerfile: Dockerfile.dev
+      additional_contexts:
+        session_auth: ./session-auth-client
       args:
         NEXT_PUBLIC_AUTH_SERVICE_URL: ${NEXT_PUBLIC_AUTH_SERVICE_URL:-http://localhost:7003}
         NEXT_PUBLIC_OPMS_URL: ${NEXT_PUBLIC_OPMS_URL:-http://localhost:7002}
@@ -230,6 +244,7 @@ services:
       NEXT_PUBLIC_COMPANY_LOGO_URL: ${NEXT_PUBLIC_COMPANY_LOGO_URL:-}
       AUTH_SERVICE_URL: ${AUTH_SERVICE_URL:-http://auth-service:7003}
     volumes:
+      - ./session-auth-client:/app/session-auth-client:ro
       - ./app-frontend/src:/app/src:ro
       - ./app-frontend/public:/app/public:ro
     command: ["npm", "run", "dev"]

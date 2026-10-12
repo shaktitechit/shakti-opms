@@ -7,6 +7,11 @@ import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { DomainSliceState } from "./common";
 import { emptyDomainState } from "./common";
 import type { UserPortalAccess } from "@/lib/opmsAuth";
+import { REFRESH_EXPIRES_COOKIE } from "@session-auth/constants";
+import { isJwtExpired } from "@session-auth/jwt";
+import { isRefreshExpired } from "@session-auth/refreshExpiry";
+import { isSessionTerminated, markSessionTerminated } from "@session-auth/sessionTerminator";
+import { clearSessionMarks } from "@/lib/sessionCookie";
 
 export const AUTH_STORAGE_KEY = "medica.auth";
 
@@ -80,13 +85,30 @@ export function readAuthFromStorage(): Partial<
   Pick<AuthState, "token" | "refreshToken" | "refreshExpiresAt" | "user">
 > {
   if (typeof document === "undefined") return {};
-  const token = getCookie("access_token");
+  if (isSessionTerminated()) return {};
+
+  const refreshExpiresRaw = getCookie(REFRESH_EXPIRES_COOKIE);
+  const refreshExpiresAtParsed = refreshExpiresRaw ? Number(refreshExpiresRaw) : null;
+  const refreshExpiresAt =
+    refreshExpiresAtParsed != null && Number.isFinite(refreshExpiresAtParsed)
+      ? refreshExpiresAtParsed
+      : null;
+
+  if (isRefreshExpired(refreshExpiresAt)) {
+    clearSessionMarks();
+    markSessionTerminated();
+    return {};
+  }
+
+  let token = getCookie("access_token");
   const refreshToken = getCookie("refresh_token");
-  if (!token) return { refreshToken: refreshToken || null };
+  if (token && isJwtExpired(token)) token = null;
+  if (!token) return { refreshToken: refreshToken || null, refreshExpiresAt };
   const user = parseJwtUser(token);
   return {
     token,
     refreshToken: refreshToken || null,
+    refreshExpiresAt,
     user,
   };
 }

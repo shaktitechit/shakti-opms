@@ -8,6 +8,8 @@ import type { ReactNode } from "react";
 import { hasOpmsAccess } from "@/lib/opmsAuth";
 import {
   clearSessionMarks,
+  invalidateOpmsClientSession,
+  isRefreshExpired,
   persistSessionMarksFromAuth,
   revokeRefreshToken,
 } from "@/lib/sessionCookie";
@@ -34,6 +36,13 @@ export function PortalAuthGate({ children }: PortalAuthGateProps) {
 
   useEffect(() => {
     if (!mounted) return;
+    if (refreshExpiresAt != null && isRefreshExpired(refreshExpiresAt)) {
+      void revokeRefreshToken(refreshToken);
+      dispatch(medicaApi.util.resetApiState());
+      dispatch(logout());
+      invalidateOpmsClientSession("/login");
+      return;
+    }
     if (!token) {
       const q = pathname ? `?from=${encodeURIComponent(pathname)}` : "";
       router.replace(`/login${q}`);

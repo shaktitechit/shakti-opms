@@ -124,6 +124,8 @@ services:
     build:
       context: ./opms-frontend
       dockerfile: Dockerfile
+      additional_contexts:
+        session_auth: ./session-auth-client
       args:
         NEXT_PUBLIC_API_ORIGIN: ${NEXT_PUBLIC_API_ORIGIN}
         NEXT_PUBLIC_PRODUCT_SERVICE_URL: ${NEXT_PUBLIC_PRODUCT_SERVICE_URL:-}

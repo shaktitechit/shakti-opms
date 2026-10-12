@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.4
 FROM node:20-alpine AS builder
 
 WORKDIR /app
@@ -14,6 +15,7 @@ ENV NEXT_PUBLIC_COMPANY_LOGO_URL=$NEXT_PUBLIC_COMPANY_LOGO_URL
 COPY package.json package-lock.json* ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
+COPY --from=session_auth . ./session-auth-client
 COPY . .
 RUN mkdir -p public && npm run build
 
