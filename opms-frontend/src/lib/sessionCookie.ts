@@ -4,6 +4,7 @@ import { AUTH_API } from "@session-auth/authApiPaths";
 import { REFRESH_EXPIRES_COOKIE } from "@session-auth/constants";
 import { jwtMaxAgeSeconds } from "@session-auth/jwt";
 import { isRefreshExpired } from "@session-auth/refreshExpiry";
+import { performLogout } from "@session-auth/performLogout";
 import { purgeLegacyAuthStorage } from "@session-auth/purgeLegacyStorage";
 import {
   broadcastAuthLogout,
@@ -108,14 +109,15 @@ export function clearSessionMarks(): void {
   purgeLegacyAuthStorage();
 }
 
+export function logoutOpmsSession(redirectTo = "/login"): Promise<void> {
+  return performLogout({
+    redirectTo,
+    clearLocal: () => clearSessionMarks(),
+  });
+}
+
 export function invalidateOpmsClientSession(redirectTo = "/login"): void {
-  if (isSessionTerminated()) return;
-  markSessionTerminated();
-  broadcastAuthLogout();
-  clearSessionMarks();
-  if (typeof window !== "undefined" && window.location.pathname !== redirectTo) {
-    window.location.assign(redirectTo);
-  }
+  void logoutOpmsSession(redirectTo);
 }
 
 export { isSessionTerminated, isRefreshExpired };

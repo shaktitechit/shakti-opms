@@ -4,6 +4,7 @@ import { AUTH_API } from "@session-auth/authApiPaths";
 import { ACCESS_COOKIE, REFRESH_COOKIE, REFRESH_EXPIRES_COOKIE } from "@session-auth/constants";
 import { isJwtExpired, jwtMaxAgeSeconds } from "@session-auth/jwt";
 import { isRefreshExpired } from "@session-auth/refreshExpiry";
+import { performLogout } from "@session-auth/performLogout";
 import { purgeLegacyAuthStorage } from "@session-auth/purgeLegacyStorage";
 import {
   broadcastAuthLogout,
@@ -243,13 +244,14 @@ export function applySessionAfterAuth(): void {
 }
 
 export function invalidateLocalSession(redirectTo = "/"): void {
-  if (isSessionTerminated()) return;
-  markSessionTerminated();
-  broadcastAuthLogout();
-  clearSessionFromStorage();
-  if (typeof window !== "undefined" && window.location.pathname !== redirectTo) {
-    window.location.assign(redirectTo);
-  }
+  void logoutAndRedirect(redirectTo);
+}
+
+export function logoutAndRedirect(redirectTo = "/"): Promise<void> {
+  return performLogout({
+    redirectTo,
+    clearLocal: () => clearSessionFromStorage(),
+  });
 }
 
 export { isSessionTerminated };
@@ -360,6 +362,7 @@ export const refreshAccessToken = createRefreshAccessToken({
   getRefreshExpiresAt: () => getRefreshExpiresAt(),
   readFallbackUser: () => readSessionFromStorage()?.user ?? null,
   saveRefreshedSession: () => {
+    if (isSessionTerminated()) return;
     purgeLegacyAuthStorage();
     resetSessionTerminated();
   },

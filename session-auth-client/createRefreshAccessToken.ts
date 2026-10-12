@@ -93,7 +93,9 @@ export function createRefreshAccessToken(deps: CreateRefreshAccessTokenDeps): ()
           return false;
         }
         deps.saveRefreshedSession(payload);
-        resetSessionTerminated();
+        if (!isSessionTerminated()) {
+          resetSessionTerminated();
+        }
         return true;
       } catch {
         markSessionTerminated();

@@ -7,11 +7,9 @@ import type { ReactNode } from "react";
 
 import { hasOpmsAccess } from "@/lib/opmsAuth";
 import {
-  clearSessionMarks,
-  invalidateOpmsClientSession,
   isRefreshExpired,
+  logoutOpmsSession,
   persistSessionMarksFromAuth,
-  revokeRefreshToken,
 } from "@/lib/sessionCookie";
 import { usePushSubscription } from "@/lib/usePushSubscription";
 import { logout, medicaApi, useAppDispatch, useAppSelector } from "@/store";
@@ -37,10 +35,9 @@ export function PortalAuthGate({ children }: PortalAuthGateProps) {
   useEffect(() => {
     if (!mounted) return;
     if (refreshExpiresAt != null && isRefreshExpired(refreshExpiresAt)) {
-      void revokeRefreshToken(refreshToken);
       dispatch(medicaApi.util.resetApiState());
       dispatch(logout());
-      invalidateOpmsClientSession("/login");
+      void logoutOpmsSession("/login");
       return;
     }
     if (!token) {
@@ -49,12 +46,11 @@ export function PortalAuthGate({ children }: PortalAuthGateProps) {
       return;
     }
     if (!hasOpmsAccess(user)) {
-      void revokeRefreshToken(refreshToken);
-      clearSessionMarks();
       dispatch(medicaApi.util.resetApiState());
       dispatch(logout());
-      const q = pathname ? `?from=${encodeURIComponent(pathname)}` : "";
-      router.replace(`/login${q}`);
+      void logoutOpmsSession(
+        pathname ? `/login?from=${encodeURIComponent(pathname)}` : "/login",
+      );
       return;
     }
     persistSessionMarksFromAuth({ token, refreshToken, refreshExpiresAt, user });

@@ -4,11 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import type { UserSession } from "@/types/leadManager";
-import {
-  clearSessionFromStorage,
-  readSessionFromStorage,
-  revokeRefreshToken,
-} from "@/utils/authStorage";
+import { logoutAndRedirect, readSessionFromStorage } from "@/utils/authStorage";
 import { useTheme } from "@/hooks/useTheme";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { Topbar } from "@/components/shell/Topbar";
@@ -98,14 +94,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [session, fetchCompanyInfo]);
 
   const handleLogout = () => {
-    void revokeRefreshToken(session?.refreshToken);
-    clearSessionFromStorage();
-    setSession(null);
-    if (typeof window !== "undefined") {
-      window.location.href = "/";
-    } else {
-      router.push("/");
-    }
+    void logoutAndRedirect("/");
   };
 
   if (isInitializing) {

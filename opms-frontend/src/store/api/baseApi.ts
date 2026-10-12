@@ -15,6 +15,7 @@ import {
   type RefreshedSessionPayload,
 } from "@session-auth/createRefreshAccessToken";
 import { purgeLegacyAuthStorage } from "@session-auth/purgeLegacyStorage";
+import { isSessionTerminated } from "@session-auth/sessionTerminator";
 import { logout, setCredentials, type AuthUser } from "@/store/slices/authSlice";
 
 type AuthSnap = {
@@ -50,6 +51,7 @@ const refreshAccessToken = createRefreshAccessToken({
     authFromStore().refreshExpiresAt ?? readRefreshExpiresAtFromCookies(),
   readFallbackUser: () => authFromStore().user ?? null,
   saveRefreshedSession: (payload: RefreshedSessionPayload) => {
+    if (isSessionTerminated()) return;
     purgeLegacyAuthStorage();
     boundStore?.dispatch(
       setCredentials({

@@ -6,7 +6,7 @@ import { Loader2 } from "lucide-react";
 import type { UserSession } from "@/types/userManager";
 import {
   readSessionFromStorage,
-  revokeRefreshToken,
+  logoutAndRedirect,
   saveSessionToStorage,
 } from "@/utils/authStorage";
 import { getAuthHeaders } from "@/utils/apiHelpers";
@@ -97,10 +97,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   };
 
   const handleLogout = () => {
-    void revokeRefreshToken();
-    saveSessionToStorage(null);
-    setSession(null);
-    router.push("/");
+    void logoutAndRedirect("/");
   };
 
   if (isInitializing) {
