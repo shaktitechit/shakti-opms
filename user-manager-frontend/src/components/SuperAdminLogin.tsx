@@ -4,7 +4,12 @@ import { useState, useEffect } from "react";
 import { Crown, ShieldAlert, Loader2, LogIn, Sun, Moon } from "lucide-react";
 import type { UserSession } from "@/types/userManager";
 import { API_BASE } from "@/utils/apiHelpers";
-import { hasSuperAdminAccess, saveSessionToStorage } from "@/utils/authStorage";
+import { AUTH_API } from "@session-auth/authApiPaths";
+import {
+  applySessionAfterAuth,
+  hasSuperAdminAccess,
+  saveSessionToStorage,
+} from "@/utils/authStorage";
 import { useTheme } from "@/hooks/useTheme";
 
 function resolveAssetUrl(path: string): string {
@@ -76,8 +81,9 @@ export function SuperAdminLogin({
     setError(null);
 
     try {
-      const res = await fetch(`${API_BASE}/api/auth/login`, {
+      const res = await fetch(AUTH_API.login, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim(), password }),
       });
@@ -88,7 +94,6 @@ export function SuperAdminLogin({
       }
 
       const token = data?.token || data?.data?.token;
-      const refreshToken = data?.refreshToken || data?.data?.refreshToken;
       const refreshExpiresIn = data?.refreshExpiresIn || data?.data?.refreshExpiresIn;
       const user = data?.user || data?.data?.user;
 
@@ -102,9 +107,9 @@ export function SuperAdminLogin({
         );
       }
 
+      applySessionAfterAuth();
       const session: UserSession = {
         token,
-        refreshToken,
         refreshExpiresAt: refreshExpiresIn ? Date.now() + refreshExpiresIn * 1000 : undefined,
         user,
       };

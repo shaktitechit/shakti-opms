@@ -97,7 +97,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   };
 
   const handleLogout = () => {
-    void revokeRefreshToken(session?.refreshToken);
+    void revokeRefreshToken();
     saveSessionToStorage(null);
     setSession(null);
     router.push("/");

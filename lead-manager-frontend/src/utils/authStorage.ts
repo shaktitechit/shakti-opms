@@ -1,9 +1,10 @@
 import type { AuthUser, UserPortalAccess, UserSession } from "@/types/leadManager";
-import { AUTH_SERVICE_URL } from "@/lib/env";
 import { createRefreshAccessToken } from "@session-auth/createRefreshAccessToken";
-import { REFRESH_EXPIRES_COOKIE } from "@session-auth/constants";
+import { AUTH_API } from "@session-auth/authApiPaths";
+import { ACCESS_COOKIE, REFRESH_EXPIRES_COOKIE, REFRESH_COOKIE } from "@session-auth/constants";
+import { purgeLegacyAuthStorage } from "@session-auth/purgeLegacyStorage";
 import { isJwtExpired, jwtMaxAgeSeconds } from "@session-auth/jwt";
-import { isRefreshExpired, refreshCookieMaxAgeSeconds } from "@session-auth/refreshExpiry";
+import { isRefreshExpired } from "@session-auth/refreshExpiry";
 import {
   broadcastAuthLogout,
   isSessionTerminated,
@@ -12,16 +13,6 @@ import {
   subscribeAuthLogout,
 } from "@session-auth/sessionTerminator";
 
-const SESSION_STORAGE_KEY = "shakti.lead_manager.session";
-const ALL_SESSION_KEYS = [
-  "shakti.app.session",
-  "shakti.lead_manager.session",
-  "medica.auth",
-  "shakti.user_manager.session",
-  "shakti.work_planner.session",
-];
-const ACCESS_COOKIE = "access_token";
-const REFRESH_COOKIE = "refresh_token";
 const LEGACY_COOKIES = [
   "shakti_session",
   "medica_session",
@@ -210,20 +201,14 @@ export function isCoordinator(user: AuthUser | null | undefined): boolean {
 export function getRefreshExpiresAt(): number | null {
   if (typeof window === "undefined") return null;
   const raw = getCookie(REFRESH_EXPIRES_COOKIE);
-  if (raw) {
-    const n = Number(raw);
-    if (Number.isFinite(n) && n > 0) return n;
-  }
-  try {
-    const stored = window.localStorage.getItem(SESSION_STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored) as UserSession;
-      if (parsed?.refreshExpiresAt) return parsed.refreshExpiresAt;
-    }
-  } catch {
-    /* ignore */
-  }
-  return null;
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+export function applySessionAfterAuth(): void {
+  purgeLegacyAuthStorage();
+  resetSessionTerminated();
 }
 
 export function invalidateLocalSession(redirectTo = "/"): void {
@@ -238,19 +223,8 @@ export function invalidateLocalSession(redirectTo = "/"): void {
 
 export { isSessionTerminated };
 
+/** Refresh token is HttpOnly; not readable from JS. */
 export function getRefreshToken(): string | null {
-  if (typeof window === "undefined") return null;
-  const cookieVal = getCookie(REFRESH_COOKIE);
-  if (cookieVal) return cookieVal;
-  try {
-    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed?.refreshToken) return parsed.refreshToken;
-    }
-  } catch {
-    /* ignore */
-  }
   return null;
 }
 
@@ -280,38 +254,21 @@ export function readSessionFromStorage(): UserSession | null {
       }
     }
 
+    purgeLegacyAuthStorage();
+
     let accessToken = getCookie(ACCESS_COOKIE);
     if (accessToken && isJwtExpired(accessToken)) accessToken = null;
-    const refreshToken = getRefreshToken() || undefined;
     const refreshExpiresAt = getRefreshExpiresAt() ?? undefined;
-
-    let storedSession: UserSession | null = null;
-    try {
-      const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
-      if (raw) storedSession = JSON.parse(raw);
-    } catch {
-      /* ignore */
-    }
 
     if (accessToken) {
       const userFromJwt = parseJwtUser(accessToken);
       if (userFromJwt && hasLeadManagerPortalAccess(userFromJwt)) {
         return {
           token: accessToken,
-          refreshToken: refreshToken || storedSession?.refreshToken,
-          refreshExpiresAt: refreshExpiresAt ?? storedSession?.refreshExpiresAt,
+          refreshExpiresAt,
           user: userFromJwt,
         };
       }
-    }
-
-    if (storedSession && (refreshToken || storedSession.refreshToken)) {
-      return {
-        token: storedSession.token || "",
-        refreshToken: refreshToken || storedSession.refreshToken,
-        refreshExpiresAt: refreshExpiresAt ?? storedSession.refreshExpiresAt,
-        user: storedSession.user,
-      };
     }
 
     return null;
@@ -322,50 +279,21 @@ export function readSessionFromStorage(): UserSession | null {
 
 export function saveSessionToStorage(session: UserSession | null): void {
   if (typeof window === "undefined") return;
+  purgeLegacyAuthStorage();
   if (!session) {
-    for (const key of ALL_SESSION_KEYS) {
-      try {
-        window.localStorage.removeItem(key);
-      } catch {
-        /* ignore */
-      }
-    }
     for (const cookieName of ALL_COOKIES) {
       deleteCookie(cookieName);
     }
-  } else {
-    resetSessionTerminated();
-    try {
-      window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
-    } catch {
-      /* ignore */
-    }
-    if (session.token) {
-      const accessMax = jwtMaxAgeSeconds(session.token);
-      if (accessMax > 0) {
-        setCookieMaxAge(ACCESS_COOKIE, session.token, accessMax);
-      } else {
-        deleteCookie(ACCESS_COOKIE);
-      }
-    }
-    if (session.refreshToken) {
-      const refreshMax = refreshCookieMaxAgeSeconds(session.refreshExpiresAt);
-      setCookieMaxAge(REFRESH_COOKIE, session.refreshToken, refreshMax);
-      if (session.refreshExpiresAt) {
-        setCookieMaxAge(
-          REFRESH_EXPIRES_COOKIE,
-          String(session.refreshExpiresAt),
-          refreshMax,
-        );
-      } else {
-        deleteCookie(REFRESH_EXPIRES_COOKIE);
-      }
-    } else {
-      deleteCookie(REFRESH_COOKIE);
-      deleteCookie(REFRESH_EXPIRES_COOKIE);
-    }
-    for (const name of LEGACY_COOKIES) deleteCookie(name);
+    return;
   }
+  resetSessionTerminated();
+  if (session.token) {
+    const accessMax = jwtMaxAgeSeconds(session.token);
+    if (accessMax > 0) {
+      setCookieMaxAge(ACCESS_COOKIE, session.token, accessMax);
+    }
+  }
+  for (const name of LEGACY_COOKIES) deleteCookie(name);
 }
 
 export async function syncSessionCookie(
@@ -382,13 +310,13 @@ export function clearSessionFromStorage(): void {
 }
 
 /** Revoke this device's refresh-token family. Other devices stay signed in. */
-export async function revokeRefreshToken(refreshToken?: string | null): Promise<void> {
-  if (!refreshToken) return;
+export async function revokeRefreshToken(_refreshToken?: string | null): Promise<void> {
   try {
-    await fetch(`${AUTH_SERVICE_URL}/api/auth/logout`, {
+    await fetch(AUTH_API.logout, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
+      body: "{}",
     });
   } catch {
     /* local session is still cleared by the caller */
@@ -396,18 +324,13 @@ export async function revokeRefreshToken(refreshToken?: string | null): Promise<
 }
 
 export const refreshAccessToken = createRefreshAccessToken({
-  authRefreshUrl: `${AUTH_SERVICE_URL}/api/auth/refresh`,
-  getRefreshToken: () => getRefreshToken(),
+  authRefreshUrl: AUTH_API.refresh,
+  cookieCredentials: true,
   getRefreshExpiresAt: () => getRefreshExpiresAt(),
   readFallbackUser: () => readSessionFromStorage()?.user ?? null,
-  saveRefreshedSession: (payload: import("@session-auth/createRefreshAccessToken").RefreshedSessionPayload) => {
-    const existing = readSessionFromStorage();
-    saveSessionToStorage({
-      token: payload.token,
-      refreshToken: payload.refreshToken,
-      refreshExpiresAt: payload.refreshExpiresAt,
-      user: (payload.user as AuthUser) || existing?.user,
-    });
+  saveRefreshedSession: () => {
+    purgeLegacyAuthStorage();
+    resetSessionTerminated();
   },
   invalidateSession: () => invalidateLocalSession("/"),
 });

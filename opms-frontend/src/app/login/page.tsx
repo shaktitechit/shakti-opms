@@ -20,6 +20,7 @@ import { MedicaLogo } from "@/components/MedicaLogo";
 import { mutationRejectedMessage } from "@/lib/mutationMessages";
 import { hasOpmsAccess } from "@/lib/opmsAuth";
 import {
+  applySessionAfterAuth,
   clearSessionMarks,
   persistSessionMarksFromAuth,
 } from "@/lib/sessionCookie";
@@ -93,7 +94,7 @@ function LoginForm() {
       toast.error("No OPMS portal access assigned. Contact an administrator.");
       return;
     }
-    persistSessionMarksFromAuth({ token, user, refreshToken, refreshExpiresAt });
+    persistSessionMarksFromAuth({ token, user, refreshExpiresAt });
     const dest = loginDestination({ from, user });
     if (typeof window !== "undefined") {
       window.location.href = dest;
@@ -122,9 +123,9 @@ function LoginForm() {
           );
           return;
         }
+        applySessionAfterAuth();
         persistSessionMarksFromAuth({
           token: data?.token,
-          refreshToken: data?.refreshToken,
           refreshExpiresAt: data?.refreshExpiresIn
             ? Date.now() + data.refreshExpiresIn * 1000
             : undefined,

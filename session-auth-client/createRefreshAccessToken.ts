@@ -14,11 +14,13 @@ export type RefreshedSessionPayload = {
 
 export type CreateRefreshAccessTokenDeps = {
   authRefreshUrl: string;
-  getRefreshToken: () => string | null;
   getRefreshExpiresAt: () => number | null;
   readFallbackUser: () => unknown | null;
   saveRefreshedSession: (payload: RefreshedSessionPayload) => void;
   invalidateSession: () => void;
+  /** When true, refresh uses HttpOnly cookie via credentials (no body token). */
+  cookieCredentials?: boolean;
+  getRefreshToken?: () => string | null;
 };
 
 function parseRefreshResponse(
@@ -45,12 +47,13 @@ function parseRefreshResponse(
   if (!token || !user) return null;
   const refreshExpiresAt = refreshExpiresIn
     ? Date.now() + refreshExpiresIn * 1000
-    : Date.now() + 30 * 24 * 60 * 60 * 1000;
+    : Date.now() + 8 * 60 * 60 * 1000;
   return { token, refreshToken, refreshExpiresAt, user };
 }
 
 export function createRefreshAccessToken(deps: CreateRefreshAccessTokenDeps): () => Promise<boolean> {
   let refreshInFlight: Promise<boolean> | null = null;
+  const useCookies = deps.cookieCredentials !== false;
 
   return async function refreshAccessToken(): Promise<boolean> {
     if (isSessionTerminated()) return false;
@@ -63,14 +66,15 @@ export function createRefreshAccessToken(deps: CreateRefreshAccessTokenDeps): ()
         return false;
       }
 
-      const refreshToken = deps.getRefreshToken();
-      if (!refreshToken) return false;
+      const refreshToken = deps.getRefreshToken?.() ?? null;
+      if (!useCookies && !refreshToken) return false;
 
       try {
         const res = await fetch(deps.authRefreshUrl, {
           method: "POST",
+          credentials: useCookies ? "include" : "same-origin",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refreshToken }),
+          body: useCookies ? "{}" : JSON.stringify({ refreshToken }),
         });
         if (!res.ok) {
           markSessionTerminated();
@@ -78,7 +82,11 @@ export function createRefreshAccessToken(deps: CreateRefreshAccessTokenDeps): ()
           return false;
         }
         const data = await res.json();
-        const payload = parseRefreshResponse(data, refreshToken, deps.readFallbackUser());
+        const payload = parseRefreshResponse(
+          data,
+          refreshToken || "",
+          deps.readFallbackUser(),
+        );
         if (!payload) {
           markSessionTerminated();
           deps.invalidateSession();

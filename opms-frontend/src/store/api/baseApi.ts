@@ -5,13 +5,16 @@ import {
   type FetchArgs,
   type FetchBaseQueryError,
 } from "@reduxjs/toolkit/query/react";
+import { createServiceBaseQueryWithAuthProxy } from "@session-auth/createServiceBaseQueryWithAuthProxy";
 
 import { publicApiOrigin } from "@/lib/env";
 import { invalidateOpmsClientSession, readRefreshExpiresAtFromCookies } from "@/lib/sessionCookie";
+import { AUTH_API } from "@session-auth/authApiPaths";
 import {
   createRefreshAccessToken,
   type RefreshedSessionPayload,
 } from "@session-auth/createRefreshAccessToken";
+import { purgeLegacyAuthStorage } from "@session-auth/purgeLegacyStorage";
 import { logout, setCredentials, type AuthUser } from "@/store/slices/authSlice";
 
 type AuthSnap = {
@@ -41,22 +44,17 @@ function ensureStore(api: StoreLike): StoreLike {
 }
 
 const refreshAccessToken = createRefreshAccessToken({
-  authRefreshUrl: `${publicApiOrigin()}/api/auth/refresh`,
-  getRefreshToken: () => {
-    const fromState = authFromStore().refreshToken;
-    if (fromState) return fromState;
-    if (typeof document === "undefined") return null;
-    const match = document.cookie.match(/(?:^| )refresh_token=([^;]+)/);
-    return match ? decodeURIComponent(match[1]) : null;
-  },
+  authRefreshUrl: AUTH_API.refresh,
+  cookieCredentials: true,
   getRefreshExpiresAt: () =>
     authFromStore().refreshExpiresAt ?? readRefreshExpiresAtFromCookies(),
   readFallbackUser: () => authFromStore().user ?? null,
   saveRefreshedSession: (payload: RefreshedSessionPayload) => {
+    purgeLegacyAuthStorage();
     boundStore?.dispatch(
       setCredentials({
         token: payload.token,
-        refreshToken: payload.refreshToken,
+        refreshToken: null,
         refreshExpiresAt: payload.refreshExpiresAt,
         user: payload.user as AuthUser,
       }),
@@ -68,15 +66,17 @@ const refreshAccessToken = createRefreshAccessToken({
   },
 });
 
-const rawBaseQuery = fetchBaseQuery({
+// @ts-expect-error — shared helper accepts RTK fetchBaseQuery without importing RTK in session-auth-client
+const rawBaseQuery = createServiceBaseQueryWithAuthProxy(fetchBaseQuery, {
   baseUrl: `${publicApiOrigin()}/api`,
+  credentials: "include",
   prepareHeaders(headers, api) {
     ensureStore(api as unknown as StoreLike);
     const token = authFromStore().token;
     if (token) headers.set("Authorization", `Bearer ${token}`);
     return headers;
   },
-});
+}) as BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError>;
 
 function requestUrl(args: string | FetchArgs): string {
   return typeof args === "string" ? args : args.url;

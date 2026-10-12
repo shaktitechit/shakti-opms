@@ -5,6 +5,7 @@ import {
   type FetchArgs,
   type FetchBaseQueryError,
 } from "@reduxjs/toolkit/query/react";
+import { createServiceBaseQueryWithAuthProxy } from "@session-auth/createServiceBaseQueryWithAuthProxy";
 import {
   invalidateLocalSession,
   readSessionFromStorage,
@@ -12,8 +13,10 @@ import {
 } from "@/utils/authStorage";
 import { LEAD_MANAGER_SERVICE_URL } from "@/lib/env";
 
-const rawBaseQuery = fetchBaseQuery({
+// @ts-expect-error — shared helper accepts RTK fetchBaseQuery without importing RTK in session-auth-client
+const rawBaseQuery = createServiceBaseQueryWithAuthProxy(fetchBaseQuery, {
   baseUrl: `${LEAD_MANAGER_SERVICE_URL}/api`,
+  credentials: "include",
   prepareHeaders(headers) {
     const session = readSessionFromStorage();
     if (session?.token) {
@@ -21,7 +24,7 @@ const rawBaseQuery = fetchBaseQuery({
     }
     return headers;
   },
-});
+}) as BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError>;
 
 function requestUrl(args: string | FetchArgs): string {
   return typeof args === "string" ? args : args.url;

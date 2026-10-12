@@ -6,10 +6,9 @@ import { Users, Lock, Mail, ShieldCheck, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import { useLoginMutation } from "@/store/api/authApiSlice";
 import {
+  applySessionAfterAuth,
   hasAppAccess,
   readSessionFromStorage,
-  saveSessionToStorage,
-  syncSessionCookie,
 } from "@/utils/authStorage";
 import { resolveHomeFromUser } from "@/constants/dashboardAccess";
 import { useTheme } from "@/hooks/useTheme";
@@ -108,13 +107,7 @@ export default function LoginPage() {
         );
       }
 
-      saveSessionToStorage(session);
-      await syncSessionCookie(
-        session.token,
-        session.user,
-        session.refreshToken,
-        session.refreshExpiresAt,
-      );
+      applySessionAfterAuth();
 
       toast.success(
         `Welcome back, ${session.user.name || session.user.email}`,

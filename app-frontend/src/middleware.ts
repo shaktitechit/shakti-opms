@@ -11,6 +11,7 @@ import {
   applyAuthSessionCookies,
   clearAuthCookies,
   effectiveAccessToken,
+  fetchAuthRefreshFromCookies,
   isRefreshCookieExpired,
 } from "@session-auth/middlewareAuth";
 
@@ -54,30 +55,8 @@ async function exchangeHandoff(code: string): Promise<IssuedSession | null> {
   }
 }
 
-async function refreshSession(refreshToken: string): Promise<IssuedSession | null> {
-  try {
-    const res = await fetch(`${authServiceBase()}/api/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as {
-      token?: string;
-      refreshToken?: string;
-      refreshExpiresIn?: number;
-      data?: { token?: string; refreshToken?: string; refreshExpiresIn?: number };
-    };
-    const token = data.token || data.data?.token;
-    if (!token) return null;
-    return {
-      token,
-      refreshToken: data.refreshToken || data.data?.refreshToken || refreshToken,
-      refreshExpiresIn: data.refreshExpiresIn || data.data?.refreshExpiresIn,
-    };
-  } catch {
-    return null;
-  }
+async function refreshSession(request: NextRequest): Promise<IssuedSession | null> {
+  return fetchAuthRefreshFromCookies(authServiceBase(), request.headers.get("cookie"));
 }
 
 function redirectUrl(request: NextRequest, targetPath: string): URL {
@@ -98,7 +77,6 @@ export async function middleware(request: NextRequest) {
   }
 
   let cookieToken = effectiveAccessToken(request);
-  const cookieRefreshToken = request.cookies.get("refresh_token")?.value;
   const urlToken = searchParams.get("token")?.trim() || "";
   const handoffCode = searchParams.get("handoff")?.trim() || "";
 
@@ -109,8 +87,8 @@ export async function middleware(request: NextRequest) {
   const exchangedToken = exchanged?.token || null;
 
   let refreshedSession: IssuedSession | null = null;
-  if (!cookieToken && !exchangedToken && !urlToken && cookieRefreshToken) {
-    refreshedSession = await refreshSession(cookieRefreshToken);
+  if (!cookieToken && !exchangedToken && !urlToken && !isRefreshCookieExpired(request)) {
+    refreshedSession = await refreshSession(request);
     if (refreshedSession) {
       cookieToken = refreshedSession.token;
     } else {

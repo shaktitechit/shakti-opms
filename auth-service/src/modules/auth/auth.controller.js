@@ -1,19 +1,33 @@
 const authService = require('./auth.service');
 const { validateLoginBody } = require('./auth.validation');
+const {
+  setAuthCookies,
+  clearAuthCookies,
+  readRefreshTokenFromRequest,
+} = require('../../utils/authCookies');
+
+function sendAuthPayload(res, result) {
+  setAuthCookies(res, {
+    token: result.token,
+    refreshToken: result.refreshToken,
+    refreshExpiresIn: result.refreshExpiresIn,
+  });
+  res.json({
+    success: true,
+    token: result.token,
+    refreshToken: result.refreshToken,
+    expiresIn: result.expiresIn,
+    refreshExpiresIn: result.refreshExpiresIn,
+    user: result.user,
+    data: result,
+  });
+}
 
 async function login(req, res, next) {
   try {
     const { email, password } = validateLoginBody(req.body);
     const result = await authService.login(email, password);
-    res.json({
-      success: true,
-      token: result.token,
-      refreshToken: result.refreshToken,
-      expiresIn: result.expiresIn,
-      refreshExpiresIn: result.refreshExpiresIn,
-      user: result.user,
-      data: result,
-    });
+    sendAuthPayload(res, result);
   } catch (err) {
     next(err);
   }
@@ -21,26 +35,23 @@ async function login(req, res, next) {
 
 async function refresh(req, res, next) {
   try {
-    const result = await authService.refresh(req.body?.refreshToken || req.body?.refresh_token);
-    res.json({
-      success: true,
-      token: result.token,
-      refreshToken: result.refreshToken,
-      expiresIn: result.expiresIn,
-      refreshExpiresIn: result.refreshExpiresIn,
-      user: result.user,
-      data: result,
-    });
+    const rawToken = readRefreshTokenFromRequest(req);
+    const result = await authService.refresh(rawToken);
+    sendAuthPayload(res, result);
   } catch (err) {
+    clearAuthCookies(res);
     next(err);
   }
 }
 
 async function logout(req, res, next) {
   try {
-    const result = await authService.logout(req.body?.refreshToken || req.body?.refresh_token);
+    const rawToken = readRefreshTokenFromRequest(req);
+    const result = await authService.logout(rawToken);
+    clearAuthCookies(res);
     res.json({ success: true, ...result });
   } catch (err) {
+    clearAuthCookies(res);
     next(err);
   }
 }
@@ -48,11 +59,7 @@ async function logout(req, res, next) {
 async function me(req, res, next) {
   try {
     const user = await authService.me(req.user._id);
-    res.json({
-      success: true,
-      user,
-      data: user,
-    });
+    res.json({ success: true, user, data: user });
   } catch (err) {
     next(err);
   }
@@ -60,10 +67,12 @@ async function me(req, res, next) {
 
 async function changePassword(req, res, next) {
   try {
-    const currentPassword = req.body?.currentPassword || req.body?.current_password;
-    const newPassword = req.body?.newPassword || req.body?.new_password;
-    await authService.changePassword(req.user._id, currentPassword, newPassword);
-    res.json({ success: true, message: 'Password updated successfully' });
+    const result = await authService.changePassword(
+      req.user._id,
+      req.body?.currentPassword,
+      req.body?.newPassword,
+    );
+    res.json({ success: true, ...result });
   } catch (err) {
     next(err);
   }
@@ -87,16 +96,9 @@ async function exchangeHandoff(req, res, next) {
   try {
     const code = req.body?.code || req.body?.handoff;
     const result = await authService.exchangeHandoff(code);
-    res.json({
-      success: true,
-      token: result.token,
-      refreshToken: result.refreshToken,
-      expiresIn: result.expiresIn,
-      refreshExpiresIn: result.refreshExpiresIn,
-      user: result.user,
-      data: result,
-    });
+    sendAuthPayload(res, result);
   } catch (err) {
+    clearAuthCookies(res);
     next(err);
   }
 }

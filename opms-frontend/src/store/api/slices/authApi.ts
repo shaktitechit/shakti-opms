@@ -1,5 +1,6 @@
 import { medicaApi } from "../baseApi";
-import { persistSessionMarksFromAuth } from "@/lib/sessionCookie";
+import { applySessionAfterAuth, persistSessionMarksFromAuth } from "@/lib/sessionCookie";
+import { AUTH_API } from "@session-auth/authApiPaths";
 import { setCredentials, setUser } from "../../slices/authSlice";
 import { unwrapEnvelope, type ApiEnvelope } from "../unwrap";
 
@@ -29,8 +30,9 @@ export const authApi = medicaApi.injectEndpoints({
   endpoints: (build) => ({
     login: build.mutation<LoginResult, LoginPayload>({
       query: (body) => ({
-        url: "auth/login",
+        url: AUTH_API.login,
         method: "POST",
+        credentials: "include",
         body,
       }),
       transformResponse: (raw: ApiEnvelope<LoginResult>) => unwrapEnvelope(raw),
@@ -41,10 +43,11 @@ export const authApi = medicaApi.injectEndpoints({
           const refreshExpiresAt = data.refreshExpiresIn
             ? Date.now() + data.refreshExpiresIn * 1000
             : null;
+          applySessionAfterAuth();
           api.dispatch(
             setCredentials({
               token: data.token,
-              refreshToken: data.refreshToken,
+              refreshToken: null,
               refreshExpiresAt,
               user: data.user,
             }),
@@ -52,7 +55,6 @@ export const authApi = medicaApi.injectEndpoints({
           const root = api.getState() as unknown as AuthSnap;
           persistSessionMarksFromAuth({
             token: root?.auth?.token ?? null,
-            refreshToken: root?.auth?.refreshToken ?? null,
             refreshExpiresAt: root?.auth?.refreshExpiresAt ?? null,
             user: root?.auth?.user ?? null,
           });
@@ -63,7 +65,7 @@ export const authApi = medicaApi.injectEndpoints({
     }),
     /** `GET /api/auth/me`. */
     getAuthMe: build.query<Record<string, unknown>, void>({
-      query: () => ({ url: "auth/me", method: "GET" }),
+      query: () => ({ url: AUTH_API.me, method: "GET", credentials: "include" }),
       transformResponse: (raw: ApiEnvelope<Record<string, unknown>>) =>
         unwrapEnvelope(raw),
       providesTags: ["AuthSession"],
@@ -74,7 +76,6 @@ export const authApi = medicaApi.injectEndpoints({
           const root = api.getState() as unknown as AuthSnap;
           persistSessionMarksFromAuth({
             token: root?.auth?.token ?? null,
-            refreshToken: root?.auth?.refreshToken ?? null,
             refreshExpiresAt: root?.auth?.refreshExpiresAt ?? null,
             user: root?.auth?.user ?? null,
           });

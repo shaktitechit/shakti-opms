@@ -13,6 +13,7 @@ import {
   applyAuthSessionCookies,
   clearAuthCookies,
   effectiveAccessToken,
+  fetchAuthRefreshFromCookies,
   isRefreshCookieExpired,
 } from "@session-auth/middlewareAuth";
 
@@ -56,30 +57,8 @@ async function exchangeHandoff(code: string): Promise<IssuedSession | null> {
   }
 }
 
-async function refreshSession(refreshToken: string): Promise<IssuedSession | null> {
-  try {
-    const res = await fetch(`${authServiceBase()}/api/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as {
-      token?: string;
-      refreshToken?: string;
-      refreshExpiresIn?: number;
-      data?: { token?: string; refreshToken?: string; refreshExpiresIn?: number };
-    };
-    const token = data.token || data.data?.token;
-    if (!token) return null;
-    return {
-      token,
-      refreshToken: data.refreshToken || data.data?.refreshToken || refreshToken,
-      refreshExpiresIn: data.refreshExpiresIn || data.data?.refreshExpiresIn,
-    };
-  } catch {
-    return null;
-  }
+async function refreshSession(request: NextRequest): Promise<IssuedSession | null> {
+  return fetchAuthRefreshFromCookies(authServiceBase(), request.headers.get("cookie"));
 }
 
 function redirectDashboardLegacy(pathname: string, req: NextRequest) {
@@ -159,11 +138,9 @@ export async function middleware(req: NextRequest) {
   const isLoginRoute = pathname === "/login";
   const isRootRoute = pathname === "/";
   let accessToken = effectiveAccessToken(req) || "";
-  const cookieRefreshToken = req.cookies.get("refresh_token")?.value?.trim() || "";
-
   let refreshedSession: IssuedSession | null = null;
-  if (!accessToken && !ssoToken && cookieRefreshToken) {
-    refreshedSession = await refreshSession(cookieRefreshToken);
+  if (!accessToken && !ssoToken && !isRefreshCookieExpired(req)) {
+    refreshedSession = await refreshSession(req);
     if (refreshedSession) {
       accessToken = refreshedSession.token;
     } else {

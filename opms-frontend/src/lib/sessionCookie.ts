@@ -1,9 +1,10 @@
 import { hasOpmsAccess } from "@/lib/opmsAuth";
 import { resolveHomeFromUser } from "@/constants/dashboardAccess";
-import { publicApiOrigin } from "@/lib/env";
+import { AUTH_API } from "@session-auth/authApiPaths";
 import { REFRESH_EXPIRES_COOKIE } from "@session-auth/constants";
 import { jwtMaxAgeSeconds } from "@session-auth/jwt";
-import { isRefreshExpired, refreshCookieMaxAgeSeconds } from "@session-auth/refreshExpiry";
+import { isRefreshExpired } from "@session-auth/refreshExpiry";
+import { purgeLegacyAuthStorage } from "@session-auth/purgeLegacyStorage";
 import {
   broadcastAuthLogout,
   isSessionTerminated,
@@ -38,14 +39,6 @@ function setCookie(name: string, value: string, maxAge: number): void {
   )}; Path=/; Max-Age=${String(maxAge)}; SameSite=Lax`;
 }
 
-const ALL_SESSION_KEYS = [
-  "shakti.app.session",
-  "shakti.lead_manager.session",
-  "medica.auth",
-  "shakti.user_manager.session",
-  "shakti.work_planner.session",
-];
-
 function deleteCookie(name: string): void {
   document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
   document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/; SameSite=Lax`;
@@ -74,20 +67,12 @@ export function persistSessionMarksFromAuth(input: {
 
   if (hasOpmsAccess(input.user)) {
     resetSessionTerminated();
+    purgeLegacyAuthStorage();
     const accessMax = jwtMaxAgeSeconds(input.token);
     if (accessMax > 0) {
       setCookie(ACCESS_COOKIE_NAME, input.token, accessMax);
     } else {
       deleteCookie(ACCESS_COOKIE_NAME);
-    }
-    if (input.refreshToken) {
-      const refreshMax = refreshCookieMaxAgeSeconds(input.refreshExpiresAt ?? undefined);
-      setCookie(REFRESH_COOKIE_NAME, input.refreshToken, refreshMax);
-      if (input.refreshExpiresAt) {
-        setCookie(REFRESH_EXPIRES_COOKIE, String(input.refreshExpiresAt), refreshMax);
-      } else {
-        deleteCookie(REFRESH_EXPIRES_COOKIE);
-      }
     }
     return;
   }
@@ -96,17 +81,22 @@ export function persistSessionMarksFromAuth(input: {
 }
 
 /** Revoke this device's refresh-token family. Other devices stay signed in. */
-export async function revokeRefreshToken(refreshToken?: string | null): Promise<void> {
-  if (!refreshToken) return;
+export async function revokeRefreshToken(_refreshToken?: string | null): Promise<void> {
   try {
-    await fetch(`${publicApiOrigin()}/api/auth/logout`, {
+    await fetch(AUTH_API.logout, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
+      body: "{}",
     });
   } catch {
     /* local session is still cleared by the caller */
   }
+}
+
+export function applySessionAfterAuth(): void {
+  purgeLegacyAuthStorage();
+  resetSessionTerminated();
 }
 
 export function clearSessionMarks(): void {
@@ -115,16 +105,7 @@ export function clearSessionMarks(): void {
   deleteCookie(REFRESH_COOKIE_NAME);
   deleteCookie(REFRESH_EXPIRES_COOKIE);
   for (const name of LEGACY_COOKIES) deleteCookie(name);
-
-  if (typeof window !== "undefined") {
-    for (const key of ALL_SESSION_KEYS) {
-      try {
-        window.localStorage.removeItem(key);
-      } catch {
-        /* ignore */
-      }
-    }
-  }
+  purgeLegacyAuthStorage();
 }
 
 export function invalidateOpmsClientSession(redirectTo = "/login"): void {

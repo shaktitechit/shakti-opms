@@ -1,4 +1,5 @@
 const express = require('express');
+const cookieParser = require('cookie-parser');
 const cors = require('cors');
 const { JSON_BODY_LIMIT } = require('./config/env');
 const corsOptions = require('./config/cors');
@@ -17,6 +18,7 @@ const app = express();
 app.set('trust proxy', 1);
 
 app.use(cors(corsOptions));
+app.use(cookieParser());
 app.use(express.json({ limit: JSON_BODY_LIMIT || '15mb' }));
 app.use(express.urlencoded({ limit: JSON_BODY_LIMIT || '15mb', extended: true }));
 

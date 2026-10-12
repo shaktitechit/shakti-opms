@@ -5,6 +5,7 @@ import {
   type FetchArgs,
   type FetchBaseQueryError,
 } from "@reduxjs/toolkit/query/react";
+import { createServiceBaseQueryWithAuthProxy } from "@session-auth/createServiceBaseQueryWithAuthProxy";
 import { API_BASE } from "@/utils/apiHelpers";
 import {
   invalidateLocalSession,
@@ -13,8 +14,10 @@ import {
 } from "@/utils/authStorage";
 const apiRoot = API_BASE.replace(/\/+$/, "");
 
-const rawBaseQuery = fetchBaseQuery({
+// @ts-expect-error — shared helper accepts RTK fetchBaseQuery without importing RTK in session-auth-client
+const rawBaseQuery = createServiceBaseQueryWithAuthProxy(fetchBaseQuery, {
   baseUrl: apiRoot.endsWith("/api") ? apiRoot : `${apiRoot}/api`,
+  credentials: "include",
   prepareHeaders(headers) {
     const session = readSessionFromStorage();
     if (session?.token) {
@@ -22,7 +25,7 @@ const rawBaseQuery = fetchBaseQuery({
     }
     return headers;
   },
-});
+}) as BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError>;
 
 function requestUrl(args: string | FetchArgs): string {
   return typeof args === "string" ? args : args.url;

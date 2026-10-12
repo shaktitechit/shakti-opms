@@ -100,6 +100,39 @@ export function applyAuthSessionCookies(
   }
 }
 
+export async function fetchAuthRefreshFromCookies(
+  authServiceBaseUrl: string,
+  cookieHeader: string | null | undefined,
+): Promise<IssuedLike | null> {
+  try {
+    const base = authServiceBaseUrl.replace(/\/+$/, "");
+    const res = await fetch(`${base}/api/auth/refresh`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(cookieHeader ? { cookie: cookieHeader } : {}),
+      },
+      body: "{}",
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      token?: string;
+      refreshToken?: string;
+      refreshExpiresIn?: number;
+      data?: { token?: string; refreshToken?: string; refreshExpiresIn?: number };
+    };
+    const token = data.token || data.data?.token;
+    if (!token) return null;
+    return {
+      token,
+      refreshToken: data.refreshToken || data.data?.refreshToken,
+      refreshExpiresIn: data.refreshExpiresIn || data.data?.refreshExpiresIn,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** Strip expired access JWT so middleware can fall back to refresh or login. */
 export function effectiveAccessToken(request: MiddlewareRequest): string | undefined {
   const token = request.cookies.get(ACCESS_COOKIE)?.value?.trim();
