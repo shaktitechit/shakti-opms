@@ -34,6 +34,7 @@ import {
   useListLeadSourcesQuery,
   useListUsersQuery,
   useListProductsQuery,
+  useListPartiesQuery,
   type LeadPriority,
   type LeadProductItem,
   type LeadContactItem,
@@ -52,6 +53,11 @@ import {
 } from "./leadUtils";
 import { isAdmin as checkIsAdmin, readSessionFromStorage } from "@/utils/authStorage";
 import { useLeadManagerTeamScope } from "@/hooks/useLeadManagerTeamScope";
+import {
+  PartySearchAutocomplete,
+  pickParties,
+  type PartyItem,
+} from "@/components/leads/PartySearchAutocomplete";
 
 type Props = {
   mode: "create" | "edit";
@@ -262,6 +268,14 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
   const { data: sourcesData } = useListLeadSourcesQuery();
   const { data: usersData } = useListUsersQuery();;
   const { data: productsData } = useListProductsQuery({ limit: "100" });
+  const { data: partiesData } = useListPartiesQuery({ limit: "500" });
+  const parties = useMemo(() => pickParties(partiesData), [partiesData]);
+  const [selectedPartyId, setSelectedPartyId] = useState<string>("");
+
+  const selectedParty = useMemo(() => {
+    if (!selectedPartyId) return null;
+    return parties.find((p) => String(p._id ?? p.id ?? "") === String(selectedPartyId)) || null;
+  }, [parties, selectedPartyId]);
 
   const [createLead, { isLoading: creating }] = useCreateLeadMutation();
   const [updateLead, { isLoading: updating }] = useUpdateLeadMutation();
@@ -348,6 +362,14 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
           })
         );
       }
+
+      const leadPartyId =
+        typeof existingLead.party_id === "object" && existingLead.party_id !== null
+          ? existingLead.party_id._id || ""
+          : typeof existingLead.party_id === "string"
+            ? existingLead.party_id
+            : "";
+      setSelectedPartyId(leadPartyId);
 
       if (Array.isArray(existingLead.contacts) && existingLead.contacts.length > 0) {
         setContacts(
@@ -579,6 +601,58 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
     toast.success(`Set ${target.name || "Contact"} as Primary Contact`);
   };
 
+  const handlePartySelect = (p: PartyItem | null) => {
+    if (!p) {
+      setSelectedPartyId("");
+      return;
+    }
+    const pId = String(p._id ?? p.id ?? "");
+    setSelectedPartyId(pId);
+    setCompanyName(p.party_name || "");
+    const primaryContact = p.contacts && p.contacts.length > 0 ? p.contacts[0] : null;
+    setName(p.contact_person || primaryContact?.name || "");
+    setPhone(p.mobile || p.phone || primaryContact?.phone || "");
+    setAlternatePhone(primaryContact?.alternate_phone || "");
+    setEmail(p.email || primaryContact?.email || "");
+    setDesignation(primaryContact?.designation || primaryContact?.department || "");
+
+    setAddressLine1(p.billing_address?.address_line_1 || "");
+    setAddressLine2(p.billing_address?.address_line_2 || "");
+    setCity(p.billing_address?.city || p.district || "");
+    setState(p.billing_address?.state || p.state || "");
+    setPincode(p.billing_address?.pincode || "");
+    setCountry(p.billing_address?.country || "India");
+
+    if (p.contacts && p.contacts.length > 1) {
+      setContacts(
+        p.contacts.slice(1).map((c) => ({
+          name: c.name || "",
+          department: c.department || "",
+          designation: c.designation || "",
+          phone: c.phone || "",
+          email: c.email || "",
+          alternate_phone: c.alternate_phone || "",
+          is_primary: false,
+        }))
+      );
+    }
+
+    toast.success(`Loaded details from Party Master: "${p.party_name}"`);
+  };
+
+  const handlePartyContactSwitch = (contactName: string) => {
+    if (!selectedParty?.contacts) return;
+    const c = selectedParty.contacts.find((ct) => ct.name === contactName);
+    if (c) {
+      setName(c.name || "");
+      setDesignation(c.designation || c.department || "");
+      if (c.phone) setPhone(c.phone);
+      if (c.phone || c.alternate_phone) setAlternatePhone(c.alternate_phone || c.phone || "");
+      if (c.email) setEmail(c.email);
+      toast.info(`Switched primary contact to ${c.name}${c.department ? ` (${c.department})` : ""}`);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -603,6 +677,11 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
 
     const payload: LeadInputPayload = {
       name: name.trim(),
+      ...(selectedPartyId
+        ? { party_id: selectedPartyId }
+        : mode === "edit"
+          ? { party_id: null }
+          : {}),
       company_name: companyName.trim() || undefined,
       phone: phone.trim() || undefined,
       email: email.trim() || undefined,
@@ -766,14 +845,76 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Section 1: Basic Information */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-slate-900">
-          <div className="flex items-center gap-2 border-b border-slate-100 pb-3 dark:border-white/10">
-            <User className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-            <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-              1. Lead & Contact Information
-            </h2>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3 dark:border-white/10">
+            <div className="flex items-center gap-2">
+              <User className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                1. Lead & Contact Information
+              </h2>
+            </div>
+            {selectedParty && (
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
+                <Building2 className="h-3 w-3" />
+                Party Master Linked
+              </span>
+            )}
           </div>
 
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-4 mb-4 rounded-xl border border-blue-200 bg-blue-50/40 p-3.5 dark:border-blue-900/40 dark:bg-blue-950/20 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold uppercase tracking-wider text-blue-900 dark:text-blue-300 flex items-center gap-1.5">
+                <Search className="h-3.5 w-3.5 text-blue-600" />
+                Search Party Master (Autofill Lead &amp; Contact)
+              </label>
+              {selectedParty && (
+                <button
+                  type="button"
+                  onClick={() => handlePartySelect(null)}
+                  className="text-[11px] font-bold text-rose-600 hover:underline dark:text-rose-400 cursor-pointer"
+                >
+                  Clear / Unlink Party
+                </button>
+              )}
+            </div>
+            <PartySearchAutocomplete
+              parties={parties}
+              selectedPartyId={selectedPartyId}
+              onSelect={handlePartySelect}
+            />
+            {selectedParty && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/80 p-2 text-xs dark:bg-slate-900/80 border border-blue-100 dark:border-white/5">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-bold text-slate-900 dark:text-white">{selectedParty.party_name}</span>
+                  {selectedParty.party_code && (
+                    <span className="font-mono text-[10px] text-slate-500">({selectedParty.party_code})</span>
+                  )}
+                  {selectedParty.party_type && (
+                    <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold capitalize dark:bg-slate-800">
+                      {selectedParty.party_type}
+                    </span>
+                  )}
+                </div>
+                {selectedParty.contacts && selectedParty.contacts.length > 1 && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-semibold text-slate-500">Switch Contact:</span>
+                    <select
+                      value={name}
+                      onChange={(e) => handlePartyContactSwitch(e.target.value)}
+                      className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs dark:border-white/10 dark:bg-slate-800 cursor-pointer"
+                    >
+                      {selectedParty.contacts.map((c, i) => (
+                        <option key={i} value={c.name || ""}>
+                          {c.name} {c.department ? `(${c.department})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
                 Contact Person Name <span className="text-rose-500">*</span>

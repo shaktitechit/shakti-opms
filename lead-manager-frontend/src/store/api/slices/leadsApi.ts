@@ -159,7 +159,7 @@ export type LeadInputPayload = Omit<
 > & {
   assigned_to?: string | null | { _id: string; name?: string; email?: string; phone?: string; department?: string };
   source_id?: string | { _id: string; name?: string };
-  party_id?: string | { _id: string; party_name?: string };
+  party_id?: string | null | { _id: string; party_name?: string };
   contact_person_id?: string;
   contacts?: LeadContactItem[];
 };
