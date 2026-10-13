@@ -1,10 +1,10 @@
 [
   {
-    "cityText": "Morinda",
+    "cityText": "Amritsar",
     "reason": "state_unmatched"
   },
   {
-    "cityText": "Amritsar",
+    "cityText": "Morinda",
     "reason": "state_unmatched"
   },
   {
@@ -21,6 +21,21 @@
   },
   {
     "cityText": "Jalandhar",
+    "reason": "state_unmatched"
+  },
+  {
+    "stateText": "Jammu",
+    "cityText": "Jammu",
+    "reason": "state_unmatched"
+  },
+  {
+    "stateText": "Gujrat",
+    "cityText": "Gujrat",
+    "reason": "state_unmatched"
+  },
+  {
+    "stateText": "",
+    "cityText": "Hoshiarpur - 146001",
     "reason": "state_unmatched"
   },
   {
@@ -49,18 +64,8 @@
     "reason": "state_unmatched"
   },
   {
-    "stateText": "Jammu",
-    "cityText": "Jammu",
-    "reason": "state_unmatched"
-  },
-  {
-    "stateText": "Gujrat",
-    "cityText": "Gujrat",
-    "reason": "state_unmatched"
-  },
-  {
-    "stateText": "",
-    "cityText": "Hoshiarpur - 146001",
+    "stateText": "Uttrakhand",
+    "cityText": "Rudrapur",
     "reason": "state_unmatched"
   }
 ]

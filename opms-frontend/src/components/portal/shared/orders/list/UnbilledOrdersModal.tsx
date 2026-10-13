@@ -70,6 +70,10 @@ import {
   usePatchUnbilledOrderMutation,
   type UnbilledOrderRecord,
 } from "@/store/api";
+import {
+  lineShowInUnbilledList,
+  type UnbilledVisibilityCatalog,
+} from "@/components/portal/shared/products/productUnbilledVisibility";
 import { useUnbilledVisibilityCatalog } from "@/components/portal/shared/products/useUnbilledVisibilityCatalog";
 
 type ModalMainTab = "unbilled" | "process_pending" | "on_hold";
@@ -163,6 +167,7 @@ function pendingQtyForCategory(
 function listOrderLinesFromRow(
   row: Record<string, unknown>,
   cat: OrderWorkflowTabCategory,
+  catalog?: UnbilledVisibilityCatalog | null,
 ): ListOrderLine[] {
   const items = Array.isArray(row.order_items)
     ? row.order_items
@@ -189,6 +194,19 @@ function listOrderLinesFromRow(
               line.dispatched_quantity,
           );
     if (ordered <= 0 && q.pendingAdmin <= 0 && q.pendingDispatch <= 0) {
+      continue;
+    }
+    if (
+      !lineShowInUnbilledList(
+        {
+          product: line.product,
+          product_name: line.product_name as string | undefined,
+          sku: line.sku as string | undefined,
+        },
+        line,
+        catalog,
+      )
+    ) {
       continue;
     }
     const { name, sku } = listOrderProductLabel(line);
@@ -535,7 +553,7 @@ export function UnbilledOrdersModal({
     (
       row: Record<string, unknown>,
       cat: OrderWorkflowTabCategory,
-    ): ListOrderView => {
+    ): ListOrderView | null => {
       const orderId = orderRefId(row._id ?? row.id);
       const orderNo =
         String(row.order_no ?? row.order_number ?? "").trim() ||
@@ -555,7 +573,8 @@ export function UnbilledOrdersModal({
         (partyId && partyNameById.has(partyId)
           ? partyNameById.get(partyId) || "—"
           : "—");
-      const lines = listOrderLinesFromRow(row, cat);
+      const lines = listOrderLinesFromRow(row, cat, visibilityCatalog);
+      if (lines.length === 0) return null;
       const ordered = lines.reduce((sum, line) => sum + line.ordered, 0);
       const pending = lines.reduce((sum, line) => sum + line.pending, 0);
 
@@ -573,7 +592,7 @@ export function UnbilledOrdersModal({
         lines,
       };
     },
-    [partyNameById, portalBasePath],
+    [partyNameById, portalBasePath, visibilityCatalog],
   );
 
   /** Process Pending — from live list orders only (does not touch UnbilledOrder). */
@@ -584,7 +603,8 @@ export function UnbilledOrdersModal({
       const row = raw as Record<string, unknown>;
       const cat = getOrderWorkflowTabCategory(row, categoryOptions);
       if (!cat || !PROCESS_PENDING_CATEGORIES.has(cat)) continue;
-      views.push(buildListOrderView(row, cat));
+      const view = buildListOrderView(row, cat);
+      if (view) views.push(view);
     }
     views.sort((a, b) => a.orderNo.localeCompare(b.orderNo));
     return views;
@@ -598,7 +618,8 @@ export function UnbilledOrdersModal({
       const row = raw as Record<string, unknown>;
       const cat = getOrderWorkflowTabCategory(row, categoryOptions);
       if (cat !== "on_hold") continue;
-      views.push(buildListOrderView(row, cat));
+      const view = buildListOrderView(row, cat);
+      if (view) views.push(view);
     }
     views.sort((a, b) => a.orderNo.localeCompare(b.orderNo));
     return views;
@@ -948,14 +969,18 @@ export function UnbilledOrdersModal({
   const ordersBusy = allOrdersQ.isLoading || allOrdersQ.isFetching;
   const busy = isUnbilledTab
     ? unbilledQ.isLoading || unbilledQ.isFetching || catalogLoading
-    : ordersBusy;
+    : ordersBusy || catalogLoading;
   const isError = isUnbilledTab ? unbilledQ.isError : allOrdersQ.isError;
   const activeCount = isUnbilledTab
     ? filtered.length
     : filteredListTabViews.length;
   const unbilledBusy = unbilledQ.isLoading || unbilledQ.isFetching;
   const canDownload =
-    !unbilledBusy && !ordersBusy && !isDownloadingPdf && totalPdfOrders > 0;
+    !unbilledBusy &&
+    !ordersBusy &&
+    !catalogLoading &&
+    !isDownloadingPdf &&
+    totalPdfOrders > 0;
   const lineCount = filtered.reduce((sum, view) => sum + view.lines.length, 0);
   const listTabLineCount = filteredListTabViews.reduce(
     (sum, view) => sum + view.lines.length,
