@@ -345,8 +345,8 @@ export function BulkUploadProductsModal({
   const downloadTemplate = useCallback(() => {
     const csvContent =
       "product_name,generic_name,aliases,sku,product_group,product_subgroup,brand,manufacturer,unit,base_price,minimum_sale_rate,mrp,gst_percent,warranty_months,unit_weight_kg,units_per_box,description,tags\n" +
-      '"Surgical Mask Box","Disposable surgical masks","face mask, 3-ply mask","MSK-001","Consumables","Face Masks","Asep","Pfizer","box","450.00","400.00","499.00","12","24","High-quality surgical masks","surgical,mask,covid"\n' +
-      '"Paracetamol 500mg","Paracetamol IP","pcm, acetaminophen","PAR-500","Tablets","Analgesics","Crocin","GSK","pcs","12.50","10.00","15.00","18","36","Pain reliever","tablet,pain,fever"';
+      '"Surgical Mask Box","Disposable surgical masks","face mask, 3-ply mask","MSK-001","Consumables","Face Masks","Asep","Pfizer","box","450.00","400.00","499.00","12","24","0.05","50","High-quality surgical masks","surgical,mask,covid"\n' +
+      '"Paracetamol 500mg","Paracetamol IP","pcm, acetaminophen","PAR-500","Tablets","Analgesics","Crocin","GSK","pcs","12.50","10.00","15.00","18","36","0.02","100","Pain reliever","tablet,pain,fever"';
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -463,7 +463,7 @@ export function BulkUploadProductsModal({
             <div className="text-xs text-blue-800 dark:text-blue-300 max-w-xl space-y-1">
               <span className="font-semibold block">How it works:</span>
               <p>
-                First row must contain header columns: <code className="font-mono bg-blue-100/80 px-1 py-0.5 rounded dark:bg-blue-950">product_name</code> (required), <code className="font-mono bg-blue-100/80 px-1 py-0.5 rounded dark:bg-blue-950">base_price</code> (required), <code className="font-mono bg-blue-100/80 px-1 py-0.5 rounded dark:bg-blue-950">minimum_sale_rate</code> (required), unit, SKU, brand, manufacturer, and other optional product attributes.
+                First row must contain header columns: <code className="font-mono bg-blue-100/80 px-1 py-0.5 rounded dark:bg-blue-950">product_name</code> (required), <code className="font-mono bg-blue-100/80 px-1 py-0.5 rounded dark:bg-blue-950">base_price</code> (required), <code className="font-mono bg-blue-100/80 px-1 py-0.5 rounded dark:bg-blue-950">minimum_sale_rate</code> (required), plus optional <code className="font-mono bg-blue-100/80 px-1 py-0.5 rounded dark:bg-blue-950">unit_weight_kg</code> and <code className="font-mono bg-blue-100/80 px-1 py-0.5 rounded dark:bg-blue-950">units_per_box</code> for transport packing (aliases: <code className="font-mono">unit_weight</code>, <code className="font-mono">units_per_carton</code>).
               </p>
               <p>
                 Large files are uploaded in batches of {BULK_UPLOAD_BATCH_SIZE} products per request to avoid payload size limits.
@@ -574,6 +574,8 @@ export function BulkUploadProductsModal({
                       <th className="px-3 py-2 font-medium">MRP</th>
                       <th className="px-3 py-2 font-medium">GST %</th>
                       <th className="px-3 py-2 font-medium">Warranty</th>
+                      <th className="px-3 py-2 font-medium">Unit wt (kg)</th>
+                      <th className="px-3 py-2 font-medium">Units/box</th>
                       <th className="px-3 py-2 font-medium">Group</th>
                       <th className="px-3 py-2 font-medium">Subgroup</th>
                       <th className="px-3 py-2 font-medium">Brand</th>
@@ -617,6 +619,30 @@ export function BulkUploadProductsModal({
                         </td>
                         <td className="px-3 py-2 tabular-nums">
                           {p.warranty_months ? `${p.warranty_months}m` : "—"}
+                        </td>
+                        <td
+                          className={`px-3 py-2 tabular-nums ${
+                            p.status === "invalid" &&
+                            p.unit_weight_kg !== "" &&
+                            (isNaN(Number(p.unit_weight_kg)) || Number(p.unit_weight_kg) < 0)
+                              ? "text-rose-600 bg-rose-50/30 dark:text-rose-400"
+                              : ""
+                          }`}
+                        >
+                          {p.unit_weight_kg || "—"}
+                        </td>
+                        <td
+                          className={`px-3 py-2 tabular-nums ${
+                            p.status === "invalid" &&
+                            p.units_per_box !== "" &&
+                            (isNaN(Number(p.units_per_box)) ||
+                              Number(p.units_per_box) < 1 ||
+                              !Number.isInteger(Number(p.units_per_box)))
+                              ? "text-rose-600 bg-rose-50/30 dark:text-rose-400"
+                              : ""
+                          }`}
+                        >
+                          {p.units_per_box || "—"}
                         </td>
                         <td className="px-3 py-2 max-w-[120px] truncate">
                           {p.product_group || "—"}

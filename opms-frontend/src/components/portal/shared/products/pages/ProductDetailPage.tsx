@@ -11,6 +11,7 @@ import {
   Tag,
   Link2,
   FileText,
+  Truck,
 } from "lucide-react";
 
 import {
@@ -56,6 +57,12 @@ const valueClass = "text-sm font-semibold text-slate-800 dark:text-slate-200 mt-
 function formatMoney(v: unknown): string {
   const n = Number(v);
   return Number.isFinite(n) ? `₹${n.toFixed(2)}` : "—";
+}
+
+function formatLogisticsNumber(v: unknown): string {
+  if (v == null || v === "") return "—";
+  const n = Number(v);
+  return Number.isFinite(n) ? String(n) : "—";
 }
 
 export default function ProductDetailPage({ id, portalHome }: ProductDetailPageProps) {
@@ -309,7 +316,31 @@ export default function ProductDetailPage({ id, portalHome }: ProductDetailPageP
                   {p.warranty_months ? `${p.warranty_months} months` : "No Warranty"}
                 </div>
               </div>
+            </div>
 
+            <h3 className="text-md font-bold text-slate-900 dark:text-slate-50 flex items-center gap-2 border-b border-slate-100 dark:border-white/5 pt-2 pb-3">
+              <Truck className="h-5 w-5 text-blue-500" /> Transport packing
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 -mt-3">
+              Used to auto-calculate dispatch weight and box counts on transport and transport plans.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-1">
+                <label className={labelClass}>Unit weight (kg)</label>
+                <div className={`${valueClass} tabular-nums`}>
+                  {formatLogisticsNumber(p.unit_weight_kg)}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className={labelClass}>Units per box</label>
+                <div className={`${valueClass} tabular-nums`}>
+                  {formatLogisticsNumber(p.units_per_box)}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
               {/* Description */}
               <div className="space-y-1 md:col-span-2">
                 <label className={labelClass}>Description</label>

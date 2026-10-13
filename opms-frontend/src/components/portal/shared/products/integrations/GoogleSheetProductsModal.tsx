@@ -65,6 +65,8 @@ type ProductRow = {
   mrp?: number;
   gst_percent?: number;
   warranty_months?: number;
+  unit_weight_kg?: number;
+  units_per_box?: number;
   aliases?: string[] | string;
   tags?: string[] | string;
   description?: string;
@@ -97,11 +99,13 @@ const COLUMNS: { key: keyof ProductRow; label: string; headerLetter: string; rea
   { key: "gst_percent", label: "GST %", headerLetter: "L", type: "number" },
   { key: "unit", label: "Unit", headerLetter: "M", type: "text" },
   { key: "warranty_months", label: "Warranty Months", headerLetter: "N", type: "number" },
-  { key: "aliases", label: "Aliases", headerLetter: "O", type: "text" },
-  { key: "tags", label: "Tags", headerLetter: "P", type: "text" },
-  { key: "description", label: "Description", headerLetter: "Q", type: "text" },
-  { key: "is_active", label: "Active", headerLetter: "R", type: "boolean" },
-  { key: "is_featured", label: "Featured", headerLetter: "S", type: "boolean" },
+  { key: "unit_weight_kg", label: "Unit Weight (kg)", headerLetter: "O", type: "number" },
+  { key: "units_per_box", label: "Units Per Box", headerLetter: "P", type: "number" },
+  { key: "aliases", label: "Aliases", headerLetter: "Q", type: "text" },
+  { key: "tags", label: "Tags", headerLetter: "R", type: "text" },
+  { key: "description", label: "Description", headerLetter: "S", type: "text" },
+  { key: "is_active", label: "Active", headerLetter: "T", type: "boolean" },
+  { key: "is_featured", label: "Featured", headerLetter: "U", type: "boolean" },
 ];
 
 function pickList(raw: unknown): unknown[] {
@@ -491,7 +495,9 @@ export function GoogleSheetProductsModal({
       colKey === "mrp" ||
       colKey === "gst_percent" ||
       colKey === "minimum_sale_rate" ||
-      colKey === "warranty_months"
+      colKey === "warranty_months" ||
+      colKey === "unit_weight_kg" ||
+      colKey === "units_per_box"
     ) {
       parsedVal = val === "" ? undefined : Number(val);
       if (parsedVal !== undefined && isNaN(parsedVal)) {
@@ -804,6 +810,8 @@ function onEdit(e) {
     if (key === "featured") key = "is_featured";
     if (key === "minimum_sale_rate" || key === "min_sale_rate" || key === "min_rate") key = "minimum_sale_rate";
     if (key === "warranty_months" || key === "warranty") key = "warranty_months";
+    if (key === "unit_weight_kg" || key === "unit_weight") key = "unit_weight_kg";
+    if (key === "units_per_box" || key === "units_per_carton") key = "units_per_box";
     
     payload[key] = rowData[i];
   }
@@ -1775,6 +1783,8 @@ function onEdit(e) {
                     <div className="bg-slate-100 dark:bg-slate-850 border border-slate-200 dark:border-slate-850 p-1.5 rounded text-center text-slate-700 dark:text-slate-300">GST %</div>
                     <div className="bg-slate-100 dark:bg-slate-850 border border-slate-200 dark:border-slate-850 p-1.5 rounded text-center text-slate-700 dark:text-slate-300">Unit</div>
                     <div className="bg-slate-100 dark:bg-slate-850 border border-slate-200 dark:border-slate-850 p-1.5 rounded text-center text-slate-700 dark:text-slate-300">Warranty Months</div>
+                    <div className="bg-slate-100 dark:bg-slate-850 border border-slate-200 dark:border-slate-850 p-1.5 rounded text-center text-slate-700 dark:text-slate-300">Unit Weight (kg)</div>
+                    <div className="bg-slate-100 dark:bg-slate-850 border border-slate-200 dark:border-slate-850 p-1.5 rounded text-center text-slate-700 dark:text-slate-300">Units Per Box</div>
                     <div className="bg-slate-100 dark:bg-slate-850 border border-slate-200 dark:border-slate-850 p-1.5 rounded text-center text-slate-700 dark:text-slate-300">Aliases</div>
                     <div className="bg-slate-100 dark:bg-slate-850 border border-slate-200 dark:border-slate-850 p-1.5 rounded text-center text-slate-700 dark:text-slate-300">Tags</div>
                     <div className="bg-slate-100 dark:bg-slate-850 border border-slate-200 dark:border-slate-850 p-1.5 rounded text-center text-slate-700 dark:text-slate-300">Description</div>
@@ -1830,6 +1840,8 @@ function onEdit(e) {
     if (key === "featured") key = "is_featured";
     if (key === "minimum_sale_rate" || key === "min_sale_rate" || key === "min_rate") key = "minimum_sale_rate";
     if (key === "warranty_months" || key === "warranty") key = "warranty_months";
+    if (key === "unit_weight_kg" || key === "unit_weight") key = "unit_weight_kg";
+    if (key === "units_per_box" || key === "units_per_carton") key = "units_per_box";
     
     payload[key] = rowData[i];
   }
