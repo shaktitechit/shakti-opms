@@ -1,6 +1,6 @@
 "use client";
 
-import { LargeModalPortal } from "@/components/portal/shared/LargeModalPortal";
+import { LargeModalPortal } from "@/components/portal/shared/ui/modals/LargeModalPortal";
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -28,17 +28,17 @@ import {
   checkOrderPartySra,
   resolveOrderCounterparty,
 } from "@/components/portal/sales/partyDisplay";
-import { OrderDetailTabsNav } from "@/components/portal/shared/OrderDetailTabsNav";
-import { ItemFulfillmentDetailsModal } from "@/components/portal/shared/ItemFulfillmentDetailsModal";
-import { PortalBusyOverlay } from "@/components/portal/shared/PortalBusyOverlay";
+import { OrderDetailTabsNav } from "@/components/portal/shared/orders/components/OrderDetailTabsNav";
+import { ItemFulfillmentDetailsModal } from "@/components/portal/shared/orders/modals/ItemFulfillmentDetailsModal";
+import { PortalBusyOverlay } from "@/components/portal/shared/shell/PortalBusyOverlay";
 import {
   OrderFulfillmentPipelineStrip,
   buildOrderFulfillmentPipelineSteps,
   DEFAULT_ORDER_PIPELINE_ICONS,
-} from "@/components/portal/shared/FulfillmentCircleStep";
-import { deriveOrderWorkflowStatus } from "@/components/portal/shared/orderLifecycle";
-import { computeDepartmentStageBoxes } from "@/components/portal/shared/orderDepartmentStages";
-import { type OrderStatusDimension } from "@/components/portal/shared/orderStatusDimensions";
+} from "@/components/portal/shared/ui/fulfillment/FulfillmentCircleStep";
+import { deriveOrderWorkflowStatus } from "@/components/portal/shared/orders/lib/orderLifecycle";
+import { computeDepartmentStageBoxes } from "@/components/portal/shared/orders/lib/orderDepartmentStages";
+import { type OrderStatusDimension } from "@/components/portal/shared/orders/lib/orderStatusDimensions";
 import OrderTab from "./components/OrderTab";
 import EditOrderModal from "./components/EditOrderModal";
 import FlagsTab from "./components/FlagsTab";
@@ -47,7 +47,7 @@ import DispatchesTab from "./components/DispatchesTab";
 import TransportsTab from "./components/TransportsTab";
 import ApprovalTab from "./components/ApprovalTab";
 import SubmitOrderPreviewModal from "./components/SubmitOrderPreviewModal";
-import type { WorkflowEmailOptions } from "@/components/portal/shared/WorkflowEmailControls";
+import type { WorkflowEmailOptions } from "@/components/portal/shared/orders/modals/WorkflowEmailControls";
 
 const btnSecondaryClass =
   "rounded-lg border border-slate-200/95 px-3 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-50 disabled:opacity-50 dark:border-white/15 dark:text-slate-100 dark:hover:bg-white/5";

@@ -6,6 +6,7 @@ const { getModels } = require('../../data/mongoRegistry');
 const { toPlain } = require('../../utils/mongoJson');
 const { ApiError } = require('../../utils/ApiError');
 const activityService = require('../activity/activity.service');
+const { syncPartyZoneIdsForZoneAssignment } = require('../parties/partyZone.sync');
 
 async function list(query = {}) {
   const { Zone } = getModels();
@@ -78,6 +79,10 @@ async function create(body, user) {
   await doc.save();
   const res = doc.toObject();
 
+  if (Array.isArray(body.parties) && body.parties.length > 0) {
+    await syncPartyZoneIdsForZoneAssignment(String(doc._id), body.parties, []);
+  }
+
   await activityService.create({
     actor: user?._id,
     entity_type: 'party',
@@ -106,11 +111,17 @@ async function update(id, body, user) {
 
   if (body.description !== undefined) record.description = body.description;
   if (body.is_active !== undefined) record.is_active = body.is_active === true || body.is_active === 'true';
+  const prevPartyIds =
+    body.parties !== undefined ? (record.parties || []).map((p) => String(p)) : null;
   if (body.parties !== undefined) record.parties = body.parties;
   if (body.sales_persons !== undefined) record.sales_persons = body.sales_persons;
 
   record.updated_by = user?._id;
   await record.save();
+
+  if (prevPartyIds !== null) {
+    await syncPartyZoneIdsForZoneAssignment(id, body.parties || [], prevPartyIds);
+  }
 
   await activityService.create({
     actor: user?._id,
@@ -154,12 +165,18 @@ async function associateParties(id, partyIds, user) {
   if (!Array.isArray(partyIds)) throw new ApiError(400, 'partyIds must be an array of strings');
   const { Zone } = getModels();
 
+  const existing = await Zone.findOne({ _id: id, deletedAt: null }).lean();
+  if (!existing) throw new ApiError(404, 'Zone not found');
+  const prevPartyIds = (existing.parties || []).map(String);
+
   const record = await Zone.findOneAndUpdate(
     { _id: id, deletedAt: null },
     { $set: { parties: partyIds, updated_by: user?._id } },
     { new: true }
   );
   if (!record) throw new ApiError(404, 'Zone not found');
+
+  await syncPartyZoneIdsForZoneAssignment(id, partyIds, prevPartyIds);
 
   await activityService.create({
     actor: user?._id,

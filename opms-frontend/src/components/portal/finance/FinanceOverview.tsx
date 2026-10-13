@@ -22,7 +22,7 @@ import { ensurePushSubscription } from "@/lib/push";
 import { publicVapidKey } from "@/lib/env";
 import { toast } from "@/lib/toast";
 import { useAppSelector } from "@/store/hooks";
-import { OverviewFlagsWidget } from "@/components/portal/shared/OverviewFlagsWidget";
+import { OverviewFlagsWidget } from "@/components/portal/shared/orders/components/OverviewFlagsWidget";
 import {
   Bell,
   BellOff,

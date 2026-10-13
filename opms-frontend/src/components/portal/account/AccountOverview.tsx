@@ -23,7 +23,7 @@ import {
 import { ensurePushSubscription } from "@/lib/push";
 import { publicVapidKey } from "@/lib/env";
 import { toast } from "@/lib/toast";
-import { OverviewFlagsWidget } from "@/components/portal/shared/OverviewFlagsWidget";
+import { OverviewFlagsWidget } from "@/components/portal/shared/orders/components/OverviewFlagsWidget";
 import { useAppSelector } from "@/store/hooks";
 import {
   Bell,

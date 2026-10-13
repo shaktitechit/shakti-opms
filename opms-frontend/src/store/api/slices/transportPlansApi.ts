@@ -16,6 +16,31 @@ export type TransportPlanOrderStatus =
   | "delivered"
   | "cancelled";
 
+export type TransportPlanLogisticsItemPreview = {
+  order_item_id?: string;
+  product_id?: string;
+  product_name?: string;
+  sku?: string;
+  unit?: string;
+  quantity?: number;
+  unit_weight_kg?: number;
+  units_per_box?: number;
+  weight_kg?: number;
+  packed_boxes?: number;
+  open_boxes?: number;
+  open_units?: number;
+  warning?: string;
+};
+
+export type TransportPlanLogisticsPreview = {
+  weight?: number;
+  packed_boxes?: number;
+  open_boxes?: number;
+  packages?: number;
+  items?: TransportPlanLogisticsItemPreview[];
+  warnings?: string[];
+};
+
 export type TransportPlanOrderRecord = {
   _id?: string;
   id?: string;
@@ -63,6 +88,8 @@ export type TransportPlanOrderRecord = {
   lr_number?: string;
   invoice_number?: string;
   packages?: number;
+  packed_boxes?: number;
+  open_boxes?: number;
   weight?: number;
   status?: TransportPlanOrderStatus;
   transport?: {
@@ -298,6 +325,20 @@ export const transportPlansApi = medicaApi.injectEndpoints({
         },
       providesTags: [{ type: "TransportPlans", id: "ELIGIBLE" }],
     }),
+    getTransportPlanLogisticsPreview: build.query<
+      TransportPlanLogisticsPreview,
+      { order_id: string; dispatch_id?: string }
+    >({
+      query: ({ order_id, dispatch_id }) => ({
+        url: "transport-plans/logistics-preview",
+        params: {
+          order_id,
+          ...(dispatch_id ? { dispatch_id } : {}),
+        },
+      }),
+      transformResponse: (raw: ApiEnvelope<TransportPlanLogisticsPreview>) =>
+        unwrapEnvelope(raw) as TransportPlanLogisticsPreview,
+    }),
     getTransportPlan: build.query<TransportPlanRecord, string>({
       query: (id) => `transport-plans/${id}`,
       transformResponse: (raw: ApiEnvelope<TransportPlanRecord>) =>
@@ -469,6 +510,7 @@ export const {
   useLazyListTransportPlansQuery,
   useGetTransportPlanStatsQuery,
   useListEligibleTransportOrdersQuery,
+  useGetTransportPlanLogisticsPreviewQuery,
   useGetTransportPlanQuery,
   useLazyGetTransportPlanQuery,
   useCreateTransportPlanMutation,

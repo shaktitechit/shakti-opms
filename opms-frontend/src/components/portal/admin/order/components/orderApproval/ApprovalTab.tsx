@@ -1,6 +1,6 @@
 "use client";
 
-import { ApprovalsTab } from "@/components/portal/shared/orderDetail/tabs/ApprovalsTab";
+import { ApprovalsTab } from "@/components/portal/shared/orders/detail/tabs/ApprovalsTab";
 
 type Props = {
   orderId: string;

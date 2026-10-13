@@ -8,7 +8,7 @@ import PartyLeaderboard from "@/components/portal/shared/dashboard/PartyLeaderbo
 import ProductLeaderboard from "@/components/portal/shared/dashboard/ProductLeaderboard";
 import FeaturedProductGroupSalesUserTable from "@/components/portal/shared/dashboard/FeaturedProductGroupSalesUserTable";
 import { useAppSelector } from "@/store/hooks";
-import { OverviewFlagsWidget } from "@/components/portal/shared/OverviewFlagsWidget";
+import { OverviewFlagsWidget } from "@/components/portal/shared/orders/components/OverviewFlagsWidget";
 import { formatPeriodCaption } from "@/components/portal/shared/dashboard/PeriodHeadingCaption";
 import {
   FilePlus,

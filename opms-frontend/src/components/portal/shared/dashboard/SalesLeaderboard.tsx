@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react";
 import { Briefcase, X } from "lucide-react";
-import { LargeModalBackdrop } from "@/components/portal/shared/LargeModalBackdrop";
-import { largeModalPanelClass } from "@/components/portal/shared/modalLayout";
-import { resolveUserDisplay } from "@/components/portal/shared/userDisplay";
+import { LargeModalBackdrop } from "@/components/portal/shared/ui/modals/LargeModalBackdrop";
+import { largeModalPanelClass } from "@/components/portal/shared/ui/modals/modalLayout";
+import { resolveUserDisplay } from "@/components/portal/shared/lib/userDisplay";
 import PeriodFilter from "./PeriodFilter";
 import { usePeriodFilter } from "./usePeriodFilter";
 import PeriodHeadingCaption from "./PeriodHeadingCaption";

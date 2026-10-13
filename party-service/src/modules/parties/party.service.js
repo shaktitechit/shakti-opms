@@ -8,6 +8,14 @@ const { ApiError } = require('../../utils/ApiError');
 const { softDeleteActiveById, restoreSoftDeletedById, listDeletedLean } = require('../../utils/mongoSoftDelete');
 const activityService = require('../activity/activity.service');
 const { PARTY_TYPES } = require('./party.validation');
+const { resolvePartyGeoFields } = require('./partyGeo.resolve');
+const {
+  assertZoneExists,
+  syncPartyZoneMembership,
+  resolveZoneIdFromName,
+  inferZoneIdForParty,
+  hydratePartyZoneIdsFromMembership,
+} = require('./partyZone.sync');
 
 const nf = 'Party not found';
 
@@ -24,6 +32,10 @@ const PATCHABLE_KEYS = Object.freeze([
   'shipping_address',
   'district',
   'state',
+  'country_id',
+  'state_id',
+  'city_id',
+  'zone_id',
   'payment_terms',
   'legacy_customer',
   'is_active',
@@ -158,26 +170,51 @@ async function list(query = {}) {
         .lean(),
     ]);
 
+    const hydrated = await hydratePartyZoneIdsFromMembership(rows);
+
     return {
       total,
       page,
       limit,
       pages: Math.ceil(total / limit),
-      data: rows.map(toPlain),
+      data: hydrated.map(toPlain),
     };
   }
 
   const rows = await Party.find(mongoFilter).sort({ createdAt: -1 }).lean();
-  return rows.map(toPlain);
+  const hydrated = await hydratePartyZoneIdsFromMembership(rows);
+  return hydrated.map(toPlain);
 }
 
 async function get(id) {
   const row = await getModels().Party.findById(id).lean();
   if (!row) throw new ApiError(404, nf);
+  if (!row.zone_id) {
+    const inferred = await inferZoneIdForParty(id);
+    if (inferred) {
+      row.zone_id = inferred;
+      await getModels().Party.updateOne({ _id: id, deletedAt: null }, { $set: { zone_id: inferred } });
+    }
+  }
   return toPlain(row);
 }
 
+async function applyPartyZoneField(body) {
+  if (body.zone_name != null && body.zone_name !== '' && !body.zone_id) {
+    body.zone_id = await resolveZoneIdFromName(body.zone_name);
+  }
+  if (body.zone_id != null && body.zone_id !== '') {
+    await assertZoneExists(body.zone_id);
+    body.zone_id = String(body.zone_id);
+  } else if (Object.prototype.hasOwnProperty.call(body, 'zone_id')) {
+    body.zone_id = null;
+  }
+  return body;
+}
+
 async function create(body, user) {
+  await resolvePartyGeoFields(body);
+  await applyPartyZoneField(body);
   const gst = body.gst_no != null ? String(body.gst_no).trim().toUpperCase() : '';
   const contacts = sanitizeContacts(body.contacts);
   const primary = primaryContactFields(contacts);
@@ -209,6 +246,10 @@ async function create(body, user) {
     shipping_address: body.shipping_address && typeof body.shipping_address === 'object' ? body.shipping_address : {},
     district: body.district != null ? String(body.district).trim() : '',
     state: body.state != null ? String(body.state).trim() : '',
+    country_id: body.country_id || undefined,
+    state_id: body.state_id || undefined,
+    city_id: body.city_id || undefined,
+    zone_id: body.zone_id || undefined,
     payment_terms: body.payment_terms != null ? String(body.payment_terms).trim() : '',
     legacy_customer: body.legacy_customer || undefined,
     is_active: body.is_active !== false,
@@ -221,6 +262,9 @@ async function create(body, user) {
 
   const doc = await getModels().Party.create(payload);
   const plain = toPlain(doc.toObject());
+  if (body.zone_id) {
+    await syncPartyZoneMembership(plain._id, body.zone_id);
+  }
   await activityService.create({
     actor: user._id,
     entity_type: 'party',
@@ -235,12 +279,48 @@ async function update(id, patch, user) {
   const doc = await getModels().Party.findOne({ _id: id, deletedAt: null });
   if (!doc) throw new ApiError(404, nf);
 
+  const hasGeoPatch =
+    patch &&
+    (Object.prototype.hasOwnProperty.call(patch, 'country_id') ||
+      Object.prototype.hasOwnProperty.call(patch, 'state_id') ||
+      Object.prototype.hasOwnProperty.call(patch, 'city_id'));
+
+  if (hasGeoPatch) {
+    const merged = {
+      country_id: Object.prototype.hasOwnProperty.call(patch, 'country_id')
+        ? patch.country_id
+        : doc.country_id,
+      state_id: Object.prototype.hasOwnProperty.call(patch, 'state_id') ? patch.state_id : doc.state_id,
+      city_id: Object.prototype.hasOwnProperty.call(patch, 'city_id') ? patch.city_id : doc.city_id,
+      billing_address: patch.billing_address || doc.billing_address,
+      shipping_address: patch.shipping_address || doc.shipping_address,
+      state: patch.state != null ? patch.state : doc.state,
+    };
+    await resolvePartyGeoFields(merged);
+    patch.country_id = merged.country_id;
+    patch.state_id = merged.state_id;
+    patch.city_id = merged.city_id;
+    if (merged.state) patch.state = merged.state;
+    if (merged.billing_address) patch.billing_address = merged.billing_address;
+    if (merged.shipping_address) patch.shipping_address = merged.shipping_address;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(patch, 'zone_id') || patch.zone_name) {
+    await applyPartyZoneField(patch);
+  }
+
   const sanitized = sanitizePatch(patch);
   if (Object.keys(sanitized).length === 0) {
     throw new ApiError(400, 'No valid fields to patch');
   }
+
+  const zoneChanged = Object.prototype.hasOwnProperty.call(sanitized, 'zone_id');
   doc.set(sanitized);
   await doc.save();
+
+  if (zoneChanged) {
+    await syncPartyZoneMembership(id, sanitized.zone_id || null);
+  }
 
   await activityService.create({
     actor: user._id,
@@ -295,10 +375,14 @@ async function bulkCreate(items, user) {
     const name = item.party_name != null ? String(item.party_name).trim() : '';
     if (!name) continue;
 
-    const gst = item.gst_no != null ? String(item.gst_no).trim().toUpperCase() : '';
-    const type = item.party_type && PARTY_TYPES.has(item.party_type) ? item.party_type : 'customer';
+    const itemBody = { ...item };
+    await resolvePartyGeoFields(itemBody);
+    await applyPartyZoneField(itemBody);
 
-    const contacts = sanitizeContacts(item.contacts);
+    const gst = itemBody.gst_no != null ? String(itemBody.gst_no).trim().toUpperCase() : '';
+    const type = itemBody.party_type && PARTY_TYPES.has(itemBody.party_type) ? itemBody.party_type : 'customer';
+
+    const contacts = sanitizeContacts(itemBody.contacts);
     const primary = primaryContactFields(contacts);
     const payload = {
       party_type: type,
@@ -306,35 +390,39 @@ async function bulkCreate(items, user) {
       contact_person:
         contacts.length > 0
           ? primary.contact_person
-          : item.contact_person != null
-            ? String(item.contact_person).trim()
+          : itemBody.contact_person != null
+            ? String(itemBody.contact_person).trim()
             : '',
       mobile:
         contacts.length > 0
           ? primary.mobile
-          : item.mobile != null
-            ? String(item.mobile).trim()
+          : itemBody.mobile != null
+            ? String(itemBody.mobile).trim()
             : '',
       email:
         contacts.length > 0
           ? primary.email
-          : item.email != null
-            ? String(item.email).trim().toLowerCase()
+          : itemBody.email != null
+            ? String(itemBody.email).trim().toLowerCase()
             : '',
       contacts,
       gst_no: gst,
-      drug_license_no: item.drug_license_no != null ? String(item.drug_license_no).trim() : '',
-      billing_address: item.billing_address && typeof item.billing_address === 'object' ? item.billing_address : {},
-      shipping_address: item.shipping_address && typeof item.shipping_address === 'object' ? item.shipping_address : {},
-      district: item.district != null ? String(item.district).trim() : '',
-      state: item.state != null ? String(item.state).trim() : '',
-      payment_terms: item.payment_terms != null ? String(item.payment_terms).trim() : '',
-      legacy_customer: item.legacy_customer || undefined,
-      is_active: item.is_active !== false,
-      is_featured: item.is_featured === true,
-      sra: Boolean(item.sra),
-      sra_from_date: parseDateOrNull(item.sra_from_date),
-      sra_to_date: parseDateOrNull(item.sra_to_date),
+      drug_license_no: itemBody.drug_license_no != null ? String(itemBody.drug_license_no).trim() : '',
+      billing_address: itemBody.billing_address && typeof itemBody.billing_address === 'object' ? itemBody.billing_address : {},
+      shipping_address: itemBody.shipping_address && typeof itemBody.shipping_address === 'object' ? itemBody.shipping_address : {},
+      district: itemBody.district != null ? String(itemBody.district).trim() : '',
+      state: itemBody.state != null ? String(itemBody.state).trim() : '',
+      country_id: itemBody.country_id || undefined,
+      state_id: itemBody.state_id || undefined,
+      city_id: itemBody.city_id || undefined,
+      zone_id: itemBody.zone_id || undefined,
+      payment_terms: itemBody.payment_terms != null ? String(itemBody.payment_terms).trim() : '',
+      legacy_customer: itemBody.legacy_customer || undefined,
+      is_active: itemBody.is_active !== false,
+      is_featured: itemBody.is_featured === true,
+      sra: Boolean(itemBody.sra),
+      sra_from_date: parseDateOrNull(itemBody.sra_from_date),
+      sra_to_date: parseDateOrNull(itemBody.sra_to_date),
     };
 
     if (user) {
@@ -342,7 +430,11 @@ async function bulkCreate(items, user) {
     }
 
     const doc = await Party.create(payload);
-    createdParties.push(toPlain(doc.toObject()));
+    const plain = toPlain(doc.toObject());
+    if (itemBody.zone_id) {
+      await syncPartyZoneMembership(plain._id, itemBody.zone_id);
+    }
+    createdParties.push(plain);
   }
 
   if (createdParties.length > 0 && user) {
@@ -440,7 +532,27 @@ async function syncFromGoogleSheet(row) {
   
   if (row.district) payload.district = String(row.district).trim();
   if (row.state) payload.state = String(row.state).trim();
+  if (row.city) payload.city = String(row.city).trim();
+  if (row.country_id) payload.country_id = String(row.country_id).trim();
+  if (row.state_id) payload.state_id = String(row.state_id).trim();
+  if (row.city_id) payload.city_id = String(row.city_id).trim();
+  if (row.zone_id) payload.zone_id = String(row.zone_id).trim();
+  const zoneNameRaw = row.zone_name ?? row.zone ?? row.operational_zone;
+  if (zoneNameRaw != null && String(zoneNameRaw).trim()) {
+    payload.zone_name = String(zoneNameRaw).trim();
+  }
   if (row.payment_terms) payload.payment_terms = String(row.payment_terms).trim();
+
+  const billingPatch = {};
+  if (row.country) billingPatch.country = String(row.country).trim();
+  if (row.state) billingPatch.state = String(row.state).trim();
+  if (row.city) billingPatch.city = String(row.city).trim();
+  if (Object.keys(billingPatch).length > 0) {
+    payload.billing_address = {
+      ...(doc?.billing_address && typeof doc.billing_address === 'object' ? doc.billing_address : {}),
+      ...billingPatch,
+    };
+  }
 
   if (isActive !== undefined) payload.is_active = isActive;
   if (isFeatured !== undefined) payload.is_featured = isFeatured;
@@ -462,20 +574,38 @@ async function syncFromGoogleSheet(row) {
     payload.contacts = [mainContact];
   }
 
+  await resolvePartyGeoFields(payload);
+  await applyPartyZoneField(payload);
+  delete payload.zone_name;
+
+  const persistPayload = { ...payload };
+  delete persistPayload.city;
+
   if (doc) {
-    for (const [k, v] of Object.entries(payload)) {
+    for (const [k, v] of Object.entries(persistPayload)) {
       doc.set(k, v);
     }
     await doc.save();
-    return toPlain(doc.toObject());
-  } else {
-    // defaults
-    if (!payload.party_name) payload.party_name = 'New Sheet Party';
-    if (payload.party_type === undefined) payload.party_type = 'customer';
-    
-    const newDoc = await Party.create(payload);
-    return toPlain(newDoc.toObject());
+    const plain = toPlain(doc.toObject());
+    if (
+      Object.prototype.hasOwnProperty.call(payload, 'zone_id') ||
+      zoneNameRaw != null
+    ) {
+      await syncPartyZoneMembership(plain._id, payload.zone_id || null);
+    }
+    return plain;
   }
+
+  // defaults
+  if (!persistPayload.party_name) persistPayload.party_name = 'New Sheet Party';
+  if (persistPayload.party_type === undefined) persistPayload.party_type = 'customer';
+
+  const newDoc = await Party.create(persistPayload);
+  const plain = toPlain(newDoc.toObject());
+  if (payload.zone_id) {
+    await syncPartyZoneMembership(plain._id, payload.zone_id);
+  }
+  return plain;
 }
 
 module.exports = {

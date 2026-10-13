@@ -28,7 +28,7 @@ import {
   ProfilePage,
 } from "@/components/portal";
 import CreateOrderPage from "@/components/portal/sales/CreateOrderPage";
-import PortalOrdersRoute from "@/components/portal/shared/orderList/PortalOrdersRoute";
+import PortalOrdersRoute from "@/components/portal/shared/orders/list/PortalOrdersRoute";
 import {
   type PortalKey,
   isPortalKey,

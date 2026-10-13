@@ -24,6 +24,12 @@ export type ProductWriteBody = {
   tags?: string[];
   is_active?: boolean;
   is_featured?: boolean;
+  /** null = inherit group/subgroup default */
+  show_in_unbilled_order_list?: boolean | null;
+  /** Net weight per sale unit (kg) for transport planning */
+  unit_weight_kg?: number | null;
+  /** Sale units per packed box */
+  units_per_box?: number | null;
   [key: string]: unknown;
 };
 
@@ -38,6 +44,10 @@ export type ProductListParams = {
   paginate?: string;
   page?: string;
   limit?: string;
+  /** Comma-separated product ObjectIds */
+  ids?: string;
+  /** Comma-separated SKUs (uppercase-insensitive match) */
+  skus?: string;
   [key: string]: string | undefined;
 };
 

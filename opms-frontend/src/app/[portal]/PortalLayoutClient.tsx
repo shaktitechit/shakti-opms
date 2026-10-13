@@ -6,7 +6,7 @@ import { AccountTabAlertProvider } from "@/components/portal/account/AccountTabA
 import { AdminTabAlertProvider } from "@/components/portal/admin/AdminTabAlert";
 import { DispatchTabAlertProvider } from "@/components/portal/dispatch/DispatchTabAlert";
 import { FinanceTabAlertProvider } from "@/components/portal/finance/FinanceTabAlert";
-import { PortalMutationOverlay } from "@/components/portal/shared/PortalMutationOverlay";
+import { PortalMutationOverlay } from "@/components/portal/shared/shell/PortalMutationOverlay";
 import type { ReactNode } from "react";
 
 type PortalLayoutClientProps = {

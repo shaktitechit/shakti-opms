@@ -14,7 +14,6 @@ const nf = 'Product not found';
 const { PRODUCT_TYPES } = require('./product.validation');
 const { legacySlugToUnitName } = require('../productUnits/productUnit.constants');
 const { getDefaultProductUnit } = require('../productUnits/productUnit.service');
-
 const PATCHABLE_KEYS = Object.freeze([
   'product_name',
   'product_type',
@@ -35,6 +34,9 @@ const PATCHABLE_KEYS = Object.freeze([
   'tags',
   'is_active',
   'is_featured',
+  'show_in_unbilled_order_list',
+  'unit_weight_kg',
+  'units_per_box',
 ]);
 
 function coerceNonNegNumber(raw, label) {
@@ -47,6 +49,14 @@ function coerceNonNegInt(raw, label) {
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0 || Math.floor(n) !== n) {
     throw new ApiError(400, `${label} must be a non-negative integer`);
+  }
+  return n;
+}
+
+function coerceUnitsPerBox(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1 || Math.floor(n) !== n) {
+    throw new ApiError(400, 'units_per_box must be an integer of at least 1');
   }
   return n;
 }
@@ -327,6 +337,33 @@ function sanitizePatch(patch) {
 
     if (k === 'is_active' || k === 'is_featured') {
       out[k] = Boolean(v);
+      continue;
+    }
+
+    if (k === 'show_in_unbilled_order_list') {
+      if (v === null || v === 'null' || v === '') {
+        out[k] = null;
+      } else {
+        out[k] = Boolean(v);
+      }
+      continue;
+    }
+
+    if (k === 'unit_weight_kg') {
+      if (v === null || v === '') {
+        out[k] = null;
+        continue;
+      }
+      out[k] = coerceNonNegNumber(v, 'unit_weight_kg');
+      continue;
+    }
+
+    if (k === 'units_per_box') {
+      if (v === null || v === '') {
+        out[k] = null;
+        continue;
+      }
+      out[k] = coerceUnitsPerBox(v);
     }
   }
 
@@ -342,6 +379,29 @@ async function list(query = {}) {
   const skip = (page - 1) * limit;
 
   const mongoFilter = { deletedAt: null };
+
+  if (query.ids && String(query.ids).trim()) {
+    const idList = String(query.ids)
+      .split(',')
+      .map((s) => s.trim())
+      .filter((id) => mongoose.Types.ObjectId.isValid(id));
+    if (!idList.length) {
+      return paginate
+        ? { total: 0, page, limit, pages: 0, groups: [], data: [] }
+        : [];
+    }
+    mongoFilter._id = { $in: idList };
+  }
+
+  if (query.skus && String(query.skus).trim()) {
+    const skuList = String(query.skus)
+      .split(',')
+      .map((s) => s.trim().toUpperCase())
+      .filter(Boolean);
+    if (skuList.length) {
+      mongoFilter.sku = { $in: skuList };
+    }
+  }
 
   if (query.search && String(query.search).trim()) {
     const s = String(query.search).trim();
@@ -510,6 +570,13 @@ async function create(body, user) {
     payload.warranty_months = coerceNonNegInt(wm, 'warranty_months');
   }
 
+  if (body.unit_weight_kg !== undefined && body.unit_weight_kg !== null && body.unit_weight_kg !== '') {
+    payload.unit_weight_kg = coerceNonNegNumber(body.unit_weight_kg, 'unit_weight_kg');
+  }
+  if (body.units_per_box !== undefined && body.units_per_box !== null && body.units_per_box !== '') {
+    payload.units_per_box = coerceUnitsPerBox(body.units_per_box);
+  }
+
   if (Array.isArray(body.tags)) {
     payload.tags = body.tags.map(x => String(x ?? '').trim().toLowerCase()).filter(Boolean);
   }
@@ -652,6 +719,12 @@ async function bulkCreate(items, user) {
     }
     if (item.mrp != null && item.mrp !== '') payload.mrp = Number(item.mrp);
     if (item.warranty_months != null && item.warranty_months !== '') payload.warranty_months = Math.floor(Number(item.warranty_months));
+    if (item.unit_weight_kg != null && item.unit_weight_kg !== '') {
+      payload.unit_weight_kg = coerceNonNegNumber(item.unit_weight_kg, 'unit_weight_kg');
+    }
+    if (item.units_per_box != null && item.units_per_box !== '') {
+      payload.units_per_box = coerceUnitsPerBox(item.units_per_box);
+    }
     if (Array.isArray(item.tags)) {
       payload.tags = item.tags.map(x => String(x ?? '').trim().toLowerCase()).filter(Boolean);
     }

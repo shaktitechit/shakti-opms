@@ -1,18 +1,18 @@
 "use client";
 
-import { LargeModalPortal } from "@/components/portal/shared/LargeModalPortal";
+import { LargeModalPortal } from "@/components/portal/shared/ui/modals/LargeModalPortal";
 import { useCallback, useMemo, useState, useEffect } from "react";
 import {
   MapOrderLinePriceModal,
   type MapOrderLinePriceSuccess,
   type MapOrderLinePriceTarget,
-} from "@/components/portal/shared/MapOrderLinePriceModal";
+} from "@/components/portal/shared/orders/modals/MapOrderLinePriceModal";
 import {
   LineRateStatusBadge,
   rateLookupKey,
   resolveLineUnitPrice,
   resolveRateDisplayStatus,
-} from "@/components/portal/shared/orderLineRateDisplay";
+} from "@/components/portal/shared/orders/lib/orderLineRateDisplay";
 import {
   mutationRejectedMessage,
   mutationSuccessCopy,

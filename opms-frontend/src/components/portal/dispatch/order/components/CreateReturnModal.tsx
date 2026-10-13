@@ -1,1 +1,1 @@
-export { CreateReturnModal } from "@/components/portal/shared/orderDetail/modals/CreateReturnModal";
+export { CreateReturnModal } from "@/components/portal/shared/orders/detail/modals/CreateReturnModal";

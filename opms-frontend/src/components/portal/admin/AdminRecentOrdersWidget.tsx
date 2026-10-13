@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArrowRight } from "lucide-react";
 import { resolveOrderCounterparty, checkOrderPartySra } from "@/components/portal/sales/partyDisplay";
-import { deriveOrderWorkflowStatus } from "@/components/portal/shared/orderLifecycle";
+import { deriveOrderWorkflowStatus } from "@/components/portal/shared/orders/lib/orderLifecycle";
 import { getAdminOrderTabCategory, ADMIN_ORDER_TAB_LABELS } from "./adminOrderUtils";
 
 interface AdminRecentOrdersWidgetProps {

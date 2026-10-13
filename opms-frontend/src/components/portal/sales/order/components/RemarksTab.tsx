@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { DashboardCard } from "@/components/widgets";
 import { useGetOrderHistoryQuery, useListUsersQuery } from "@/store/api";
-import { resolveUserDisplay } from "@/components/portal/shared/userDisplay";
+import { resolveUserDisplay } from "@/components/portal/shared/lib/userDisplay";
 
 type RemarksTabProps = {
   orderId: string;

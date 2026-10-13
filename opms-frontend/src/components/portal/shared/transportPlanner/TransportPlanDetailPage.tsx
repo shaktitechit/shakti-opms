@@ -5,9 +5,9 @@ import { useParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import { ArrowLeft, Printer, Send, Truck, XCircle } from "lucide-react";
 
-import { LargeModalPortal } from "@/components/portal/shared/LargeModalPortal";
-import { PortalBusyOverlay } from "@/components/portal/shared/PortalBusyOverlay";
-import type { CreateTransportFormDefaults } from "@/components/portal/shared/orderDetail/modals/CreateTransportModal";
+import { LargeModalPortal } from "@/components/portal/shared/ui/modals/LargeModalPortal";
+import { PortalBusyOverlay } from "@/components/portal/shared/shell/PortalBusyOverlay";
+import type { CreateTransportFormDefaults } from "@/components/portal/shared/orders/detail/modals/CreateTransportModal";
 import { OrderDeliveryModal } from "@/components/portal/dispatch/order/components/OrderDeliveryModal";
 import { OrderDetailModal } from "@/components/portal/sales/components/modals/OrderDetailModal";
 import { buildPartyNameById } from "@/components/portal/sales/partyDisplay";
@@ -31,12 +31,12 @@ import {
 } from "@/store/api";
 import { CreateAccountDispatchModal } from "@/components/portal/account/order/components/CreateAccountDispatchModal";
 import { CancelTransportPlanModal } from "./CancelTransportPlanModal";
-import { ApprovalsTab } from "@/components/portal/shared/orderDetail/tabs/ApprovalsTab";
-import { DispatchesTab } from "@/components/portal/shared/orderDetail/tabs/DispatchesTab";
-import { TransportsTab } from "@/components/portal/shared/orderDetail/tabs/TransportsTab";
-import { DeliveriesTab } from "@/components/portal/shared/orderDetail/tabs/DeliveriesTab";
-import { buildUserNameById } from "@/components/portal/shared/userDisplay";
-import { formatDate } from "@/components/portal/shared/orderDetail/orderDetailUtils";
+import { ApprovalsTab } from "@/components/portal/shared/orders/detail/tabs/ApprovalsTab";
+import { DispatchesTab } from "@/components/portal/shared/orders/detail/tabs/DispatchesTab";
+import { TransportsTab } from "@/components/portal/shared/orders/detail/tabs/TransportsTab";
+import { DeliveriesTab } from "@/components/portal/shared/orders/detail/tabs/DeliveriesTab";
+import { buildUserNameById } from "@/components/portal/shared/lib/userDisplay";
+import { formatDate } from "@/components/portal/shared/orders/detail/orderDetailUtils";
 import {
   useListUsersQuery,
   useListTransportsQuery,
@@ -711,7 +711,8 @@ export default function TransportPlanDetailPage({
               remarks: data?.remarks || undefined,
               lrNumber: line.lr_number || undefined,
               weight: line.weight ?? undefined,
-              packedBoxes: line.packages ?? undefined,
+              packedBoxes: line.packed_boxes ?? line.packages ?? undefined,
+              openBoxes: line.open_boxes ?? undefined,
               expectedDeliveryDate:
                 ord && typeof ord === "object" && "expected_delivery_date" in ord
                   ? String(

@@ -4,16 +4,16 @@ import { useMemo } from "react";
 import {
   useListAttachmentsQuery,
 } from "@/store/api";
-import SharedAttachmentsTab from "@/components/portal/shared/orderDetail/tabs/AttachmentsTab";
+import SharedAttachmentsTab from "@/components/portal/shared/orders/detail/tabs/AttachmentsTab";
 import {
   countDispatchVisibleAttachments,
   pickOrderAttachments,
-} from "@/components/portal/shared/orderDetail/orderDetailUtils";
+} from "@/components/portal/shared/orders/detail/orderDetailUtils";
 
 export {
   countDispatchVisibleAttachments,
   pickOrderAttachments,
-} from "@/components/portal/shared/orderDetail/orderDetailUtils";
+} from "@/components/portal/shared/orders/detail/orderDetailUtils";
 
 type AttachmentsTabProps = {
   orderId: string;

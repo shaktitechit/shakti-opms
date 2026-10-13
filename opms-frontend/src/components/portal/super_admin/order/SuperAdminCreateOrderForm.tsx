@@ -1,6 +1,6 @@
 "use client";
 
-import { LargeModalPortal } from "@/components/portal/shared/LargeModalPortal";
+import { LargeModalPortal } from "@/components/portal/shared/ui/modals/LargeModalPortal";
 import {
   useCallback,
   useEffect,
@@ -13,7 +13,7 @@ import {
 import {
   WorkflowEmailControls,
   type WorkflowEmailOptions,
-} from "@/components/portal/shared/WorkflowEmailControls";
+} from "@/components/portal/shared/orders/modals/WorkflowEmailControls";
 import {
   X,
   ShoppingCart,
@@ -63,7 +63,7 @@ import {
   hasKitParent,
   isKitProductId,
   previewKitBuckets,
-} from "@/components/portal/shared/kitBucketExpand";
+} from "@/components/portal/shared/lib/kitBucketExpand";
 import { toast } from "@/lib/toast";
 import { mutationRejectedMessage, mutationSuccessCopy } from "@/lib/mutationMessages";
 import { useAppSelector } from "@/store";
@@ -74,16 +74,16 @@ import {
   rateLookupKey,
   resolveLineUnitPrice,
   resolveRateDisplayStatus,
-} from "@/components/portal/shared/orderLineRateDisplay";
+} from "@/components/portal/shared/orders/lib/orderLineRateDisplay";
 import {
   MapOrderLinePriceModal,
   type MapOrderLinePriceSuccess,
   type MapOrderLinePriceTarget,
-} from "@/components/portal/shared/MapOrderLinePriceModal";
+} from "@/components/portal/shared/orders/modals/MapOrderLinePriceModal";
 import {
   PreviousPartyItemsModal,
   type PreviousPartyOrderItem,
-} from "@/components/portal/shared/PreviousPartyItemsModal";
+} from "@/components/portal/shared/orders/modals/PreviousPartyItemsModal";
 import { OrderItemsForm } from "./OrderItemsForm";
 import { OrderApprovalsForm } from "./OrderApprovalsForm";
 import { OrderDispatchesForm } from "./OrderDispatchesForm";
@@ -92,13 +92,13 @@ import { OrderDeliveriesForm } from "./OrderDeliveriesForm";
 import { OrderReturnsForm } from "./OrderReturnsForm";
 import {
   buildUserNameById,
-} from "@/components/portal/shared/userDisplay";
+} from "@/components/portal/shared/lib/userDisplay";
 import {
   pickList,
 } from "@/components/portal/sales/partyDisplay";
-import { SettleRestOrderModal } from "@/components/portal/shared/orderDetail/modals/SettleRestOrderModal";
-import { largeModalPanelClass } from "@/components/portal/shared/modalLayout";
-import { summarizeReleaseDispatchState } from "@/components/portal/shared/orderDetail/accountDispatchAvailability";
+import { SettleRestOrderModal } from "@/components/portal/shared/orders/detail/modals/SettleRestOrderModal";
+import { largeModalPanelClass } from "@/components/portal/shared/ui/modals/modalLayout";
+import { summarizeReleaseDispatchState } from "@/components/portal/shared/orders/detail/accountDispatchAvailability";
 import { refId, formatMoney, type NamedOption, type ProductOption } from "./utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────

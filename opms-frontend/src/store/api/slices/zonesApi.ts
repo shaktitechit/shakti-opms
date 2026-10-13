@@ -80,6 +80,7 @@ export const zonesApi = medicaApi.injectEndpoints({
       transformResponse: (raw: ApiEnvelope<any>) => unwrapEnvelope(raw),
       invalidatesTags: (_r, _e, arg) => [
         "Parties",
+        { type: "Parties", id: "LIST" },
         { type: "Zones", id: `${arg.id}-parties` },
         { type: "Zones", id: arg.id },
       ],

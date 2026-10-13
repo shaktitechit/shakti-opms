@@ -10,7 +10,7 @@ import {
   hasKitParent,
   isKitProductId,
   previewKitBuckets,
-} from "@/components/portal/shared/kitBucketExpand";
+} from "@/components/portal/shared/lib/kitBucketExpand";
 import {
   LineDraft,
   ProductOption,

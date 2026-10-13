@@ -18,8 +18,8 @@ import {
 import {
   OrderFulfillmentPipelineStrip,
   buildListOrderFulfillmentPipeline,
-} from "@/components/portal/shared/FulfillmentCircleStep";
-import { LargeModalPortal } from "@/components/portal/shared/LargeModalPortal";
+} from "@/components/portal/shared/ui/fulfillment/FulfillmentCircleStep";
+import { LargeModalPortal } from "@/components/portal/shared/ui/modals/LargeModalPortal";
 
 export type OrderDetailModalProps = {
   orderId: string | null;

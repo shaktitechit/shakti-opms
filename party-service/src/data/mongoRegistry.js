@@ -254,6 +254,14 @@ function registerModels() {
         default: 0,
         min: 0,
       },
+      unit_weight_kg: {
+        type: Number,
+        min: 0,
+      },
+      units_per_box: {
+        type: Number,
+        min: 1,
+      },
       description: {
         type: String,
         trim: true,
@@ -465,6 +473,57 @@ function registerModels() {
   zoneSchema.plugin(softDeletePlugin);
   mongoose.model("Zone", zoneSchema);
 
+  // --- Party geography masters (PartyCountry / PartyState / PartyCity) ---
+  const partyCountrySchema = new mongoose.Schema(
+    {
+      company_id: { type: mongoose.Schema.Types.ObjectId, ref: "CompanyInfo", index: true },
+      name: { type: String, required: true, unique: true, trim: true, index: true },
+      iso_code: { type: String, trim: true, uppercase: true },
+      description: { type: String, trim: true },
+      is_active: { type: Boolean, default: true, index: true },
+      deletedAt: { type: Date, default: null, index: true },
+      created_by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    },
+    { timestamps: true }
+  );
+  partyCountrySchema.plugin(softDeletePlugin);
+  mongoose.model("PartyCountry", partyCountrySchema);
+
+  const partyStateSchema = new mongoose.Schema(
+    {
+      company_id: { type: mongoose.Schema.Types.ObjectId, ref: "CompanyInfo", index: true },
+      name: { type: String, required: true, trim: true, index: true },
+      country: { type: mongoose.Schema.Types.ObjectId, ref: "PartyCountry", required: true, index: true },
+      description: { type: String, trim: true },
+      is_active: { type: Boolean, default: true, index: true },
+      deletedAt: { type: Date, default: null, index: true },
+      created_by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    },
+    { timestamps: true }
+  );
+  partyStateSchema.index({ name: 1, country: 1 }, { unique: true });
+  partyStateSchema.plugin(softDeletePlugin);
+  mongoose.model("PartyState", partyStateSchema);
+
+  const partyCitySchema = new mongoose.Schema(
+    {
+      company_id: { type: mongoose.Schema.Types.ObjectId, ref: "CompanyInfo", index: true },
+      name: { type: String, required: true, trim: true, index: true },
+      state: { type: mongoose.Schema.Types.ObjectId, ref: "PartyState", required: true, index: true },
+      description: { type: String, trim: true },
+      is_active: { type: Boolean, default: true, index: true },
+      deletedAt: { type: Date, default: null, index: true },
+      created_by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    },
+    { timestamps: true }
+  );
+  partyCitySchema.index({ name: 1, state: 1 }, { unique: true });
+  partyCitySchema.plugin(softDeletePlugin);
+  mongoose.model("PartyCity", partyCitySchema);
+
   // --- Schemas from ProductSubgroup.js ---
   const productSubgroupSchema = new mongoose.Schema(
     {
@@ -585,6 +644,10 @@ function registerModels() {
       shipping_address: partyAddressSchema,
       district: { type: String, trim: true },
       state: { type: String, trim: true },
+      country_id: { type: mongoose.Schema.Types.ObjectId, ref: "PartyCountry", index: true },
+      state_id: { type: mongoose.Schema.Types.ObjectId, ref: "PartyState", index: true },
+      city_id: { type: mongoose.Schema.Types.ObjectId, ref: "PartyCity", index: true },
+      zone_id: { type: mongoose.Schema.Types.ObjectId, ref: "Zone", index: true },
       payment_terms: { type: String, trim: true },
       legacy_customer: { type: mongoose.Schema.Types.ObjectId, ref: "Customer", unique: true, sparse: true },
       is_active: { type: Boolean, default: true },
@@ -2455,6 +2518,8 @@ function registerModels() {
       lr_number: { type: String, trim: true },
       invoice_number: { type: String, trim: true },
       packages: { type: Number, min: 0 },
+      packed_boxes: { type: Number, min: 0 },
+      open_boxes: { type: Number, min: 0 },
       weight: { type: Number, min: 0 },
       status: {
         type: String,
@@ -2825,6 +2890,9 @@ function registerModels() {
       mongoose.models.ProductKitItem || mongoose.model('ProductKitItem', productKitItemSchema),
     ProductGroup: mongoose.models.ProductGroup || mongoose.model('ProductGroup', productGroupSchema),
     Zone: mongoose.models.Zone || mongoose.model('Zone', zoneSchema),
+    PartyCountry: mongoose.models.PartyCountry || mongoose.model('PartyCountry', partyCountrySchema),
+    PartyState: mongoose.models.PartyState || mongoose.model('PartyState', partyStateSchema),
+    PartyCity: mongoose.models.PartyCity || mongoose.model('PartyCity', partyCitySchema),
     ProductSubgroup: mongoose.models.ProductSubgroup || mongoose.model('ProductSubgroup', productSubgroupSchema),
     ProductBrand: mongoose.models.ProductBrand || mongoose.model('ProductBrand', productBrandSchema),
     ProductManufacturer:

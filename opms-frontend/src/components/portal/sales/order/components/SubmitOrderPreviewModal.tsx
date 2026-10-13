@@ -4,12 +4,12 @@ import { useMemo } from "react";
 import {
   largeModalBackdropClass,
   largeModalPanelClass,
-} from "@/components/portal/shared/modalLayout";
-import { LargeModalPortal } from "@/components/portal/shared/LargeModalPortal";
+} from "@/components/portal/shared/ui/modals/modalLayout";
+import { LargeModalPortal } from "@/components/portal/shared/ui/modals/LargeModalPortal";
 import {
   WorkflowEmailControls,
   type WorkflowEmailOptions,
-} from "@/components/portal/shared/WorkflowEmailControls";
+} from "@/components/portal/shared/orders/modals/WorkflowEmailControls";
 
 type SubmitIssue = {
   kind: "submit" | "approval";

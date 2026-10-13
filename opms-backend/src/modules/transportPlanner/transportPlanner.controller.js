@@ -22,6 +22,13 @@ exports.get = asyncHandler(async (req, res) => {
   res.json({ success: true, data: await service.get(req.params.id, req.user) });
 });
 
+exports.previewOrderLogistics = asyncHandler(async (req, res) => {
+  res.json({
+    success: true,
+    data: await service.previewOrderLogistics(req.query, req.user),
+  });
+});
+
 exports.create = asyncHandler(async (req, res) => {
   validation.assertCreate(req.body || {});
   res.status(201).json({ success: true, data: await service.create(req.body, req.user) });

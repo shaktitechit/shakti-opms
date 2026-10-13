@@ -2,6 +2,7 @@
  * @fileoverview Transport Planner: business rules and mongoose persistence.
  * @module modules/transportPlanner/transportPlanner.service
  */
+const mongoose = require('mongoose');
 const { getModels } = require('../../data/mongoRegistry');
 const { toPlain } = require('../../utils/mongoJson');
 const { ApiError } = require('../../utils/ApiError');
@@ -24,6 +25,12 @@ const {
   enrichOrdersWithApprovalPending,
   enrichOrdersWithDueSheetStatus,
 } = require('../orders/orderApprovalPending.util');
+const {
+  buildPlanOrderDocuments,
+  computePlanOrderLogistics,
+  loadDispatchesByOrderIds,
+} = require('./planOrderLogistics');
+const orderService = require('../orders/order.service');
 
 function userId(user) {
   return user?._id || user?.id;
@@ -606,6 +613,39 @@ async function get(id, _user) {
   return getWithOrders(id);
 }
 
+async function previewOrderLogistics(query, user) {
+  const orderId = query?.order_id;
+  if (!orderId) throw new ApiError(400, 'order_id is required');
+  if (!mongoose.Types.ObjectId.isValid(String(orderId))) {
+    throw new ApiError(400, 'Invalid order_id');
+  }
+
+  const order = await orderService.getById(String(orderId), user);
+
+  let dispatch = null;
+  const dispatchId = query?.dispatch_id;
+  if (dispatchId) {
+    if (!mongoose.Types.ObjectId.isValid(String(dispatchId))) {
+      throw new ApiError(400, 'Invalid dispatch_id');
+    }
+    const { OrderDispatch } = getModels();
+    dispatch = await OrderDispatch.findOne({
+      _id: dispatchId,
+      order: orderId,
+      deletedAt: null,
+    }).lean();
+    if (!dispatch) throw new ApiError(404, 'Dispatch not found for this order');
+  }
+
+  let dispatches = [];
+  if (!dispatch) {
+    const byOrder = await loadDispatchesByOrderIds([orderId]);
+    dispatches = byOrder.get(String(orderId)) || [];
+  }
+
+  return computePlanOrderLogistics({ order, dispatch, dispatches });
+}
+
 async function create(body, user) {
   assertCanPlan(user);
   await ensureTransportAgentActive(body.transport_agent);
@@ -626,21 +666,18 @@ async function create(body, user) {
     const { orderMap, dispatchMap } = await assertDispatchItemsEligible(body.items, {
       excludePlanId: doc._id,
     });
-    await TransportPlanOrder.insertMany(
-      body.items.map((item) => {
-        const order = orderMap.get(String(item.order_id));
-        const dispatch = item.dispatch_id ? dispatchMap.get(String(item.dispatch_id)) : null;
-        return {
-          transport_plan: doc._id,
-          order: order._id,
-          party: order.party || undefined,
-          customer: order.customer || undefined,
-          dispatch: dispatch ? dispatch._id : undefined,
-          invoice_number: dispatch ? (dispatch.bill_number || undefined) : undefined,
-          status: 'pending',
-        };
-      })
+    const orderIdsForLogistics = [
+      ...new Set(body.items.filter((i) => !i.dispatch_id).map((i) => i.order_id)),
+    ];
+    const orderDispatchesByOrder = await loadDispatchesByOrderIds(orderIdsForLogistics);
+    const planOrderDocs = await buildPlanOrderDocuments(
+      body.items,
+      orderMap,
+      dispatchMap,
+      doc._id,
+      orderDispatchesByOrder
     );
+    await TransportPlanOrder.insertMany(planOrderDocs);
     await maybePromoteToPlanned(doc._id, user);
   }
 
@@ -860,21 +897,18 @@ async function addOrders(planId, body, user) {
     throw new ApiError(400, 'One or more items are already on this plan');
   }
 
-  await TransportPlanOrder.insertMany(
-    body.items.map((item) => {
-      const order = orderMap.get(String(item.order_id));
-      const dispatch = item.dispatch_id ? dispatchMap.get(String(item.dispatch_id)) : null;
-      return {
-        transport_plan: planId,
-        order: order._id,
-        party: order.party || undefined,
-        customer: order.customer || undefined,
-        dispatch: dispatch ? dispatch._id : undefined,
-        invoice_number: dispatch ? (dispatch.bill_number || undefined) : undefined,
-        status: 'pending',
-      };
-    })
+  const orderIdsForLogistics = [
+    ...new Set(body.items.filter((i) => !i.dispatch_id).map((i) => i.order_id)),
+  ];
+  const orderDispatchesByOrder = await loadDispatchesByOrderIds(orderIdsForLogistics);
+  const planOrderDocs = await buildPlanOrderDocuments(
+    body.items,
+    orderMap,
+    dispatchMap,
+    planId,
+    orderDispatchesByOrder
   );
+  await TransportPlanOrder.insertMany(planOrderDocs);
 
   plan.updated_by = userId(user);
   await plan.save();
@@ -1018,6 +1052,8 @@ async function updateDispatchDetails(planId, planOrderId, body, user) {
   if (body.lr_number !== undefined) line.lr_number = body.lr_number;
   if (body.invoice_number !== undefined) line.invoice_number = body.invoice_number;
   if (body.packages !== undefined) line.packages = Number(body.packages);
+  if (body.packed_boxes !== undefined) line.packed_boxes = Number(body.packed_boxes);
+  if (body.open_boxes !== undefined) line.open_boxes = Number(body.open_boxes);
   if (body.weight !== undefined) line.weight = Number(body.weight);
   if (body.dispatch !== undefined) line.dispatch = body.dispatch;
   if (body.dispatch_date !== undefined) {
@@ -1498,6 +1534,7 @@ async function stats(query = {}, _user) {
 module.exports = {
   list,
   get,
+  previewOrderLogistics,
   create,
   update,
   remove,

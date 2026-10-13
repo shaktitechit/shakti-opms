@@ -5,10 +5,10 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useMemo, useState } from "react";
 import { CalendarDays, Download, ExternalLink, Plus, RefreshCw, Trash2 } from "lucide-react";
 
-import { PortalBusyOverlay } from "@/components/portal/shared/PortalBusyOverlay";
-import { ListEntitySearchPanel } from "@/components/portal/shared/orderList/ListEntitySearchPanel";
-import { OrderListPaginationBar } from "@/components/portal/shared/orderList/OrderListPaginationBar";
-import { OrderListBottomTabStrip } from "@/components/portal/shared/orderList/OrderListBottomTabStrip";
+import { PortalBusyOverlay } from "@/components/portal/shared/shell/PortalBusyOverlay";
+import { ListEntitySearchPanel } from "@/components/portal/shared/orders/list/ListEntitySearchPanel";
+import { OrderListPaginationBar } from "@/components/portal/shared/orders/list/OrderListPaginationBar";
+import { OrderListBottomTabStrip } from "@/components/portal/shared/orders/list/OrderListBottomTabStrip";
 import { mutationRejectedMessage } from "@/lib/mutationMessages";
 import { toast } from "@/lib/toast";
 import {

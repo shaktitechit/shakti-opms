@@ -41,6 +41,10 @@ const unbilledOrderItemSchema = new mongoose.Schema(
       default: "",
     },
 
+    product_group: { type: String, trim: true, default: "" },
+    product_subgroup: { type: String, trim: true, default: "" },
+    product_group_id: { type: String, trim: true, default: "" },
+
     /** Account/finance-cleared approved qty on the order line. */
     approved_quantity: {
       type: Number,

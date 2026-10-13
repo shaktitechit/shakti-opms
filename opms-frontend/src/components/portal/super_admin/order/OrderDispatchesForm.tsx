@@ -15,8 +15,8 @@ import {
   resolveOrderItemIdForLine,
   summarizeReleaseDispatchState,
   type AccountDispatchPreviewRow,
-} from "@/components/portal/shared/orderDetail/accountDispatchAvailability";
-import { isKitShellDispatchSource } from "@/components/portal/shared/orderDetail/dispatchKitDisplay";
+} from "@/components/portal/shared/orders/detail/accountDispatchAvailability";
+import { isKitShellDispatchSource } from "@/components/portal/shared/orders/detail/dispatchKitDisplay";
 import {
   NamedOption,
   refId,

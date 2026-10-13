@@ -4,7 +4,7 @@ import {
   MapOrderLinePriceModal,
   type MapOrderLinePriceSuccess,
   type MapOrderLinePriceTarget,
-} from "@/components/portal/shared/MapOrderLinePriceModal";
+} from "@/components/portal/shared/orders/modals/MapOrderLinePriceModal";
 import {
   useCheckOrderRatesQuery,
   usePatchOrderMutation,

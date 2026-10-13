@@ -5,7 +5,7 @@ import {
   MONTH_OPTIONS,
   formatMultiSelectLabel,
 } from "./periodFilterUtils";
-import { DATE_FILTER_OPTIONS } from "../orderList/orderListDateFilter";
+import { DATE_FILTER_OPTIONS } from "../orders/list/orderListDateFilter";
 
 import type { DashboardDataType } from "./periodFilterUtils";
 

@@ -7,7 +7,7 @@ import type { FormEvent } from "react";
 import {
   WorkflowEmailControls,
   type WorkflowEmailOptions,
-} from "@/components/portal/shared/WorkflowEmailControls";
+} from "@/components/portal/shared/orders/modals/WorkflowEmailControls";
 import {
   ShoppingCart,
   Search,
@@ -27,23 +27,23 @@ import {
   mutationRejectedMessage,
 } from "@/lib/mutationMessages";
 import { toast } from "@/lib/toast";
-import { ModalOverlay } from "@/components/portal/shared/ModalOverlay";
+import { ModalOverlay } from "@/components/portal/shared/ui/modals/ModalOverlay";
 import {
   MapOrderLinePriceModal,
   type MapOrderLinePriceSuccess,
   type MapOrderLinePriceTarget,
-} from "@/components/portal/shared/MapOrderLinePriceModal";
+} from "@/components/portal/shared/orders/modals/MapOrderLinePriceModal";
 import {
   PreviousPartyItemsModal,
   type PreviousPartyOrderItem,
-} from "@/components/portal/shared/PreviousPartyItemsModal";
+} from "@/components/portal/shared/orders/modals/PreviousPartyItemsModal";
 import { Button } from "@/components/ui/Button";
 import {
   LineRateStatusBadge,
   rateLookupKey,
   resolveLineUnitPrice,
   resolveRateDisplayStatus,
-} from "@/components/portal/shared/orderLineRateDisplay";
+} from "@/components/portal/shared/orders/lib/orderLineRateDisplay";
 import {
   useCheckPartyLineRatesQuery,
   useCreateOrderMutation,

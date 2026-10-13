@@ -1,1 +1,1 @@
-export * from "@/components/portal/shared/orderDetail/accountDispatchAvailability";
+export * from "@/components/portal/shared/orders/detail/accountDispatchAvailability";

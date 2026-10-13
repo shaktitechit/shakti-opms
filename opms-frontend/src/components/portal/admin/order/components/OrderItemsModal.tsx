@@ -1,6 +1,6 @@
 "use client";
 
-import { LargeModalPortal } from "@/components/portal/shared/LargeModalPortal";
+import { LargeModalPortal } from "@/components/portal/shared/ui/modals/LargeModalPortal";
 import { OrderTab } from "./OrderTab";
 
 interface OrderItemsModalProps {

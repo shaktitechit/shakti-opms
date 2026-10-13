@@ -1,4 +1,4 @@
-import { deriveOrderWorkflowStatus } from "@/components/portal/shared/orderLifecycle";
+import { deriveOrderWorkflowStatus } from "@/components/portal/shared/orders/lib/orderLifecycle";
 import {
   isDueSheetPending,
   isOrderClosedOrDelivered,
@@ -19,7 +19,7 @@ import {
   ORDER_WORKFLOW_TABS,
   computeOrderWorkflowTabStats,
   createEmptyOrderWorkflowTabStats,
-} from "@/components/portal/shared/orderList/orderWorkflowTabs";
+} from "@/components/portal/shared/orders/list/orderWorkflowTabs";
 import { isReturnPending } from "@/constants/orderReturnStatus";
 
 function refId(value: unknown): string {
@@ -35,7 +35,7 @@ function refId(value: unknown): string {
 export { pendingApprovalStageLabel };
 export type { ApprovalPendingStage };
 /** Compatibility re-export — unbilled orders live outside workflow tabs. */
-export { isUnbilledOrder } from "@/components/portal/shared/orderList/unbilledOrders";
+export { isUnbilledOrder } from "@/components/portal/shared/orders/list/unbilledOrders";
 
 export type AccountOrderTabCategory = OrderWorkflowTabCategory;
 

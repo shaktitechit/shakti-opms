@@ -1,1 +1,1 @@
-export { CreateTransportModal } from "@/components/portal/shared/orderDetail/modals/CreateTransportModal";
+export { CreateTransportModal } from "@/components/portal/shared/orders/detail/modals/CreateTransportModal";

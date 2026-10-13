@@ -17,14 +17,14 @@ import {
   renderPriorityBadge,
   renderWorkflowStatusBadge,
   type OrderListRow,
-} from "@/components/portal/shared/orderList/orderListDisplay";
-import { getOrderWorkflowTabCategory } from "@/components/portal/shared/orderList/orderWorkflowTabs";
-import { useOrderWorkflowCategoryOptions } from "@/components/portal/shared/orderList/useOrderWorkflowCategoryOptions";
-import { pickOrders } from "@/components/portal/shared/pickOrders";
+} from "@/components/portal/shared/orders/list/orderListDisplay";
+import { getOrderWorkflowTabCategory } from "@/components/portal/shared/orders/list/orderWorkflowTabs";
+import { useOrderWorkflowCategoryOptions } from "@/components/portal/shared/orders/list/useOrderWorkflowCategoryOptions";
+import { pickOrders } from "@/components/portal/shared/lib/pickOrders";
 import {
   buildUserNameById,
   resolveUserDisplay,
-} from "@/components/portal/shared/userDisplay";
+} from "@/components/portal/shared/lib/userDisplay";
 import { toast } from "@/lib/toast";
 import {
   useLazyListOrdersQuery,

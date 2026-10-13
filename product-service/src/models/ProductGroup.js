@@ -28,6 +28,11 @@ const productGroupSchema = new mongoose.Schema(
       default: false,
       index: true,
     },
+    show_in_unbilled_order_list: {
+      type: Boolean,
+      default: true,
+      index: true,
+    },
     deletedAt: {
       type: Date,
       default: null,

@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { Users, X } from "lucide-react";
-import { LargeModalBackdrop } from "@/components/portal/shared/LargeModalBackdrop";
-import { largeModalPanelClass } from "@/components/portal/shared/modalLayout";
+import { LargeModalBackdrop } from "@/components/portal/shared/ui/modals/LargeModalBackdrop";
+import { largeModalPanelClass } from "@/components/portal/shared/ui/modals/modalLayout";
 import { resolveOrderCounterparty } from "@/components/portal/sales/partyDisplay";
 import PeriodFilter from "./PeriodFilter";
 import { usePeriodFilter } from "./usePeriodFilter";

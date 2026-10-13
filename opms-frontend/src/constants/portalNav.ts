@@ -2,7 +2,7 @@ import {
   ORDER_MASTER_NAV_CHILDREN_BY_PORTAL,
   resolveOrderStageLabel,
   type OrderMasterPortalKey,
-} from "@/components/portal/shared/orderList/orderMasterNav";
+} from "@/components/portal/shared/orders/list/orderMasterNav";
 
 /**
  * Role portal navigation — paths are `/portal` plus optional segments (`/sales/my-orders`).
@@ -57,6 +57,9 @@ export const PORTAL_NAV: Record<PortalKey, readonly PortalNavLeaf[]> = {
       children: [
         { label: "Master Party List", query: "view=parties", icon: "Users" },
         { label: "Zone Management List", query: "view=zones", icon: "Map" },
+        { label: "Country List", query: "view=countries", icon: "Landmark" },
+        { label: "State List", query: "view=states", icon: "MapPin" },
+        { label: "City List", query: "view=cities", icon: "Building2" },
       ],
     },
     {
@@ -103,6 +106,9 @@ export const PORTAL_NAV: Record<PortalKey, readonly PortalNavLeaf[]> = {
       children: [
         { label: "Master Party List", query: "view=parties", icon: "Users" },
         { label: "Zone Management List", query: "view=zones", icon: "Map" },
+        { label: "Country List", query: "view=countries", icon: "Landmark" },
+        { label: "State List", query: "view=states", icon: "MapPin" },
+        { label: "City List", query: "view=cities", icon: "Building2" },
       ],
     },
     {
@@ -137,6 +143,9 @@ export const PORTAL_NAV: Record<PortalKey, readonly PortalNavLeaf[]> = {
       children: [
         { label: "Master Party List", query: "view=parties", icon: "Users" },
         { label: "Zone Management List", query: "view=zones", icon: "Map" },
+        { label: "Country List", query: "view=countries", icon: "Landmark" },
+        { label: "State List", query: "view=states", icon: "MapPin" },
+        { label: "City List", query: "view=cities", icon: "Building2" },
       ],
     },
     {
@@ -183,6 +192,9 @@ export const PORTAL_NAV: Record<PortalKey, readonly PortalNavLeaf[]> = {
       children: [
         { label: "Master Party List", query: "view=parties", icon: "Users" },
         { label: "Zone Management List", query: "view=zones", icon: "Map" },
+        { label: "Country List", query: "view=countries", icon: "Landmark" },
+        { label: "State List", query: "view=states", icon: "MapPin" },
+        { label: "City List", query: "view=cities", icon: "Building2" },
       ],
     },
     {

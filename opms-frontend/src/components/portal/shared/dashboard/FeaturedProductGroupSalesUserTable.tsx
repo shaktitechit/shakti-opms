@@ -3,7 +3,7 @@
 import { Fragment, useMemo, useState } from "react";
 import { LayoutGrid, ChevronRight, ChevronDown } from "lucide-react";
 import { useListUsersQuery } from "@/store/api";
-import { buildUserNameById, pickUsersList } from "@/components/portal/shared/userDisplay";
+import { buildUserNameById, pickUsersList } from "@/components/portal/shared/lib/userDisplay";
 import FeaturedMatrixTableFrame from "./FeaturedMatrixTableFrame";
 import { usePeriodFilter } from "./usePeriodFilter";
 import {

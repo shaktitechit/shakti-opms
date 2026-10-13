@@ -1,11 +1,11 @@
 export {
   PortalAuthGate,
   PortalSectionPlaceholder,
-} from "./shared/PortalAuthGate";
+} from "./shared/shell/PortalAuthGate";
 
-export { PortalFullScreenLoader } from "./shared/PortalFullScreenLoader";
-export { PortalBusyOverlay, usePortalBusy } from "./shared/PortalBusyOverlay";
-export { PortalMutationOverlay } from "./shared/PortalMutationOverlay";
+export { PortalFullScreenLoader } from "./shared/shell/PortalFullScreenLoader";
+export { PortalBusyOverlay, usePortalBusy } from "./shared/shell/PortalBusyOverlay";
+export { PortalMutationOverlay } from "./shared/shell/PortalMutationOverlay";
 
 export { default as PortalOverview } from "./PortalOverview";
 
@@ -14,21 +14,24 @@ export { PORTAL_OVERVIEW_BY_KEY } from "./portalOverviewRegistry";
 export { default as AdminOverview } from "./admin/AdminOverview";
 export { default as ListAdminOrdersPage } from "./admin/order/ListAdminOrdersPage";
 export { default as AdminCreateOrderPage } from "./admin/AdminCreateOrderPage";
-export { default as ListPartiesPage } from "./shared/ListPartiesPage";
-export { default as ListZonePartiesPage } from "./shared/ListZonePartiesPage";
-export { default as ZonePartiesPage } from "./shared/ZonePartiesPage";
-export { default as ZoneDetailModal } from "./shared/ZoneDetailModal";
-export { default as ListProductsPage } from "./shared/ListProductsPage";
-export { default as ListProductGroupsPage } from "./shared/ListProductGroupsPage";
-export { default as ListProductSubgroupsPage } from "./shared/ListProductSubgroupsPage";
-export { default as ListProductBrandsPage } from "./shared/ListProductBrandsPage";
-export { default as ListProductManufacturersPage } from "./shared/ListProductManufacturersPage";
-export { default as GroupProductsPage } from "./shared/GroupProductsPage";
-export { default as SubgroupProductsPage } from "./shared/SubgroupProductsPage";
-export { default as BrandProductsPage } from "./shared/BrandProductsPage";
-export { default as ManufacturerProductsPage } from "./shared/ManufacturerProductsPage";
-export { default as PartyDetailPage } from "./shared/PartyDetailPage";
-export { default as ProductDetailPage } from "./shared/ProductDetailPage";
+export { default as ListPartiesPage } from "./shared/parties/pages/ListPartiesPage";
+export { default as ListZonePartiesPage } from "./shared/parties/pages/ListZonePartiesPage";
+export { default as ZonePartiesPage } from "./shared/parties/pages/ZonePartiesPage";
+export { default as ZoneDetailModal } from "./shared/parties/modals/ZoneDetailModal";
+export { default as ListPartyCountriesPage } from "./shared/parties/pages/ListPartyCountriesPage";
+export { default as ListPartyStatesPage } from "./shared/parties/pages/ListPartyStatesPage";
+export { default as ListPartyCitiesPage } from "./shared/parties/pages/ListPartyCitiesPage";
+export { default as ListProductsPage } from "./shared/products/pages/ListProductsPage";
+export { default as ListProductGroupsPage } from "./shared/products/pages/ListProductGroupsPage";
+export { default as ListProductSubgroupsPage } from "./shared/products/pages/ListProductSubgroupsPage";
+export { default as ListProductBrandsPage } from "./shared/products/pages/ListProductBrandsPage";
+export { default as ListProductManufacturersPage } from "./shared/products/pages/ListProductManufacturersPage";
+export { default as GroupProductsPage } from "./shared/products/pages/GroupProductsPage";
+export { default as SubgroupProductsPage } from "./shared/products/pages/SubgroupProductsPage";
+export { default as BrandProductsPage } from "./shared/products/pages/BrandProductsPage";
+export { default as ManufacturerProductsPage } from "./shared/products/pages/ManufacturerProductsPage";
+export { default as PartyDetailPage } from "./shared/parties/pages/PartyDetailPage";
+export { default as ProductDetailPage } from "./shared/products/pages/ProductDetailPage";
 export { default as SalesOverview } from "./sales/SalesOverview";
 export { default as SalesCreateOrderPage } from "./sales/CreateOrderPage";
 export { default as ListMyOrdersPage } from "./sales/ListMyOrdersPage";
@@ -51,12 +54,12 @@ export { default as AccountCreateOrderPage } from "./account/AccountCreateOrderP
 
 export { default as DispatchOverview } from "./dispatch/DispatchOverview";
 export { default as ListDispatchOrdersPage } from "./dispatch/order/ListDispatchOrdersPage";
-export { default as ListDriversPage } from "./shared/ListDriversPage";
-export { default as ListVehiclesPage } from "./shared/ListVehiclesPage";
-export { default as DriverDetailPage } from "./shared/DriverDetailPage";
-export { default as VehicleDetailPage } from "./shared/VehicleDetailPage";
-export { default as ListTransportAgentsPage } from "./shared/ListTransportAgentsPage";
-export { default as TransportAgentDetailPage } from "./shared/TransportAgentDetailPage";
+export { default as ListDriversPage } from "./shared/fleet/pages/ListDriversPage";
+export { default as ListVehiclesPage } from "./shared/fleet/pages/ListVehiclesPage";
+export { default as DriverDetailPage } from "./shared/fleet/pages/DriverDetailPage";
+export { default as VehicleDetailPage } from "./shared/fleet/pages/VehicleDetailPage";
+export { default as ListTransportAgentsPage } from "./shared/fleet/pages/ListTransportAgentsPage";
+export { default as TransportAgentDetailPage } from "./shared/fleet/pages/TransportAgentDetailPage";
 
 // Super Admin portal pages
 export { default as SuperAdminOverview } from "./super_admin/SuperAdminOverview";
@@ -65,10 +68,10 @@ export { default as ListSuperAdminOrdersPage } from "./super_admin/order/ListSup
 export { default as SuperAdminOrderDetail } from "./super_admin/order/SuperAdminOrderDetail";
 export { default as SuperAdminCreateOrderPage } from "./super_admin/SuperAdminCreateOrderPage";
 
-export { default as ProfilePage } from "./shared/ProfilePage";
-export { default as PortalOverviewShell } from "./shared/PortalOverviewShell";
-export { usePortalDashboardKpi } from "./shared/usePortalDashboardKpi";
-export { pickOrders } from "./shared/pickOrders";
+export { default as ProfilePage } from "./shared/profile/ProfilePage";
+export { default as PortalOverviewShell } from "./shared/shell/PortalOverviewShell";
+export { usePortalDashboardKpi } from "./shared/hooks/usePortalDashboardKpi";
+export { pickOrders } from "./shared/lib/pickOrders";
 
 /** @deprecated Prefer importing {@link DashboardShell} from `@/components/shell`. */
 export { DashboardShell, PortalShell } from "@/components/shell";

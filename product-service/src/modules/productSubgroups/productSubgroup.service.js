@@ -73,6 +73,7 @@ async function create(body, user) {
     description: body.description ? String(body.description).trim() : undefined,
     is_active: body.is_active !== false,
     is_featured: !!body.is_featured,
+    show_in_unbilled_order_list: body.show_in_unbilled_order_list !== false,
     created_by: user?._id,
   });
 
@@ -123,6 +124,9 @@ async function update(id, body, user) {
   }
   if (body.is_featured !== undefined) {
     doc.is_featured = !!body.is_featured;
+  }
+  if (body.show_in_unbilled_order_list !== undefined) {
+    doc.show_in_unbilled_order_list = body.show_in_unbilled_order_list !== false;
   }
   doc.updated_by = user?._id;
 

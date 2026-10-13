@@ -6,9 +6,9 @@ import { Download, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useAppSelector } from "@/store/hooks";
 import { buildTransportPlansPdf } from "./buildTransportPlansPdf";
-import { usePdfCompanyLetterhead } from "@/components/portal/shared/pdfCompanyLetterhead";
-import { LargeModalPortal } from "@/components/portal/shared/LargeModalPortal";
-import { PortalBusyOverlay } from "@/components/portal/shared/PortalBusyOverlay";
+import { usePdfCompanyLetterhead } from "@/components/portal/shared/pdf/templates/pdfCompanyLetterhead";
+import { LargeModalPortal } from "@/components/portal/shared/ui/modals/LargeModalPortal";
+import { PortalBusyOverlay } from "@/components/portal/shared/shell/PortalBusyOverlay";
 import { toast } from "@/lib/toast";
 import {
   useLazyGetTransportPlanQuery,

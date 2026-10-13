@@ -156,6 +156,18 @@ const productSchema = new mongoose.Schema(
       min: 0,
     },
 
+    /** Net weight of one sale unit (kg). Used for transport planning. */
+    unit_weight_kg: {
+      type: Number,
+      min: 0,
+    },
+
+    /** Sale units per packed box. Used for transport package counts. */
+    units_per_box: {
+      type: Number,
+      min: 1,
+    },
+
     /* -------------------------------------------------------
      * META
      * ----------------------------------------------------- */
@@ -190,6 +202,13 @@ const productSchema = new mongoose.Schema(
     is_featured: {
       type: Boolean,
       default: false,
+      index: true,
+    },
+
+    /** null = inherit subgroup → group; explicit boolean overrides. */
+    show_in_unbilled_order_list: {
+      type: Boolean,
+      default: null,
       index: true,
     },
 

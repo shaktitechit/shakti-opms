@@ -118,6 +118,18 @@ function assertDispatchDetails(body) {
       throw new ApiError(400, 'packages must be a non-negative number');
     }
   }
+  if (body.packed_boxes !== undefined && body.packed_boxes !== null) {
+    const n = Number(body.packed_boxes);
+    if (!Number.isFinite(n) || n < 0) {
+      throw new ApiError(400, 'packed_boxes must be a non-negative number');
+    }
+  }
+  if (body.open_boxes !== undefined && body.open_boxes !== null) {
+    const n = Number(body.open_boxes);
+    if (!Number.isFinite(n) || n < 0) {
+      throw new ApiError(400, 'open_boxes must be a non-negative number');
+    }
+  }
   if (body.weight !== undefined && body.weight !== null) {
     const n = Number(body.weight);
     if (!Number.isFinite(n) || n < 0) {

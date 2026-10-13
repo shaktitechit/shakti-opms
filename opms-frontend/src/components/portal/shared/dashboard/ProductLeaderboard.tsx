@@ -2,8 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { Package, X } from "lucide-react";
-import { LargeModalBackdrop } from "@/components/portal/shared/LargeModalBackdrop";
-import { largeModalPanelClass } from "@/components/portal/shared/modalLayout";
+import { LargeModalBackdrop } from "@/components/portal/shared/ui/modals/LargeModalBackdrop";
+import { largeModalPanelClass } from "@/components/portal/shared/ui/modals/modalLayout";
 import PeriodFilter from "./PeriodFilter";
 import { usePeriodFilter } from "./usePeriodFilter";
 import PeriodHeadingCaption from "./PeriodHeadingCaption";
@@ -32,7 +32,7 @@ import {
   formatMetricValue,
   roundToTwo,
 } from "./leaderboardUtils";
-import { isKitShellOrderLine } from "@/components/portal/shared/orderLineQuantities";
+import { isKitShellOrderLine } from "@/components/portal/shared/orders/lib/orderLineQuantities";
 
 function resolveProductName(item: any): string {
   return (

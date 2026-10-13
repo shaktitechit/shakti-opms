@@ -1,22 +1,22 @@
 import React, { useCallback, useMemo, useState } from "react";
 import { CheckCircle2, Download, Send } from "lucide-react";
 import { DashboardCard } from "@/components/widgets";
-import { resolveUserDisplay } from "@/components/portal/shared/userDisplay";
-import { LargeModalPortal } from "@/components/portal/shared/LargeModalPortal";
+import { resolveUserDisplay } from "@/components/portal/shared/lib/userDisplay";
+import { LargeModalPortal } from "@/components/portal/shared/ui/modals/LargeModalPortal";
 import { toast } from "@/lib/toast";
-import { type OrderItemsPdfLine } from "../../../shared/OrderItemsPdfTemplate";
-import { buildOrderItemsPdf } from "../../../shared/buildOrderItemsPdf";
-import { usePdfCompanyLetterhead } from "../../../shared/pdfCompanyLetterhead";
+import { type OrderItemsPdfLine } from "../../../shared/pdf/templates/OrderItemsPdfTemplate";
+import { buildOrderItemsPdf } from "../../../shared/pdf/builders/buildOrderItemsPdf";
+import { usePdfCompanyLetterhead } from "../../../shared/pdf/templates/pdfCompanyLetterhead";
 import {
   MapOrderLinePriceModal,
   type MapOrderLinePriceSuccess,
   type MapOrderLinePriceTarget,
-} from "@/components/portal/shared/MapOrderLinePriceModal";
+} from "@/components/portal/shared/orders/modals/MapOrderLinePriceModal";
 import {
   LineRateStatusBadge,
   rateLookupKey,
   resolveRateDisplayStatus,
-} from "@/components/portal/shared/orderLineRateDisplay";
+} from "@/components/portal/shared/orders/lib/orderLineRateDisplay";
 import {
   adminApprovalActionLabel,
   adminAmendmentNotes,
@@ -24,8 +24,8 @@ import {
   isAdminAmended,
   isAdminApprovalContinuation,
   pickLatestAdminSalesApproval,
-} from "@/components/portal/shared/orderAdminApprovalDisplay";
-import { lineApprovalQuantities } from "@/components/portal/shared/orderLineQuantities";
+} from "@/components/portal/shared/orders/lib/orderAdminApprovalDisplay";
+import { lineApprovalQuantities } from "@/components/portal/shared/orders/lib/orderLineQuantities";
 import {
   useCheckOrderRatesQuery,
   useGetOrderHistoryQuery,

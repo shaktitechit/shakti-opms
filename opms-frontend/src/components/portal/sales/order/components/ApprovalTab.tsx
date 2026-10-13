@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { CheckCircle2, XCircle, Clock, AlertCircle } from "lucide-react";
 import { useListOrderApprovalsQuery, useListUsersQuery } from "@/store/api";
-import { resolveUserDisplay } from "@/components/portal/shared/userDisplay";
+import { resolveUserDisplay } from "@/components/portal/shared/lib/userDisplay";
 import { DashboardCard } from "@/components/widgets";
 
 type ApprovalTabProps = {

@@ -9,7 +9,7 @@ import type { QtyBasis } from "./leaderboardUtils";
 import {
   dateFilterToRange,
   orderMatchesDateFilter,
-} from "../orderList/orderListDateFilter";
+} from "../orders/list/orderListDateFilter";
 
 function getCurrentPeriodDefaults() {
   const now = new Date();

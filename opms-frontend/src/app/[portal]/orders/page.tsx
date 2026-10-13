@@ -2,8 +2,8 @@
 
 import { useParams } from "next/navigation";
 
-import PortalOrdersRoute from "@/components/portal/shared/orderList/PortalOrdersRoute";
-import { portalHomeForPortal } from "@/components/portal/shared/orderList/orderMasterNav";
+import PortalOrdersRoute from "@/components/portal/shared/orders/list/PortalOrdersRoute";
+import { portalHomeForPortal } from "@/components/portal/shared/orders/list/orderMasterNav";
 import { isPortalKey } from "@/constants/portalNav";
 
 /** `/portal/orders` → default queue via {@link PortalOrdersRoute}. */

@@ -11,15 +11,15 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import OrderQuickAccess from "@/components/portal/shared/orderList/OrderQuickAccess";
-import type { OrderQuickAccessRole } from "@/components/portal/shared/orderList/orderQuickAccessConfig";
+import OrderQuickAccess from "@/components/portal/shared/orders/list/OrderQuickAccess";
+import type { OrderQuickAccessRole } from "@/components/portal/shared/orders/list/orderQuickAccessConfig";
 import {
   computeOrderWorkflowTabStats,
   type OrderWorkflowCategoryOptions,
   type OrderWorkflowTabCategory,
   type OrderWorkflowTabStat,
   type OrderWorkflowTabStats,
-} from "@/components/portal/shared/orderList/orderWorkflowTabs";
+} from "@/components/portal/shared/orders/list/orderWorkflowTabs";
 import PeriodHeadingCaption from "./PeriodHeadingCaption";
 import ReportDownloadButton from "./ReportDownloadButton";
 import { formatPeriodLabel } from "./periodFilterUtils";

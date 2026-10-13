@@ -1,4 +1,4 @@
 export {
   ReadonlyTransportsTab as TransportsTab,
   default,
-} from "@/components/portal/shared/orderDetail/tabs/ReadonlyTransportsTab";
+} from "@/components/portal/shared/orders/detail/tabs/ReadonlyTransportsTab";

@@ -1,1 +1,1 @@
-export { OrderDeliveryModal } from "@/components/portal/shared/orderDetail/modals/OrderDeliveryModal";
+export { OrderDeliveryModal } from "@/components/portal/shared/orders/detail/modals/OrderDeliveryModal";

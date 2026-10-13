@@ -83,7 +83,11 @@ export const ordersApi = medicaApi.injectEndpoints({
     }),
     getOrder: build.query<unknown, string>({
       query: (id) => `orders/${id}`,
-      transformResponse: (raw: ApiEnvelope<unknown>) => unwrapEnvelope(raw),
+      transformResponse: (raw: ApiEnvelope<unknown>) => {
+        const body = unwrapEnvelope(raw);
+        if (!body || typeof body !== "object" || Array.isArray(body)) return body;
+        return normalizeOrderBody(body as LooseRecord);
+      },
       providesTags: (_r, _e, id) => [{ type: "Order", id }],
     }),
     getOrderHistory: build.query<unknown, string>({

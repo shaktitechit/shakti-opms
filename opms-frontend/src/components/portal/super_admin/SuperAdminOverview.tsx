@@ -14,7 +14,7 @@ import {
   useGetTransportPlanStatsQuery,
   useGetCompanyDataQuery,
 } from "@/store/api";
-import { OverviewFlagsWidget } from "@/components/portal/shared/OverviewFlagsWidget";
+import { OverviewFlagsWidget } from "@/components/portal/shared/orders/components/OverviewFlagsWidget";
 import { useAppSelector } from "@/store/hooks";
 import {
   Building2,

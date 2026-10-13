@@ -1,4 +1,4 @@
-import { deriveOrderWorkflowStatus } from "@/components/portal/shared/orderLifecycle";
+import { deriveOrderWorkflowStatus } from "@/components/portal/shared/orders/lib/orderLifecycle";
 import {
   isDueSheetPending,
   isOrderClosed,
@@ -18,7 +18,7 @@ import {
   ORDER_WORKFLOW_TABS,
   computeOrderWorkflowTabStats,
   createEmptyOrderWorkflowTabStats,
-} from "@/components/portal/shared/orderList/orderWorkflowTabs";
+} from "@/components/portal/shared/orders/list/orderWorkflowTabs";
 import {
   buildPendingReturnOrderIds,
 } from "@/components/portal/account/accountOrderUtils";

@@ -24,6 +24,21 @@ const {
   TRACKABLE_PIPELINE_STAGES,
   normalizeUnbilledOrderStatus,
 } = require('./unbilledOrder.constants');
+const {
+  collectProductIdsFromOrder,
+  collectProductIdsFromItems,
+  loadUnbilledVisibilityMaps,
+  productVisibleForUnbilled,
+  collectProductIdsFromUnbilledRows,
+  collectLineKeysFromOrder,
+  collectLineKeysFromItems,
+  collectLineKeysFromUnbilledRows,
+  applyVisibilityToUnbilledRow,
+  unbilledRowVisibleAfterFilter,
+  snapshotFieldsForUnbilledLine,
+  resolveProductIdFromLine,
+  orderLineByItemId,
+} = require('./productUnbilledVisibility');
 
 const UNBILLED_NF = 'Unbilled order not found';
 
@@ -204,7 +219,7 @@ function lineApprovedQuantity(line) {
  * Approved vs submitted/transport_created dispatch qty.
  * Remaining = max(0, approved − dispatched) per line.
  */
-function computeApprovalDispatchGap(order, dispatches = []) {
+function computeApprovalDispatchGap(order, dispatches = [], visibilityMaps = null) {
   const dispatchedByLine = aggregateDispatchedByLine(dispatches);
   const items = [];
   let approvedTotal = 0;
@@ -214,6 +229,12 @@ function computeApprovalDispatchGap(order, dispatches = []) {
     const approved = lineApprovedQuantity(line);
     if (approved <= 0) continue;
 
+    const productId = resolveProductIdFromLine(line, line, visibilityMaps);
+    const productDoc = visibilityMaps?.productById?.get(String(productId));
+    if (visibilityMaps && !productVisibleForUnbilled(productId, visibilityMaps)) {
+      continue;
+    }
+
     const lineId = String(line._id || '');
     const dispatched = Math.min(approved, dispatchedByLine[lineId] || 0);
     const remaining = Math.max(0, approved - dispatched);
@@ -221,11 +242,13 @@ function computeApprovalDispatchGap(order, dispatches = []) {
     dispatchedTotal += dispatched;
 
     if (remaining <= 0) continue;
+    const groupSnap = snapshotFieldsForUnbilledLine(line, productDoc);
     items.push({
       order_item_id: line._id,
       product: line.product,
       product_name: line.product_name || '',
       sku: line.sku || '',
+      ...groupSnap,
       approved_quantity: approved,
       billed_dispatched_quantity: dispatched,
       remaining_quantity: remaining,
@@ -322,7 +345,16 @@ async function resolvePipelineStage(order, dispatches = [], models = getModels()
 
   // Membership is qty only: approved > submitted/transport_created dispatch.
   // Labels are Unbilled / Partially Billed — never Transport Pending.
-  const { dispatchedTotal, remainingTotal } = computeApprovalDispatchGap(order, dispatches);
+  const visibilityMaps = await loadUnbilledVisibilityMaps(
+    collectProductIdsFromOrder(order),
+    models,
+    collectLineKeysFromOrder(order),
+  );
+  const { dispatchedTotal, remainingTotal } = computeApprovalDispatchGap(
+    order,
+    dispatches,
+    visibilityMaps,
+  );
   if (remainingTotal <= 0) return PIPELINE_STAGE.RESOLVED;
   if (dispatchedTotal <= 0) return PIPELINE_STAGE.UNBILLED;
   return PIPELINE_STAGE.PARTIALLY_BILLED;
@@ -332,7 +364,7 @@ async function resolvePipelineStage(order, dispatches = [], models = getModels()
  * Build rollup + line snapshots. Returns null when not eligible.
  * Only unbilled / partially_billed (approved > dispatched).
  */
-function buildUnbilledSnapshot(order, dispatches = [], pipelineStage) {
+function buildUnbilledSnapshot(order, dispatches = [], pipelineStage, visibilityMaps = null) {
   if (!order || isExcludedFromUnbilled(order)) return null;
 
   const status = String(order.status || '').toLowerCase();
@@ -341,7 +373,7 @@ function buildUnbilledSnapshot(order, dispatches = [], pipelineStage) {
   if (!TRACKABLE_PIPELINE_STAGES.includes(pipelineStage)) return null;
 
   const { approvedTotal, dispatchedTotal, remainingTotal, items } =
-    computeApprovalDispatchGap(order, dispatches);
+    computeApprovalDispatchGap(order, dispatches, visibilityMaps);
   if (remainingTotal <= 0 || items.length === 0) return null;
 
   const billingStatus = String(order.billing_status || '').toLowerCase();
@@ -407,20 +439,61 @@ async function list(query = {}) {
   }
 
   const rows = await unbilledQuery().find(q).sort({ remaining_quantity: -1, updatedAt: -1 }).lean();
-  return rows.map(toPlain);
+  const { Order } = getModels();
+  for (const row of rows) {
+    const needsOrder =
+      !row.order
+      || typeof row.order !== 'object'
+      || !Array.isArray(row.order.order_items)
+      || row.order.order_items.length === 0;
+    if (!needsOrder) continue;
+    const orderId = refId(row.order);
+    if (!orderId) continue;
+    const order = await Order.findOne({ _id: orderId, deletedAt: null })
+      .select('order_items')
+      .lean();
+    if (order) row.order = order;
+  }
+
+  const visibilityMaps = await loadUnbilledVisibilityMaps(
+    collectProductIdsFromUnbilledRows(rows),
+    getModels(),
+    collectLineKeysFromUnbilledRows(rows),
+  );
+  return rows
+    .map((row) => applyVisibilityToUnbilledRow(row, visibilityMaps))
+    .filter(unbilledRowVisibleAfterFilter)
+    .map(toPlain);
 }
 
 async function get(id) {
   const row = await unbilledQuery().findOne({ _id: id, deletedAt: null }).lean();
   if (!row) throw new ApiError(404, UNBILLED_NF);
-  return toPlain(row);
+  const visibilityMaps = await loadUnbilledVisibilityMaps(
+    collectProductIdsFromItems(row.unbilled_items),
+    getModels(),
+    collectLineKeysFromItems(row.unbilled_items),
+  );
+  const filtered = applyVisibilityToUnbilledRow(row, visibilityMaps);
+  if (!unbilledRowVisibleAfterFilter(filtered)) {
+    throw new ApiError(404, UNBILLED_NF);
+  }
+  return toPlain(filtered);
 }
 
 async function getByOrder(orderId) {
   const row = await unbilledQuery()
     .findOne({ order: orderId, deletedAt: null })
     .lean();
-  return row ? toPlain(row) : null;
+  if (!row) return null;
+  const visibilityMaps = await loadUnbilledVisibilityMaps(
+    collectProductIdsFromItems(row.unbilled_items),
+    getModels(),
+    collectLineKeysFromItems(row.unbilled_items),
+  );
+  const filtered = applyVisibilityToUnbilledRow(row, visibilityMaps);
+  if (!unbilledRowVisibleAfterFilter(filtered)) return null;
+  return toPlain(filtered);
 }
 
 /**
@@ -432,19 +505,39 @@ async function applySettledRest(orderId, restItems = [], user = null, options = 
     throw new ApiError(400, 'Invalid order');
   }
 
+  const order = await Order.findOne({ _id: orderId, deletedAt: null }).lean();
+  const orderLineMap = orderLineByItemId(order);
+  const productIds = [
+    ...collectProductIdsFromItems(restItems),
+    ...collectProductIdsFromOrder(order),
+  ];
+  const visibilityMaps = await loadUnbilledVisibilityMaps(
+    productIds,
+    getModels(),
+    [
+      ...collectLineKeysFromItems(restItems),
+      ...collectLineKeysFromOrder(order),
+    ],
+  );
+
   const normalized = (restItems || [])
     .map((item) => {
       const remaining = Math.max(0, num(item.remaining_quantity ?? item.approved_quantity));
       if (remaining <= 0) return null;
       const lineId = item.order_item_id;
       if (!lineId) return null;
-      const productId = refId(item.product) || item.product;
+      const orderLine = orderLineMap.get(String(lineId));
+      const productId = resolveProductIdFromLine(item, orderLine, visibilityMaps);
       if (!productId) return null;
+      const productDoc = visibilityMaps.productById.get(String(productId));
+      if (!productVisibleForUnbilled(productId, visibilityMaps)) return null;
+      const groupSnap = snapshotFieldsForUnbilledLine(orderLine, productDoc);
       return {
         order_item_id: lineId,
         product: productId,
-        product_name: String(item.product_name || ''),
-        sku: String(item.sku || ''),
+        product_name: String(item.product_name || orderLine?.product_name || ''),
+        sku: String(item.sku || orderLine?.sku || ''),
+        ...groupSnap,
         approved_quantity: remaining,
         billed_dispatched_quantity: 0,
         remaining_quantity: remaining,
@@ -453,8 +546,6 @@ async function applySettledRest(orderId, restItems = [], user = null, options = 
     .filter(Boolean);
 
   if (normalized.length === 0) return getByOrder(orderId);
-
-  const order = await Order.findOne({ _id: orderId, deletedAt: null }).lean();
   if (!order) throw new ApiError(404, 'Order not found');
   if (isExcludedFromUnbilled(order)) return null;
 
@@ -561,22 +652,32 @@ async function create(body, user) {
 
   const models = getModels();
   const { order, dispatches } = await loadOrderAndDispatches(orderId);
+  const visibilityMaps = await loadUnbilledVisibilityMaps(
+    collectProductIdsFromOrder(order),
+    models,
+    collectLineKeysFromOrder(order),
+  );
   let pipelineStage = await resolvePipelineStage(order, dispatches, models);
   if (!TRACKABLE_PIPELINE_STAGES.includes(pipelineStage)) {
     pipelineStage = PIPELINE_STAGE.UNBILLED;
   }
-  let snapshot = buildUnbilledSnapshot(order, dispatches, pipelineStage);
+  let snapshot = buildUnbilledSnapshot(order, dispatches, pipelineStage, visibilityMaps);
   if (!snapshot) {
     // For manual creation of unbilled order, construct tracking from order items directly if order is active
     if (order && !isExcludedFromUnbilled(order) && String(order.status || '').toLowerCase() !== 'draft') {
       const items = (order.order_items || []).map((line) => {
         const qty = num(line.ordered_quantity ?? line.approved_quantity ?? line.quantity);
         if (qty <= 0) return null;
+        const productId = resolveProductIdFromLine(line, line, visibilityMaps);
+        const productDoc = visibilityMaps.productById.get(String(productId));
+        if (!productVisibleForUnbilled(productId, visibilityMaps)) return null;
+        const groupSnap = snapshotFieldsForUnbilledLine(line, productDoc);
         return {
           order_item_id: line._id,
           product: line.product,
           product_name: line.product_name || '',
           sku: line.sku || '',
+          ...groupSnap,
           approved_quantity: qty,
           billed_dispatched_quantity: 0,
           remaining_quantity: qty,
@@ -613,11 +714,19 @@ async function create(body, user) {
     for (const item of body.items) {
       const qty = num(item.quantity);
       if (qty <= 0) continue;
+      const orderLine = (order.order_items || []).find(
+        (line) => String(line._id || '') === String(item.order_item_id || ''),
+      );
+      const productId = resolveProductIdFromLine(item, orderLine, visibilityMaps);
+      const productDoc = productId ? visibilityMaps.productById.get(String(productId)) : null;
+      if (!productVisibleForUnbilled(productId, visibilityMaps)) continue;
+      const groupSnap = snapshotFieldsForUnbilledLine(orderLine, productDoc);
       customItems.push({
         order_item_id: item.order_item_id || item.productId || undefined,
         product: item.productId || item.product || undefined,
         product_name: item.productName || item.product_name || '',
         sku: item.sku || '',
+        ...groupSnap,
         approved_quantity: num(item.lastQuantity || item.approved_quantity || qty),
         billed_dispatched_quantity: 0,
         remaining_quantity: qty,
@@ -723,16 +832,36 @@ async function patch(id, body, user) {
   }
   if (Array.isArray(body.unbilled_items) || Array.isArray(body.items)) {
     const rawItems = Array.isArray(body.unbilled_items) ? body.unbilled_items : body.items;
+    const { Order } = getModels();
+    const order = doc.order
+      ? await Order.findOne({ _id: doc.order, deletedAt: null }).lean()
+      : null;
+    const orderLineMap = orderLineByItemId(order);
+    const visibilityMaps = await loadUnbilledVisibilityMaps(
+      [...collectProductIdsFromItems(rawItems), ...collectProductIdsFromOrder(order)],
+      getModels(),
+      [
+        ...collectLineKeysFromItems(rawItems),
+        ...collectLineKeysFromOrder(order),
+      ],
+    );
     const customItems = [];
     let customRemaining = 0;
     for (const item of rawItems) {
       const qty = num(item.quantity ?? item.remaining_quantity);
       if (qty <= 0) continue;
+      const lineKey = String(item.order_item_id || '');
+      const orderLine = lineKey ? orderLineMap.get(lineKey) : null;
+      const productId = resolveProductIdFromLine(item, orderLine, visibilityMaps);
+      const productDoc = productId ? visibilityMaps.productById.get(String(productId)) : null;
+      if (!productVisibleForUnbilled(productId, visibilityMaps)) continue;
+      const groupSnap = snapshotFieldsForUnbilledLine(orderLine, productDoc);
       customItems.push({
         order_item_id: item.order_item_id || item.productId || undefined,
         product: item.productId || item.product || undefined,
         product_name: item.productName || item.product_name || '',
         sku: item.sku || '',
+        ...groupSnap,
         approved_quantity: num(item.lastQuantity || item.approved_quantity || qty),
         billed_dispatched_quantity: num(item.billed_dispatched_quantity || 0),
         remaining_quantity: qty,

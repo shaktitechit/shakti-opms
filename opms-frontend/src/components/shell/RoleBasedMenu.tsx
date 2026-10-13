@@ -14,7 +14,7 @@ import { PORTAL_NAV, isNavLeafActive, type PortalNavChild } from "@/constants/po
 import {
   isPortalNavChildActive,
   portalNavChildHref,
-} from "@/components/portal/shared/orderList/orderMasterNav";
+} from "@/components/portal/shared/orders/list/orderMasterNav";
 import { NavIcon } from "./NavIcon";
 import { useAppSelector } from "@/store";
 

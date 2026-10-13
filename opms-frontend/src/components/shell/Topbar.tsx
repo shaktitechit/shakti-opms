@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { Menu, Sun, Moon, Clock } from "lucide-react";
-import { GoogleSheetRemindersModal } from "../portal/shared/GoogleSheetRemindersModal";
+import { GoogleSheetRemindersModal } from "../portal/shared/integrations/GoogleSheetRemindersModal";
 import { useListRemindersQuery } from "@/store/api";
 
 import { GlobalSearch } from "./GlobalSearch";

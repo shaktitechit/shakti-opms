@@ -1,5 +1,5 @@
 import { formatPeriodLabel } from "./periodFilterUtils";
-import { DATE_FILTER_OPTIONS } from "../orderList/orderListDateFilter";
+import { DATE_FILTER_OPTIONS } from "../orders/list/orderListDateFilter";
 
 interface PeriodHeadingCaptionProps {
   selectedYears: number[];

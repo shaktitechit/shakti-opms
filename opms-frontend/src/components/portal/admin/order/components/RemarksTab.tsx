@@ -1,6 +1,6 @@
 import React from "react";
 import { DashboardCard } from "@/components/widgets";
-import { resolveUserDisplay } from "@/components/portal/shared/userDisplay";
+import { resolveUserDisplay } from "@/components/portal/shared/lib/userDisplay";
 
 interface RemarksTabProps {
   historyList: any[];

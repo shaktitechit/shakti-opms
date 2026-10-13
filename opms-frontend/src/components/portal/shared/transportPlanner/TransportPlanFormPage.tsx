@@ -10,21 +10,21 @@ import {
   pickList,
   resolveOrderCounterparty,
 } from "@/components/portal/sales/partyDisplay";
-import { PortalBusyOverlay } from "@/components/portal/shared/PortalBusyOverlay";
-import { ListEntitySearchPanel } from "@/components/portal/shared/orderList/ListEntitySearchPanel";
+import { PortalBusyOverlay } from "@/components/portal/shared/shell/PortalBusyOverlay";
+import { ListEntitySearchPanel } from "@/components/portal/shared/orders/list/ListEntitySearchPanel";
 import {
   formatDateShort,
   orderKey,
   renderPriorityBadge,
   renderWorkflowStatusBadge,
   type OrderListRow,
-} from "@/components/portal/shared/orderList/orderListDisplay";
+} from "@/components/portal/shared/orders/list/orderListDisplay";
 import {
   getOrderWorkflowTabCategory,
   ORDER_WORKFLOW_TAB_LABELS,
   type OrderWorkflowTabCategory,
-} from "@/components/portal/shared/orderList/orderWorkflowTabs";
-import { useOrderWorkflowCategoryOptions } from "@/components/portal/shared/orderList/useOrderWorkflowCategoryOptions";
+} from "@/components/portal/shared/orders/list/orderWorkflowTabs";
+import { useOrderWorkflowCategoryOptions } from "@/components/portal/shared/orders/list/useOrderWorkflowCategoryOptions";
 import { mutationRejectedMessage } from "@/lib/mutationMessages";
 import { toast } from "@/lib/toast";
 import {

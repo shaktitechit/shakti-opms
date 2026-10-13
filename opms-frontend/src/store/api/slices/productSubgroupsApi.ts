@@ -8,6 +8,7 @@ export type ProductSubgroupRecord = {
   description?: string;
   is_active: boolean;
   is_featured?: boolean;
+  show_in_unbilled_order_list?: boolean;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -53,6 +54,7 @@ export const productSubgroupsApi = medicaApi.injectEndpoints({
         { type: "ProductSubgroups", id: arg.id },
         { type: "ProductSubgroups", id: "LIST" },
         "Products",
+        "UnbilledOrders",
       ],
     }),
     deleteProductSubgroup: build.mutation<{ success: boolean }, string>({

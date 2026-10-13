@@ -7,6 +7,7 @@ export type ProductGroupRecord = {
   description?: string;
   is_active: boolean;
   is_featured?: boolean;
+  show_in_unbilled_order_list?: boolean;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -34,7 +35,7 @@ export const productGroupsApi = medicaApi.injectEndpoints({
       query: (body) => ({ url: "product-groups", method: "POST", body }),
       transformResponse: (raw: ApiEnvelope<ProductGroupRecord>) =>
         unwrapEnvelope(raw) as ProductGroupRecord,
-      invalidatesTags: [{ type: "ProductGroups", id: "LIST" }, "Products"],
+      invalidatesTags: [{ type: "ProductGroups", id: "LIST" }, "Products", "UnbilledOrders"],
     }),
     patchProductGroup: build.mutation<
       ProductGroupRecord,
@@ -52,6 +53,7 @@ export const productGroupsApi = medicaApi.injectEndpoints({
         { type: "ProductGroups", id: arg.id },
         { type: "ProductGroups", id: "LIST" },
         "Products",
+        "UnbilledOrders",
       ],
     }),
     deleteProductGroup: build.mutation<{ success: boolean }, string>({

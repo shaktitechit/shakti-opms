@@ -4,7 +4,7 @@
  */
 
 import type { TransportPlanOrderRecord, TransportPlanRecord } from "@/store/api";
-import type { PdfCompanyLetterhead } from "../pdfCompanyLetterhead";
+import type { PdfCompanyLetterhead } from "../pdf/templates/pdfCompanyLetterhead";
 import {
   agentLabel,
   formatMoney,
@@ -29,7 +29,7 @@ import {
   type JsPDF,
   type PdfChromeOpts,
   type PdfCol,
-} from "../pdfVectorChrome";
+} from "../pdf/builders/pdfVectorChrome";
 
 export type BuildTransportPlansPdfInput = {
   letterhead: PdfCompanyLetterhead;

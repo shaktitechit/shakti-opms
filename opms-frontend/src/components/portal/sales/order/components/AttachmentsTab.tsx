@@ -1,13 +1,13 @@
 "use client";
 
-import { LargeModalPortal } from "@/components/portal/shared/LargeModalPortal";
+import { LargeModalPortal } from "@/components/portal/shared/ui/modals/LargeModalPortal";
 import { useMemo, useState } from "react";
 import { DashboardCard } from "@/components/widgets";
 import {
   FilePreviewModal,
   useFilePreview,
   type PreviewFile,
-} from "@/components/portal/shared/FilePreviewModal";
+} from "@/components/portal/shared/ui/modals/FilePreviewModal";
 import { useAppSelector } from "@/store";
 import { useDeleteAttachmentMutation, useCreateAttachmentMutation } from "@/store/api";
 import { toast } from "@/lib/toast";

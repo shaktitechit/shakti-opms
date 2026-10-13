@@ -1,5 +1,5 @@
-import { deriveOrderWorkflowStatus } from "@/components/portal/shared/orderLifecycle";
-import { isKitShellOrderLine } from "@/components/portal/shared/orderLineQuantities";
+import { deriveOrderWorkflowStatus } from "@/components/portal/shared/orders/lib/orderLifecycle";
+import { isKitShellOrderLine } from "@/components/portal/shared/orders/lib/orderLineQuantities";
 
 export type MatrixMetric = "quantity" | "volume";
 export type MatrixQtyBasis = "net" | "approved" | "dispatched";

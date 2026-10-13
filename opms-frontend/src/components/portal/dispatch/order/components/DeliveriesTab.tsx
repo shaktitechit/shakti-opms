@@ -1,1 +1,1 @@
-export { DeliveriesTab } from "@/components/portal/shared/orderDetail/tabs/DeliveriesTab";
+export { DeliveriesTab } from "@/components/portal/shared/orders/detail/tabs/DeliveriesTab";

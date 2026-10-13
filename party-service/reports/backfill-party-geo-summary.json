@@ -1,0 +1,34 @@
+{
+  "scanned": 257,
+  "skipped_non_india": 0,
+  "skipped_already_complete": 0,
+  "skipped_no_state_text": 129,
+  "updated": 124,
+  "state_only": 4,
+  "full_geo": 120,
+  "topUnmatchedStates": [
+    {
+      "text": "Malerkotla",
+      "count": 1
+    },
+    {
+      "text": "Himachal Pradeshsh",
+      "count": 1
+    },
+    {
+      "text": "Jammu",
+      "count": 1
+    },
+    {
+      "text": "Gujrat",
+      "count": 1
+    }
+  ],
+  "topUnmatchedCities": [
+    {
+      "text": "Punjab|Hoshiarpur - 146001",
+      "count": 1
+    }
+  ],
+  "dryRun": false
+}

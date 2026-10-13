@@ -30,7 +30,7 @@ import { Button } from "@/components/ui/Button";
 import {
   PreviousPartyItemsModal,
   type PreviousPartyOrderItem,
-} from "@/components/portal/shared/PreviousPartyItemsModal";
+} from "@/components/portal/shared/orders/modals/PreviousPartyItemsModal";
 
 const inputClass =
   "w-full rounded-lg border border-slate-200/95 bg-white px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-500/25 dark:border-white/15 dark:bg-slate-950 dark:text-slate-50";

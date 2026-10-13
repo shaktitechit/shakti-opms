@@ -24,6 +24,7 @@ router.use(async (_req, _res, next) => {
 router.get('/', controller.list);
 router.get('/stats', controller.stats);
 router.get('/eligible-orders', controller.eligibleOrders);
+router.get('/logistics-preview', controller.previewOrderLogistics);
 router.post('/', controller.create);
 
 router.get('/:id', controller.get);

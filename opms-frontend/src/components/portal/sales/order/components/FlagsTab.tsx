@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import { useListFlagsQuery, useListUsersQuery } from "@/store/api";
-import { OrderDepartmentFlagsTab } from "@/components/portal/shared/OrderDepartmentFlagsTab";
+import { OrderDepartmentFlagsTab } from "@/components/portal/shared/orders/components/OrderDepartmentFlagsTab";
 
 type FlagsTabProps = {
   orderId: string;

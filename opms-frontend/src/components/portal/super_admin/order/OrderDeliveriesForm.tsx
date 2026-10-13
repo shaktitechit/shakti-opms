@@ -6,7 +6,7 @@ import { toast } from "@/lib/toast";
 import {
   nestDispatchLinesForDisplay,
   type DispatchLineDisplay,
-} from "@/components/portal/shared/orderDetail/dispatchKitDisplay";
+} from "@/components/portal/shared/orders/detail/dispatchKitDisplay";
 import {
   refId,
   formatDateOnly,

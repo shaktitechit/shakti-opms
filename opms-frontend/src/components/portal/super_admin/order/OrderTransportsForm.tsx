@@ -11,7 +11,7 @@ import {
 import {
   buildReleaseSettlePayload,
   idFromRef,
-} from "@/components/portal/shared/orderDetail/accountDispatchAvailability";
+} from "@/components/portal/shared/orders/detail/accountDispatchAvailability";
 import {
   NamedOption,
   refId,

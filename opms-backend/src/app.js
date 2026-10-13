@@ -88,6 +88,9 @@ app.use('/api/product-kit-items', proxyToProductService);
 
 app.use('/api/parties', proxyToPartyService);
 app.use('/api/zones', proxyToPartyService);
+app.use('/api/party-countries', proxyToPartyService);
+app.use('/api/party-states', proxyToPartyService);
+app.use('/api/party-cities', proxyToPartyService);
 app.use('/api/party-products', proxyToPartyService);
 app.use('/api/party-order-products-rate', proxyToPartyService);
 app.use('/api/orders', orderRoutes);

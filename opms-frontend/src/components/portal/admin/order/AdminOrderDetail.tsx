@@ -1,7 +1,7 @@
 "use client";
 
-import OrderDetailsPage from "@/components/portal/shared/orderDetail/OrderDetailsPage";
-import { ADMIN_ORDER_DETAILS_CONFIG } from "@/components/portal/shared/orderDetail/orderDetailsPageConfig";
+import OrderDetailsPage from "@/components/portal/shared/orders/detail/OrderDetailsPage";
+import { ADMIN_ORDER_DETAILS_CONFIG } from "@/components/portal/shared/orders/detail/orderDetailsPageConfig";
 
 export default function AdminOrderDetail({ orderId }: { orderId: string }) {
   return (

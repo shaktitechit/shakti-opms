@@ -254,6 +254,16 @@ function registerModels() {
         default: 0,
         min: 0,
       },
+      /** Net weight of one sale unit (same as order line unit), in kilograms. */
+      unit_weight_kg: {
+        type: Number,
+        min: 0,
+      },
+      /** How many sale units fit in one packed transport box. */
+      units_per_box: {
+        type: Number,
+        min: 1,
+      },
       description: {
         type: String,
         trim: true,
@@ -277,6 +287,11 @@ function registerModels() {
       is_featured: {
         type: Boolean,
         default: false,
+        index: true,
+      },
+      show_in_unbilled_order_list: {
+        type: Boolean,
+        default: null,
         index: true,
       },
       deletedAt: {
@@ -438,6 +453,7 @@ function registerModels() {
       description: { type: String, trim: true },
       is_active: { type: Boolean, default: true, index: true },
       is_featured: { type: Boolean, default: false, index: true },
+      show_in_unbilled_order_list: { type: Boolean, default: true, index: true },
       deletedAt: { type: Date, default: null, index: true },
       created_by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
       updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
@@ -474,6 +490,7 @@ function registerModels() {
       description: { type: String, trim: true },
       is_active: { type: Boolean, default: true, index: true },
       is_featured: { type: Boolean, default: false, index: true },
+      show_in_unbilled_order_list: { type: Boolean, default: true, index: true },
       deletedAt: { type: Date, default: null, index: true },
       created_by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
       updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
@@ -2472,6 +2489,8 @@ function registerModels() {
       lr_number: { type: String, trim: true },
       invoice_number: { type: String, trim: true },
       packages: { type: Number, min: 0 },
+      packed_boxes: { type: Number, min: 0 },
+      open_boxes: { type: Number, min: 0 },
       weight: { type: Number, min: 0 },
       status: {
         type: String,

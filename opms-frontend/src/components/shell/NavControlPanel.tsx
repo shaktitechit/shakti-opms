@@ -9,7 +9,7 @@ import { PORTAL_NAV, isNavLeafActive } from "@/constants/portalNav";
 import {
   isPortalNavChildActive,
   portalNavChildHref,
-} from "@/components/portal/shared/orderList/orderMasterNav";
+} from "@/components/portal/shared/orders/list/orderMasterNav";
 import { PORTAL_NAV_TOP } from "@/constants/dashboardAccess";
 import { getOpmsAccessRoles } from "@/lib/opmsAuth";
 import { NavIcon } from "./NavIcon";

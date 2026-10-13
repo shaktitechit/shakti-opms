@@ -8,6 +8,9 @@ const { notFound } = require('./middlewares/notFound.middleware');
 
 const partyRoutes = require('./modules/parties/party.routes');
 const zonePartiesRoutes = require('./modules/zoneParties/zoneParties.routes');
+const partyCountriesRoutes = require('./modules/partyCountries/partyCountries.routes');
+const partyStatesRoutes = require('./modules/partyStates/partyStates.routes');
+const partyCitiesRoutes = require('./modules/partyCities/partyCities.routes');
 const partyProductRoutes = require('./modules/partyProducts/partyProduct.routes');
 const partyOrderProductsRateRoutes = require('./modules/partyOrderProductsRate/partyOrderProductsRate.routes');
 
@@ -25,6 +28,9 @@ app.get(['/health', '/api/health'], (req, res) => {
 
 app.use('/api/parties', partyRoutes);
 app.use('/api/zones', zonePartiesRoutes);
+app.use('/api/party-countries', partyCountriesRoutes);
+app.use('/api/party-states', partyStatesRoutes);
+app.use('/api/party-cities', partyCitiesRoutes);
 app.use('/api/party-products', partyProductRoutes);
 app.use('/api/party-order-products-rate', partyOrderProductsRateRoutes);
 

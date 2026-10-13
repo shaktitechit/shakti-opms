@@ -1,1 +1,1 @@
-export { default } from "@/components/portal/shared/orderDetail/modals/OrderDetailsModal";
+export { default } from "@/components/portal/shared/orders/detail/modals/OrderDetailsModal";

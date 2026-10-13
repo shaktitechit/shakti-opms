@@ -47,6 +47,10 @@ const partySchema = new mongoose.Schema(
     shipping_address: partyAddressSchema,
     district: { type: String, trim: true },
     state: { type: String, trim: true },
+    country_id: { type: mongoose.Schema.Types.ObjectId, ref: "PartyCountry", index: true },
+    state_id: { type: mongoose.Schema.Types.ObjectId, ref: "PartyState", index: true },
+    city_id: { type: mongoose.Schema.Types.ObjectId, ref: "PartyCity", index: true },
+    zone_id: { type: mongoose.Schema.Types.ObjectId, ref: "Zone", index: true },
     payment_terms: { type: String, trim: true },
     /** Trace import from legacy Customer document during migration */
     legacy_customer: { type: mongoose.Schema.Types.ObjectId, ref: "Customer", unique: true, sparse: true },

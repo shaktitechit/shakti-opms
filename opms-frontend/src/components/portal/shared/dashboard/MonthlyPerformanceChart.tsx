@@ -11,7 +11,7 @@ import {
   itemUnitPrice,
   shouldIncludeOrder,
 } from "./leaderboardUtils";
-import { isKitShellOrderLine } from "@/components/portal/shared/orderLineQuantities";
+import { isKitShellOrderLine } from "@/components/portal/shared/orders/lib/orderLineQuantities";
 import type { DashboardOrdersSummary } from "@/store/api/slices/dashboardApi";
 
 interface MonthlyPerformanceChartProps {

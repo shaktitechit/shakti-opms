@@ -14,6 +14,9 @@ export type UnbilledOrderItem = {
   product?: string | { _id?: string; product_name?: string; sku?: string };
   product_name?: string;
   sku?: string;
+  product_group?: string;
+  product_subgroup?: string;
+  product_group_id?: string;
   approved_quantity: number;
   billed_dispatched_quantity: number;
   remaining_quantity: number;

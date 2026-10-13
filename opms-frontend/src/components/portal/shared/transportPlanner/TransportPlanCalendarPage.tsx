@@ -12,7 +12,7 @@ import {
   X,
 } from "lucide-react";
 
-import { PortalBusyOverlay } from "@/components/portal/shared/PortalBusyOverlay";
+import { PortalBusyOverlay } from "@/components/portal/shared/shell/PortalBusyOverlay";
 import {
   useListTransportAgentsQuery,
   useListTransportPlansQuery,
