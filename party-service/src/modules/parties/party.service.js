@@ -2,6 +2,7 @@
  * @fileoverview Parties CRUD + soft-delete (OPMS counterparties).
  * @module modules/parties/party.service
  */
+const mongoose = require('mongoose');
 const { getModels } = require('../../data/mongoRegistry');
 const { toPlain } = require('../../utils/mongoJson');
 const { ApiError } = require('../../utils/ApiError');
@@ -58,12 +59,13 @@ function sanitizeContacts(contacts) {
     .map((c) => ({
       name: c.name != null ? String(c.name).trim() : '',
       department: c.department != null ? String(c.department).trim() : '',
+      designation: c.designation != null ? String(c.designation).trim() : '',
       phone: c.phone != null ? String(c.phone).trim() : '',
       email: c.email != null ? String(c.email).trim().toLowerCase() : '',
       alternate_phone: c.alternate_phone != null ? String(c.alternate_phone).trim() : '',
     }))
     .filter(
-      (c) => c.name || c.department || c.phone || c.email || c.alternate_phone
+      (c) => c.name || c.department || c.designation || c.phone || c.email || c.alternate_phone
     );
 }
 
@@ -139,6 +141,46 @@ async function list(query = {}) {
 
   if (query.type && query.type !== 'all') {
     mongoFilter.party_type = query.type;
+  }
+
+  const andClauses = [];
+
+  if (query.city_id && mongoose.Types.ObjectId.isValid(query.city_id)) {
+    const cId = new mongoose.Types.ObjectId(query.city_id);
+    const cityOr = [{ city_id: cId }];
+    if (query.city && String(query.city).trim()) {
+      const cRegex = new RegExp(String(query.city).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      cityOr.push({ city: cRegex }, { 'billing_address.city': cRegex });
+    }
+    andClauses.push({ $or: cityOr });
+  } else if (query.city && String(query.city).trim()) {
+    const cRegex = new RegExp(String(query.city).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    andClauses.push({ $or: [{ city: cRegex }, { 'billing_address.city': cRegex }] });
+  }
+
+  if (query.state_id && mongoose.Types.ObjectId.isValid(query.state_id)) {
+    const sId = new mongoose.Types.ObjectId(query.state_id);
+    const stateOr = [{ state_id: sId }];
+    if (query.state && String(query.state).trim()) {
+      const sRegex = new RegExp(String(query.state).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      stateOr.push({ state: sRegex }, { 'billing_address.state': sRegex });
+    }
+    andClauses.push({ $or: stateOr });
+  } else if (query.state && String(query.state).trim()) {
+    const sRegex = new RegExp(String(query.state).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+    andClauses.push({ $or: [{ state: sRegex }, { 'billing_address.state': sRegex }] });
+  }
+
+  if (query.country_id && mongoose.Types.ObjectId.isValid(query.country_id)) {
+    andClauses.push({ country_id: new mongoose.Types.ObjectId(query.country_id) });
+  }
+
+  if (andClauses.length > 0) {
+    if (mongoFilter.$and) {
+      mongoFilter.$and.push(...andClauses);
+    } else {
+      mongoFilter.$and = andClauses;
+    }
   }
 
   const status = query.status || 'active';
@@ -522,7 +564,7 @@ async function syncFromGoogleSheet(row) {
 
   const payload = {};
   if (row.party_name || row.name) payload.party_name = String(row.party_name || row.name).trim();
-  if (typeRaw && ['customer', 'supplier', 'both'].includes(typeRaw)) payload.party_type = typeRaw;
+  if (typeRaw && ['customer', 'supplier', 'both', 'leads', 'lead', 'quotation', 'quotations', 'visits', 'visit'].includes(typeRaw)) payload.party_type = typeRaw;
   
   if (row.contact_person || row.contact) payload.contact_person = String(row.contact_person || row.contact).trim();
   if (row.mobile || row.phone) payload.mobile = String(row.mobile || row.phone).trim();

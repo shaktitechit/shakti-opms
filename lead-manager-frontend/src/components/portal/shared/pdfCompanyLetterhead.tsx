@@ -25,7 +25,8 @@ export function formatCompanyAddress(
   company?: CompanyInfoRecord | null,
   fallback = ""
 ): string {
-  if (!company) return fallback || "";
+  if (fallback && fallback.trim()) return fallback.trim();
+  if (!company) return "";
   const rawAddr = String(company.address || "").trim();
   const city = String(company.city || "").trim();
   const state = String(company.state || "").trim();

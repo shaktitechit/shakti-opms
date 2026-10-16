@@ -9,6 +9,8 @@ import React, { useMemo, type CSSProperties } from "react";
 import { useGetCompanyInfoQuery, type LeadQuotationRecord, type LeadQuotationProformaDetails } from "@/store/api";
 import { formatCompanyAddress } from "@/components/portal/shared/pdfCompanyLetterhead";
 import { resolvePublicAssetUrl } from "@/lib/env";
+import { numberToIndianWords } from "./quotationLineMath";
+import { RichTextDisplay, isNonEmptyRichText } from "./RichTextDisplay";
 
 type Props = {
   quotation: LeadQuotationRecord;
@@ -64,14 +66,14 @@ export default function ProformaInvoiceTemplate({ quotation, proformaDetails }: 
   const pDetails = proformaDetails || quotation.proforma_details || {};
 
   const companyName =
+    quotation.company_name ||
     (company?.trade_name as string) ||
     (company?.legal_name as string) ||
-    quotation.company_name ||
     "Shakti Technology IT";
   const companyRegdAddress = formatCompanyAddress(company as any, quotation.company_regd_address);
-  const companyPhone = (company?.phone as string) || quotation.company_phone || "";
-  const companyEmail = (company?.email as string) || quotation.company_email || "";
-  const companyGstin = (company?.gstin as string) || quotation.company_gstin || "";
+  const companyPhone = quotation.company_phone || (company?.phone as string) || "";
+  const companyEmail = quotation.company_email || (company?.email as string) || "";
+  const companyGstin = quotation.company_gstin || (company?.gstin as string) || "";
 
   const bankName = quotation.bank_name || (company?.bank_name as string) || "";
   const accountName = quotation.account_name || (company?.account_name as string) || companyName;
@@ -124,6 +126,9 @@ export default function ProformaInvoiceTemplate({ quotation, proformaDetails }: 
       ? quotation.sales_person_user.name
       : "") ||
     "Sales Representative";
+
+  const effectiveMessage =
+    pDetails.message || (quotation as any).message || (quotation as any).quotation_message || "";
 
   return (
     <div id="proforma-pdf-root" style={pageStyle}>
@@ -244,6 +249,26 @@ export default function ProformaInvoiceTemplate({ quotation, proformaDetails }: 
         </div>
       </div>
 
+      {/* Cover / Introductory Message (if provided, rendered seamlessly without label) */}
+      {isNonEmptyRichText(effectiveMessage) && (
+        <div
+          style={{
+            width: "100%",
+            marginBottom: "8px",
+            padding: "4px 2px",
+            fontSize: "8.5px",
+            color: "#334155",
+            lineHeight: "14px",
+            boxSizing: "border-box",
+          }}
+        >
+          <RichTextDisplay
+            content={effectiveMessage}
+            className="text-[8.5px] leading-relaxed text-slate-800"
+          />
+        </div>
+      )}
+
       {/* 3. Goods & Pricing Table */}
       <div style={{ marginBottom: "10px", border: "1px solid #cbd5e1", borderRadius: "4px", overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "8px" }}>
@@ -265,8 +290,9 @@ export default function ProformaInvoiceTemplate({ quotation, proformaDetails }: 
               const qty = Number(it.quantity || 1);
               const rate = Number(it.rate || 0);
               const subtotal = Number(it.taxable_amount || qty * rate);
-              const gstRate = Number(it.gst_rate || 18);
-              const gstAmt = Number(it.total_gst_amount || (subtotal * gstRate) / 100);
+              const isItemGstOff = quotation.gst_enabled === false || it.gst_enabled === false || !it.gst_rate;
+              const gstRate = isItemGstOff ? 0 : Number(it.gst_rate || 0);
+              const gstAmt = isItemGstOff ? 0 : Number(it.total_gst_amount || 0);
               const total = Number(it.line_total || subtotal + gstAmt);
 
               return (
@@ -280,8 +306,12 @@ export default function ProformaInvoiceTemplate({ quotation, proformaDetails }: 
                   <td style={{ padding: "5px 4px", textAlign: "center", borderRight: "1px solid #e2e8f0", fontWeight: 600 }}>{qty}</td>
                   <td style={{ padding: "5px 6px", textAlign: "right", borderRight: "1px solid #e2e8f0" }}>{formatCurrency(rate)}</td>
                   <td style={{ padding: "5px 6px", textAlign: "right", borderRight: "1px solid #e2e8f0" }}>{formatCurrency(subtotal)}</td>
-                  <td style={{ padding: "5px 4px", textAlign: "center", borderRight: "1px solid #e2e8f0" }}>{gstRate}%</td>
-                  <td style={{ padding: "5px 6px", textAlign: "right", borderRight: "1px solid #e2e8f0" }}>{formatCurrency(gstAmt)}</td>
+                  <td style={{ padding: "5px 4px", textAlign: "center", borderRight: "1px solid #e2e8f0" }}>
+                    {isItemGstOff || !gstRate ? "" : `${gstRate}%`}
+                  </td>
+                  <td style={{ padding: "5px 6px", textAlign: "right", borderRight: "1px solid #e2e8f0" }}>
+                    {isItemGstOff || !gstAmt ? "" : formatCurrency(gstAmt)}
+                  </td>
                   <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: 700, color: "#0f172a" }}>{formatCurrency(total)}</td>
                 </tr>
               );
@@ -292,7 +322,9 @@ export default function ProformaInvoiceTemplate({ quotation, proformaDetails }: 
               <td colSpan={5} style={{ padding: "6px 8px", textAlign: "right", color: "#1e3a5f" }}>Total</td>
               <td style={{ padding: "6px 6px", textAlign: "right", borderRight: "1px solid #cbd5e1" }}>{formatCurrency(quotation.subtotal)}</td>
               <td style={{ padding: "6px 4px", textAlign: "center", borderRight: "1px solid #cbd5e1" }}>—</td>
-              <td style={{ padding: "6px 6px", textAlign: "right", borderRight: "1px solid #cbd5e1" }}>{formatCurrency(quotation.total_gst)}</td>
+              <td style={{ padding: "6px 6px", textAlign: "right", borderRight: "1px solid #cbd5e1" }}>
+                {quotation.gst_enabled === false || !quotation.total_gst ? "" : formatCurrency(quotation.total_gst)}
+              </td>
               <td style={{ padding: "6px 8px", textAlign: "right", color: "#2563eb", fontWeight: 800 }}>{formatCurrency(quotation.grand_total)}</td>
             </tr>
           </tfoot>
@@ -304,19 +336,21 @@ export default function ProformaInvoiceTemplate({ quotation, proformaDetails }: 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "3px" }}>
           <div>
             <strong style={{ color: "#1e3a5f" }}>Total GST : </strong>
-            <span style={{ fontWeight: 600 }}>₹ {formatCurrency(quotation.total_gst)}</span>
+            <span style={{ fontWeight: 600 }}>
+              {quotation.gst_enabled === false || !quotation.total_gst ? "" : `₹ ${formatCurrency(quotation.total_gst)}`}
+            </span>
           </div>
           <div>
             <strong style={{ color: "#1e3a5f", fontSize: "9.5px" }}>Grand Total : </strong>
             <span style={{ fontWeight: 800, color: "#2563eb", fontSize: "11px" }}>₹ {formatCurrency(quotation.grand_total)}</span>
           </div>
         </div>
-        {quotation.amount_in_words && (
-          <div>
-            <strong style={{ color: "#475569" }}>Amount in words : </strong>
-            <span style={{ fontStyle: "italic", color: "#0f172a", fontWeight: 500 }}>{quotation.amount_in_words}</span>
-          </div>
-        )}
+        <div style={{ marginTop: "4px", paddingTop: "4px", borderTop: "1px dashed #cbd5e1", fontSize: "8.5px" }}>
+          <strong style={{ color: "#475569" }}>Amount in words : </strong>
+          <span style={{ fontStyle: "italic", color: "#1e3a5f", fontWeight: 700 }}>
+            {(quotation.amount_in_words && quotation.amount_in_words.trim()) || numberToIndianWords(quotation.grand_total) || "Zero Rupees Only"}
+          </span>
+        </div>
       </div>
 
       {/* 4. Order Details 2-Column Box */}

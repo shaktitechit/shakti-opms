@@ -4,7 +4,7 @@
  */
 const mongoose = require('mongoose');
 const { getModels } = require('../../data/mongoRegistry');
-const { isAdmin, isManager } = require('../../middlewares/leadManagerAuth.middleware');
+const { isAdmin, isManager, isCoordinator } = require('../../middlewares/leadManagerAuth.middleware');
 
 function userId(user) {
   return user?._id || user?.id;
@@ -18,18 +18,6 @@ function asObjectId(id) {
   } catch {
     return null;
   }
-}
-
-function isCoordinator(user) {
-  if (!user) return false;
-  const portals = Array.isArray(user.portals) ? user.portals : [];
-  const portalAccess = portals.find(
-    (p) => p && (p.portal_code === 'lead_manager' || p.portal === 'lead_manager')
-  );
-  if (portalAccess && Array.isArray(portalAccess.access_roles)) {
-    return portalAccess.access_roles.includes('coordinator');
-  }
-  return false;
 }
 
 /**

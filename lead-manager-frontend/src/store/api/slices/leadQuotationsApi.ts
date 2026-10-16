@@ -20,6 +20,7 @@ export type LeadQuotationItem = {
   discount_percent?: number;
   discount_amount?: number;
   taxable_amount: number;
+  gst_enabled?: boolean;
   gst_rate: number;
   cgst_rate?: number;
   cgst_amount?: number;
@@ -61,16 +62,27 @@ export type LeadQuotationRecord = {
     state?: string;
     pincode?: string;
     country?: string;
+    country_id?: string;
+    state_id?: string;
+    city_id?: string;
   };
   items: LeadQuotationItem[];
   total_discount?: number;
   subtotal: number;
+  gst_enabled?: boolean;
   total_gst: number;
   round_off?: number;
   grand_total: number;
   amount_in_words?: string;
   payment_terms?: string;
+  message?: string;
+  quotation_message?: string;
   terms_and_conditions?: string[];
+  company_branch_id?: string;
+  branch_id?: string;
+  company_branch_code?: string;
+  branch_code?: string;
+  company_branch_name?: string;
   company_name?: string;
   company_regd_address?: string;
   company_phone?: string;
@@ -181,6 +193,7 @@ export type LeadQuotationProformaDetails = {
   margin_sheet_attached?: string;
   kyc_status?: string;
   remarks?: string;
+  message?: string;
   generated_at?: string;
   generated_by?: string | { _id: string; name?: string; email?: string; department?: string };
 };
@@ -223,6 +236,7 @@ export type CreateQuotationPayload = {
   ref_no?: string;
   customer_ref?: string;
   party_id?: string;
+  gst_enabled?: boolean;
   quotation_date?: string;
   valid_until?: string;
   validity_days?: number;
@@ -239,6 +253,9 @@ export type CreateQuotationPayload = {
     state?: string;
     pincode?: string;
     country?: string;
+    country_id?: string;
+    state_id?: string;
+    city_id?: string;
   };
   items: Array<{
     product?: string;
@@ -248,10 +265,18 @@ export type CreateQuotationPayload = {
     quantity: number;
     unit?: string;
     rate: number;
+    gst_enabled?: boolean;
     gst_rate: number;
     igst_rate?: number;
   }>;
   terms_and_conditions?: string[];
+  message?: string;
+  quotation_message?: string;
+  company_branch_id?: string;
+  branch_id?: string;
+  company_branch_code?: string;
+  branch_code?: string;
+  company_branch_name?: string;
   company_name?: string;
   company_regd_address?: string;
   company_phone?: string;
@@ -277,6 +302,7 @@ export type CreateQuotationPayload = {
   status?: QuotationStatus;
   discount_type?: "percentage" | "fixed";
   discount_value?: number;
+  amount_in_words?: string;
   notes?: string;
 };
 
@@ -300,6 +326,9 @@ export type ConvertQuotationPayload = {
     state?: string;
     pincode?: string;
     country?: string;
+    country_id?: string;
+    state_id?: string;
+    city_id?: string;
   };
   shipping_address?: {
     address_line_1?: string;
@@ -307,6 +336,9 @@ export type ConvertQuotationPayload = {
     state?: string;
     pincode?: string;
     country?: string;
+    country_id?: string;
+    state_id?: string;
+    city_id?: string;
   };
   party_data?: Record<string, any>;
   order_data?: {

@@ -8,7 +8,7 @@
 
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft,
   Save,
@@ -31,6 +31,10 @@ import {
   ChevronUp,
   Minus,
   X,
+  Copy,
+  Eye,
+  Printer,
+  MapPin,
 } from "lucide-react";
 import {
   useCreateLeadQuotationMutation,
@@ -40,7 +44,14 @@ import {
   useListTermsAndConditionsQuery,
   useListProductsQuery,
   useListPartiesQuery,
+  useCreatePartyMutation,
+  usePatchPartyMutation,
+  useLazyListPartiesQuery,
+  useGetPartyCountriesQuery,
+  useGetPartyStatesQuery,
+  useGetPartyCitiesQuery,
   useGetCompanyInfoQuery,
+  useGetBranchesQuery,
   useListUsersQuery,
   useListLeadsQuery,
   useListQuotationsQuery,
@@ -48,6 +59,7 @@ import {
   type LeadQuotationRecord,
   type CreateQuotationPayload,
   type TermsAndConditionsRecord,
+  type BranchRecord,
 } from "@/store/api";
 import { useAppSelector } from "@/store/hooks";
 import { toast } from "@/lib/toast";
@@ -59,9 +71,11 @@ import {
   computeQuotationTotals,
   isValidQuotationLineQuantity,
   parseQuotationLineQuantity,
+  numberToIndianWords,
 } from "./quotationLineMath";
 import { RichTextEditor } from "./RichTextEditor";
 import { RichTextDisplay } from "./RichTextDisplay";
+import QuotationPdfTemplate from "./QuotationPdfTemplate";
 import { getFieldText } from "@/components/leads/LeadFormPage";
 import { LeadSearchAutocomplete } from "@/components/leads/LeadSearchAutocomplete";
 import {
@@ -69,13 +83,20 @@ import {
   pickParties,
   type PartyItem,
 } from "@/components/leads/PartySearchAutocomplete";
-import { buildQuotationSignatoryUsers, getLeadManagerPortalRole } from "@/components/leads/leadUtils";
+import { syncPartyMaster } from "@/utils/syncPartyMaster";
+import {
+  buildQuotationSignatoryUsers,
+  getLeadManagerPortalRole,
+  isUserInLeadManagerPortal,
+  getDeptLabel,
+} from "@/components/leads/leadUtils";
 import { isAdmin, isManager, readSessionFromStorage } from "@/utils/authStorage";
 import { useLeadManagerTeamScope } from "@/hooks/useLeadManagerTeamScope";
 
 type Props = {
   mode: "create" | "edit";
   quotationId?: string;
+  copyFromId?: string;
   leadId?: string;
   portalHome?: string;
 };
@@ -91,6 +112,7 @@ type ItemState = {
   discount_percent?: number;
   discount_amount?: number;
   gst_rate: number;
+  gst_enabled?: boolean;
 };
 
 export type CatalogProduct = {
@@ -435,10 +457,13 @@ function computeNextRefNo(existingQuotations: LeadQuotationRecord[]): string {
 export function QuotationFormPage({
   mode,
   quotationId,
+  copyFromId,
   leadId,
   portalHome = "/dashboard",
 }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const resolvedCopyFromId = copyFromId || searchParams?.get("copy_from") || searchParams?.get("clone") || undefined;
   const reduxUser = useAppSelector((state) => state.auth.user);
   const sessionUser = useMemo(() => readSessionFromStorage()?.user || null, []);
   const authUser = (reduxUser || sessionUser) as any;
@@ -446,10 +471,14 @@ export function QuotationFormPage({
   const teamScopedPickers = isManager || isCoordinator;
 
   const isEditing = mode === "edit" && Boolean(quotationId);
+  const isCopyMode = mode === "create" && Boolean(resolvedCopyFromId);
+  const copyInitializedRef = useRef(false);
+
+  const targetQuotationId = isEditing ? quotationId : isCopyMode ? resolvedCopyFromId : "";
 
   const { data: existingQuotation, isLoading: loadingQuotation } = useGetLeadQuotationQuery(
-    quotationId || "",
-    { skip: !isEditing || !quotationId }
+    targetQuotationId || "",
+    { skip: !targetQuotationId }
   );
 
   const { data: linkedLead } = useGetLeadQuery(leadId || "", { skip: !leadId });
@@ -470,7 +499,11 @@ export function QuotationFormPage({
     return parties.find((p) => String(p._id ?? p.id ?? "") === String(selectedPartyId)) || null;
   }, [parties, selectedPartyId]);
 
-  useGetCompanyInfoQuery();
+  const { data: companyData } = useGetCompanyInfoQuery();
+  const { data: branchesData = [] } = useGetBranchesQuery();
+  const branches = useMemo(() => {
+    return Array.isArray(branchesData) ? branchesData : [];
+  }, [branchesData]);
 
   const { data: usersData } = useListUsersQuery();
   const usersList = useMemo(() => {
@@ -493,15 +526,19 @@ export function QuotationFormPage({
     });
   }, [usersList, filterByTeam, withSelfInList, authUser]);
 
-  // Sales rep picker: sales roster limited to the same team scope
+  // Sales rep picker: list all Lead Manager portal users
   const salesUsers = useMemo(() => {
-    const sales = usersList.filter((u: any) => isSalesDepartmentUser(u));
-    const scoped = filterByTeam(sales as Array<{ _id?: string; id?: string }>);
-    const selfRow = authUser?._id
-      ? sales.find((u: any) => String(u._id) === String(authUser._id))
-      : undefined;
-    return withSelfInList(scoped, selfRow as { _id?: string; id?: string } | undefined);
-  }, [usersList, filterByTeam, withSelfInList, authUser]);
+    const portalUsers = (usersList as Array<{
+      _id: string;
+      name: string;
+      email?: string;
+      phone?: string;
+      department?: string;
+      role?: string;
+      portals?: Array<{ portal_code: string; access_roles?: string[] }>;
+    }>).filter(isUserInLeadManagerPortal);
+    return portalUsers.length > 0 ? portalUsers : (usersList as Array<any>);
+  }, [usersList]);
 
   // Master Terms & Conditions sets list for multi-selection
   const { data: masterTermsData } = useListTermsAndConditionsQuery({ limit: 100 });
@@ -547,6 +584,7 @@ export function QuotationFormPage({
   // Form State
   const [refNo, setRefNo] = useState("");
   const [customerRef, setCustomerRef] = useState("");
+  const [gstEnabled, setGstEnabled] = useState<boolean>(true);
   const [quotationDate, setQuotationDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [validityDays, setValidityDays] = useState(15);
   const [subject, setSubject] = useState("");
@@ -557,9 +595,203 @@ export function QuotationFormPage({
   const [email, setEmail] = useState("");
   const [gstin, setGstin] = useState("");
   const [addressLine, setAddressLine] = useState("");
-  const [city, setCity] = useState("");
+  const [countryId, setCountryId] = useState("");
+  const [country, setCountry] = useState("India");
+  const [stateId, setStateId] = useState("");
   const [state, setState] = useState("");
+  const [cityId, setCityId] = useState("");
+  const [city, setCity] = useState("");
   const [pincode, setPincode] = useState("");
+  const [message, setMessage] = useState("");
+
+  const { data: countriesData = [], isLoading: isCountriesLoading } = useGetPartyCountriesQuery(
+    { limit: 500, status: "active" }
+  );
+
+  const { data: statesData = [], isLoading: isStatesLoading } = useGetPartyStatesQuery(
+    countryId ? { country_id: countryId, limit: 1000, status: "active" } : undefined,
+    { skip: !countryId }
+  );
+
+  const { data: citiesData = [], isLoading: isCitiesLoading } = useGetPartyCitiesQuery(
+    stateId ? { state_id: stateId, limit: 5000, status: "active" } : undefined,
+    { skip: !stateId }
+  );
+
+  // Auto-select India by default if no country selected
+  useEffect(() => {
+    if (!countryId && countriesData.length > 0) {
+      const india = countriesData.find(
+        (c) =>
+          c.name.trim().toLowerCase() === "india" ||
+          c.iso_code?.toUpperCase() === "IN"
+      );
+      if (india) {
+        setCountryId(india._id || india.id || "");
+        setCountry(india.name);
+      }
+    }
+  }, [countriesData, countryId]);
+
+  // Match country name to country ID if set by text
+  useEffect(() => {
+    if (country && !countryId && countriesData.length > 0) {
+      const cMatch = countriesData.find(
+        (c) =>
+          c.name.trim().toLowerCase() === country.trim().toLowerCase() ||
+          c.iso_code?.toLowerCase() === country.trim().toLowerCase()
+      );
+      if (cMatch) {
+        setCountryId(cMatch._id || cMatch.id || "");
+      }
+    }
+  }, [countriesData, country, countryId]);
+
+  // Match state name to state ID if set by text
+  useEffect(() => {
+    if (state && !stateId && statesData.length > 0) {
+      const sMatch = statesData.find(
+        (s) => s.name.trim().toLowerCase() === state.trim().toLowerCase()
+      );
+      if (sMatch) {
+        setStateId(sMatch._id || sMatch.id || "");
+      }
+    }
+  }, [statesData, state, stateId]);
+
+  // If stateId is set but does not belong to the currently loaded states for this country, clear it
+  useEffect(() => {
+    if (stateId && statesData.length > 0 && !isStatesLoading) {
+      const exists = statesData.some((s) => (s._id || s.id) === stateId);
+      if (!exists) {
+        setStateId("");
+        setState("");
+        setCityId("");
+        setCity("");
+      }
+    }
+  }, [statesData, stateId, isStatesLoading]);
+
+  // Match city name to city ID if set by text
+  useEffect(() => {
+    if (city && !cityId && citiesData.length > 0) {
+      const ciMatch = citiesData.find(
+        (ci) => ci.name.trim().toLowerCase() === city.trim().toLowerCase()
+      );
+      if (ciMatch) {
+        setCityId(ciMatch._id || ciMatch.id || "");
+      }
+    }
+  }, [citiesData, city, cityId]);
+
+  // If cityId is set but does not belong to the currently loaded cities for this state, clear it
+  useEffect(() => {
+    if (cityId && citiesData.length > 0 && !isCitiesLoading) {
+      const exists = citiesData.some((ci) => (ci._id || ci.id) === cityId);
+      if (!exists) {
+        setCityId("");
+        setCity("");
+      }
+    }
+  }, [citiesData, cityId, isCitiesLoading]);
+
+  // Prioritize or filter parties matching selected state/city/country
+  const filteredParties = useMemo(() => {
+    if (!state && !city && !country) return parties;
+    const cNorm = country.toLowerCase().trim();
+    const sNorm = state.toLowerCase().trim();
+    const ciNorm = city.toLowerCase().trim();
+
+    return [...parties].sort((a, b) => {
+      const aCountry = (a.billing_address?.country || a.country || "").toLowerCase().trim();
+      const bCountry = (b.billing_address?.country || b.country || "").toLowerCase().trim();
+      const aState = (a.billing_address?.state || a.state || "").toLowerCase().trim();
+      const bState = (b.billing_address?.state || b.state || "").toLowerCase().trim();
+      const aCity = (a.billing_address?.city || a.district || a.city || "").toLowerCase().trim();
+      const bCity = (b.billing_address?.city || b.district || b.city || "").toLowerCase().trim();
+
+      const aScore =
+        (ciNorm && aCity === ciNorm ? 4 : 0) +
+        (sNorm && aState === sNorm ? 2 : 0) +
+        (cNorm && aCountry === cNorm ? 1 : 0);
+      const bScore =
+        (ciNorm && bCity === ciNorm ? 4 : 0) +
+        (sNorm && bState === sNorm ? 2 : 0) +
+        (cNorm && bCountry === cNorm ? 1 : 0);
+      return bScore - aScore;
+    });
+  }, [parties, state, city, country]);
+
+  // Company Branch & Letterhead State
+  const [selectedBranchId, setSelectedBranchId] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [companyRegdAddress, setCompanyRegdAddress] = useState("");
+  const [companyPhone, setCompanyPhone] = useState("");
+  const [companyEmail, setCompanyEmail] = useState("");
+  const [companyGstin, setCompanyGstin] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [accountName, setAccountName] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [ifscCode, setIfscCode] = useState("");
+  const [bankBranchName, setBankBranchName] = useState("");
+  const [accountType, setAccountType] = useState("");
+
+  const selectedBranch = useMemo(() => {
+    if (!branches.length) return null;
+    if (selectedBranchId) {
+      return branches.find((b) => String(b._id) === String(selectedBranchId)) || null;
+    }
+    return null;
+  }, [branches, selectedBranchId]);
+
+  const formatBranchAddress = (branch?: BranchRecord | null) => {
+    if (!branch?.address) return "";
+    const addr = branch.address;
+    const parts = [
+      addr.street,
+      addr.landmark,
+      addr.city,
+      addr.state ? (addr.pincode ? `${addr.state} - ${addr.pincode}` : addr.state) : addr.pincode,
+      addr.country || "India",
+    ].filter(Boolean);
+    return parts.join(", ");
+  };
+
+  const handleBranchSelect = (branchId: string, manualUserAction = true) => {
+    setSelectedBranchId(branchId);
+    if (!branchId) return;
+    const branch = branches.find((b) => String(b._id) === String(branchId));
+    if (!branch) return;
+
+    const formattedAddr = formatBranchAddress(branch);
+    const cName = branch.branch_name || companyData?.trade_name || companyData?.legal_name || "Medica Enterprises";
+    setCompanyName(cName);
+    setCompanyRegdAddress(formattedAddr);
+    setCompanyPhone(branch.contact?.phone || branch.contact?.alternate_phone || companyData?.phone || "");
+    setCompanyEmail(branch.contact?.email || branch.contact?.billing_email || companyData?.email || "");
+    setCompanyGstin(branch.taxation?.gstin || companyData?.gstin || "");
+
+    const primaryBank = branch.banking?.find((b) => b.is_primary) || branch.banking?.[0];
+    if (primaryBank) {
+      setBankName(primaryBank.bank_name || "");
+      setAccountName(primaryBank.account_name || cName);
+      setAccountNumber(primaryBank.account_number || "");
+      setIfscCode(primaryBank.ifsc_code || "");
+      setBankBranchName(primaryBank.branch_name || "");
+      setAccountType(primaryBank.account_type || "Current Account");
+    } else if (companyData) {
+      setBankName(companyData.bank_name || "");
+      setAccountName(companyData.account_name || cName);
+      setAccountNumber(companyData.account_number || "");
+      setIfscCode(companyData.ifsc_code || "");
+      setBankBranchName(companyData.branch_name || "");
+      setAccountType(companyData.account_type || "Current Account");
+    }
+
+    if (manualUserAction) {
+      toast.info(`Branch switched to: ${branch.branch_name}`);
+    }
+  };
 
   // Signatory State
   const [signatoryUserId, setSignatoryUserId] = useState("");
@@ -592,6 +824,9 @@ export function QuotationFormPage({
 
   const [createQuotation, { isLoading: isCreating }] = useCreateLeadQuotationMutation();
   const [updateQuotation, { isLoading: isUpdating }] = useUpdateLeadQuotationMutation();
+  const [createParty] = useCreatePartyMutation();
+  const [patchParty] = usePatchPartyMutation();
+  const [fetchPartiesTrigger] = useLazyListPartiesQuery();
 
   // Compute calculated validity expiry date
   const validityEndDate = useMemo(() => {
@@ -631,8 +866,12 @@ export function QuotationFormPage({
       setCell("");
       setEmail("");
       setAddressLine("");
-      setCity("");
+      setCountryId("");
+      setCountry("India");
+      setStateId("");
       setState("");
+      setCityId("");
+      setCity("");
       setPincode("");
       return;
     }
@@ -651,14 +890,30 @@ export function QuotationFormPage({
     setPhone(targetLead.phone || targetLead.contacts?.[0]?.phone || "");
     setCell(targetLead.alternate_phone || targetLead.phone || targetLead.contacts?.[0]?.phone || "");
     setEmail(targetLead.email || targetLead.contacts?.[0]?.email || "");
+
+    const b = targetLead.billing_address as any;
+    const pAddr = targetLead.party_id?.billing_address as any;
     setAddressLine(
-      targetLead.billing_address?.address_line_1 ||
-      targetLead.party_id?.billing_address?.address_line_1 ||
+      b?.address_line_1 ||
+      pAddr?.address_line_1 ||
       ""
     );
-    setCity(targetLead.billing_address?.city || targetLead.party_id?.district || "");
-    setState(targetLead.billing_address?.state || targetLead.party_id?.state || "");
-    setPincode(targetLead.billing_address?.pincode || "");
+    const leadCountry = b?.country || pAddr?.country || targetLead.party_id?.country || "India";
+    const leadCountryId = b?.country_id || pAddr?.country_id || targetLead.party_id?.country_id || "";
+    setCountry(leadCountry);
+    setCountryId(leadCountryId);
+
+    const leadState = b?.state || pAddr?.state || targetLead.party_id?.state || "";
+    const leadStateId = b?.state_id || pAddr?.state_id || targetLead.party_id?.state_id || "";
+    setState(leadState);
+    setStateId(leadStateId);
+
+    const leadCity = b?.city || pAddr?.city || targetLead.party_id?.district || targetLead.party_id?.city || "";
+    const leadCityId = b?.city_id || pAddr?.city_id || targetLead.party_id?.city_id || "";
+    setCity(leadCity);
+    setCityId(leadCityId);
+
+    setPincode(b?.pincode || pAddr?.pincode || "");
 
     if (targetLead.products && targetLead.products.length > 0) {
       setItems(
@@ -708,13 +963,28 @@ export function QuotationFormPage({
     setEmail(p.email || primaryContact?.email || "");
     setGstin(p.gst_no || "");
 
-    const addr = [p.billing_address?.address_line_1, p.billing_address?.address_line_2]
+    const pAddr = p.billing_address as any;
+    const addr = [pAddr?.address_line_1, pAddr?.address_line_2]
       .filter(Boolean)
       .join(", ");
     setAddressLine(addr || "");
-    setCity(p.billing_address?.city || p.district || "");
-    setState(p.billing_address?.state || p.state || "");
-    setPincode(p.billing_address?.pincode || "");
+
+    const pCountry = pAddr?.country || p.country || "India";
+    const pCountryId = pAddr?.country_id || p.country_id || "";
+    setCountry(pCountry);
+    setCountryId(pCountryId);
+
+    const pState = pAddr?.state || p.state || "";
+    const pStateId = pAddr?.state_id || p.state_id || "";
+    setState(pState);
+    setStateId(pStateId);
+
+    const pCity = pAddr?.city || p.district || p.city || "";
+    const pCityId = pAddr?.city_id || p.city_id || "";
+    setCity(pCity);
+    setCityId(pCityId);
+
+    setPincode(pAddr?.pincode || "");
 
     toast.success(`Loaded customer details for "${p.party_name}"`);
   };
@@ -731,7 +1001,7 @@ export function QuotationFormPage({
     }
   };
 
-  // Populate form on edit mode or linked lead
+  // Populate form on edit mode, copy mode, or linked lead
   useEffect(() => {
     if (isEditing && existingQuotation) {
       const qAny = existingQuotation as any;
@@ -739,6 +1009,7 @@ export function QuotationFormPage({
       setSelectedLeadId(typeof existingQuotation.lead === "object" && existingQuotation.lead !== null ? existingQuotation.lead._id : (existingQuotation.lead || ""));
       setRefNo(existingQuotation.ref_no || "");
       setCustomerRef(qAny.customer_ref || "");
+      setGstEnabled(existingQuotation.gst_enabled !== false);
       setQuotationDate(
         existingQuotation.quotation_date
           ? new Date(existingQuotation.quotation_date).toISOString().split("T")[0]
@@ -752,13 +1023,32 @@ export function QuotationFormPage({
       setCell(qAny.cell || "");
       setEmail(existingQuotation.email || "");
       setGstin(qAny.gstin || "");
-      const addr = qAny.billing_address || existingQuotation.address;
+      const addr = (qAny.billing_address || existingQuotation.address) as any;
       if (addr) {
         setAddressLine(addr.address_line_1 || "");
-        setCity(addr.city || "");
+        setCountry(addr.country || "India");
+        setCountryId(addr.country_id || "");
         setState(addr.state || "");
+        setStateId(addr.state_id || "");
+        setCity(addr.city || "");
+        setCityId(addr.city_id || "");
         setPincode(addr.pincode || "");
       }
+
+      // Branch & company profile from quotation
+      const qBranchId = String((existingQuotation as any).branch_id || (existingQuotation as any).company_branch_id || "");
+      setSelectedBranchId(qBranchId);
+      setCompanyName(existingQuotation.company_name || "");
+      setCompanyRegdAddress(existingQuotation.company_regd_address || "");
+      setCompanyPhone(existingQuotation.company_phone || "");
+      setCompanyEmail(existingQuotation.company_email || "");
+      setCompanyGstin(existingQuotation.company_gstin || "");
+      setBankName(existingQuotation.bank_name || "");
+      setAccountName(existingQuotation.account_name || "");
+      setAccountNumber(existingQuotation.account_number || "");
+      setIfscCode(existingQuotation.ifsc_code || "");
+      setBankBranchName(existingQuotation.branch_name || "");
+      setAccountType(existingQuotation.account_type || "");
 
       // Signatory from quotation
       const qSignatoryId =
@@ -794,6 +1084,7 @@ export function QuotationFormPage({
             rate: Number(i.rate) || 0,
             discount_percent: Number(i.discount_percent) || 0,
             discount_amount: Number(i.discount_amount) || 0,
+            gst_enabled: i.gst_enabled !== false,
             gst_rate: Number(i.gst_rate) ?? 5,
           }))
         );
@@ -803,11 +1094,113 @@ export function QuotationFormPage({
           ? existingQuotation.terms_and_conditions
           : []
       );
-    } else if (linkedLead) {
+      setMessage((existingQuotation as any).message || (existingQuotation as any).quotation_message || "");
+    } else if (isCopyMode && existingQuotation && !copyInitializedRef.current) {
+      copyInitializedRef.current = true;
+      const qAny = existingQuotation as any;
+      setSelectedPartyId(existingQuotation.party_id || "");
+      setSelectedLeadId(typeof existingQuotation.lead === "object" && existingQuotation.lead !== null ? existingQuotation.lead._id : (existingQuotation.lead || ""));
+      // Assign fresh next reference number and reset date to today
+      setRefNo(autoNextRefNo);
+      setCustomerRef(qAny.customer_ref || "");
+      setGstEnabled(existingQuotation.gst_enabled !== false);
+      setQuotationDate(new Date().toISOString().split("T")[0]);
+      setValidityDays(existingQuotation.validity_days || 15);
+      setSubject(existingQuotation.subject || "");
+      setCustomerName(existingQuotation.customer_name || "");
+      setKindAttn(qAny.kind_attn || "");
+      setPhone(existingQuotation.phone || "");
+      setCell(qAny.cell || "");
+      setEmail(existingQuotation.email || "");
+      setGstin(qAny.gstin || "");
+      const addr = (qAny.billing_address || existingQuotation.address) as any;
+      if (addr) {
+        setAddressLine(addr.address_line_1 || "");
+        setCountry(addr.country || "India");
+        setCountryId(addr.country_id || "");
+        setState(addr.state || "");
+        setStateId(addr.state_id || "");
+        setCity(addr.city || "");
+        setCityId(addr.city_id || "");
+        setPincode(addr.pincode || "");
+      }
+
+      // Branch & company profile from quotation
+      const qBranchId = String((existingQuotation as any).branch_id || (existingQuotation as any).company_branch_id || "");
+      setSelectedBranchId(qBranchId);
+      setCompanyName(existingQuotation.company_name || "");
+      setCompanyRegdAddress(existingQuotation.company_regd_address || "");
+      setCompanyPhone(existingQuotation.company_phone || "");
+      setCompanyEmail(existingQuotation.company_email || "");
+      setCompanyGstin(existingQuotation.company_gstin || "");
+      setBankName(existingQuotation.bank_name || "");
+      setAccountName(existingQuotation.account_name || "");
+      setAccountNumber(existingQuotation.account_number || "");
+      setIfscCode(existingQuotation.ifsc_code || "");
+      setBankBranchName(existingQuotation.branch_name || "");
+      setAccountType(existingQuotation.account_type || "");
+
+      // Signatory from quotation
+      const qSignatoryId =
+        typeof existingQuotation.signatory_user === "object" && existingQuotation.signatory_user !== null
+          ? (existingQuotation.signatory_user as any)?._id || ""
+          : (existingQuotation.signatory_user as string) || "";
+      setSignatoryUserId(qSignatoryId);
+      setSignatoryName(existingQuotation.signatory_name || "");
+      setSignatoryPhone(existingQuotation.signatory_phone || "");
+      setSignatoryEmail(existingQuotation.signatory_email || "");
+      setSignatoryDesignation(existingQuotation.signatory_designation || "");
+
+      // Sales Person from quotation or authUser
+      const qSalesPersonId =
+        typeof (existingQuotation as any).sales_person_user === "object" && (existingQuotation as any).sales_person_user !== null
+          ? ((existingQuotation as any).sales_person_user as any)?._id || ""
+          : ((existingQuotation as any).sales_person_user as string) || "";
+      if (qSalesPersonId) {
+        setSalesPersonUserId(qSalesPersonId);
+        setSalesPersonName(existingQuotation.sales_person_name || "");
+        setSalesPersonPhone(existingQuotation.sales_person_phone || "");
+        setSalesPersonEmail(existingQuotation.sales_person_email || "");
+        setSalesPersonDesignation(existingQuotation.sales_person_designation || "Sales Executive");
+      } else if (authUser && isSalesDepartmentUser(authUser as any)) {
+        setSalesPersonUserId(String(authUser._id || (authUser as any).id || ""));
+        setSalesPersonName(String(authUser.name || authUser.email || ""));
+        setSalesPersonPhone(String((authUser as any).phone || ""));
+        setSalesPersonEmail(String(authUser.email || ""));
+        setSalesPersonDesignation(String((authUser as any).designation || "Sales Executive"));
+      }
+
+      if (existingQuotation.items && existingQuotation.items.length > 0) {
+        setItems(
+          existingQuotation.items.map((i: any) => ({
+            product: i.product?._id || i.product || undefined,
+            product_name: i.product_name || "",
+            description: i.description || "",
+            hsn_code: i.hsn_code || "9018",
+            quantity: parseQuotationLineQuantity(i.quantity, 1),
+            unit: i.unit || "Nos",
+            rate: Number(i.rate) || 0,
+            discount_percent: Number(i.discount_percent) || 0,
+            discount_amount: Number(i.discount_amount) || 0,
+            gst_enabled: i.gst_enabled !== false,
+            gst_rate: Number(i.gst_rate) ?? 5,
+          }))
+        );
+      }
+      setTerms(
+        existingQuotation.terms_and_conditions && existingQuotation.terms_and_conditions.length > 0
+          ? existingQuotation.terms_and_conditions
+          : []
+      );
+      setMessage((existingQuotation as any).message || (existingQuotation as any).quotation_message || "");
+      toast.info(`Pre-filled quotation copied from #${existingQuotation.quotation_no || existingQuotation.ref_no}`);
+    } else if (linkedLead && !isCopyMode) {
       handleLeadSelect(linkedLead._id);
       setRefNo(autoNextRefNo);
-    } else if (!isEditing) {
+      setMessage("");
+    } else if (!isEditing && !isCopyMode) {
       setRefNo(autoNextRefNo);
+      setMessage("");
       if (authUser && isSalesDepartmentUser(authUser as any)) {
         setSalesPersonUserId(String(authUser._id || (authUser as any).id || ""));
         setSalesPersonName(String(authUser.name || authUser.email || ""));
@@ -816,7 +1209,37 @@ export function QuotationFormPage({
         setSalesPersonDesignation(String((authUser as any).designation || "Sales Executive"));
       }
     }
-  }, [isEditing, existingQuotation, linkedLead, autoNextRefNo, authUser]);
+  }, [isEditing, isCopyMode, existingQuotation, linkedLead, autoNextRefNo, authUser]);
+
+  // Default to Head Office branch on new quotation when branches load
+  useEffect(() => {
+    if (!isEditing && !isCopyMode && !selectedBranchId && branches.length > 0) {
+      const headOffice = branches.find((b) => b.is_head_office) || branches[0];
+      if (headOffice) {
+        handleBranchSelect(headOffice._id, false);
+      }
+    }
+  }, [isEditing, isCopyMode, selectedBranchId, branches]);
+
+  // If editing an existing quote that didn't have branch_id explicitly set, match branch by code, gstin, or fallback to head office
+  useEffect(() => {
+    if (isEditing && existingQuotation && !selectedBranchId && branches.length > 0) {
+      const qAny = existingQuotation as any;
+      const match =
+        branches.find((b) => b.branch_code && b.branch_code === qAny.branch_code) ||
+        branches.find((b) => b.taxation?.gstin && b.taxation.gstin === existingQuotation.company_gstin) ||
+        branches.find((b) => b.is_head_office) ||
+        branches[0];
+      if (match) {
+        setSelectedBranchId(match._id);
+        if (!companyName) setCompanyName(existingQuotation.company_name || match.branch_name);
+        if (!companyRegdAddress) setCompanyRegdAddress(existingQuotation.company_regd_address || formatBranchAddress(match));
+        if (!companyPhone) setCompanyPhone(existingQuotation.company_phone || match.contact?.phone || "");
+        if (!companyEmail) setCompanyEmail(existingQuotation.company_email || match.contact?.email || "");
+        if (!companyGstin) setCompanyGstin(existingQuotation.company_gstin || match.taxation?.gstin || "");
+      }
+    }
+  }, [isEditing, existingQuotation, selectedBranchId, branches]);
 
   const handleSelectAdminUser = (userId: string) => {
     if (!userId) {
@@ -865,7 +1288,7 @@ export function QuotationFormPage({
   };
 
   const calculations = useMemo(() => {
-    const totals = computeQuotationTotals(items);
+    const totals = computeQuotationTotals(items, { gstEnabled });
     return {
       items: totals.computedItems.map(({ item, gross, discPercent, discAmt, taxable, gstAmt, lineTotal }) => ({
         ...item,
@@ -882,8 +1305,315 @@ export function QuotationFormPage({
       totalGst: totals.totalGst,
       roundOff: totals.roundOff,
       grandTotal: totals.grandTotal,
+      amount_in_words: totals.amount_in_words || numberToIndianWords(totals.grandTotal),
     };
-  }, [items]);
+  }, [items, gstEnabled]);
+
+  // Live Preview State & dynamic LeadQuotationRecord object
+  const [showLivePreviewModal, setShowLivePreviewModal] = useState(false);
+  const previewContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const previewQuotationRecord: LeadQuotationRecord = useMemo(() => {
+    return {
+      _id: quotationId || "preview-id",
+      quotation_no: refNo.trim() || autoNextRefNo || "Q-PREVIEW",
+      ref_no: refNo.trim() || autoNextRefNo || "Q-PREVIEW",
+      customer_ref: customerRef.trim() || undefined,
+      lead: selectedLeadId || leadId || "",
+      party_id: selectedPartyId || undefined,
+      quotation_date: quotationDate ? new Date(quotationDate).toISOString() : new Date().toISOString(),
+      valid_until: validityEndDate ? new Date(validityEndDate).toISOString() : undefined,
+      validity_days: Number(validityDays) || 15,
+      subject: subject.trim() || "Quotation Proposal",
+      customer_name: customerName.trim() || "Customer / Organization",
+      kind_attn: kindAttn.trim() || undefined,
+      phone: phone.trim() || undefined,
+      cell: cell.trim() || undefined,
+      email: email.trim() || undefined,
+      gstin: gstin.trim() || undefined,
+      address: {
+        address_line_1: addressLine.trim() || undefined,
+        city: city.trim() || undefined,
+        city_id: cityId || undefined,
+        state: state.trim() || undefined,
+        state_id: stateId || undefined,
+        country: country.trim() || "India",
+        country_id: countryId || undefined,
+        pincode: pincode.trim() || undefined,
+      },
+      items: items.map((i, idx) => {
+        const calc = calculations.items[idx];
+        return {
+          product: i.product,
+          product_name: i.product_name.trim() || "Item",
+          description: i.description || "",
+          hsn_code: i.hsn_code || "9018",
+          quantity: parseQuotationLineQuantity(i.quantity, 1),
+          unit: i.unit || "Nos",
+          rate: Number(i.rate) || 0,
+          discount_percent: Number(i.discount_percent) || 0,
+          discount_amount: Number(i.discount_amount) || 0,
+          taxable_amount: calc?.taxable ?? 0,
+          gst_enabled: i.gst_enabled !== false,
+          gst_rate: Number(i.gst_rate) || 0,
+          total_gst_amount: calc?.gstAmt ?? 0,
+          line_total: calc?.lineTotal ?? 0,
+        };
+      }),
+      total_discount: calculations.totalDiscount,
+      subtotal: calculations.subtotal,
+      total_gst: calculations.totalGst,
+      round_off: calculations.roundOff,
+      grand_total: calculations.grandTotal,
+      amount_in_words: calculations.amount_in_words || numberToIndianWords(calculations.grandTotal),
+      message: message || undefined,
+      quotation_message: message || undefined,
+      terms_and_conditions: terms.filter(Boolean),
+      branch_id: selectedBranchId || undefined,
+      branch_code: branches.find((b) => String(b._id) === String(selectedBranchId))?.branch_code || undefined,
+      company_branch_name: companyName || undefined,
+      company_name: companyName || undefined,
+      company_regd_address: companyRegdAddress || undefined,
+      company_phone: companyPhone || undefined,
+      company_email: companyEmail || undefined,
+      company_gstin: companyGstin || undefined,
+      bank_name: bankName || undefined,
+      account_name: accountName || undefined,
+      account_number: accountNumber || undefined,
+      ifsc_code: ifscCode || undefined,
+      branch_name: bankBranchName || undefined,
+      account_type: accountType || undefined,
+      signatory_name: signatoryName.trim() || "Authorized Signatory",
+      signatory_phone: signatoryPhone.trim() || undefined,
+      signatory_email: signatoryEmail.trim() || undefined,
+      signatory_designation: signatoryDesignation.trim() || "Lead Manager",
+      signatory_user: signatoryUserId || undefined,
+      sales_person_name: salesPersonName.trim() || undefined,
+      sales_person_phone: salesPersonPhone.trim() || undefined,
+      sales_person_email: salesPersonEmail.trim() || undefined,
+      sales_person_designation: salesPersonDesignation.trim() || "Sales Executive",
+      sales_person_user: salesPersonUserId || undefined,
+      status: "draft",
+      approval_status: "pending_approval",
+      gst_enabled: gstEnabled,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+  }, [
+    quotationId,
+    refNo,
+    autoNextRefNo,
+    customerRef,
+    selectedLeadId,
+    leadId,
+    selectedPartyId,
+    quotationDate,
+    validityEndDate,
+    validityDays,
+    subject,
+    customerName,
+    kindAttn,
+    phone,
+    cell,
+    email,
+    gstin,
+    addressLine,
+    city,
+    cityId,
+    state,
+    stateId,
+    country,
+    countryId,
+    pincode,
+    items,
+    gstEnabled,
+    calculations,
+    terms,
+    message,
+    selectedBranchId,
+    branches,
+    companyName,
+    companyRegdAddress,
+    companyPhone,
+    companyEmail,
+    companyGstin,
+    bankName,
+    accountName,
+    accountNumber,
+    ifscCode,
+    bankBranchName,
+    accountType,
+    signatoryName,
+    signatoryPhone,
+    signatoryEmail,
+    signatoryDesignation,
+    signatoryUserId,
+    salesPersonName,
+    salesPersonPhone,
+    salesPersonEmail,
+    salesPersonDesignation,
+    salesPersonUserId,
+  ]);
+
+  const handlePrintPreview = () => {
+    if (!previewContainerRef.current) return;
+
+    // Detect if content exceeds single A4 printable page height (~1060px)
+    const isMultiPage = (previewContainerRef.current.scrollHeight || 0) > 1060;
+
+    const printFrame = document.createElement("iframe");
+    printFrame.style.position = "fixed";
+    printFrame.style.right = "0";
+    printFrame.style.bottom = "0";
+    printFrame.style.width = "0";
+    printFrame.style.height = "0";
+    printFrame.style.border = "0";
+    document.body.appendChild(printFrame);
+
+    const doc = printFrame.contentWindow?.document;
+    if (!doc) return;
+
+    doc.open();
+    doc.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Preview_Quotation_${refNo || autoNextRefNo || "Draft"}</title>
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 8mm 10mm;
+              ${
+                isMultiPage
+                  ? `@bottom-center {
+                content: "Page " counter(page) " of " counter(pages);
+                font-size: 7.5pt;
+                font-weight: 700;
+                color: #334155;
+              }`
+                  : `@bottom-center {
+                content: none;
+              }`
+              }
+            }
+            * {
+              box-sizing: border-box;
+            }
+            html, body {
+              margin: 0;
+              padding: 0;
+              background: #ffffff;
+              color: #0f172a;
+              font-family: Arial, Helvetica, sans-serif;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            #quotation-pdf-root {
+              width: 100% !important;
+              max-width: 794px !important;
+              margin: 0 auto !important;
+              padding: 0 !important;
+              box-shadow: none !important;
+              background: #ffffff !important;
+            }
+            .rich-text-content {
+              font-size: 8.5px !important;
+              line-height: 1.4 !important;
+              color: #1e293b !important;
+            }
+            .rich-text-content table {
+              width: 100% !important;
+              border-collapse: collapse !important;
+              margin: 4px 0 6px 0 !important;
+              page-break-inside: avoid !important;
+            }
+            .rich-text-content th,
+            .rich-text-content td {
+              border: 1px solid #cbd5e1 !important;
+              padding: 4px 6px !important;
+              font-size: 8px !important;
+              line-height: 1.3 !important;
+              text-align: left !important;
+              vertical-align: top !important;
+            }
+            .rich-text-content th {
+              background-color: #f1f5f9 !important;
+              font-weight: 700 !important;
+              color: #0f172a !important;
+            }
+            .rich-text-content h1 {
+              font-size: 11px !important;
+              font-weight: 700 !important;
+              margin: 4px 0 2px 0 !important;
+              color: #0f172a !important;
+            }
+            .rich-text-content h2 {
+              font-size: 10px !important;
+              font-weight: 700 !important;
+              margin: 3px 0 2px 0 !important;
+              color: #0f172a !important;
+            }
+            .rich-text-content h3 {
+              font-size: 9px !important;
+              font-weight: 700 !important;
+              margin: 2px 0 1px 0 !important;
+              color: #0f172a !important;
+            }
+            .rich-text-content p {
+              margin: 0 0 3px 0 !important;
+            }
+            .rich-text-content ul,
+            .rich-text-content ol {
+              margin: 2px 0 4px 0 !important;
+              padding-left: 16px !important;
+            }
+            .rich-text-content li {
+              margin-bottom: 2px !important;
+            }
+            .rich-text-content blockquote {
+              border-left: 2px solid #94a3b8 !important;
+              padding-left: 8px !important;
+              margin: 3px 0 !important;
+              font-style: italic !important;
+            }
+            .rich-text-content hr {
+              border: none !important;
+              border-top: 1px solid #cbd5e1 !important;
+              margin: 4px 0 !important;
+            }
+            ${
+              isMultiPage
+                ? `.print-page-number::after {
+              content: "Page " counter(page) " of " counter(pages);
+            }`
+                : `.print-page-number {
+              display: none !important;
+            }`
+            }
+          </style>
+        </head>
+        <body class="${isMultiPage ? "multi-page" : "single-page"}">
+          ${previewContainerRef.current.innerHTML}
+        </body>
+      </html>
+    `);
+    doc.close();
+
+    setTimeout(() => {
+      try {
+        printFrame.contentWindow?.focus();
+        printFrame.contentWindow?.print();
+      } catch (err) {
+        console.error("Print preview error:", err);
+      } finally {
+        setTimeout(() => {
+          if (document.body.contains(printFrame)) {
+            document.body.removeChild(printFrame);
+          }
+        }, 1000);
+      }
+    }, 250);
+  };
 
   // Product Selection handler
   const handleSelectProduct = (index: number, productId: string) => {
@@ -932,6 +1662,7 @@ export function QuotationFormPage({
       quantity: 1,
       unit: prodUnit,
       rate,
+      gst_enabled: true,
       gst_rate: gstRate,
     };
 
@@ -968,6 +1699,7 @@ export function QuotationFormPage({
         quantity: 1,
         unit: "Nos",
         rate: 0,
+        gst_enabled: true,
         gst_rate: 18,
       },
     ]);
@@ -1093,6 +1825,21 @@ export function QuotationFormPage({
       return;
     }
 
+    if (!country.trim()) {
+      toast.error("Country is required");
+      return;
+    }
+
+    if (!state.trim()) {
+      toast.error("State is required");
+      return;
+    }
+
+    if (!city.trim()) {
+      toast.error("City is required");
+      return;
+    }
+
     if (items.some((i) => !i.product_name.trim())) {
       toast.error("All line items must have a product name");
       return;
@@ -1110,10 +1857,61 @@ export function QuotationFormPage({
 
     const cleanedTerms = terms.map((t) => t.trim()).filter(Boolean);
 
+    // Sync Party Master (check party master with name, contact, email, gst; create with party_type quotation if not exist, or update via party service)
+    let resolvedPartyId = selectedPartyId || "";
+    try {
+      const syncResult = await syncPartyMaster({
+        partyType: "quotation",
+        partyId: selectedPartyId || undefined,
+        partyName: customerName.trim(),
+        contactPerson: kindAttn.trim() || undefined,
+        phone: phone.trim() || cell.trim(),
+        email: email.trim(),
+        gst: gstin.trim(),
+        billingAddress: {
+          address_line_1: addressLine.trim() || undefined,
+          city: city.trim() || undefined,
+          city_id: cityId || undefined,
+          state: state.trim() || undefined,
+          state_id: stateId || undefined,
+          pincode: pincode.trim() || undefined,
+          country: country.trim() || "India",
+          country_id: countryId || undefined,
+        },
+        contacts: kindAttn.trim()
+          ? [
+              {
+                name: kindAttn.trim(),
+                phone: phone.trim() || cell.trim() || undefined,
+                email: email.trim() || undefined,
+                is_primary: true,
+              },
+            ]
+          : [],
+        existingParties: parties,
+        fetchPartiesBySearch: (q) => fetchPartiesTrigger(q).unwrap(),
+        createParty: (body) => createParty(body).unwrap(),
+        patchParty: (arg) => patchParty(arg).unwrap(),
+      });
+
+      if (syncResult?.partyId) {
+        resolvedPartyId = syncResult.partyId;
+        setSelectedPartyId(syncResult.partyId);
+        if (syncResult.matched) {
+          toast.info(`Party Master matched & updated: ${syncResult.partyName}`);
+        } else {
+          toast.success(`New Party Master created with type 'quotation': ${syncResult.partyName}`);
+        }
+      }
+    } catch (partyErr) {
+      console.warn("Party master sync warning:", partyErr);
+    }
+
     const payload: CreateQuotationPayload & Record<string, unknown> = {
       ref_no: refNo.trim() || undefined,
       customer_ref: customerRef.trim() || undefined,
-      party_id: selectedPartyId || undefined,
+      party_id: resolvedPartyId || undefined,
+      gst_enabled: gstEnabled,
       quotation_date: quotationDate ? new Date(quotationDate).toISOString() : new Date().toISOString(),
       validity_days: Number(validityDays) || 15,
       subject: subject.trim() || undefined,
@@ -1126,9 +1924,12 @@ export function QuotationFormPage({
       address: {
         address_line_1: addressLine.trim(),
         city: city.trim(),
+        city_id: cityId || undefined,
         state: state.trim(),
+        state_id: stateId || undefined,
         pincode: pincode.trim(),
-        country: "India",
+        country: country.trim() || "India",
+        country_id: countryId || undefined,
       },
       items: items.map((i) => ({
         product: i.product,
@@ -1140,9 +1941,26 @@ export function QuotationFormPage({
         rate: Number(i.rate) || 0,
         discount_percent: Number(i.discount_percent) || 0,
         discount_amount: Number(i.discount_amount) || 0,
+        gst_enabled: i.gst_enabled !== false,
         gst_rate: Number(i.gst_rate) || 0,
       })),
       terms_and_conditions: cleanedTerms,
+      message: message.trim() || undefined,
+      quotation_message: message.trim() || undefined,
+      branch_id: selectedBranchId || undefined,
+      branch_code: branches.find((b) => String(b._id) === String(selectedBranchId))?.branch_code || undefined,
+      company_branch_name: companyName || undefined,
+      company_name: companyName.trim() || undefined,
+      company_regd_address: companyRegdAddress.trim() || undefined,
+      company_phone: companyPhone.trim() || undefined,
+      company_email: companyEmail.trim() || undefined,
+      company_gstin: companyGstin.trim() || undefined,
+      bank_name: bankName.trim() || undefined,
+      account_name: accountName.trim() || undefined,
+      account_number: accountNumber.trim() || undefined,
+      ifsc_code: ifscCode.trim() || undefined,
+      branch_name: bankBranchName.trim() || undefined,
+      account_type: accountType.trim() || undefined,
       signatory_name: signatoryName.trim(),
       signatory_phone: signatoryPhone.trim(),
       signatory_email: signatoryEmail.trim(),
@@ -1153,6 +1971,7 @@ export function QuotationFormPage({
       sales_person_email: salesPersonEmail.trim(),
       sales_person_designation: salesPersonDesignation.trim() || "Sales Executive",
       sales_person_user: salesPersonUserId || undefined,
+      amount_in_words: calculations.amount_in_words || numberToIndianWords(calculations.grandTotal),
     };
 
     const targetLeadId = selectedLeadId || leadId || "";
@@ -1224,16 +2043,45 @@ export function QuotationFormPage({
           </Link>
           <div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <FileText className="h-5 w-5 text-primary" />
-              {isEditing ? `Edit Quotation #${existingQuotation?.quotation_no || ""}` : "Generate Quotation"}
+              {isCopyMode ? (
+                <Copy className="h-5 w-5 text-indigo-500" />
+              ) : (
+                <FileText className="h-5 w-5 text-primary" />
+              )}
+              {isEditing
+                ? `Edit Quotation #${existingQuotation?.quotation_no || ""}`
+                : isCopyMode
+                ? `Copy Quotation (from #${existingQuotation?.quotation_no || existingQuotation?.ref_no || ""})`
+                : "Generate Quotation"}
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Official Letterhead format proposal for {customerName || "Customer"}
+              {isCopyMode
+                ? `Creating a new quotation copied from #${existingQuotation?.quotation_no || existingQuotation?.ref_no || "previous quotation"}`
+                : `Official Letterhead format proposal for ${customerName || "Customer"}`}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShowLivePreviewModal(true)}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-xs font-bold text-emerald-700 shadow-xs hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/60 dark:text-emerald-300 transition-colors cursor-pointer"
+            title="View real-time A4 letterhead preview with PREVIEW watermark"
+          >
+            <Eye className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+            Live Preview
+          </button>
+          {isEditing && quotationId && (
+            <Link
+              href={`${portalHome}/quotations/new?copy_from=${quotationId}`}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800 dark:text-slate-200 transition"
+              title="Create a copy of this quotation as a new quotation"
+            >
+              <Copy className="h-4 w-4 text-indigo-500" />
+              Copy Quotation
+            </Link>
+          )}
           <Link
             href={`${portalHome}/quotations`}
             className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-white/10 dark:text-slate-300"
@@ -1247,13 +2095,47 @@ export function QuotationFormPage({
             className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-5 py-2 text-xs font-bold text-white shadow-md hover:bg-primary-hover disabled:opacity-50 cursor-pointer"
           >
             <Save className="h-4 w-4" />
-            {isCreating || isUpdating ? "Saving..." : isEditing ? "Update Quotation" : "Generate Quotation"}
+            {isCreating || isUpdating
+              ? "Saving..."
+              : isEditing
+              ? "Update Quotation"
+              : isCopyMode
+              ? "Create Copied Quotation"
+              : "Generate Quotation"}
           </button>
         </div>
       </div>
 
       {/* Main Form Body */}
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Copy Mode Information Banner */}
+        {isCopyMode && existingQuotation && (
+          <div className="rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50/90 via-white to-indigo-50/50 p-4 dark:border-indigo-900/50 dark:bg-slate-900 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-center gap-3.5">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-600 text-white font-black text-xs shadow-md shadow-indigo-600/20">
+                <Copy className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-extrabold text-slate-900 dark:text-white">
+                    Copying from Quotation #{existingQuotation.quotation_no || existingQuotation.ref_no}
+                  </h4>
+                  <span className="rounded-md bg-indigo-100 px-2 py-0.5 text-[10px] font-black uppercase text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">
+                    Source: v{existingQuotation.version || 1}
+                  </span>
+                </div>
+                <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                  All line items, specifications, addresses, and terms &amp; conditions have been copied. A fresh quotation reference will be created as a Draft proposal upon saving.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 self-start md:self-auto rounded-xl bg-indigo-100/70 px-3 py-1.5 dark:bg-indigo-950/70 text-xs font-bold text-indigo-800 dark:text-indigo-300">
+              <span>New Reference:</span>
+              <span className="rounded bg-indigo-600 px-1.5 py-0.5 text-white font-mono">{refNo || autoNextRefNo}</span>
+            </div>
+          </div>
+        )}
+
         {/* Revision Information Banner for Edit Mode */}
         {isEditing && existingQuotation && (
           <div className="rounded-2xl border border-indigo-200 bg-gradient-to-r from-indigo-50/80 via-white to-indigo-50/50 p-4 dark:border-indigo-900/50 dark:bg-slate-900 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
@@ -1318,6 +2200,85 @@ export function QuotationFormPage({
             </div>
           </div>
         )}
+
+        {/* Company Branch & Letterhead Entity */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-white/10 dark:bg-slate-900">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4 border-b border-slate-100 pb-3 dark:border-white/10">
+            <div>
+              <div className="text-xs font-bold uppercase tracking-wider text-primary flex items-center gap-2">
+                <Building2 className="h-4 w-4" />
+                <span>Company Branch / Billing &amp; Letterhead Entity</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Opt the branch profile used for Header (Logo, Address, Phone, Email, GSTIN) and Footer (Bank details &amp; Signatory address).
+              </p>
+            </div>
+            {selectedBranch && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-primary/10 text-primary border border-primary/20">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                {selectedBranch.is_head_office ? "Head Office" : "Branch Office"} • Code: {selectedBranch.branch_code}
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <div className="md:col-span-1 space-y-2">
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Opt Company Branch <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative">
+                <select
+                  value={selectedBranchId}
+                  onChange={(e) => handleBranchSelect(e.target.value)}
+                  className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 pr-8 text-xs font-bold text-slate-900 shadow-xs focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white cursor-pointer"
+                >
+                  <option value="" disabled>-- Select Company Branch --</option>
+                  {branches.map((b) => (
+                    <option key={b._id} value={b._id}>
+                      {b.branch_name} ({b.address?.city || b.branch_code}){b.is_head_office ? " [HQ]" : ""}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-3 h-4 w-4 text-slate-400" />
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Switching branch updates header letterhead address, contact phone/email, GSTIN, and company banking details.
+              </p>
+            </div>
+
+            <div className="md:col-span-2 rounded-xl bg-slate-50/90 p-4 border border-slate-200/80 dark:bg-slate-800/60 dark:border-white/10">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                <div className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                  <MapPin className="h-4 w-4 text-primary" />
+                  <span>{companyName || "No Branch Selected"}</span>
+                </div>
+                {companyGstin && (
+                  <span className="text-[10px] font-mono font-bold text-slate-600 bg-white dark:bg-slate-700 dark:text-slate-200 px-2 py-0.5 rounded border border-slate-200 dark:border-white/10">
+                    GSTIN: {companyGstin}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px] text-slate-600 dark:text-slate-300">
+                <div>
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">Branch Address: </span>
+                  <span className="break-words">{companyRegdAddress || "Address not configured"}</span>
+                </div>
+                <div>
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">Official Contact: </span>
+                  <span>{[companyPhone ? `Phone: ${companyPhone}` : "", companyEmail ? `Email: ${companyEmail}` : ""].filter(Boolean).join(" • ") || "N/A"}</span>
+                </div>
+                <div className="sm:col-span-2 pt-2 border-t border-slate-200/60 dark:border-white/10 flex flex-wrap items-center gap-x-4 gap-y-1 text-[10.5px]">
+                  <span><strong className="text-slate-700 dark:text-slate-200">Bank:</strong> {bankName || "N/A"}</span>
+                  <span><strong className="text-slate-700 dark:text-slate-200">A/c No:</strong> <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{accountNumber || "N/A"}</span></span>
+                  <span><strong className="text-slate-700 dark:text-slate-200">IFSC:</strong> <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{ifscCode || "N/A"}</span></span>
+                  {bankBranchName && <span><strong className="text-slate-700 dark:text-slate-200">Branch:</strong> {bankBranchName}</span>}
+                  {accountType && <span><strong className="text-slate-700 dark:text-slate-200">Type:</strong> {accountType}</span>}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* Reference & Proposal Subject */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-white/10 dark:bg-slate-900">
@@ -1447,7 +2408,7 @@ export function QuotationFormPage({
             </div>
 
             <PartySearchAutocomplete
-              parties={parties}
+              parties={filteredParties}
               selectedPartyId={selectedPartyId}
               onSelect={handlePartySelect}
             />
@@ -1594,7 +2555,7 @@ export function QuotationFormPage({
               />
             </div>
 
-            <div className="sm:col-span-2 md:col-span-2">
+            <div className="sm:col-span-2 md:col-span-4">
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
                 Street Address
               </label>
@@ -1607,54 +2568,183 @@ export function QuotationFormPage({
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-2 sm:col-span-3 md:col-span-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  City
-                </label>
-                <input
-                  type="text"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  placeholder="City"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-xs focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-900 dark:text-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  State
-                </label>
-                <input
-                  type="text"
-                  value={state}
-                  onChange={(e) => setState(e.target.value)}
-                  placeholder="State"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-xs focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-900 dark:text-white"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Pincode
-                </label>
-                <input
-                  type="text"
-                  value={pincode}
-                  onChange={(e) => setPincode(e.target.value)}
-                  placeholder="Pincode"
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-xs focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-900 dark:text-white"
-                />
-              </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Country <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={countryId}
+                onChange={(e) => {
+                  const cId = e.target.value;
+                  setCountryId(cId);
+                  const matched = countriesData.find((c) => (c._id || c.id) === cId);
+                  setCountry(matched?.name || "");
+                  setStateId("");
+                  setState("");
+                  setCityId("");
+                  setCity("");
+                }}
+                disabled={isCountriesLoading}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-xs focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-900 dark:text-white disabled:opacity-50"
+              >
+                <option value="">{isCountriesLoading ? "Loading countries..." : "Select Country"}</option>
+                {countriesData.map((c) => (
+                  <option key={c._id || c.id} value={c._id || c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                State <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={stateId}
+                onChange={(e) => {
+                  const sId = e.target.value;
+                  setStateId(sId);
+                  const matched = statesData.find((s) => (s._id || s.id) === sId);
+                  setState(matched?.name || "");
+                  setCityId("");
+                  setCity("");
+                }}
+                disabled={!countryId || isStatesLoading}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-xs focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-900 dark:text-white disabled:opacity-50"
+              >
+                <option value="">
+                  {!countryId
+                    ? "Select country first"
+                    : isStatesLoading
+                    ? "Loading states..."
+                    : "Select State"}
+                </option>
+                {statesData.map((s) => (
+                  <option key={s._id || s.id} value={s._id || s.id}>
+                    {s.name}
+                  </option>
+                ))}
+                {state && !statesData.some((s) => (s._id || s.id) === stateId) && (
+                  <option value={stateId || state}>{state}</option>
+                )}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                City / District <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={cityId}
+                onChange={(e) => {
+                  const ciId = e.target.value;
+                  setCityId(ciId);
+                  const matched = citiesData.find((ci) => (ci._id || ci.id) === ciId);
+                  setCity(matched?.name || "");
+                }}
+                disabled={!stateId || isCitiesLoading}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-xs focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-900 dark:text-white disabled:opacity-50"
+              >
+                <option value="">
+                  {!stateId
+                    ? "Select state first"
+                    : isCitiesLoading
+                    ? "Loading cities..."
+                    : "Select City"}
+                </option>
+                {citiesData.map((ci) => (
+                  <option key={ci._id || ci.id} value={ci._id || ci.id}>
+                    {ci.name}
+                  </option>
+                ))}
+                {city && !citiesData.some((ci) => (ci._id || ci.id) === cityId) && (
+                  <option value={cityId || city}>{city}</option>
+                )}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Pincode
+              </label>
+              <input
+                type="text"
+                value={pincode}
+                onChange={(e) => setPincode(e.target.value)}
+                placeholder="Pincode"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-900 shadow-xs focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-900 dark:text-white"
+              />
             </div>
           </div>
         </div>
 
+        {/* Cover / Introductory Message (Above Requirements) */}
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-white/10 dark:bg-slate-900">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400">
+                <FileText className="h-4 w-4" />
+              </div>
+              <div>
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Introductory Message / Cover Note
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Optional cover letter / introductory message displayed directly above requirements &amp; pricing table. If empty, nothing is shown on the quotation PDF.
+                </p>
+              </div>
+            </div>
+            {message && (
+              <button
+                type="button"
+                onClick={() => setMessage("")}
+                className="text-xs font-medium text-rose-600 hover:text-rose-700 dark:text-rose-400 hover:underline"
+              >
+                Clear Message
+              </button>
+            )}
+          </div>
+          <RichTextEditor
+            value={message}
+            onChange={(val) => setMessage(val)}
+            placeholder="Write your introductory message or cover note here (e.g. 'Dear Sir, We thank you for your valued enquiry and are pleased to submit our best competitive quotation...')..."
+            minHeight="110px"
+          />
+        </div>
+
         {/* Line Items Table Builder */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-white/10 dark:bg-slate-900">
-          <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-            <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
-              <Calculator className="h-4 w-4 text-blue-600" />
-              Line Items &amp; Products ({items.length})
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                <Calculator className="h-4 w-4 text-blue-600" />
+                Line Items &amp; Products ({items.length})
+              </div>
+
+              {/* GST Enable/Disable Checkbox */}
+              <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-slate-800 shadow-2xs cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/60 transition select-none">
+                <input
+                  type="checkbox"
+                  checked={gstEnabled}
+                  onChange={(e) => setGstEnabled(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary dark:border-white/20 dark:bg-slate-900 cursor-pointer"
+                />
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  Calculate GST
+                </span>
+                <span
+                  className={`rounded-md px-1.5 py-0.5 text-[10px] font-black uppercase ${
+                    gstEnabled
+                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                      : "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400"
+                  }`}
+                >
+                  {gstEnabled ? "Enabled" : "Exempt / Off"}
+                </span>
+              </label>
             </div>
+
             <button
               type="button"
               onClick={handleAddItem}
@@ -1824,21 +2914,70 @@ export function QuotationFormPage({
                       />
                     </div>
 
-                    {/* GST % */}
+                    {/* GST % with Inline Toggle */}
                     <div className="col-span-3 sm:col-span-1">
-                      <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
-                        GST %
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                          GST %
+                        </label>
+                        <label
+                          className={`inline-flex items-center gap-1 select-none ${
+                            !gstEnabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+                          }`}
+                          title={
+                            !gstEnabled
+                              ? "GST is disabled at quotation level"
+                              : it.gst_enabled === false
+                              ? "GST disabled for this item (click to enable)"
+                              : "GST enabled for this item (click to disable)"
+                          }
+                        >
+                          <input
+                            type="checkbox"
+                            disabled={!gstEnabled}
+                            checked={gstEnabled && it.gst_enabled !== false}
+                            onChange={(e) => {
+                              setItems((prev) =>
+                                prev.map((x, i) =>
+                                  i === idx ? { ...x, gst_enabled: e.target.checked } : x
+                                )
+                              );
+                            }}
+                            className="h-3 w-3 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:cursor-not-allowed"
+                          />
+                          <span
+                            className={`text-[9px] font-bold ${
+                              !gstEnabled || it.gst_enabled === false
+                                ? "text-amber-600 dark:text-amber-400"
+                                : "text-emerald-600 dark:text-emerald-400"
+                            }`}
+                          >
+                            {!gstEnabled || it.gst_enabled === false ? "Off" : "On"}
+                          </span>
+                        </label>
+                      </div>
                       <select
-                        value={it.gst_rate}
+                        value={gstEnabled && it.gst_enabled !== false ? it.gst_rate : 0}
+                        disabled={!gstEnabled || it.gst_enabled === false}
                         onChange={(e) =>
                           setItems((prev) =>
                             prev.map((x, i) => (i === idx ? { ...x, gst_rate: Number(e.target.value) } : x))
                           )
                         }
-                        className="w-full rounded-lg border border-slate-200 bg-white px-1.5 py-1.5 text-xs font-semibold text-slate-900 dark:border-white/10 dark:bg-slate-900 dark:text-white"
+                        className={`w-full rounded-lg border bg-white px-1.5 py-1.5 text-xs font-semibold text-slate-900 dark:bg-slate-900 dark:text-white ${
+                          gstEnabled && it.gst_enabled !== false
+                            ? "border-slate-200 dark:border-white/10"
+                            : "border-slate-200 bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 opacity-60 cursor-not-allowed"
+                        }`}
+                        title={
+                          !gstEnabled
+                            ? "GST calculation is currently disabled for this quotation"
+                            : it.gst_enabled === false
+                            ? "GST is disabled for this line item"
+                            : undefined
+                        }
                       >
-                        <option value={0}>0%</option>
+                        <option value={0}>No GST (0%)</option>
                         <option value={5}>5%</option>
                         <option value={12}>12%</option>
                         <option value={18}>18%</option>
@@ -1887,7 +3026,12 @@ export function QuotationFormPage({
                         Taxable: <strong>{formatCurrencyINR(comp?.taxable || 0)}</strong>
                       </span>
                       <span>
-                        GST: <strong>{formatCurrencyINR(comp?.gstAmt || 0)}</strong>
+                        GST: <strong>{!gstEnabled || it.gst_enabled === false || !comp?.gstAmt ? "—" : formatCurrencyINR(comp?.gstAmt || 0)}</strong>
+                        {(!gstEnabled || it.gst_enabled === false) && (
+                          <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold ml-1">
+                            (Exempt)
+                          </span>
+                        )}
                       </span>
                       <span className="text-blue-700 dark:text-blue-400 font-bold">
                         Total: {formatCurrencyINR(comp?.lineTotal || 0)}
@@ -1926,8 +3070,14 @@ export function QuotationFormPage({
               <div className="text-slate-600 dark:text-slate-300">
                 Taxable Sub Total: <strong>{formatCurrencyINR(calculations.subtotal)}</strong>
               </div>
-              <div className="text-slate-600 dark:text-slate-300">
-                Total GST Amount: <strong>{formatCurrencyINR(calculations.totalGst)}</strong>
+              <div className="text-slate-600 dark:text-slate-300 flex items-center justify-end gap-1.5">
+                <span>Total GST Amount:</span>
+                <strong>{formatCurrencyINR(calculations.totalGst)}</strong>
+                {!gstEnabled && (
+                  <span className="rounded bg-slate-200/80 px-1.5 py-0.2 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                    Exempt / Off
+                  </span>
+                )}
               </div>
               {calculations.roundOff !== 0 ? (
                 <div className="text-slate-600 dark:text-slate-300">
@@ -1941,7 +3091,7 @@ export function QuotationFormPage({
           </div>
         </div>
 
-        {/* Sales Representative Section (Internal Role / Sales Department) */}
+        {/* Sales Representative Section (All Lead Manager Portal Users) */}
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xs dark:border-white/10 dark:bg-slate-900">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3 dark:border-white/10">
             <div>
@@ -1950,8 +3100,7 @@ export function QuotationFormPage({
                 Sales Representative / Sales Person (Internal Use &amp; Order Handover)
               </div>
               <p className="text-[11px] text-slate-500 mt-0.5">
-                Assign the sales department representative responsible for this account. Kept for internal operations and automatically assigns the sales person when converting to an Order.
-                {teamScopedPickers ? " Only members of your reporting team are listed." : ""}
+                Assign the sales representative responsible for this account from all Lead Manager portal users.
               </p>
             </div>
 
@@ -1966,14 +3115,18 @@ export function QuotationFormPage({
                   className="rounded-lg border border-emerald-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-800 shadow-xs focus:border-emerald-500 focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-slate-100 cursor-pointer"
                 >
                   <option value="">
-                    -- Select Sales Person (Sales Department) --
+                    -- Select Sales Person ({salesUsers.length} Lead Manager users) --
                   </option>
                   {salesUsers.map((u: any) => {
-                    const deptLabel = u.department ? `[${u.department.toUpperCase()}]` : "";
-                    const roleLabel = u.role ? `• ${u.role}` : "";
+                    const dept = u.department ? getDeptLabel(u.department || "") || u.department : "";
+                    const deptLabel = dept ? `[${dept}]` : "";
+                    const roleBadge = getLeadManagerPortalRole(u);
+                    const roleLabel = roleBadge ? `• ${roleBadge}` : (u.role ? `• ${u.role}` : "");
+                    const emailLabel = u.email ? `<${u.email}>` : "";
+                    const phoneLabel = u.phone ? `(${u.phone})` : "";
                     return (
                       <option key={u._id} value={u._id}>
-                        {u.name || u.email} {deptLabel} {roleLabel} {u.phone ? `(${u.phone})` : ""}
+                        {u.name || u.email} {deptLabel} {roleLabel} {emailLabel} {phoneLabel}
                       </option>
                     );
                   })}
@@ -2432,23 +3585,135 @@ export function QuotationFormPage({
         </div>
 
         {/* Footer Actions Toolbar */}
-        <div className="flex justify-end gap-3 pt-4 border-t border-slate-200 dark:border-white/10">
-          <Link
-            href={`${portalHome}/quotations`}
-            className="rounded-xl border border-slate-200 px-5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:text-slate-300"
-          >
-            Cancel
-          </Link>
+        <div className="flex items-center justify-between gap-3 pt-4 border-t border-slate-200 dark:border-white/10">
           <button
-            type="submit"
-            disabled={isCreating || isUpdating}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-xs font-bold text-white shadow-md hover:bg-primary-hover disabled:opacity-50 cursor-pointer"
+            type="button"
+            onClick={() => setShowLivePreviewModal(true)}
+            className="inline-flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs font-bold text-emerald-700 shadow-xs hover:bg-emerald-100 dark:border-emerald-900/50 dark:bg-emerald-950/60 dark:text-emerald-300 transition-colors cursor-pointer"
+            title="View real-time A4 letterhead preview with PREVIEW watermark"
           >
-            <Save className="h-4 w-4" />
-            {isCreating || isUpdating ? "Saving..." : isEditing ? "Update Quotation" : "Generate Quotation"}
+            <Eye className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+            Live Preview (Watermarked)
           </button>
+
+          <div className="flex items-center gap-3">
+            <Link
+              href={`${portalHome}/quotations`}
+              className="rounded-xl border border-slate-200 px-5 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:text-slate-300"
+            >
+              Cancel
+            </Link>
+            <button
+              type="submit"
+              disabled={isCreating || isUpdating}
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-xs font-bold text-white shadow-md hover:bg-primary-hover disabled:opacity-50 cursor-pointer"
+            >
+              <Save className="h-4 w-4" />
+              {isCreating || isUpdating
+                ? "Saving..."
+                : isEditing
+                ? "Update Quotation"
+                : isCopyMode
+                ? "Create Copied Quotation"
+                : "Generate Quotation"}
+            </button>
+          </div>
         </div>
       </form>
+
+      {/* Floating Quick Live Preview Button */}
+      <div className="fixed bottom-6 right-6 z-40">
+        <button
+          type="button"
+          onClick={() => setShowLivePreviewModal(true)}
+          className="inline-flex items-center gap-2.5 rounded-full bg-slate-900 text-white px-5 py-3 text-xs font-bold shadow-xl shadow-slate-900/30 hover:bg-slate-800 dark:bg-primary dark:hover:bg-primary-hover hover:scale-105 active:scale-95 transition-all cursor-pointer border border-white/15"
+          title="Open watermarked live preview of this quotation"
+        >
+          <span className="relative flex h-2.5 w-2.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+          </span>
+          <Eye className="h-4 w-4 text-emerald-400" />
+          <span>Live Preview</span>
+          <span className="rounded-full bg-rose-500 px-2 py-0.5 text-[9px] font-black uppercase text-white shadow-xs">
+            Preview
+          </span>
+        </button>
+      </div>
+
+      {/* Live Preview Modal (Watermarked as PREVIEW) */}
+      {showLivePreviewModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-900/60 p-3 sm:p-6 backdrop-blur-xs">
+          <div className="relative flex max-h-[96vh] w-full max-w-4xl flex-col rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-white/10 dark:bg-slate-900 overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-6 py-3.5 dark:border-white/10">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600 dark:bg-emerald-950/60 dark:text-emerald-400">
+                  <Eye className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                      Live Quotation Letterhead Preview
+                    </h3>
+                    <span className="rounded-md bg-rose-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60">
+                      WATERMARKED • PREVIEW
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Real-time draft rendering of #{refNo || autoNextRefNo || "New Proposal"} for {customerName || "Customer"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handlePrintPreview}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
+                  title="Print watermarked preview draft"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  Print Preview
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowLivePreviewModal(false)}
+                  className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200 cursor-pointer"
+                  title="Close preview"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Live Indicator Notice Bar */}
+            <div className="bg-amber-50 px-6 py-2 text-[11px] text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border-b border-amber-100 dark:border-amber-900/30 flex items-center justify-between flex-wrap gap-2">
+              <span className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                <strong>Live Dynamic Preview:</strong> Form changes are instantly rendered on this letterhead.
+              </span>
+              <span className="font-semibold text-rose-700 dark:text-rose-400">
+                Watermarked draft — Official quote is generated upon saving.
+              </span>
+            </div>
+
+            {/* Scrollable Letterhead Area - Centered A4 Sheet */}
+            <div className="flex-1 overflow-y-auto bg-slate-100/70 p-4 sm:p-8 dark:bg-slate-950/60 flex justify-center items-start">
+              <div
+                ref={previewContainerRef}
+                className="w-full max-w-[794px] bg-white shadow-xl rounded-md overflow-hidden flex justify-center relative"
+              >
+                <QuotationPdfTemplate
+                  quotation={previewQuotationRecord}
+                  portalLabel="Lead Manager"
+                  watermark="PREVIEW"
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -72,7 +72,15 @@ app.use('/api/projects', projectRoutes);
 app.use('/api/power-app', powerAppRoutes);
 app.use('/api/facilities', powerAppRoutes);
 app.use('/api/enquiries', powerAppRoutes);
-app.use('/api/parties', proxyToPartyService);
+app.use(
+  [
+    '/api/parties',
+    '/api/party-countries',
+    '/api/party-states',
+    '/api/party-cities',
+  ],
+  proxyToPartyService
+);
 app.use('/api/leads', proxyToLeadManagerService);
 app.use('/api/notifications', proxyToNotificationService);
 app.use('/api/push', proxyToNotificationService);

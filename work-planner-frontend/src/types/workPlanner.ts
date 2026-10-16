@@ -452,6 +452,12 @@ export type WorkPlanVisitRecord = {
     contact_email?: string;
   }>;
   address?: string;
+  country?: string;
+  state?: string;
+  city?: string;
+  country_id?: string;
+  state_id?: string;
+  city_id?: string;
   planned_start_time?: string;
   planned_end_time?: string;
   purpose?: string;
@@ -551,6 +557,12 @@ export type WorkPlanRecord = {
   manager_remarks?: string;
   authority_remarks?: AuthorityRemarkItem[];
   location?: string;
+  country_id?: string;
+  state_id?: string;
+  city_id?: string;
+  country?: string;
+  state?: string;
+  city?: string;
   is_discussed_with_manager?: boolean;
   discussed_manager_id?: string | { _id?: string; name?: string; email?: string };
   discussed_manager_name?: string;

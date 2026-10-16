@@ -5,7 +5,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   ArrowLeft,
@@ -25,6 +25,8 @@ import {
   X,
   Search,
   Check,
+  Users,
+  Copy,
 } from "lucide-react";
 import {
   useCreateLeadMutation,
@@ -35,6 +37,12 @@ import {
   useListUsersQuery,
   useListProductsQuery,
   useListPartiesQuery,
+  useCreatePartyMutation,
+  usePatchPartyMutation,
+  useLazyListPartiesQuery,
+  useGetPartyCountriesQuery,
+  useGetPartyStatesQuery,
+  useGetPartyCitiesQuery,
   type LeadPriority,
   type LeadProductItem,
   type LeadContactItem,
@@ -50,6 +58,9 @@ import {
   leadLineValue,
   isUserInLeadManagerPortal,
   getLeadManagerPortalRole,
+  LEAD_DEPARTMENT_OPTIONS,
+  getDeptLabel,
+  isSeniorLeadRole,
 } from "./leadUtils";
 import { isAdmin as checkIsAdmin, readSessionFromStorage } from "@/utils/authStorage";
 import { useLeadManagerTeamScope } from "@/hooks/useLeadManagerTeamScope";
@@ -58,10 +69,12 @@ import {
   pickParties,
   type PartyItem,
 } from "@/components/leads/PartySearchAutocomplete";
+import { syncPartyMaster } from "@/utils/syncPartyMaster";
 
 type Props = {
   mode: "create" | "edit";
   leadId?: string;
+  copyFromId?: string;
   portalHome?: string;
 };
 
@@ -250,8 +263,19 @@ const DEFAULT_SOURCES = [
   "Other",
 ];
 
-export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props) {
+export function LeadFormPage({
+  mode,
+  leadId,
+  copyFromId: propCopyFromId,
+  portalHome = "/dashboard",
+}: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const queryCopyFromId = searchParams?.get("copy_from") || searchParams?.get("clone") || "";
+  const resolvedCopyFromId = propCopyFromId || queryCopyFromId;
+  const isCopyMode = mode === "create" && Boolean(resolvedCopyFromId);
+  const targetLeadId = mode === "edit" ? (leadId || "") : (isCopyMode ? resolvedCopyFromId : "");
+
   const reduxUser = useAppSelector((state) => state.auth.user);
   const sessionUser = useMemo(() => readSessionFromStorage()?.user || null, []);
   const authUser = (reduxUser || sessionUser) as any;
@@ -259,10 +283,10 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
   const isSales = !isAdmin;
   const { filterByTeam, withSelfInList, canAssignWithinTeam } = useLeadManagerTeamScope();
 
-  // Fetch lead data if edit mode
+  // Fetch lead data if edit mode or copy mode
   const { data: existingLead, isLoading: loadingLead } = useGetLeadQuery(
-    leadId || "",
-    { skip: mode !== "edit" || !leadId }
+    targetLeadId,
+    { skip: !targetLeadId }
   );
 
   const { data: sourcesData } = useListLeadSourcesQuery();
@@ -280,6 +304,9 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
   const [createLead, { isLoading: creating }] = useCreateLeadMutation();
   const [updateLead, { isLoading: updating }] = useUpdateLeadMutation();
   const [checkDuplicates] = useCheckLeadDuplicatesMutation();
+  const [createParty] = useCreatePartyMutation();
+  const [patchParty] = usePatchPartyMutation();
+  const [fetchPartiesTrigger] = useLazyListPartiesQuery();
 
   // Form State
   const [name, setName] = useState<string>("");
@@ -287,34 +314,168 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
   const [phone, setPhone] = useState<string>("");
   const [email, setEmail] = useState<string>("");
   const [alternatePhone, setAlternatePhone] = useState<string>("");
+  const [gstNo, setGstNo] = useState<string>("");
   const [industry, setIndustry] = useState<string>("");
   const [designation, setDesignation] = useState<string>("");
 
   const [addressLine1, setAddressLine1] = useState<string>("");
   const [addressLine2, setAddressLine2] = useState<string>("");
-  const [city, setCity] = useState<string>("");
-  const [state, setState] = useState<string>("");
-  const [pincode, setPincode] = useState<string>("");
+  const [countryId, setCountryId] = useState<string>("");
   const [country, setCountry] = useState<string>("India");
+  const [stateId, setStateId] = useState<string>("");
+  const [state, setState] = useState<string>("");
+  const [cityId, setCityId] = useState<string>("");
+  const [city, setCity] = useState<string>("");
+  const [pincode, setPincode] = useState<string>("");
+
+  const { data: countriesData = [], isLoading: isCountriesLoading } = useGetPartyCountriesQuery(
+    { limit: 500, status: "active" }
+  );
+
+  const { data: statesData = [], isLoading: isStatesLoading } = useGetPartyStatesQuery(
+    countryId ? { country_id: countryId, limit: 1000, status: "active" } : undefined,
+    { skip: !countryId }
+  );
+
+  const { data: citiesData = [], isLoading: isCitiesLoading } = useGetPartyCitiesQuery(
+    stateId ? { state_id: stateId, limit: 5000, status: "active" } : undefined,
+    { skip: !stateId }
+  );
+
+  // Auto-select India by default if no country selected
+  useEffect(() => {
+    if (!countryId && countriesData.length > 0) {
+      const india = countriesData.find(
+        (c) =>
+          c.name.trim().toLowerCase() === "india" ||
+          c.iso_code?.toUpperCase() === "IN"
+      );
+      if (india) {
+        setCountryId(india._id || india.id || "");
+        setCountry(india.name);
+      }
+    }
+  }, [countriesData, countryId]);
+
+  // Match country name to country ID if set by text from lead or party
+  useEffect(() => {
+    if (country && !countryId && countriesData.length > 0) {
+      const cMatch = countriesData.find(
+        (c) =>
+          c.name.trim().toLowerCase() === country.trim().toLowerCase() ||
+          c.iso_code?.toLowerCase() === country.trim().toLowerCase()
+      );
+      if (cMatch) {
+        setCountryId(cMatch._id || cMatch.id || "");
+      }
+    }
+  }, [countriesData, country, countryId]);
+
+  // Match state name to state ID if set by text from lead or party
+  useEffect(() => {
+    if (state && !stateId && statesData.length > 0) {
+      const sMatch = statesData.find(
+        (s) => s.name.trim().toLowerCase() === state.trim().toLowerCase()
+      );
+      if (sMatch) {
+        setStateId(sMatch._id || sMatch.id || "");
+      }
+    }
+  }, [statesData, state, stateId]);
+
+  // If stateId is set but does not belong to the currently loaded states for this country, clear it
+  useEffect(() => {
+    if (stateId && statesData.length > 0 && !isStatesLoading) {
+      const exists = statesData.some((s) => (s._id || s.id) === stateId);
+      if (!exists) {
+        setStateId("");
+        setState("");
+        setCityId("");
+        setCity("");
+      }
+    }
+  }, [statesData, stateId, isStatesLoading]);
+
+  // Match city name to city ID if set by text from lead or party
+  useEffect(() => {
+    if (city && !cityId && citiesData.length > 0) {
+      const ciMatch = citiesData.find(
+        (ci) => ci.name.trim().toLowerCase() === city.trim().toLowerCase()
+      );
+      if (ciMatch) {
+        setCityId(ciMatch._id || ciMatch.id || "");
+      }
+    }
+  }, [citiesData, city, cityId]);
+
+  // If cityId is set but does not belong to the currently loaded cities for this state, clear it
+  useEffect(() => {
+    if (cityId && citiesData.length > 0 && !isCitiesLoading) {
+      const exists = citiesData.some((ci) => (ci._id || ci.id) === cityId);
+      if (!exists) {
+        setCityId("");
+        setCity("");
+      }
+    }
+  }, [citiesData, cityId, isCitiesLoading]);
 
   const [requirement, setRequirement] = useState<string>("");
   const [expectedClosingDate, setExpectedClosingDate] = useState<string>("");
 
   const [source, setSource] = useState<string>("Website");
   const [priority, setPriority] = useState<LeadPriority>("medium");
-  const [assignedTo, setAssignedTo] = useState<string>("");
+  const [department, setDepartment] = useState<string>("sales");
+  const [assignedUsers, setAssignedUsers] = useState<string[]>([]);
+  const [createdBy, setCreatedBy] = useState<string>("");
   const [tagsInput, setTagsInput] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
 
   const [products, setProducts] = useState<LeadProductItem[]>([]);
   const [contacts, setContacts] = useState<LeadContactItem[]>([]);
 
+  // Prioritize or filter parties matching selected state/city/country
+  const filteredParties = useMemo(() => {
+    if (!state && !city && !country) return parties;
+    const cNorm = country.toLowerCase().trim();
+    const sNorm = state.toLowerCase().trim();
+    const ciNorm = city.toLowerCase().trim();
+
+    return [...parties].sort((a, b) => {
+      const aCountry = (a.billing_address?.country || a.country || "").toLowerCase().trim();
+      const bCountry = (b.billing_address?.country || b.country || "").toLowerCase().trim();
+      const aState = (a.billing_address?.state || a.state || "").toLowerCase().trim();
+      const bState = (b.billing_address?.state || b.state || "").toLowerCase().trim();
+      const aCity = (a.billing_address?.city || a.district || a.city || "").toLowerCase().trim();
+      const bCity = (b.billing_address?.city || b.district || b.city || "").toLowerCase().trim();
+
+      const aScore =
+        (ciNorm && aCity === ciNorm ? 4 : 0) +
+        (sNorm && aState === sNorm ? 2 : 0) +
+        (cNorm && aCountry === cNorm ? 1 : 0);
+      const bScore =
+        (ciNorm && bCity === ciNorm ? 4 : 0) +
+        (sNorm && bState === sNorm ? 2 : 0) +
+        (cNorm && bCountry === cNorm ? 1 : 0);
+      return bScore - aScore;
+    });
+  }, [parties, state, city, country]);
+
+  const isSenior = isSeniorLeadRole(authUser);
+
   // Duplicate Warning State
   const [dupResult, setDupResult] = useState<DuplicateCheckResult | null>(null);
 
-  // Populate state on edit
+  const copyNotifiedRef = useRef(false);
   useEffect(() => {
-    if (existingLead && mode === "edit") {
+    if (isCopyMode && existingLead && !copyNotifiedRef.current) {
+      copyNotifiedRef.current = true;
+      toast.info(`Pre-filled from Lead #${existingLead.lead_no} for copying`);
+    }
+  }, [isCopyMode, existingLead]);
+
+  // Populate state on edit or copy
+  useEffect(() => {
+    if (existingLead && (mode === "edit" || isCopyMode)) {
       setName(existingLead.name || "");
       setCompanyName(existingLead.company_name || "");
       setPhone(existingLead.phone || "");
@@ -324,12 +485,16 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
       setDesignation(existingLead.designation || "");
 
       if (existingLead.billing_address) {
-        setAddressLine1(existingLead.billing_address.address_line_1 || "");
-        setAddressLine2(existingLead.billing_address.address_line_2 || "");
-        setCity(existingLead.billing_address.city || "");
-        setState(existingLead.billing_address.state || "");
-        setPincode(existingLead.billing_address.pincode || "");
-        setCountry(existingLead.billing_address.country || "India");
+        const b = existingLead.billing_address as any;
+        setAddressLine1(b.address_line_1 || "");
+        setAddressLine2(b.address_line_2 || "");
+        setCity(b.city || "");
+        setCityId(b.city_id || "");
+        setState(b.state || "");
+        setStateId(b.state_id || "");
+        setPincode(b.pincode || "");
+        setCountry(b.country || "India");
+        setCountryId(b.country_id || "");
       }
 
       setRequirement(existingLead.requirement || "");
@@ -339,11 +504,31 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
 
       setSource(existingLead.source || "Website");
       setPriority(existingLead.priority || "medium");
-      setAssignedTo(
-        typeof existingLead.assigned_to === "object"
-          ? existingLead.assigned_to?._id || ""
-          : existingLead.assigned_to || ""
-      );
+      setDepartment(existingLead.department || "sales");
+
+      if (Array.isArray(existingLead.assigned_users) && existingLead.assigned_users.length > 0) {
+        setAssignedUsers(
+          existingLead.assigned_users.map((u) => (typeof u === "object" && u !== null ? u._id : String(u)))
+        );
+      } else if (existingLead.assigned_to) {
+        const pId = typeof existingLead.assigned_to === "object" ? existingLead.assigned_to?._id : existingLead.assigned_to;
+        setAssignedUsers(pId ? [String(pId)] : []);
+      } else {
+        setAssignedUsers([]);
+      }
+
+      if (isCopyMode) {
+        setCreatedBy(String(authUser?._id || authUser?.id || ""));
+      } else {
+        const existingCreator =
+          typeof existingLead.created_by === "object" && existingLead.created_by !== null
+            ? existingLead.created_by._id
+            : typeof existingLead.created_by === "string"
+            ? existingLead.created_by
+            : "";
+        setCreatedBy(existingCreator || String(authUser?._id || authUser?.id || ""));
+      }
+
       setTagsInput(Array.isArray(existingLead.tags) ? existingLead.tags.join(", ") : "");
       setNotes(existingLead.notes || "");
 
@@ -370,6 +555,9 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
             ? existingLead.party_id
             : "";
       setSelectedPartyId(leadPartyId);
+      if (typeof existingLead.party_id === "object" && existingLead.party_id !== null) {
+        setGstNo((existingLead.party_id as any).gst_no || (existingLead.party_id as any).gstin || "");
+      }
 
       if (Array.isArray(existingLead.contacts) && existingLead.contacts.length > 0) {
         setContacts(
@@ -386,7 +574,7 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
         );
       }
     }
-  }, [existingLead, mode]);
+  }, [existingLead, mode, isCopyMode]);
 
   // Duplicate Check Handler
   const triggerDuplicateCheck = async () => {
@@ -432,6 +620,41 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
     role?: string;
     portals?: Array<{ portal_code: string; access_roles?: string[] }>;
   }>;
+
+  useEffect(() => {
+    if (mode === "create" && !createdBy && authUser) {
+      setCreatedBy(String(authUser._id || authUser.id || ""));
+    }
+  }, [mode, createdBy, authUser]);
+
+  const [assignSearch, setAssignSearch] = useState<string>("");
+
+  const allPortalUsers = useMemo(() => {
+    const filtered = rawUsers.filter(isUserInLeadManagerPortal);
+    return filtered.length > 0 ? filtered : rawUsers;
+  }, [rawUsers]);
+
+  const filteredAssignees = useMemo(() => {
+    if (!assignSearch.trim()) return allPortalUsers;
+    const q = assignSearch.toLowerCase().trim();
+    return allPortalUsers.filter(
+      (u) =>
+        u.name.toLowerCase().includes(q) ||
+        String(u.email || "").toLowerCase().includes(q) ||
+        String(u.department || "").toLowerCase().includes(q) ||
+        getDeptLabel(u.department || "").toLowerCase().includes(q)
+    );
+  }, [allPortalUsers, assignSearch]);
+
+  const handleDepartmentChange = (newDept: string) => {
+    setDepartment(newDept);
+  };
+
+  const toggleAssignedUser = (userId: string) => {
+    setAssignedUsers((prev) =>
+      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
+    );
+  };
 
   const assignableUsers = useMemo(() => {
     const filtered = rawUsers.filter(isUserInLeadManagerPortal);
@@ -609,6 +832,7 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
     const pId = String(p._id ?? p.id ?? "");
     setSelectedPartyId(pId);
     setCompanyName(p.party_name || "");
+    setGstNo(p.gst_no || (p as any).gstin || "");
     const primaryContact = p.contacts && p.contacts.length > 0 ? p.contacts[0] : null;
     setName(p.contact_person || primaryContact?.name || "");
     setPhone(p.mobile || p.phone || primaryContact?.phone || "");
@@ -616,12 +840,26 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
     setEmail(p.email || primaryContact?.email || "");
     setDesignation(primaryContact?.designation || primaryContact?.department || "");
 
-    setAddressLine1(p.billing_address?.address_line_1 || "");
-    setAddressLine2(p.billing_address?.address_line_2 || "");
-    setCity(p.billing_address?.city || p.district || "");
-    setState(p.billing_address?.state || p.state || "");
-    setPincode(p.billing_address?.pincode || "");
-    setCountry(p.billing_address?.country || "India");
+    const pAddr = p.billing_address;
+    setAddressLine1(pAddr?.address_line_1 || "");
+    setAddressLine2(pAddr?.address_line_2 || "");
+
+    const pCountry = pAddr?.country || p.country || "India";
+    const pCountryId = pAddr?.country_id || p.country_id || "";
+    setCountry(pCountry);
+    setCountryId(pCountryId);
+
+    const pState = pAddr?.state || p.state || "";
+    const pStateId = pAddr?.state_id || p.state_id || "";
+    setState(pState);
+    setStateId(pStateId);
+
+    const pCity = pAddr?.city || p.district || p.city || "";
+    const pCityId = pAddr?.city_id || p.city_id || "";
+    setCity(pCity);
+    setCityId(pCityId);
+
+    setPincode(pAddr?.pincode || "");
 
     if (p.contacts && p.contacts.length > 1) {
       setContacts(
@@ -664,21 +902,83 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
       toast.error("Please provide at least a phone number or email address");
       return;
     }
+    if (!country.trim()) {
+      toast.error("Country is required");
+      return;
+    }
+    if (!state.trim()) {
+      toast.error("State is required");
+      return;
+    }
+    if (!city.trim()) {
+      toast.error("City / District is required");
+      return;
+    }
 
     const assignmentFields = {
-      assigned_to: canAssignWithinTeam
-        ? assignedTo
-          ? assignedTo
-          : isAdmin
-            ? null
-            : undefined
-        : undefined,
+      assigned_to: assignedUsers.length > 0 ? assignedUsers[0] : (isAdmin ? null : undefined),
+      assigned_users: assignedUsers,
     };
+
+    // Sync Party Master (check party master with name, contact, email, gst; create with party_type leads if not exist, or update via party service)
+    let resolvedPartyId = selectedPartyId || "";
+    try {
+      const syncResult = await syncPartyMaster({
+        partyType: "leads",
+        partyId: selectedPartyId || undefined,
+        partyName: companyName.trim() || name.trim(),
+        contactPerson: name.trim(),
+        phone: phone.trim(),
+        email: email.trim(),
+        gst: gstNo.trim(),
+        billingAddress: {
+          address_line_1: addressLine1.trim() || undefined,
+          address_line_2: addressLine2.trim() || undefined,
+          city: city.trim() || undefined,
+          state: state.trim() || undefined,
+          pincode: pincode.trim() || undefined,
+          country: country.trim() || "India",
+          country_id: countryId || undefined,
+          state_id: stateId || undefined,
+          city_id: cityId || undefined,
+        },
+        countryId: countryId || undefined,
+        stateId: stateId || undefined,
+        cityId: cityId || undefined,
+        contacts: contacts.map((c) => ({
+          name: c.name.trim(),
+          department: c.department?.trim(),
+          designation: c.designation?.trim(),
+          phone: c.phone?.trim(),
+          email: c.email?.trim(),
+          alternate_phone: c.alternate_phone?.trim(),
+          is_primary: Boolean(c.is_primary),
+        })),
+        existingParties: parties,
+        fetchPartiesBySearch: (q) => fetchPartiesTrigger(q).unwrap(),
+        createParty: (body) => createParty(body).unwrap(),
+        patchParty: (arg) => patchParty(arg).unwrap(),
+      });
+
+      if (syncResult?.partyId) {
+        resolvedPartyId = syncResult.partyId;
+        setSelectedPartyId(syncResult.partyId);
+        if (syncResult.matched) {
+          toast.info(`Party Master matched & updated: ${syncResult.partyName}`);
+        } else {
+          toast.success(`New Party Master created with type 'leads': ${syncResult.partyName}`);
+        }
+      }
+    } catch (partyErr) {
+      console.warn("Party master sync warning:", partyErr);
+    }
 
     const payload: LeadInputPayload = {
       name: name.trim(),
-      ...(selectedPartyId
-        ? { party_id: selectedPartyId }
+      department: department.toLowerCase().trim(),
+      created_by: isSenior && createdBy ? createdBy : undefined,
+      ...(resolvedPartyId
+        ? { party_id: resolvedPartyId }
         : mode === "edit"
           ? { party_id: null }
           : {}),
@@ -695,6 +995,9 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
         state: state.trim() || undefined,
         pincode: pincode.trim() || undefined,
         country: country.trim() || "India",
+        country_id: countryId || undefined,
+        state_id: stateId || undefined,
+        city_id: cityId || undefined,
       },
       requirement: requirement.trim() || undefined,
       estimated_value: isAdmin ? productsEstimatedTotal : existingLead?.estimated_value,
@@ -724,7 +1027,11 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
     try {
       if (mode === "create") {
         const created = await createLead(payload).unwrap();
-        toast.success(`Lead #${created.lead_no} created successfully`);
+        toast.success(
+          isCopyMode
+            ? `Lead #${created.lead_no} created successfully (copied from Lead #${existingLead?.lead_no})`
+            : `Lead #${created.lead_no} created successfully`
+        );
         router.push(`${portalHome}/leads/${created._id}`);
       } else if (leadId) {
         const updated = await updateLead({ id: leadId, body: payload }).unwrap();
@@ -752,25 +1059,44 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
             </Link>
             <div>
               <h1 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">
-                {mode === "create" ? "Create New Lead" : `Edit Lead #${existingLead?.lead_no}`}
+                {isCopyMode
+                  ? `Copy Lead (from #${existingLead?.lead_no || ""})`
+                  : mode === "create"
+                  ? "Create New Lead"
+                  : `Edit Lead #${existingLead?.lead_no}`}
               </h1>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                {mode === "create"
+                {isCopyMode
+                  ? `Pre-filled from Lead #${existingLead?.lead_no || ""}. Review details and click create.`
+                  : mode === "create"
                   ? "Capture sales lead details, requirements, and assign owner"
                   : "Update lead contact info, requirements and pipeline properties"}
               </p>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={creating || updating}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-primary-hover disabled:opacity-50"
-          >
-            <Save className="h-4 w-4" />
-            {mode === "create" ? "Save & Create Lead" : "Save Changes"}
-          </button>
+          <div className="flex items-center gap-2">
+            {mode === "edit" && leadId && (
+              <Link
+                href={`${portalHome}/leads/new?copy_from=${leadId}`}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800 dark:text-slate-200"
+                title="Create a copy of this lead"
+              >
+                <Copy className="h-4 w-4 text-indigo-500" />
+                Copy Lead
+              </Link>
+            )}
+
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={creating || updating}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-primary-hover disabled:opacity-50"
+            >
+              <Save className="h-4 w-4" />
+              {mode === "create" ? (isCopyMode ? "Create Copied Lead" : "Save & Create Lead") : "Save Changes"}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -877,7 +1203,7 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
               )}
             </div>
             <PartySearchAutocomplete
-              parties={parties}
+              parties={filteredParties}
               selectedPartyId={selectedPartyId}
               onSelect={handlePartySelect}
             />
@@ -1007,6 +1333,19 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
                 onChange={(e) => setAlternatePhone(e.target.value)}
                 placeholder="+91 22 1234 5678"
                 className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                GSTIN / Tax ID
+              </label>
+              <input
+                type="text"
+                value={gstNo}
+                onChange={(e) => setGstNo(e.target.value.toUpperCase())}
+                placeholder="27AAAAA0000A1Z5"
+                className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-mono uppercase text-slate-800 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white"
               />
             </div>
           </div>
@@ -1154,37 +1493,124 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
                 type="text"
                 value={addressLine1}
                 onChange={(e) => setAddressLine1(e.target.value)}
-                placeholder="Plot 45, Sector 18"
+                placeholder="Plot / Building, Street / Area"
                 className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white"
               />
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                City / District
+                Address Line 2 (Optional)
               </label>
               <input
                 type="text"
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                placeholder="Mumbai"
+                value={addressLine2}
+                onChange={(e) => setAddressLine2(e.target.value)}
+                placeholder="Landmark / Floor"
                 className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white"
               />
             </div>
 
+            {/* Country */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                State
+                Country <span className="text-rose-500">*</span>
               </label>
-              <input
-                type="text"
-                value={state}
-                onChange={(e) => setState(e.target.value)}
-                placeholder="Maharashtra"
-                className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white"
-              />
+              <select
+                value={countryId}
+                onChange={(e) => {
+                  const cId = e.target.value;
+                  setCountryId(cId);
+                  const matched = countriesData.find((c) => (c._id || c.id) === cId);
+                  setCountry(matched?.name || "");
+                  setStateId("");
+                  setState("");
+                  setCityId("");
+                  setCity("");
+                }}
+                disabled={isCountriesLoading}
+                className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white disabled:opacity-50"
+              >
+                <option value="">{isCountriesLoading ? "Loading countries..." : "Select Country"}</option>
+                {countriesData.map((c) => (
+                  <option key={c._id || c.id} value={c._id || c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
+            {/* State */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                State <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={stateId}
+                onChange={(e) => {
+                  const sId = e.target.value;
+                  setStateId(sId);
+                  const matched = statesData.find((s) => (s._id || s.id) === sId);
+                  setState(matched?.name || "");
+                  setCityId("");
+                  setCity("");
+                }}
+                disabled={!countryId || isStatesLoading}
+                className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white disabled:opacity-50"
+              >
+                <option value="">
+                  {!countryId
+                    ? "Select country first"
+                    : isStatesLoading
+                    ? "Loading states..."
+                    : "Select State"}
+                </option>
+                {statesData.map((s) => (
+                  <option key={s._id || s.id} value={s._id || s.id}>
+                    {s.name}
+                  </option>
+                ))}
+                {state && !statesData.some((s) => (s._id || s.id) === stateId) && (
+                  <option value={stateId || state}>{state}</option>
+                )}
+              </select>
+            </div>
+
+            {/* City */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                City / District <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={cityId}
+                onChange={(e) => {
+                  const ciId = e.target.value;
+                  setCityId(ciId);
+                  const matched = citiesData.find((ci) => (ci._id || ci.id) === ciId);
+                  setCity(matched?.name || "");
+                }}
+                disabled={!stateId || isCitiesLoading}
+                className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white disabled:opacity-50"
+              >
+                <option value="">
+                  {!stateId
+                    ? "Select state first"
+                    : isCitiesLoading
+                    ? "Loading cities..."
+                    : "Select City"}
+                </option>
+                {citiesData.map((ci) => (
+                  <option key={ci._id || ci.id} value={ci._id || ci.id}>
+                    {ci.name}
+                  </option>
+                ))}
+                {city && !citiesData.some((ci) => (ci._id || ci.id) === cityId) && (
+                  <option value={cityId || city}>{city}</option>
+                )}
+              </select>
+            </div>
+
+            {/* Pincode */}
             <div>
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
                 Pincode
@@ -1194,18 +1620,6 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
                 value={pincode}
                 onChange={(e) => setPincode(e.target.value)}
                 placeholder="400001"
-                className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                Country
-              </label>
-              <input
-                type="text"
-                value={country}
-                onChange={(e) => setCountry(e.target.value)}
                 className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white"
               />
             </div>
@@ -1442,31 +1856,158 @@ export function LeadFormPage({ mode, leadId, portalHome = "/dashboard" }: Props)
               </select>
             </div>
 
-            {/* Assign To — single assignee selection */}
-            {canAssignWithinTeam && (
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Assigned To {isAdmin ? "" : "(your team)"}
-                </label>
-                <select
-                  value={assignedTo}
-                  onChange={(e) => setAssignedTo(e.target.value)}
-                  className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white"
-                >
-                  <option value="">
-                    {isAdmin ? "Unassigned..." : "Assign to myself (default)..."}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Department <span className="text-rose-500">*</span>
+              </label>
+              <select
+                value={department}
+                onChange={(e) => handleDepartmentChange(e.target.value)}
+                className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white"
+              >
+                {LEAD_DEPARTMENT_OPTIONS.map((dept) => (
+                  <option key={dept.value} value={dept.value}>
+                    {dept.label}
                   </option>
-                  {assignableUsers.map((u) => {
+                ))}
+              </select>
+            </div>
+
+            {/* Assigned To (Independent of Department) */}
+            <div>
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Assigned To ({allPortalUsers.length} Lead Manager Users Available)
+                </label>
+                {assignedUsers.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setAssignedUsers([])}
+                    className="text-[11px] font-medium text-rose-500 hover:underline"
+                  >
+                    Clear All ({assignedUsers.length} selected)
+                  </button>
+                )}
+              </div>
+
+              {/* Instant Search Filter */}
+              <div className="mt-1.5 relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  value={assignSearch}
+                  onChange={(e) => setAssignSearch(e.target.value)}
+                  placeholder="Search user by name, email or department..."
+                  className="w-full rounded-lg border border-slate-200 bg-white py-1.5 pl-8 pr-7 text-xs text-slate-800 placeholder-slate-400 focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white"
+                />
+                {assignSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setAssignSearch("")}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
+              </div>
+
+              {filteredAssignees.length === 0 ? (
+                <div className="mt-2 rounded-xl border border-dashed border-amber-300 bg-amber-50/50 p-3 text-center text-xs text-amber-700 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-400">
+                  No Lead Manager portal users found matching your search.
+                </div>
+              ) : (
+                <div className="mt-2 max-h-56 overflow-y-auto space-y-1.5 rounded-xl border border-slate-200 bg-slate-50/50 p-2.5 dark:border-white/10 dark:bg-slate-800/40">
+                  {filteredAssignees.map((u) => {
+                    const isSelected = assignedUsers.includes(u._id);
                     const roleBadge = getLeadManagerPortalRole(u);
+                    const isCurrentUser = String(u._id) === String(authUser?._id || authUser?.id);
+                    const deptLabel = getDeptLabel(u.department || "") || u.department || "General";
                     return (
-                      <option key={u._id} value={u._id}>
-                        {u.name} {roleBadge ? `(${roleBadge})` : ""}
-                      </option>
+                      <label
+                        key={u._id}
+                        className={`flex items-center justify-between gap-2.5 rounded-lg p-2.5 text-xs transition cursor-pointer ${
+                          isSelected
+                            ? "bg-white dark:bg-slate-700 shadow-xs border border-primary/50 ring-1 ring-primary/20"
+                            : "bg-white/70 dark:bg-slate-800/60 hover:bg-white dark:hover:bg-slate-700/70 border border-slate-200/60 dark:border-white/5"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleAssignedUser(u._id)}
+                            className="rounded border-slate-300 text-primary focus:ring-primary h-4 w-4"
+                          />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-semibold text-slate-800 dark:text-slate-100">
+                                {u.name}
+                              </span>
+                              {isCurrentUser && (
+                                <span className="rounded bg-indigo-50 px-1 py-0.2 text-[10px] font-medium text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+                                  You
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500 dark:text-slate-400 flex-wrap">
+                              {u.email && (
+                                <span className="inline-flex items-center gap-1 truncate text-slate-600 dark:text-slate-300">
+                                  <Mail className="h-3 w-3 text-slate-400 shrink-0" />
+                                  <span className="truncate">{u.email}</span>
+                                </span>
+                              )}
+                              <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                                <Building2 className="h-2.5 w-2.5 text-slate-400 shrink-0" />
+                                Dept: {deptLabel}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        {roleBadge && (
+                          <span className="shrink-0 rounded-md bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
+                            {roleBadge}
+                          </span>
+                        )}
+                      </label>
                     );
                   })}
-                </select>
-              </div>
-            )}
+                </div>
+              )}
+            </div>
+
+            {/* Created By: Senior Role Selection vs Executive Self-Lock */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                Created By
+              </label>
+              {isSenior ? (
+                <div className="mt-1.5">
+                  <select
+                    value={createdBy}
+                    onChange={(e) => setCreatedBy(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-800 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white"
+                  >
+                    {allPortalUsers.map((u) => {
+                      const isCurrentUser = String(u._id) === String(authUser?._id || authUser?.id);
+                      const roleBadge = getLeadManagerPortalRole(u);
+                      return (
+                        <option key={u._id} value={u._id}>
+                          {u.name} {isCurrentUser ? "(You) " : ""}{roleBadge ? `• ${roleBadge}` : ""}{u.department ? ` (${getDeptLabel(u.department)})` : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Senior override: You can log this lead on behalf of any Lead Manager portal member.
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-1.5 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 dark:border-white/10 dark:bg-slate-800/60 dark:text-slate-300">
+                  <span className="font-semibold">{authUser?.name || "Your Profile"}</span>
+                  <span className="text-[10px] text-slate-400">Auto-attributed to you</span>
+                </div>
+              )}
+            </div>
 
 
             <div>

@@ -4,7 +4,7 @@
  */
 const { ApiError } = require('../../utils/ApiError');
 
-const PARTY_TYPES = new Set(['customer', 'supplier', 'both']);
+const PARTY_TYPES = new Set(['customer', 'supplier', 'both', 'leads', 'lead', 'quotation', 'quotations', 'visits', 'visit']);
 
 function hasContactPhone(body) {
   if (body.mobile && typeof body.mobile === 'string' && body.mobile.trim()) return true;

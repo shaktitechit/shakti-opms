@@ -41,7 +41,14 @@ const labelClass = "text-xs font-medium text-slate-700 dark:text-slate-300";
 const btnSecondaryClass =
   "rounded-lg border border-slate-200/95 px-3 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-50 disabled:opacity-50 dark:border-white/15 dark:text-slate-100 dark:hover:bg-white/5";
 
-const PARTY_TYPE_OPTIONS = ["customer", "supplier", "both"] as const;
+const PARTY_TYPE_OPTIONS = [
+  "customer",
+  "supplier",
+  "both",
+  "leads",
+  "quotation",
+  "visits",
+] as const;
 
 function stringField(v: unknown): string {
   return typeof v === "string" ? v : "";
@@ -59,7 +66,7 @@ function valsEqual(a: unknown, b: unknown): boolean {
 
 type PartyState = {
   party_name: string;
-  party_type: "customer" | "supplier" | "both";
+  party_type: (typeof PARTY_TYPE_OPTIONS)[number];
   contacts: PartyContact[];
   gst_no: string;
   drug_license_no: string;
@@ -143,9 +150,15 @@ function partyToFormState(p: Record<string, unknown>, opts?: { asCopy?: boolean 
   const baseName = stringField(p.party_name);
   return {
     party_name: opts?.asCopy && baseName ? `${baseName} (Copy)` : baseName,
-    party_type: PARTY_TYPE_OPTIONS.includes(p.party_type as (typeof PARTY_TYPE_OPTIONS)[number])
-      ? (p.party_type as PartyState["party_type"])
-      : "customer",
+    party_type: (function () {
+      const t = String(p.party_type || "").toLowerCase().trim();
+      if (t === "lead") return "leads";
+      if (t === "quotations") return "quotation";
+      if (t === "visit") return "visits";
+      return (PARTY_TYPE_OPTIONS as readonly string[]).includes(t)
+        ? (t as PartyState["party_type"])
+        : "customer";
+    })(),
     contacts: loadedContacts.length > 0 ? loadedContacts : [emptyPartyContact()],
     gst_no: stringField(p.gst_no),
     drug_license_no: stringField(p.drug_license_no),
@@ -512,7 +525,10 @@ export function PartyDetailModal({
                 >
                   <option value="customer">Customer (Hospital / Retailer)</option>
                   <option value="supplier">Supplier (Distributor / Manufacturer)</option>
-                  <option value="both">Both</option>
+                  <option value="both">Both (Customer & Supplier)</option>
+                  <option value="leads">Leads</option>
+                  <option value="quotation">Quotation</option>
+                  <option value="visits">Visits</option>
                 </select>
               </div>
 

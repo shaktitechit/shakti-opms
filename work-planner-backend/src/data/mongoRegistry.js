@@ -61,17 +61,61 @@ function registerModels() {
 
   // Party schema
   if (!mongoose.models.Party) {
+    const partyAddressSchema = new mongoose.Schema(
+      {
+        address_line_1: String,
+        address_line_2: String,
+        city: String,
+        state: String,
+        pincode: String,
+        country: { type: String, default: 'India' },
+      },
+      { _id: false }
+    );
+
+    const partyContactSchema = new mongoose.Schema(
+      {
+        name: { type: String, trim: true },
+        department: { type: String, trim: true },
+        phone: { type: String, trim: true },
+        email: { type: String, lowercase: true, trim: true },
+        alternate_phone: { type: String, trim: true },
+        designation: { type: String, trim: true },
+      },
+      { _id: false }
+    );
+
     const partySchema = new mongoose.Schema(
       {
         company_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CompanyInfo', index: true },
         party_name: { type: String, required: true, trim: true },
         legal_name: { type: String, trim: true },
-        party_type: { type: String, trim: true },
+        party_type: {
+          type: String,
+          enum: ['customer', 'supplier', 'both', 'leads', 'lead', 'quotation', 'quotations', 'visits', 'visit'],
+          default: 'visits',
+          trim: true,
+          index: true,
+        },
+        contact_person: { type: String, trim: true },
+        mobile: { type: String, trim: true },
+        email: { type: String, lowercase: true, trim: true },
+        contacts: { type: [partyContactSchema], default: [] },
+        gst_no: { type: String, uppercase: true, trim: true },
+        drug_license_no: { type: String, trim: true },
+        billing_address: partyAddressSchema,
+        shipping_address: partyAddressSchema,
         city: { type: String, trim: true },
+        district: { type: String, trim: true },
         state: { type: String, trim: true },
+        country: { type: String, trim: true },
+        country_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PartyCountry', index: true },
+        state_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PartyState', index: true },
+        city_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PartyCity', index: true },
+        is_active: { type: Boolean, default: true },
         deletedAt: { type: Date, default: null, index: true },
       },
-      { timestamps: true }
+      { timestamps: true, strict: false }
     );
     partySchema.plugin(softDeletePlugin);
     mongoose.model('Party', partySchema);
@@ -158,6 +202,12 @@ function registerModels() {
         },
         remarks: { type: String, trim: true },
         location: { type: String, trim: true },
+        country_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PartyCountry', index: true },
+        state_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PartyState', index: true },
+        city_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PartyCity', index: true },
+        country: { type: String, trim: true },
+        state: { type: String, trim: true },
+        city: { type: String, trim: true },
         is_discussed_with_manager: { type: Boolean, default: false },
         discussed_manager_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         discussed_manager_name: { type: String, trim: true },
@@ -313,6 +363,13 @@ function registerModels() {
           },
         ],
         address: { type: String, trim: true },
+        country: { type: String, trim: true },
+        state: { type: String, trim: true },
+        city: { type: String, trim: true },
+        country_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PartyCountry' },
+        state_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PartyState' },
+        city_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PartyCity' },
+        gst_no: { type: String, trim: true, uppercase: true },
         planned_start_time: Date,
         planned_end_time: Date,
         purpose: { type: String, trim: true },
@@ -1132,6 +1189,12 @@ function registerModels() {
         plan_type: { type: String, trim: true },
         remarks: { type: String, trim: true },
         location: { type: String, trim: true },
+        country_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PartyCountry' },
+        state_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PartyState' },
+        city_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PartyCity' },
+        country: { type: String, trim: true },
+        state: { type: String, trim: true },
+        city: { type: String, trim: true },
         is_discussed_with_manager: { type: Boolean, default: null },
         discussed_manager_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         discussed_manager_name: { type: String, trim: true },

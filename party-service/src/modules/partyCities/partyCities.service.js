@@ -36,7 +36,7 @@ async function list(query = {}) {
   const { PartyCity, PartyState } = getModels();
   const filter = buildListFilter(query);
 
-  if (query.country_id) {
+  if (!query.state_id && query.country_id) {
     const stateIds = await PartyState.find({
       country: query.country_id,
       deletedAt: null,

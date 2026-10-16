@@ -223,12 +223,14 @@ async function getCalendar(query = {}, user) {
     q.quotation = { $ne: null };
   }
 
-  const rows = await LeadFollowUp.find(q)
+  let rows = await LeadFollowUp.find(q)
     .populate({
       path: 'lead',
-      select: 'lead_no name company_name phone email status priority assigned_to estimated_value party_id requirement_details',
+      select: 'lead_no name company_name phone email status priority assigned_to assigned_users created_by estimated_value party_id requirement_details',
       populate: [
         { path: 'assigned_to', select: 'name email department' },
+        { path: 'assigned_users', select: 'name email department' },
+        { path: 'created_by', select: 'name email department' },
         { path: 'party_id', select: 'party_name legal_name district state' },
       ],
     })
@@ -237,6 +239,7 @@ async function getCalendar(query = {}, user) {
       select: 'quotation_no version grand_total status customer_name kind_attn phone email subject party_id created_by signatory_user sales_person_name sales_person_user lead',
       populate: [
         { path: 'sales_person_user', select: 'name email department' },
+        { path: 'created_by', select: 'name email department' },
         { path: 'signatory_user', select: 'name email department' },
         { path: 'party_id', select: 'party_name legal_name' },
       ],
@@ -246,59 +249,104 @@ async function getCalendar(query = {}, user) {
     .sort({ follow_up_date: 1 })
     .lean();
 
-  // Filter based on user scope
+  const getAssigneeIds = (r) => {
+    const ids = new Set();
+    const lead = r.lead && typeof r.lead === 'object' ? r.lead : null;
+    const leadAssignee = lead?.assigned_to?._id ? String(lead.assigned_to._id) : (lead?.assigned_to ? String(lead.assigned_to) : null);
+    if (leadAssignee) ids.add(leadAssignee);
+
+    if (Array.isArray(lead?.assigned_users)) {
+      lead.assigned_users.forEach((u) => {
+        const uId = u?._id ? String(u._id) : (u ? String(u) : null);
+        if (uId) ids.add(uId);
+      });
+    }
+
+    const quote = r.quotation && typeof r.quotation === 'object' ? r.quotation : null;
+    const qRep = quote?.sales_person_user?._id ? String(quote.sales_person_user._id) : (quote?.sales_person_user ? String(quote.sales_person_user) : null);
+    if (qRep) ids.add(qRep);
+
+    return ids;
+  };
+
+  const getCreatorIds = (r) => {
+    const ids = new Set();
+    const fuCreator = r.created_by?._id ? String(r.created_by._id) : (r.created_by ? String(r.created_by) : null);
+    if (fuCreator) ids.add(fuCreator);
+
+    const lead = r.lead && typeof r.lead === 'object' ? r.lead : null;
+    const leadCreator = lead?.created_by?._id ? String(lead.created_by._id) : (lead?.created_by ? String(lead.created_by) : null);
+    if (leadCreator) ids.add(leadCreator);
+
+    const quote = r.quotation && typeof r.quotation === 'object' ? r.quotation : null;
+    const qCreator = quote?.created_by?._id ? String(quote.created_by._id) : (quote?.created_by ? String(quote.created_by) : null);
+    if (qCreator) ids.add(qCreator);
+
+    return ids;
+  };
+
+  const scope = String(query.scope || '').toLowerCase().trim();
+
+  // 1. Base Role Scoping
   if (!isAdmin) {
     if (isMgr || isCoord) {
-      // Manager / Coordinator: own + downline team. Quotations only for managers.
-      return rows
-        .filter((r) => {
-          const fuCreator = r.created_by?._id ? String(r.created_by._id) : (r.created_by ? String(r.created_by) : null);
-          if (r.quotation) {
-            const qCreator = r.quotation?.created_by?._id ? String(r.quotation.created_by._id) : (r.quotation?.created_by ? String(r.quotation.created_by) : null);
-            const qRep = r.quotation?.sales_person_user?._id ? String(r.quotation.sales_person_user._id) : (r.quotation?.sales_person_user ? String(r.quotation.sales_person_user) : null);
-            return teamSet.has(qCreator) || teamSet.has(qRep) || teamSet.has(fuCreator);
-          }
-          if (r.lead) {
-            const leadAssignee = r.lead?.assigned_to?._id ? String(r.lead.assigned_to._id) : (r.lead?.assigned_to ? String(r.lead.assigned_to) : null);
-            return teamSet.has(leadAssignee) || teamSet.has(fuCreator);
-          }
-          return teamSet.has(fuCreator);
-        })
-        .map(toPlain);
+      // Manager / Coordinator: own + downline team (by assignee OR creator)
+      rows = rows.filter((r) => {
+        const assignees = getAssigneeIds(r);
+        const creators = getCreatorIds(r);
+        return [...assignees].some((id) => teamSet.has(id)) || [...creators].some((id) => teamSet.has(id));
+      });
     } else {
-      // Executive: own lead follow-ups + quotation follow-ups where they are rep/creator/assignee
-      return rows
-        .filter((r) => {
-          const fuCreator = r.created_by?._id ? String(r.created_by._id) : (r.created_by ? String(r.created_by) : null);
-          const assignedId = r.lead?.assigned_to?._id ? String(r.lead.assigned_to._id) : (r.lead?.assigned_to ? String(r.lead.assigned_to) : null);
-          if (r.quotation) {
-            const qCreator = r.quotation?.created_by?._id ? String(r.quotation.created_by._id) : (r.quotation?.created_by ? String(r.quotation.created_by) : null);
-            const qRep = r.quotation?.sales_person_user?._id ? String(r.quotation.sales_person_user._id) : (r.quotation?.sales_person_user ? String(r.quotation.sales_person_user) : null);
-            return (
-              qCreator === userIdStr ||
-              qRep === userIdStr ||
-              fuCreator === userIdStr ||
-              assignedId === userIdStr
-            );
-          }
-          return assignedId === userIdStr || fuCreator === userIdStr;
-        })
-        .map(toPlain);
+      // Executive: strictly see follow-ups where THIS user is assigned or is creator
+      rows = rows.filter((r) => {
+        const assignees = getAssigneeIds(r);
+        const creators = getCreatorIds(r);
+        return assignees.has(userIdStr) || creators.has(userIdStr);
+      });
     }
   }
 
-  // If admin filtered by assigned_to
-  if (isAdmin && query.assigned_to && query.assigned_to !== 'all') {
-    const targetAssignee = String(query.assigned_to);
-    return rows
-      .filter((r) => {
-        const leadAssignee = r.lead?.assigned_to?._id ? String(r.lead.assigned_to._id) : (r.lead?.assigned_to ? String(r.lead.assigned_to) : null);
-        const qRep = r.quotation?.sales_person_user?._id ? String(r.quotation.sales_person_user._id) : (r.quotation?.sales_person_user ? String(r.quotation.sales_person_user) : null);
-        const qCreator = r.quotation?.created_by?._id ? String(r.quotation.created_by._id) : (r.quotation?.created_by ? String(r.quotation.created_by) : null);
-        const fuCreator = r.created_by?._id ? String(r.created_by._id) : (r.created_by ? String(r.created_by) : null);
-        return leadAssignee === targetAssignee || qRep === targetAssignee || qCreator === targetAssignee || fuCreator === targetAssignee;
-      })
-      .map(toPlain);
+  // 2. View Scope: "team" vs "mine" / "me"
+  if (scope === 'mine' || scope === 'me') {
+    rows = rows.filter((r) => {
+      const assignees = getAssigneeIds(r);
+      const creators = getCreatorIds(r);
+      return assignees.has(userIdStr) || creators.has(userIdStr);
+    });
+  } else if (scope === 'team') {
+    if (isMgr || isCoord) {
+      rows = rows.filter((r) => {
+        const assignees = getAssigneeIds(r);
+        const creators = getCreatorIds(r);
+        return [...assignees].some((id) => teamSet.has(id)) || [...creators].some((id) => teamSet.has(id));
+      });
+    }
+  } else if (scope === 'assigned_to_me') {
+    rows = rows.filter((r) => getAssigneeIds(r).has(userIdStr));
+  } else if (scope === 'created_by_me') {
+    rows = rows.filter((r) => getCreatorIds(r).has(userIdStr));
+  }
+
+  // 3. Separate Filter: assigned_to
+  if (query.assigned_to && query.assigned_to !== 'all') {
+    const target = String(query.assigned_to).trim();
+    if (target === 'me') {
+      rows = rows.filter((r) => getAssigneeIds(r).has(userIdStr));
+    } else if (target === 'unassigned') {
+      rows = rows.filter((r) => getAssigneeIds(r).size === 0);
+    } else {
+      rows = rows.filter((r) => getAssigneeIds(r).has(target));
+    }
+  }
+
+  // 4. Separate Filter: created_by
+  if (query.created_by && query.created_by !== 'all') {
+    const target = String(query.created_by).trim();
+    if (target === 'me') {
+      rows = rows.filter((r) => getCreatorIds(r).has(userIdStr));
+    } else {
+      rows = rows.filter((r) => getCreatorIds(r).has(target));
+    }
   }
 
   return rows.map(toPlain);
@@ -339,35 +387,43 @@ async function getUrgentSummary(user, timeZone = 'Asia/Kolkata') {
   })
     .populate({
       path: 'lead',
-      select: 'lead_no name company_name phone email status priority assigned_to requirement products party_id contacts',
+      select: 'lead_no name company_name phone email status priority assigned_to assigned_users created_by requirement products party_id contacts',
       populate: [
         { path: 'party_id', select: 'party_name legal_name' },
         { path: 'assigned_to', select: 'name email' },
+        { path: 'assigned_users', select: 'name email' },
+        { path: 'created_by', select: 'name email' },
       ],
     })
     .populate({
       path: 'quotation',
-      select: 'quotation_no version grand_total status customer_name kind_attn phone email subject party_id created_by lead',
+      select: 'quotation_no version grand_total status customer_name kind_attn phone email subject party_id created_by sales_person_user lead',
+      populate: [
+        { path: 'sales_person_user', select: 'name email' },
+        { path: 'created_by', select: 'name email' },
+      ],
     })
+    .populate('created_by', 'name email department')
     .sort({ follow_up_date: 1, follow_up_time: 1 })
     .lean();
 
   const isAdmin = isLeadAdmin(user);
   const userStr = String(user._id);
 
-  // Filter based on user scope
+  // Filter based on user scope (assigned to OR created by)
   const filtered = allPending.filter((fu) => {
     if (isAdmin) return true;
     const leadAssignee = fu.lead?.assigned_to?._id ? String(fu.lead.assigned_to._id) : (fu.lead?.assigned_to ? String(fu.lead.assigned_to) : null);
-    const qCreator = fu.quotation?.created_by?._id ? String(fu.quotation.created_by._id) : (fu.quotation?.created_by ? String(fu.quotation.created_by) : null);
+    const inAssignedUsers = Array.isArray(fu.lead?.assigned_users) && fu.lead.assigned_users.some((u) => String(u?._id || u) === userStr);
     const qRep = fu.quotation?.sales_person_user?._id ? String(fu.quotation.sales_person_user._id) : (fu.quotation?.sales_person_user ? String(fu.quotation.sales_person_user) : null);
+    const isAssigned = leadAssignee === userStr || inAssignedUsers || qRep === userStr;
+
     const fuCreator = fu.created_by?._id ? String(fu.created_by._id) : (fu.created_by ? String(fu.created_by) : null);
-    return (
-      leadAssignee === userStr ||
-      qCreator === userStr ||
-      qRep === userStr ||
-      fuCreator === userStr
-    );
+    const leadCreator = fu.lead?.created_by?._id ? String(fu.lead.created_by._id) : (fu.lead?.created_by ? String(fu.lead.created_by) : null);
+    const qCreator = fu.quotation?.created_by?._id ? String(fu.quotation.created_by._id) : (fu.quotation?.created_by ? String(fu.quotation.created_by) : null);
+    const isCreator = fuCreator === userStr || leadCreator === userStr || qCreator === userStr;
+
+    return isAssigned || isCreator;
   });
 
   const overdue = [];

@@ -486,7 +486,9 @@ export async function downloadTablePdf(options: {
     doc.setTextColor(100, 116, 139);
 
     doc.text(portalStr, marginX, pageHeight - 3);
-    doc.text(`Page ${i} of ${pageCount}`, pageWidth / 2, pageHeight - 3, { align: "center" });
+    if (pageCount > 1) {
+      doc.text(`Page ${i} of ${pageCount}`, pageWidth / 2, pageHeight - 3, { align: "center" });
+    }
     doc.text(auditRight, pageWidth - marginX, pageHeight - 3, { align: "right" });
   }
 

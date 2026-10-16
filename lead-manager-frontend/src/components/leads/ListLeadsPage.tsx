@@ -26,6 +26,7 @@ import {
   MoreVertical,
   X,
   FileSpreadsheet,
+  Copy,
 } from "lucide-react";
 import {
   useListLeadsQuery,
@@ -53,6 +54,8 @@ import {
   LEAD_PRIORITY_CONFIG,
   isUserInLeadManagerPortal,
   getLeadManagerPortalRole,
+  LEAD_DEPARTMENT_OPTIONS,
+  getDeptLabel,
 } from "./leadUtils";
 import { AssignLeadModal } from "./AssignLeadModal";
 import { FollowUpModal } from "./FollowUpModal";
@@ -62,7 +65,9 @@ import { BulkUploadLeadsModal } from "./BulkUploadLeadsModal";
 import { DownloadLeadsPreviewModal, type ColumnDef } from "./DownloadLeadsPreviewModal";
 
 
-import { readSessionFromStorage } from "@/utils/authStorage";
+import { readSessionFromStorage, isManager, isCoordinator } from "@/utils/authStorage";
+import { useLeadManagerRole } from "@/hooks/useLeadManagerRole";
+import { useLeadManagerTeamScope } from "@/hooks/useLeadManagerTeamScope";
 
 type Props = {
   portalHome?: string;
@@ -90,10 +95,12 @@ const DEFAULT_LEAD_EXPORT_COLUMNS: ColumnDef[] = [
   { key: "source", label: "Source", defaultSelected: true, widthPdf: 1.2 },
   { key: "status", label: "Status*", defaultSelected: true, widthPdf: 1 },
   { key: "priority", label: "Priority*", defaultSelected: true, widthPdf: 1 },
+  { key: "department", label: "Department", defaultSelected: true, widthPdf: 1.1 },
   { key: "assigned_to_name", label: "Assigned To*", defaultSelected: true, widthPdf: 1.3 },
   { key: "estimated_value_fmt", label: "Est. Value (₹)", defaultSelected: true, widthPdf: 1.3 },
   { key: "products_summary", label: "Products / Requirement", defaultSelected: false, widthPdf: 2 },
   { key: "next_follow_up_at", label: "Next Follow-Up", defaultSelected: true, widthPdf: 1.2 },
+  { key: "created_by_name", label: "Created By", defaultSelected: true, widthPdf: 1.3 },
   { key: "created_at_fmt", label: "Created Date", defaultSelected: false, widthPdf: 1.2 },
 ];
 
@@ -110,8 +117,10 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
   });
   const [search, setSearch] = useState<string>("");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
+  const [departmentFilter, setDepartmentFilter] = useState<string>("all");
   const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [salesUserFilter, setSalesUserFilter] = useState<string>("all");
+  const [createdByFilter, setCreatedByFilter] = useState<string>("all");
   const [cityFilter, setCityFilter] = useState<string>("");
   const [followUpFilter, setFollowUpFilter] = useState<"today" | "overdue" | "upcoming" | "">("");
   const [fromDate, setFromDate] = useState<string>("");
@@ -131,16 +140,23 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
   const { data: sources } = useListLeadSourcesQuery();
   const { data: usersData } = useListUsersQuery();
 
-  const isAdmin = isLeadAdmin(authUser, portalHome);
+  const { isAdmin: isRoleAdmin, isManager: isRoleManager, isCoordinator: isRoleCoord, isExecutive } = useLeadManagerRole();
+  const { filterByTeam, withSelfInList } = useLeadManagerTeamScope();
+
+  const isAdmin = isRoleAdmin || isLeadAdmin(authUser, portalHome);
+  const isTeamLead = isRoleManager || isRoleCoord || isManager(authUser) || isCoordinator(authUser);
+  const canFilterRep = isAdmin || isTeamLead;
+
+  const [scopeFilter, setScopeFilter] = useState<"team" | "mine">("team");
+
   const showPricing = canViewLeadPricing(authUser, portalHome);
-  const tableColSpan = showPricing ? 12 : 11;
+  const tableColSpan = showPricing ? 13 : 12;
 
   const authUserId = authUser?._id
     ? String(authUser._id)
     : authUser?.id
     ? String(authUser.id)
     : undefined;
-
 
   const queryArgs = useMemo(
     () => ({
@@ -149,8 +165,11 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
       search: search.trim() || undefined,
       status: activeTab !== "all" ? activeTab : undefined,
       priority: priorityFilter !== "all" ? priorityFilter : undefined,
+      department: departmentFilter !== "all" ? departmentFilter : undefined,
       source: sourceFilter !== "all" ? sourceFilter : undefined,
-      assigned_to: isAdmin ? (salesUserFilter !== "all" ? salesUserFilter : undefined) : authUserId,
+      scope: isTeamLead ? scopeFilter : undefined,
+      assigned_to: canFilterRep && salesUserFilter !== "all" ? salesUserFilter : undefined,
+      created_by: isAdmin && createdByFilter !== "all" ? createdByFilter : undefined,
       city: cityFilter.trim() || undefined,
       follow_up_filter: followUpFilter || undefined,
       from_date: fromDate || undefined,
@@ -162,10 +181,14 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
       search,
       activeTab,
       priorityFilter,
+      departmentFilter,
       sourceFilter,
+      isTeamLead,
+      scopeFilter,
+      canFilterRep,
       salesUserFilter,
       isAdmin,
-      authUserId,
+      createdByFilter,
       cityFilter,
       followUpFilter,
       fromDate,
@@ -188,6 +211,15 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
     ? usersData
     : (usersData as { data?: Array<{ _id: string; name: string; department?: string; portals?: Array<{ portal_code: string; access_roles?: string[] }> }> })?.data || []) as Array<{ _id: string; name: string; department?: string; portals?: Array<{ portal_code: string; access_roles?: string[] }> }>;
 
+  const assignableUsers = useMemo(() => {
+    let filtered = users.filter(isUserInLeadManagerPortal);
+    if (filtered.length === 0) filtered = users;
+    if (isAdmin) return filtered;
+    const scoped = filterByTeam(filtered);
+    const selfRow = authUser?._id ? users.find((u) => String(u._id) === String(authUser._id)) : undefined;
+    return withSelfInList(scoped, selfRow);
+  }, [users, filterByTeam, withSelfInList, authUser, isAdmin]);
+
   const formattedLeadsForExport = useMemo(() => {
     return items.map((lead: LeadRecord) => {
       const assignedNames = formatLeadAssignees(lead) || "Unassigned";
@@ -207,6 +239,14 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
       const cityVal = party?.district || party?.billing_address?.city || (lead as any).city || "N/A";
       const stateVal = party?.state || party?.billing_address?.state || (lead as any).state || "N/A";
       const createdDate = lead.createdAt || (lead as any).created_at;
+      const createdByName =
+        typeof lead.created_by === "object" && lead.created_by?.name
+          ? lead.created_by.name
+          : typeof lead.created_by === "object" && lead.created_by?.email
+          ? lead.created_by.email
+          : typeof lead.created_by === "string" && lead.created_by
+          ? lead.created_by
+          : "System";
 
       return {
         _id: lead._id,
@@ -220,7 +260,9 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
         source: typeof lead.source === "string" ? lead.source : (lead.source as any)?.name || "Direct",
         status: (lead.status || "new").toUpperCase(),
         priority: (lead.priority || "medium").toUpperCase(),
+        department: getDeptLabel(lead.department || "sales"),
         assigned_to_name: assignedNames,
+        created_by_name: createdByName,
         estimated_value_fmt: lead.estimated_value ? `₹${Number(lead.estimated_value).toLocaleString("en-IN")}` : "₹0",
         products_summary: productsSummary,
         next_follow_up_at: lead.next_follow_up_at ? formatLeadDate(lead.next_follow_up_at) : "None",
@@ -232,8 +274,10 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
   const clearFilters = () => {
     setSearch("");
     setPriorityFilter("all");
+    setDepartmentFilter("all");
     setSourceFilter("all");
     setSalesUserFilter("all");
+    setCreatedByFilter("all");
     setCityFilter("");
     setFollowUpFilter("");
     setFromDate("");
@@ -244,8 +288,10 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
   const hasActiveFilters =
     Boolean(search) ||
     priorityFilter !== "all" ||
+    departmentFilter !== "all" ||
     sourceFilter !== "all" ||
     salesUserFilter !== "all" ||
+    (isAdmin && createdByFilter !== "all") ||
     Boolean(cityFilter) ||
     Boolean(followUpFilter) ||
     Boolean(fromDate) ||
@@ -259,11 +305,24 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
       <div className="relative shrink-0 overflow-hidden rounded-xl border border-primary/20 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent px-4 py-2.5 shadow-sm">
         <div className="relative flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h1 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">
-              Lead Manager
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">
+                Lead Manager
+              </h1>
+              <span className="rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-[10px] font-extrabold uppercase text-primary">
+                {isAdmin
+                  ? "All Leads (Global)"
+                  : isTeamLead
+                  ? (scopeFilter === "team" ? "Team Leads" : "My Leads")
+                  : "My Leads"}
+              </span>
+            </div>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Track inquiries, qualify prospects, manage follow-ups, and convert leads to orders.
+              {isAdmin
+                ? "Global lead management — track all company inquiries, assignments, and conversions."
+                : isTeamLead
+                ? "Team lead management — track leads created by or assigned to your team members."
+                : "Personal lead pipeline — track leads assigned to you or created by you."}
             </p>
           </div>
 
@@ -306,7 +365,6 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
               </>
             )}
 
-
             <Link
               href="/dashboard/leads/follow-ups"
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-white/5"
@@ -320,7 +378,7 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
               className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-white/5"
             >
               <BarChart3 className="h-3.5 w-3.5 text-indigo-500" />
-              My Reports
+              {isAdmin || isTeamLead ? "Team Sales Reports" : "My Reports"}
             </Link>
 
             <Link
@@ -333,6 +391,43 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
           </div>
         </div>
       </div>
+
+      {/* Team / Mine Scope Toggle for Managers & Coordinators */}
+      {isTeamLead && (
+        <div className="flex items-center gap-2 px-1">
+          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">View Scope:</span>
+          <div className="inline-flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl text-xs font-semibold border border-slate-200/80 dark:border-white/10">
+            <button
+              type="button"
+              onClick={() => {
+                setScopeFilter("team");
+                setPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                scopeFilter === "team"
+                  ? "bg-white dark:bg-slate-700 text-primary shadow-xs font-bold"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+              }`}
+            >
+              Team Leads (Created or Assigned to Team)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setScopeFilter("mine");
+                setPage(1);
+              }}
+              className={`px-3 py-1.5 rounded-lg transition-all ${
+                scopeFilter === "mine"
+                  ? "bg-white dark:bg-slate-700 text-primary shadow-xs font-bold"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+              }`}
+            >
+              My Leads (Created or Assigned to Me)
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Status Tab Strip */}
       <div className="flex overflow-x-auto border-b border-slate-200 dark:border-white/10">
@@ -432,6 +527,27 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
 
             <div>
               <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                Department
+              </label>
+              <select
+                value={departmentFilter}
+                onChange={(e) => {
+                  setDepartmentFilter(e.target.value);
+                  setPage(1);
+                }}
+                className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white"
+              >
+                <option value="all">All Departments</option>
+                {LEAD_DEPARTMENT_OPTIONS.map((d) => (
+                  <option key={d.value} value={d.value}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400">
                 Lead Source
               </label>
               <select
@@ -451,7 +567,7 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
               </select>
             </div>
 
-            {isAdmin && (
+            {canFilterRep && (
               <div>
                 <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400">
                   Assigned To
@@ -464,8 +580,34 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
                   }}
                   className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white"
                 >
-                  <option value="all">All Users</option>
+                  <option value="all">{isAdmin ? "All Users" : "All Team Members"}</option>
                   <option value="unassigned">Unassigned Only</option>
+                  {assignableUsers.map((u) => {
+                    const roleBadge = getLeadManagerPortalRole(u);
+                    return (
+                      <option key={u._id} value={u._id}>
+                        {u.name} {roleBadge ? `(${roleBadge})` : ""}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            )}
+
+            {isAdmin && (
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+                  Created By
+                </label>
+                <select
+                  value={createdByFilter}
+                  onChange={(e) => {
+                    setCreatedByFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 shadow-sm focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white"
+                >
+                  <option value="all">All Creators</option>
                   {users
                     .filter(isUserInLeadManagerPortal)
                     .map((u) => {
@@ -564,6 +706,7 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
                 <th className="px-4 py-3 text-center">Est. Qty</th>
                 {showPricing && <th className="px-4 py-3 text-right">Est. Value</th>}
                 <th className="px-4 py-3">Next Follow-up</th>
+                <th className="px-4 py-3">Created By</th>
                 <th className="px-4 py-3">Created</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
@@ -618,6 +761,13 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
                             {lead.company_name}
                           </div>
                         )}
+                        {lead.department && (
+                          <div className="mt-1">
+                            <span className="inline-flex items-center rounded-md bg-purple-50 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700 dark:bg-purple-950/60 dark:text-purple-300">
+                              {getDeptLabel(lead.department)}
+                            </span>
+                          </div>
+                        )}
                       </td>
 
                       {/* Contact */}
@@ -664,7 +814,18 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
 
                       {/* Assigned To */}
                       <td className="px-4 py-3">
-                        {lead.assigned_to?.name ? (
+                        {lead.assigned_users && lead.assigned_users.length > 0 ? (
+                          <div>
+                            <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">
+                              {lead.assigned_users.map((u) => u.name).filter(Boolean).join(", ")}
+                            </div>
+                            {lead.assigned_users.length > 1 && (
+                              <span className="text-[10px] text-slate-400 font-medium">
+                                ({lead.assigned_users.length} members)
+                              </span>
+                            )}
+                          </div>
+                        ) : lead.assigned_to?.name ? (
                           <div className="text-[11px] font-semibold text-slate-800 dark:text-slate-200">
                             {lead.assigned_to.name}
                           </div>
@@ -730,6 +891,32 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
                         )}
                       </td>
 
+                      {/* Created By */}
+                      <td className="px-4 py-3 whitespace-nowrap text-[11px]">
+                        {typeof lead.created_by === "object" && lead.created_by?.name ? (
+                          <div>
+                            <span className="font-semibold text-slate-800 dark:text-slate-200">
+                              {lead.created_by.name}
+                            </span>
+                            {lead.created_by.department && (
+                              <span className="block text-[10px] text-slate-400">
+                                {lead.created_by.department}
+                              </span>
+                            )}
+                          </div>
+                        ) : typeof lead.created_by === "object" && lead.created_by?.email ? (
+                          <span className="font-medium text-slate-700 dark:text-slate-300">
+                            {lead.created_by.email}
+                          </span>
+                        ) : typeof lead.created_by === "string" && lead.created_by ? (
+                          <span className="font-medium text-slate-700 dark:text-slate-300">
+                            {lead.created_by}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">System</span>
+                        )}
+                      </td>
+
                       {/* Created Date */}
                       <td className="px-4 py-3 whitespace-nowrap text-[11px] text-slate-500">
                         {formatLeadDate(lead.createdAt)}
@@ -755,6 +942,14 @@ export function ListLeadsPage({ portalHome = "/dashboard" }: Props) {
                               <Pencil className="h-4 w-4" />
                             </Link>
                           )}
+
+                          <Link
+                            href={`${portalHome}/leads/new?copy_from=${lead._id}`}
+                            title="Copy Lead as New"
+                            className="rounded-lg p-1.5 text-slate-400 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950/50 dark:hover:text-indigo-400"
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Link>
 
                           {!isLeadClosed && (
                             <button

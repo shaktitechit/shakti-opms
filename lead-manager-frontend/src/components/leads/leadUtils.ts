@@ -202,13 +202,33 @@ export type LeadAssigneeLike = {
   department?: string;
 } | null | undefined;
 
-/** Compact label for list/detail: "John Doe" or "Unassigned" */
+export const LEAD_DEPARTMENT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "sales", label: "Sales" },
+  { value: "admin", label: "Admin" },
+  { value: "finance", label: "Finance" },
+  { value: "dispatch", label: "Dispatch" },
+  { value: "account", label: "Account" },
+  { value: "operations", label: "Operations" },
+];
+
+/** Compact label for list/detail: "John Doe" or "John Doe, Jane Smith" or "Unassigned" */
 export function formatLeadAssignees(lead: {
   assigned_to?: LeadAssigneeLike;
+  assigned_users?: LeadAssigneeLike[];
 } | null | undefined): string {
   if (!lead) return "Unassigned";
+  if (Array.isArray(lead.assigned_users) && lead.assigned_users.length > 0) {
+    const names = lead.assigned_users.map((u) => u?.name).filter(Boolean);
+    if (names.length > 0) return names.join(", ");
+  }
   if (lead.assigned_to?.name) return lead.assigned_to.name;
   return "Unassigned";
+}
+
+/** Returns true if user has a senior role on lead manager portal (admin, manager, coordinator) */
+export function isSeniorLeadRole(user: AuthUserLike): boolean {
+  if (!user) return false;
+  return isAdmin(user as any) || isManager(user as any) || isCoordinator(user as any);
 }
 
 /** Returns true if the user is in the admin department */
@@ -224,11 +244,14 @@ export function getUserDepartment(user: AuthUserLike): string {
 
 /** Human-readable label for a department */
 export function getDeptLabel(dept: string): string {
-  switch (dept) {
+  switch (dept?.toLowerCase()) {
     case "sales": return "Sales";
     case "admin": return "Admin";
     case "finance": return "Finance";
-    default: return dept.charAt(0).toUpperCase() + dept.slice(1);
+    case "dispatch": return "Dispatch";
+    case "account": return "Account";
+    case "operations": return "Operations";
+    default: return dept ? dept.charAt(0).toUpperCase() + dept.slice(1) : "Sales";
   }
 }
 
@@ -383,6 +406,55 @@ export function getFollowUpSalesRepName(fu: {
     return fu.created_by.name;
   }
   return "Unassigned";
+}
+
+/** Display name for designated follow-up assignee (lead assignee or quotation sales rep). */
+export function getFollowUpAssigneeName(fu: {
+  lead?: {
+    assigned_to?: { name?: string } | string | null;
+    assigned_users?: Array<{ name?: string }>;
+  } | string | null;
+  quotation?: {
+    sales_person_name?: string;
+    sales_person_user?: { name?: string } | string | null;
+  } | string | null;
+}): string {
+  const leadObj = typeof fu.lead === "object" && fu.lead !== null ? fu.lead : null;
+  if (leadObj?.assigned_to && typeof leadObj.assigned_to === "object" && leadObj.assigned_to.name) {
+    return leadObj.assigned_to.name;
+  }
+  if (Array.isArray(leadObj?.assigned_users) && leadObj.assigned_users.length > 0 && leadObj.assigned_users[0]?.name) {
+    return leadObj.assigned_users.map((u) => u.name).filter(Boolean).join(", ");
+  }
+  const quoteObj = typeof fu.quotation === "object" && fu.quotation !== null ? fu.quotation : null;
+  if (quoteObj?.sales_person_name?.trim()) {
+    return quoteObj.sales_person_name.trim();
+  }
+  const sp = quoteObj?.sales_person_user;
+  if (sp && typeof sp === "object" && sp.name) {
+    return sp.name;
+  }
+  return "Unassigned";
+}
+
+/** Display name for who created the follow-up or originating lead/quotation. */
+export function getFollowUpCreatorName(fu: {
+  created_by?: { name?: string } | string | null;
+  lead?: { created_by?: { name?: string } | string | null } | string | null;
+  quotation?: { created_by?: { name?: string } | string | null } | string | null;
+}): string {
+  if (fu.created_by && typeof fu.created_by === "object" && fu.created_by.name) {
+    return fu.created_by.name;
+  }
+  const leadObj = typeof fu.lead === "object" && fu.lead !== null ? fu.lead : null;
+  if (leadObj?.created_by && typeof leadObj.created_by === "object" && leadObj.created_by.name) {
+    return leadObj.created_by.name;
+  }
+  const quoteObj = typeof fu.quotation === "object" && fu.quotation !== null ? fu.quotation : null;
+  if (quoteObj?.created_by && typeof quoteObj.created_by === "object" && quoteObj.created_by.name) {
+    return quoteObj.created_by.name;
+  }
+  return "System / Unknown";
 }
 
 import { isAdmin, isCoordinator, isManager, isExecutive } from "@/utils/authStorage";

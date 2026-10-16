@@ -11,12 +11,15 @@ import { useAppSelector } from "@/store/hooks";
 import { readSessionFromStorage } from "@/utils/authStorage";
 import { formatCompanyAddress } from "@/components/portal/shared/pdfCompanyLetterhead";
 import { resolvePublicAssetUrl } from "@/lib/env";
+import { numberToIndianWords } from "./quotationLineMath";
+import { RichTextDisplay, isNonEmptyRichText } from "./RichTextDisplay";
 
 type Props = {
   quotation: LeadQuotationRecord;
   portalLabel?: string;
   downloadedBy?: string;
   documentType?: "quotation" | "proforma";
+  watermark?: string;
 };
 
 const PAGE_WIDTH = 794;
@@ -63,6 +66,7 @@ export default function QuotationPdfTemplate({
   portalLabel = "Lead Manager",
   downloadedBy,
   documentType = "quotation",
+  watermark,
 }: Props) {
   const { data: companyData } = useGetCompanyInfoQuery();
   const company = companyData as Record<string, unknown> | undefined;
@@ -87,9 +91,9 @@ export default function QuotationPdfTemplate({
   }, [downloadedBy, authUser, quotation.signatory_name]);
 
   const companyName =
+    quotation.company_name ||
     (company?.trade_name as string) ||
     (company?.legal_name as string) ||
-    quotation.company_name ||
     "";
 
   const resolvedPortalLabel = portalLabel || "Lead Manager";
@@ -103,9 +107,9 @@ export default function QuotationPdfTemplate({
 
   const companyRegdAddress = formatCompanyAddress(company as any, quotation.company_regd_address);
 
-  const companyPhone = (company?.phone as string) || quotation.company_phone || "";
-  const companyEmail = (company?.email as string) || quotation.company_email || "";
-  const companyGstin = (company?.gstin as string) || quotation.company_gstin || "";
+  const companyPhone = quotation.company_phone || (company?.phone as string) || "";
+  const companyEmail = quotation.company_email || (company?.email as string) || "";
+  const companyGstin = quotation.company_gstin || (company?.gstin as string) || "";
 
   const contactLine = [
     companyPhone ? `Phone: ${companyPhone}` : "",
@@ -187,6 +191,106 @@ export default function QuotationPdfTemplate({
         data-pdf-page
         style={pageStyle}
       >
+        {/* WATERMARK OVERLAY */}
+        {watermark && (
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              pointerEvents: "none",
+              userSelect: "none",
+              zIndex: 35,
+              overflow: "hidden",
+            }}
+          >
+            {/* Top subtle repeating watermark */}
+            <div
+              style={{
+                position: "absolute",
+                top: "16%",
+                transform: "rotate(-32deg)",
+                fontSize: "76px",
+                fontWeight: 900,
+                letterSpacing: "14px",
+                color: "rgba(220, 38, 38, 0.07)",
+                textTransform: "uppercase",
+                whiteSpace: "nowrap",
+                fontFamily: "Arial, Helvetica, sans-serif",
+              }}
+            >
+              {watermark}
+            </div>
+
+            {/* Main Center Prominent Watermark Box */}
+            <div
+              style={{
+                transform: "rotate(-32deg)",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "24px 56px",
+                border: "8px dashed rgba(220, 38, 38, 0.22)",
+                borderRadius: "20px",
+                backgroundColor: "rgba(255, 255, 255, 0.25)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "116px",
+                  fontWeight: 900,
+                  letterSpacing: "20px",
+                  color: "rgba(220, 38, 38, 0.16)",
+                  textTransform: "uppercase",
+                  whiteSpace: "nowrap",
+                  lineHeight: "1",
+                  fontFamily: "Arial, Helvetica, sans-serif",
+                }}
+              >
+                {watermark}
+              </div>
+              <div
+                style={{
+                  fontSize: "15px",
+                  fontWeight: 800,
+                  letterSpacing: "6px",
+                  marginTop: "10px",
+                  color: "rgba(220, 38, 38, 0.30)",
+                  textTransform: "uppercase",
+                  fontFamily: "Arial, Helvetica, sans-serif",
+                }}
+              >
+                UNOFFICIAL DRAFT • NOT FOR ISSUE
+              </div>
+            </div>
+
+            {/* Bottom subtle repeating watermark */}
+            <div
+              style={{
+                position: "absolute",
+                bottom: "16%",
+                transform: "rotate(-32deg)",
+                fontSize: "76px",
+                fontWeight: 900,
+                letterSpacing: "14px",
+                color: "rgba(220, 38, 38, 0.07)",
+                textTransform: "uppercase",
+                whiteSpace: "nowrap",
+                fontFamily: "Arial, Helvetica, sans-serif",
+              }}
+            >
+              {watermark}
+            </div>
+          </div>
+        )}
+
         {/* 1. HEADER SECTION */}
         <div style={{ marginBottom: "14px", width: "100%", boxSizing: "border-box" }}>
           <div style={{ display: "flex", flexDirection: "row", alignItems: "center", justifyContent: "space-between", width: "100%", paddingBottom: "10px", borderBottom: "2.5px solid #1e3a5f" }}>
@@ -441,6 +545,26 @@ export default function QuotationPdfTemplate({
           </div>
         </div>
 
+        {/* Cover / Introductory Message (if provided, rendered seamlessly without label) */}
+        {isNonEmptyRichText(quotation.message || (quotation as any).quotation_message) && (
+          <div
+            style={{
+              width: "100%",
+              marginBottom: "8px",
+              padding: "4px 2px",
+              fontSize: "8.5px",
+              color: "#334155",
+              lineHeight: "14px",
+              boxSizing: "border-box",
+            }}
+          >
+            <RichTextDisplay
+              content={(quotation.message || (quotation as any).quotation_message) || ""}
+              className="text-[8.5px] leading-relaxed text-slate-800"
+            />
+          </div>
+        )}
+
         {/* 4. ITEMS GRID */}
         <div
           style={{
@@ -540,10 +664,10 @@ export default function QuotationPdfTemplate({
                 {formatCurrency(item.taxable_amount)}
               </div>
               <div style={{ width: "7%", padding: "6px 4px", textAlign: "center", color: "#475569", borderRight: "1px solid #cbd5e1", boxSizing: "border-box" }}>
-                {item.gst_rate}%
+                {quotation.gst_enabled === false || item.gst_enabled === false || !item.gst_rate ? "" : `${item.gst_rate}%`}
               </div>
               <div style={{ width: "10%", padding: "6px 4px", textAlign: "right", borderRight: "1px solid #cbd5e1", boxSizing: "border-box" }}>
-                {formatCurrency(item.total_gst_amount)}
+                {quotation.gst_enabled === false || item.gst_enabled === false || !item.total_gst_amount ? "" : formatCurrency(item.total_gst_amount)}
               </div>
               <div style={{ width: "12%", padding: "6px 4px", textAlign: "right", fontWeight: 700, color: "#0f172a", boxSizing: "border-box" }}>
                 {formatCurrency(item.line_total)}
@@ -587,7 +711,7 @@ export default function QuotationPdfTemplate({
                 textTransform: "capitalize",
               }}
             >
-              {quotation.amount_in_words || "—"}
+              {(quotation.amount_in_words && quotation.amount_in_words.trim()) || numberToIndianWords(quotation.grand_total) || "Zero Rupees Only"}
             </div>
           </div>
 
@@ -616,7 +740,9 @@ export default function QuotationPdfTemplate({
             )}
             <div style={{ display: "flex", flexDirection: "row", justifyContent: "space-between", padding: "4px 6px", fontSize: "8.5px", borderBottom: "1px solid #cbd5e1", boxSizing: "border-box" }}>
               <span style={{ color: "#475569", fontWeight: 600 }}>Total GST:</span>
-              <span style={{ fontWeight: 700 }}>Rs. {formatCurrency(quotation.total_gst)}</span>
+              <span style={{ fontWeight: 700 }}>
+                {quotation.gst_enabled === false || !quotation.total_gst ? "" : `Rs. ${formatCurrency(quotation.total_gst)}`}
+              </span>
             </div>
             {quotation.round_off !== undefined && quotation.round_off !== 0 && (
               <div style={{ display: "flex", flexDirection: "row", justifyContent: "space-between", padding: "4px 6px", fontSize: "8.5px", borderBottom: "1px solid #cbd5e1", boxSizing: "border-box" }}>
@@ -699,48 +825,48 @@ export default function QuotationPdfTemplate({
                 color: "#334155",
               }}
             >
-              {((company?.bank_name as string) || quotation.bank_name) && (
+              {(quotation.bank_name || (company?.bank_name as string)) && (
                 <div>
                   <strong>Bank Name :</strong>{" "}
                   <span style={{ fontWeight: 700, color: "#0f172a" }}>
-                    {(company?.bank_name as string) || quotation.bank_name}
+                    {quotation.bank_name || (company?.bank_name as string)}
                   </span>
                 </div>
               )}
-              {((company?.account_name as string) || quotation.account_name || companyName) && (
+              {(quotation.account_name || (company?.account_name as string) || companyName) && (
                 <div>
                   <strong>Account Name :</strong>{" "}
                   <span style={{ fontWeight: 600, color: "#0f172a" }}>
-                    {(company?.account_name as string) || quotation.account_name || companyName}
+                    {quotation.account_name || (company?.account_name as string) || companyName}
                   </span>
                 </div>
               )}
-              {((company?.account_number as string) || quotation.account_number) && (
+              {(quotation.account_number || (company?.account_number as string)) && (
                 <div>
                   <strong>A/c No. :</strong>{" "}
                   <span style={{ fontWeight: 700, color: "#1e40af", fontFamily: "monospace" }}>
-                    {(company?.account_number as string) || quotation.account_number}
+                    {quotation.account_number || (company?.account_number as string)}
                   </span>
                 </div>
               )}
-              {((company?.ifsc_code as string) || quotation.ifsc_code) && (
+              {(quotation.ifsc_code || (company?.ifsc_code as string)) && (
                 <div>
                   <strong>IFSC Code :</strong>{" "}
                   <span style={{ fontWeight: 700, color: "#1e40af", fontFamily: "monospace" }}>
-                    {(company?.ifsc_code as string) || quotation.ifsc_code}
+                    {quotation.ifsc_code || (company?.ifsc_code as string)}
                   </span>
                 </div>
               )}
-              {((company?.branch_name as string) || quotation.branch_name) && (
+              {(quotation.branch_name || (company?.branch_name as string)) && (
                 <div>
                   <strong>Branch :</strong>{" "}
-                  <span>{(company?.branch_name as string) || quotation.branch_name}</span>
+                  <span>{quotation.branch_name || (company?.branch_name as string)}</span>
                 </div>
               )}
-              {((company?.account_type as string) || quotation.account_type) && (
+              {(quotation.account_type || (company?.account_type as string)) && (
                 <div>
                   <strong>A/c Type :</strong>{" "}
-                  <span>{(company?.account_type as string) || quotation.account_type}</span>
+                  <span>{quotation.account_type || (company?.account_type as string)}</span>
                 </div>
               )}
               {Boolean(company?.upi_id) && (
@@ -843,6 +969,7 @@ export default function QuotationPdfTemplate({
             display: "flex",
             flexDirection: "row",
             justifyContent: "space-between",
+            alignItems: "center",
             paddingTop: "5px",
             borderTop: "1px solid #e2e8f0",
             fontSize: "7px",
@@ -855,6 +982,15 @@ export default function QuotationPdfTemplate({
           <div>
             Ref: {quotation.quotation_no || quotation.ref_no || ""} • Generated via {resolvedPortalLabel}
           </div>
+          <div
+            className="print-page-number"
+            style={{
+              textAlign: "center",
+              fontWeight: 700,
+              fontSize: "7.5px",
+              color: "#334155",
+            }}
+          />
           <div style={{ textAlign: "right" }}>
             Generated By: {userLabel} •{" "}
             {new Date().toLocaleDateString("en-IN", {

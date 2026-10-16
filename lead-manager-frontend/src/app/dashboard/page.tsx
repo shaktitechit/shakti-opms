@@ -93,7 +93,7 @@ export default function DashboardPage() {
                 className="flex items-center gap-1.5 rounded-xl bg-white text-primary px-3.5 py-2 text-xs font-bold hover:bg-white/90 shadow-md transition"
               >
                 <BarChart3 className="h-4 w-4" />
-                My Reports
+                Team Sales Reports
               </Link>
             </>
           ) : isManager ? (
@@ -131,7 +131,7 @@ export default function DashboardPage() {
                 className="flex items-center gap-1.5 rounded-xl bg-white/10 backdrop-blur-md px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20 border border-white/20 transition"
               >
                 <BarChart3 className="h-4 w-4" />
-                My Reports
+                Team Sales Report
               </Link>
             </>
           ) : isCoordinator ? (
@@ -169,7 +169,7 @@ export default function DashboardPage() {
                 className="flex items-center gap-1.5 rounded-xl bg-white/10 backdrop-blur-md px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20 border border-white/20 transition"
               >
                 <BarChart3 className="h-4 w-4" />
-                My Reports
+                Team Sales Report
               </Link>
             </>
           ) : (
@@ -207,7 +207,7 @@ export default function DashboardPage() {
                 className="flex items-center gap-1.5 rounded-xl bg-white/10 backdrop-blur-md px-3.5 py-2 text-xs font-semibold text-white hover:bg-white/20 border border-white/20 transition"
               >
                 <BarChart3 className="h-4 w-4" />
-                My Reports
+                Team Sales Reports
               </Link>
             </>
           )}
@@ -269,7 +269,7 @@ export default function DashboardPage() {
       {(activeSection === "all" || activeSection === "leads") && (
         <LeadsDashboardSection
           portalHome="/dashboard"
-          assigned_to={isExecutive ? user?._id : undefined}
+          assigned_to={isExecutive ? (user?._id || (user as any)?.id) : undefined}
           isAdmin={isAdmin}
           isManager={isManager}
           isCoordinator={isCoordinator}

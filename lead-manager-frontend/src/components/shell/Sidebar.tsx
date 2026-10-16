@@ -49,7 +49,8 @@ export function Sidebar({
 
   /** Lead pipeline reports at /dashboard/leads/reports (distinct from Quote Reports). */
   const showLeadReportsNav = isAdmin || isManager || isCoordinator || isExecutive;
-  const leadReportsNavLabel = "My Reports";
+  const leadReportsNavLabel =
+    isAdmin || isManager || isCoordinator ? "Team Sales Reports" : "My Reports";
 
   return (
     <>

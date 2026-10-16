@@ -72,6 +72,7 @@ import {
   LEAD_STATUS_CONFIG,
   LEAD_PRIORITY_CONFIG,
   FOLLOWUP_TYPE_CONFIG,
+  getDeptLabel,
 } from "./leadUtils";
 import { AssignLeadModal } from "./AssignLeadModal";
 import { MarkWonModal } from "./MarkWonModal";
@@ -246,7 +247,14 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
                 Source: {lead.source}
               </span>
 
-              {/* Assigned (multi-dept) */}
+              {/* Department */}
+              {lead.department && (
+                <span className="inline-flex rounded-lg bg-purple-50 px-2.5 py-1 text-xs font-semibold text-purple-700 dark:bg-purple-950/60 dark:text-purple-300">
+                  Dept: {getDeptLabel(lead.department)}
+                </span>
+              )}
+
+              {/* Assigned (multi-dept / multi-member) */}
               <span className="inline-flex max-w-md items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-800 dark:border-white/10 dark:bg-slate-800/60 dark:text-slate-200">
                 <UserCheck className="h-3.5 w-3.5 shrink-0 text-blue-600 dark:text-blue-400" />
                 <span className="truncate">{formatLeadAssignees(lead)}</span>
@@ -265,6 +273,15 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
                 Edit
               </Link>
             )}
+
+            <Link
+              href={`${portalHome}/leads/new?copy_from=${lead._id}`}
+              className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800 dark:text-slate-200"
+              title="Copy this lead to create a new lead"
+            >
+              <Copy className="h-3.5 w-3.5 text-indigo-500" />
+              Copy Lead
+            </Link>
 
             {!isClosed && (
               <button
@@ -351,6 +368,9 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
               </div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
                 {formatLeadDate(lead.createdAt) || "Lead Created"}
+                {typeof lead.created_by === "object" && lead.created_by?.name
+                  ? ` by ${lead.created_by.name}`
+                  : ""}
               </div>
             </div>
           </div>
@@ -824,6 +844,49 @@ export function LeadDetailPage({ leadId, portalHome = "/dashboard" }: Props) {
                   {lead.billing_address?.country || "India"}
                 </div>
               </div>
+            </div>
+
+            {/* Record Information Card */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-slate-900">
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white border-b border-slate-100 pb-3 dark:border-white/10">
+                Record Info
+              </h3>
+              <dl className="mt-4 space-y-3 text-xs">
+                <div>
+                  <dt className="text-slate-500 dark:text-slate-400">Created By</dt>
+                  <dd className="font-semibold text-slate-900 dark:text-white mt-0.5">
+                    {typeof lead.created_by === "object" && lead.created_by?.name
+                      ? lead.created_by.name
+                      : typeof lead.created_by === "object" && lead.created_by?.email
+                      ? lead.created_by.email
+                      : typeof lead.created_by === "string" && lead.created_by
+                      ? lead.created_by
+                      : "System"}
+                  </dd>
+                </div>
+                {lead.department && (
+                  <div>
+                    <dt className="text-slate-500 dark:text-slate-400">Department</dt>
+                    <dd className="font-semibold text-slate-900 dark:text-white mt-0.5">
+                      {getDeptLabel(lead.department)}
+                    </dd>
+                  </div>
+                )}
+                <div>
+                  <dt className="text-slate-500 dark:text-slate-400">Created At</dt>
+                  <dd className="font-semibold text-slate-900 dark:text-white mt-0.5">
+                    {formatLeadDateTime(lead.createdAt)}
+                  </dd>
+                </div>
+                {lead.updatedAt && (
+                  <div>
+                    <dt className="text-slate-500 dark:text-slate-400">Last Modified</dt>
+                    <dd className="font-semibold text-slate-900 dark:text-white mt-0.5">
+                      {formatLeadDateTime(lead.updatedAt)}
+                    </dd>
+                  </div>
+                )}
+              </dl>
             </div>
 
             {/* Lost or Converted Info Card */}

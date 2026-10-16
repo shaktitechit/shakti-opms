@@ -71,6 +71,9 @@ export type LeadAddress = {
   state?: string;
   pincode?: string;
   country?: string;
+  country_id?: string;
+  state_id?: string;
+  city_id?: string;
 };
 
 export type LeadQualification = {
@@ -142,10 +145,12 @@ export type LeadRecord = {
   qualification?: LeadQualification;
   lost_info?: LeadLostInfo;
   conversion?: LeadConversion;
+  department?: string;
+  assigned_users?: Array<{ _id: string; name: string; email?: string; phone?: string; department?: string }>;
   last_contacted_at?: string;
   next_follow_up_at?: string;
   last_activity_at?: string;
-  created_by?: { _id: string; name: string; email: string };
+  created_by?: { _id: string; name: string; email?: string; department?: string } | string | null;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -153,11 +158,16 @@ export type LeadRecord = {
 export type LeadInputPayload = Omit<
   Partial<LeadRecord>,
   | "assigned_to"
+  | "assigned_users"
+  | "created_by"
   | "source_id"
   | "party_id"
   | "contact_person_id"
 > & {
   assigned_to?: string | null | { _id: string; name?: string; email?: string; phone?: string; department?: string };
+  assigned_users?: string[];
+  department?: string;
+  created_by?: string;
   source_id?: string | { _id: string; name?: string };
   party_id?: string | null | { _id: string; party_name?: string };
   contact_person_id?: string;
@@ -177,6 +187,8 @@ export type LeadFollowUpRecord = {
     status?: LeadStatus;
     priority?: LeadPriority;
     assigned_to?: { _id: string; name: string };
+    assigned_users?: Array<{ _id: string; name: string }>;
+    created_by?: { _id: string; name: string } | string;
     party_id?: { _id?: string; party_name?: string; legal_name?: string };
     contacts?: Array<{ name?: string; phone?: string; email?: string; designation?: string }>;
   } | string | null;
@@ -458,6 +470,7 @@ export type FollowUpDetailedRecord = {
   email: string;
   city: string;
   rep_name: string;
+  creator_name?: string;
   type: LeadFollowUpType;
   status: LeadFollowUpStatus;
   display_status: string;
@@ -501,6 +514,8 @@ export type ListLeadsQueryArgs = {
   scope?: string;
   city?: string;
   state?: string;
+  department?: string;
+  created_by?: string;
   from_date?: string;
   to_date?: string;
   follow_up_filter?: "today" | "overdue" | "upcoming";
@@ -621,7 +636,9 @@ export const leadsApi = medicaApi.injectEndpoints({
       LeadRecord,
       {
         id: string;
-        assigned_to: string;
+        assigned_to?: string;
+        assigned_users?: string[];
+        department?: string;
         notes?: string;
       }
     >({
@@ -797,7 +814,16 @@ export const leadsApi = medicaApi.injectEndpoints({
 
     getLeadFollowUpCalendar: build.query<
       LeadFollowUpRecord[],
-      { from_date?: string; to_date?: string; status?: string } | void
+      {
+        from_date?: string;
+        to_date?: string;
+        status?: string;
+        type?: string;
+        scope?: string;
+        assigned_to?: string;
+        created_by?: string;
+        entity_type?: string;
+      } | void
     >({
       query: (params) => ({
         url: "/leads/follow-ups/calendar",

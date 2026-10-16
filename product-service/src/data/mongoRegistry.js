@@ -604,7 +604,7 @@ function registerModels() {
       company_id: { type: mongoose.Schema.Types.ObjectId, ref: "CompanyInfo", index: true },
       party_type: {
         type: String,
-        enum: ["customer", "supplier", "both"],
+        enum: ["customer", "supplier", "both", "leads", "lead", "quotation", "quotations", "visits", "visit"],
         default: "customer",
         index: true,
       },

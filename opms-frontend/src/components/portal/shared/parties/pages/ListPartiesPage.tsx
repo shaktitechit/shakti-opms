@@ -56,6 +56,9 @@ const PARTY_TYPE_TABS = [
   { id: "customer", label: "Customer" },
   { id: "supplier", label: "Supplier" },
   { id: "both", label: "Both" },
+  { id: "leads", label: "Leads" },
+  { id: "quotation", label: "Quotation" },
+  { id: "visits", label: "Visits" },
 ] as const;
 
 const STATUS_FILTER_OPTIONS = [
@@ -78,7 +81,17 @@ type PartyRow = {
   _id?: string;
   id?: string;
   party_name?: string;
-  party_type?: "customer" | "supplier" | "both";
+  party_type?:
+    | "customer"
+    | "supplier"
+    | "both"
+    | "leads"
+    | "lead"
+    | "quotation"
+    | "quotations"
+    | "visits"
+    | "visit"
+    | string;
   contact_person?: string;
   mobile?: string;
   email?: string;
@@ -127,28 +140,54 @@ function formatDateShort(v: unknown): string {
 }
 
 function renderPartyTypeBadge(type: string) {
-  if (type === "customer") {
+  const norm = String(type || "").toLowerCase().trim();
+  if (norm === "customer") {
     return (
       <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-2xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-700/10 dark:bg-blue-500/10 dark:text-blue-400 dark:ring-blue-500/20">
         Customer
       </span>
     );
   }
-  if (type === "supplier") {
+  if (norm === "supplier") {
     return (
       <span className="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-2xs font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-700/10 dark:bg-indigo-500/10 dark:text-indigo-400 dark:ring-indigo-500/20">
         Supplier
       </span>
     );
   }
-  if (type === "both") {
+  if (norm === "both") {
     return (
       <span className="inline-flex items-center rounded-full bg-purple-50 px-2 py-0.5 text-2xs font-semibold text-purple-700 ring-1 ring-inset ring-purple-700/10 dark:bg-purple-500/10 dark:text-purple-400 dark:ring-purple-500/20">
         Both
       </span>
     );
   }
-  return null;
+  if (norm === "leads" || norm === "lead") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-2xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-700/10 dark:bg-amber-500/10 dark:text-amber-400 dark:ring-amber-500/20">
+        Leads
+      </span>
+    );
+  }
+  if (norm === "quotation" || norm === "quotations") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-sky-50 px-2 py-0.5 text-2xs font-semibold text-sky-700 ring-1 ring-inset ring-sky-700/10 dark:bg-sky-500/10 dark:text-sky-400 dark:ring-sky-500/20">
+        Quotation
+      </span>
+    );
+  }
+  if (norm === "visits" || norm === "visit") {
+    return (
+      <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-2xs font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-700/10 dark:bg-emerald-500/10 dark:text-emerald-400 dark:ring-emerald-500/20">
+        Visits
+      </span>
+    );
+  }
+  return norm ? (
+    <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-2xs font-semibold capitalize text-slate-700 ring-1 ring-inset ring-slate-700/10 dark:bg-slate-800 dark:text-slate-300 dark:ring-slate-600/20">
+      {norm}
+    </span>
+  ) : null;
 }
 
 function renderActiveBadge(active: boolean) {
@@ -256,6 +295,9 @@ export default function ListPartiesPage({ portalHome }: ListPartiesPageProps) {
           { value: "customer", label: "Customer" },
           { value: "supplier", label: "Supplier" },
           { value: "both", label: "Both" },
+          { value: "leads", label: "Leads" },
+          { value: "quotation", label: "Quotation" },
+          { value: "visits", label: "Visits" },
         ],
       },
       {

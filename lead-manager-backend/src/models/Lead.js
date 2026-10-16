@@ -37,6 +37,9 @@ const leadAddressSchema = new mongoose.Schema(
     state: { type: String, trim: true },
     pincode: { type: String, trim: true },
     country: { type: String, default: "India" },
+    country_id: { type: mongoose.Schema.Types.ObjectId, ref: "PartyCountry" },
+    state_id: { type: mongoose.Schema.Types.ObjectId, ref: "PartyState" },
+    city_id: { type: mongoose.Schema.Types.ObjectId, ref: "PartyCity" },
   },
   { _id: false }
 );
@@ -127,7 +130,9 @@ const leadSchema = new mongoose.Schema(
       index: true,
     },
 
+    department: { type: String, trim: true, default: "sales", index: true },
     assigned_to: { type: mongoose.Schema.Types.ObjectId, ref: "User", index: true },
+    assigned_users: [{ type: mongoose.Schema.Types.ObjectId, ref: "User", index: true }],
     assigned_by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     assigned_at: Date,
 

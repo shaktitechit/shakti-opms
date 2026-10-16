@@ -10,6 +10,12 @@ export interface WorkPlanFormDraft {
   planDate: string;
   planType: string;
   location: string;
+  countryId?: string;
+  countryName?: string;
+  stateId?: string;
+  stateName?: string;
+  cityId?: string;
+  cityName?: string;
   remarks: string;
   isDiscussedWithManager: boolean | null;
   discussedManagerId: string;

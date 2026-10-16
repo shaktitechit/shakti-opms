@@ -40,6 +40,9 @@ export type LeadRecord = {
   contacts?: LeadContactItem[];
   designation?: string;
   billing_address?: LeadAddress;
+  city?: string;
+  state?: string;
+  country?: string;
   status?: LeadStatus | string;
   priority?: string;
   assigned_to?: { _id: string; name?: string; email?: string } | string;

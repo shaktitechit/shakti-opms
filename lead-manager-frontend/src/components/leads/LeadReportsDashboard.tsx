@@ -411,14 +411,15 @@ export function LeadReportsDashboard({ portalHome = "/dashboard" }: Props) {
       overdue_followups: sp.overdue_followups || 0,
     }));
 
+    const sheetTitle = isManager || isCoordinator ? "Team Sales Scorecard" : "Sales Rep Scorecard";
     downloadTableXlsx({
-      filename: `lead_sales_rep_scorecard_${period}.xlsx`,
-      sheetName: "Rep Scorecard",
-      title: `Sales Rep Lead Performance Scorecard (${period.toUpperCase().replace(/_/g, " ")})`,
+      filename: `${(isManager || isCoordinator ? "team_sales_report_" : "lead_sales_rep_scorecard_")}${period}.xlsx`,
+      sheetName: sheetTitle,
+      title: `${(isManager || isCoordinator ? "Team Sales Performance Scorecard" : "Sales Rep Lead Performance Scorecard")} (${period.toUpperCase().replace(/_/g, " ")})`,
       columns: cols,
       rows,
     });
-    toast.success("Sales Rep Scorecard Excel report downloaded!");
+    toast.success(`${sheetTitle} Excel report downloaded!`);
   };
 
   // Tab 3: Monthly Trends Export
@@ -540,14 +541,24 @@ export function LeadReportsDashboard({ portalHome = "/dashboard" }: Props) {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-black text-slate-900 dark:text-white">
-                  {isTeamLeadReports || isExecutive ? "My Reports" : "Lead Analytics & Reports"}
+                  {isAdmin || isManager || isCoordinator
+                    ? "Team Sales Reports"
+                    : "My Reports"}
                 </h1>
                 <span className="rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-[10px] font-extrabold uppercase text-primary">
-                  {isAdmin ? "All Leads" : isManager || isCoordinator ? "Team Leads" : "My Leads"}
+                  {isAdmin
+                    ? "All Leads (Global)"
+                    : isManager || isCoordinator
+                    ? "Team Leads (Assigned to Team)"
+                    : "My Leads (Assigned & Created by Me)"}
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Lead pipeline analytics — conversion funnel, rep scorecards, monthly trends, sources, and product demand.
+                {isAdmin
+                  ? "Global pipeline analytics across all sales reps and company inquiries."
+                  : isManager || isCoordinator
+                  ? "Team pipeline analytics — conversion funnel, sales rep scorecards, monthly trends, and performance for leads assigned to your team."
+                  : "Personal pipeline analytics — conversion funnel, monthly trends, and performance for leads assigned to you or created by you."}
                 {isTeamLeadReports ? " Quotation commercial reports live under Quote Reports in the sidebar." : ""}
               </p>
             </div>
@@ -779,7 +790,7 @@ export function LeadReportsDashboard({ portalHome = "/dashboard" }: Props) {
           }`}
         >
           <Users className="h-4 w-4" />
-          Sales Rep Scorecard
+          {isManager || isCoordinator ? "Team Sales Scorecard" : "Sales Rep Scorecard"}
         </button>
 
         <button
@@ -1033,7 +1044,9 @@ export function LeadReportsDashboard({ portalHome = "/dashboard" }: Props) {
             <div>
               <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <Users className="h-5 w-5 text-primary" />
-                Sales Executive Lead Conversion Scorecard
+                {isManager || isCoordinator
+                  ? "Team Sales Performance Scorecard"
+                  : "Sales Executive Lead Conversion Scorecard"}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 Individual performance ranking, pipeline generation, deal closures, and follow-up discipline.

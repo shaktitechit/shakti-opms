@@ -88,10 +88,11 @@ function resolveFollowUpOwnerUserId(fu = {}) {
   const assigneeId = lead?.assigned_to ? refId(lead.assigned_to) : null;
 
   const quotation = fu.quotation && typeof fu.quotation === 'object' ? fu.quotation : null;
+  const qRepId = quotation?.sales_person_user ? refId(quotation.sales_person_user) : null;
   const qCreatorId = quotation?.created_by ? refId(quotation.created_by) : null;
 
   const fallbackId = fu.created_by ? refId(fu.created_by) : null;
-  return assigneeId || qCreatorId || fallbackId;
+  return assigneeId || qRepId || qCreatorId || fallbackId;
 }
 
 module.exports = {

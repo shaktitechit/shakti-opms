@@ -1776,6 +1776,12 @@ export function WorkPlanDetailPage({ planId }: WorkPlanDetailPageProps) {
               ? String((plan.sales_user as any)?._id || (plan.sales_user as any)?.id || "")
               : String(plan.sales_user || "")
           }
+          defaultCountryId={plan.country_id}
+          defaultCountryName={plan.country}
+          defaultStateId={plan.state_id}
+          defaultStateName={plan.state}
+          defaultCityId={plan.city_id}
+          defaultCityName={plan.city}
           isSaving={actionLoading}
           onClose={() => {
             setVisitModalOpen(false);

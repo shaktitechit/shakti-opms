@@ -20,6 +20,7 @@ const partyContactSchema = new mongoose.Schema(
   {
     name: { type: String, trim: true },
     department: { type: String, trim: true },
+    designation: { type: String, trim: true },
     phone: { type: String, trim: true },
     email: { type: String, lowercase: true, trim: true },
     alternate_phone: { type: String, trim: true },
@@ -32,7 +33,7 @@ const partySchema = new mongoose.Schema(
     company_id: { type: mongoose.Schema.Types.ObjectId, ref: "CompanyInfo", index: true },
     party_type: {
       type: String,
-      enum: ["customer", "supplier", "both"],
+      enum: ["customer", "supplier", "both", "leads", "lead", "quotation", "quotations", "visits", "visit"],
       default: "customer",
       index: true,
     },

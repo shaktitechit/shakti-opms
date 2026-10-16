@@ -9,6 +9,7 @@ const userRoutes = require('./modules/users/user.routes');
 const companyInfoRoutes = require('./modules/companyInfo/companyInfo.routes');
 const portalRoutes = require('./modules/portals/portal.routes');
 const departmentRoutes = require('./modules/departments/department.routes');
+const branchRoutes = require('./modules/branches/branch.routes');
 const { proxyToNotificationService } = require('./utils/proxyToNotificationService');
 const { ApiError } = require('./utils/ApiError');
 
@@ -31,6 +32,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/company-info', companyInfoRoutes);
+app.use('/api/branches', branchRoutes);
 app.use('/api/portals', portalRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/notifications', proxyToNotificationService);

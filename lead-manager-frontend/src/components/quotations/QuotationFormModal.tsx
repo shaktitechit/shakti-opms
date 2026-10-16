@@ -19,6 +19,8 @@ import {
   ChevronDown,
   ChevronUp,
   Minus,
+  Copy,
+  MapPin,
 } from "lucide-react";
 import {
   useCreateLeadQuotationMutation,
@@ -27,6 +29,7 @@ import {
   useListProductsQuery,
   useListPartiesQuery,
   useGetCompanyInfoQuery,
+  useGetBranchesQuery,
   useListUsersQuery,
   useListLeadsQuery,
   useListQuotationsQuery,
@@ -34,6 +37,7 @@ import {
   type LeadQuotationRecord,
   type CreateQuotationPayload,
   type TermsAndConditionsRecord,
+  type BranchRecord,
 } from "@/store/api";
 import { useAppSelector } from "@/store/hooks";
 import { toast } from "@/lib/toast";
@@ -44,17 +48,24 @@ import {
   computeQuotationTotals,
   isValidQuotationLineQuantity,
   parseQuotationLineQuantity,
+  numberToIndianWords,
 } from "./quotationLineMath";
 import { RichTextEditor } from "./RichTextEditor";
 import { RichTextDisplay } from "./RichTextDisplay";
 import { getFieldText } from "@/components/leads/LeadFormPage";
-import { buildQuotationSignatoryUsers, getLeadManagerPortalRole } from "@/components/leads/leadUtils";
+import {
+  buildQuotationSignatoryUsers,
+  getLeadManagerPortalRole,
+  isUserInLeadManagerPortal,
+  getDeptLabel,
+} from "@/components/leads/leadUtils";
 import { useLeadManagerTeamScope } from "@/hooks/useLeadManagerTeamScope";
 import { isAdmin, isManager } from "@/utils/authStorage";
 
 type Props = {
   lead?: LeadRecord | null;
   quotation?: LeadQuotationRecord | null;
+  isCopy?: boolean;
   open: boolean;
   onClose: () => void;
   onSuccess?: (quotation: LeadQuotationRecord) => void;
@@ -72,6 +83,7 @@ type ItemState = {
   discount_percent?: number;
   discount_amount?: number;
   gst_rate: number;
+  gst_enabled?: boolean;
 };
 
 export type CatalogProduct = {
@@ -632,11 +644,13 @@ function computeNextRefNo(existingQuotations: LeadQuotationRecord[]): string {
 export function QuotationFormModal({
   lead,
   quotation,
+  isCopy = false,
   open,
   onClose,
   onSuccess,
 }: Props) {
-  const isEditing = Boolean(quotation?._id);
+  const isEditing = Boolean(quotation?._id) && !isCopy;
+  const isCopyMode = Boolean(quotation?._id) && Boolean(isCopy);
   const authUser = useAppSelector((state) => state.auth.user);
   const { filterByTeam, withSelfInList } = useLeadManagerTeamScope();
 
@@ -656,7 +670,11 @@ export function QuotationFormModal({
     return parties.find((p) => String(p._id ?? p.id ?? "") === String(selectedPartyId)) || null;
   }, [parties, selectedPartyId]);
 
-  useGetCompanyInfoQuery();
+  const { data: companyData } = useGetCompanyInfoQuery(undefined, { skip: !open });
+  const { data: branchesData = [] } = useGetBranchesQuery(undefined, { skip: !open });
+  const branches = useMemo(() => {
+    return Array.isArray(branchesData) ? branchesData : [];
+  }, [branchesData]);
 
   const { data: usersData } = useListUsersQuery();
   const usersList = useMemo(() => {
@@ -678,8 +696,18 @@ export function QuotationFormModal({
     });
   }, [usersList, filterByTeam, withSelfInList, authUser]);
 
+  // Sales rep picker: list all Lead Manager portal users
   const salesUsers = useMemo(() => {
-    return usersList.filter((u: any) => isSalesDepartmentUser(u));
+    const portalUsers = (usersList as Array<{
+      _id: string;
+      name: string;
+      email?: string;
+      phone?: string;
+      department?: string;
+      role?: string;
+      portals?: Array<{ portal_code: string; access_roles?: string[] }>;
+    }>).filter(isUserInLeadManagerPortal);
+    return portalUsers.length > 0 ? portalUsers : (usersList as Array<any>);
   }, [usersList]);
 
   // Master Terms & Conditions sets list for multi-selection
@@ -890,6 +918,78 @@ export function QuotationFormModal({
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
   const [pincode, setPincode] = useState("");
+  const [message, setMessage] = useState("");
+
+  // Company Branch & Letterhead State
+  const [selectedBranchId, setSelectedBranchId] = useState("");
+  const [companyName, setCompanyName] = useState("");
+  const [companyRegdAddress, setCompanyRegdAddress] = useState("");
+  const [companyPhone, setCompanyPhone] = useState("");
+  const [companyEmail, setCompanyEmail] = useState("");
+  const [companyGstin, setCompanyGstin] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [accountName, setAccountName] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [ifscCode, setIfscCode] = useState("");
+  const [bankBranchName, setBankBranchName] = useState("");
+  const [accountType, setAccountType] = useState("");
+
+  const selectedBranch = useMemo(() => {
+    if (!branches.length) return null;
+    if (selectedBranchId) {
+      return branches.find((b) => String(b._id) === String(selectedBranchId)) || null;
+    }
+    return null;
+  }, [branches, selectedBranchId]);
+
+  const formatBranchAddress = (branch?: BranchRecord | null) => {
+    if (!branch?.address) return "";
+    const addr = branch.address;
+    const parts = [
+      addr.street,
+      addr.landmark,
+      addr.city,
+      addr.state ? (addr.pincode ? `${addr.state} - ${addr.pincode}` : addr.state) : addr.pincode,
+      addr.country || "India",
+    ].filter(Boolean);
+    return parts.join(", ");
+  };
+
+  const handleBranchSelect = (branchId: string, manualUserAction = true) => {
+    setSelectedBranchId(branchId);
+    if (!branchId) return;
+    const branch = branches.find((b) => String(b._id) === String(branchId));
+    if (!branch) return;
+
+    const formattedAddr = formatBranchAddress(branch);
+    const cName = branch.branch_name || companyData?.trade_name || companyData?.legal_name || "Medica Enterprises";
+    setCompanyName(cName);
+    setCompanyRegdAddress(formattedAddr);
+    setCompanyPhone(branch.contact?.phone || branch.contact?.alternate_phone || companyData?.phone || "");
+    setCompanyEmail(branch.contact?.email || branch.contact?.billing_email || companyData?.email || "");
+    setCompanyGstin(branch.taxation?.gstin || companyData?.gstin || "");
+
+    const primaryBank = branch.banking?.find((b) => b.is_primary) || branch.banking?.[0];
+    if (primaryBank) {
+      setBankName(primaryBank.bank_name || "");
+      setAccountName(primaryBank.account_name || cName);
+      setAccountNumber(primaryBank.account_number || "");
+      setIfscCode(primaryBank.ifsc_code || "");
+      setBankBranchName(primaryBank.branch_name || "");
+      setAccountType(primaryBank.account_type || "Current Account");
+    } else if (companyData) {
+      setBankName(companyData.bank_name || "");
+      setAccountName(companyData.account_name || cName);
+      setAccountNumber(companyData.account_number || "");
+      setIfscCode(companyData.ifsc_code || "");
+      setBankBranchName(companyData.branch_name || "");
+      setAccountType(companyData.account_type || "Current Account");
+    }
+
+    if (manualUserAction) {
+      toast.info(`Branch switched to: ${branch.branch_name}`);
+    }
+  };
 
   // Signatory State (Assigned Admin User info printed on PDF)
   const [signatoryUserId, setSignatoryUserId] = useState("");
@@ -919,6 +1019,7 @@ export function QuotationFormModal({
 
   const [terms, setTerms] = useState<string[]>([]);
   const [showTerms, setShowTerms] = useState(true);
+  const [gstEnabled, setGstEnabled] = useState<boolean>(true);
 
   const [createQuotation, { isLoading: isCreating }] = useCreateLeadQuotationMutation();
   const [updateQuotation, { isLoading: isUpdating }] = useUpdateLeadQuotationMutation();
@@ -931,10 +1032,12 @@ export function QuotationFormModal({
     if (quotation) {
       setSelectedPartyId(quotation.party_id || "");
       setSelectedLeadId(typeof quotation.lead === "object" && quotation.lead !== null ? quotation.lead._id : (quotation.lead || ""));
-      setRefNo(quotation.ref_no || "");
+      setRefNo(isCopyMode ? autoNextRefNo : (quotation.ref_no || ""));
       setCustomerRef(quotation.customer_ref || "");
       setQuotationDate(
-        quotation.quotation_date
+        isCopyMode
+          ? new Date().toISOString().split("T")[0]
+          : quotation.quotation_date
           ? new Date(quotation.quotation_date).toISOString().split("T")[0]
           : new Date().toISOString().split("T")[0]
       );
@@ -951,6 +1054,21 @@ export function QuotationFormModal({
       setState(quotation.address?.state || "");
       setPincode(quotation.address?.pincode || "");
 
+      // Branch & company profile from quotation
+      const qBranchId = String((quotation as any).branch_id || (quotation as any).company_branch_id || "");
+      setSelectedBranchId(qBranchId);
+      setCompanyName(quotation.company_name || "");
+      setCompanyRegdAddress(quotation.company_regd_address || "");
+      setCompanyPhone(quotation.company_phone || "");
+      setCompanyEmail(quotation.company_email || "");
+      setCompanyGstin(quotation.company_gstin || "");
+      setBankName(quotation.bank_name || "");
+      setAccountName(quotation.account_name || "");
+      setAccountNumber(quotation.account_number || "");
+      setIfscCode(quotation.ifsc_code || "");
+      setBankBranchName(quotation.branch_name || "");
+      setAccountType(quotation.account_type || "");
+
       // Signatory from quotation
       const qSignatoryId =
         typeof quotation.signatory_user === "object" && quotation.signatory_user !== null
@@ -961,6 +1079,7 @@ export function QuotationFormModal({
       setSignatoryPhone(quotation.signatory_phone || "");
       setSignatoryEmail(quotation.signatory_email || "");
       setSignatoryDesignation(quotation.signatory_designation || "");
+      setGstEnabled((quotation as any).gst_enabled !== false);
 
       // Sales Person from quotation
       const qSalesPersonId =
@@ -985,6 +1104,7 @@ export function QuotationFormModal({
             rate: i.rate || 0,
             discount_percent: Number(i.discount_percent) || 0,
             discount_amount: Number(i.discount_amount) || 0,
+            gst_enabled: (i as any).gst_enabled !== false,
             gst_rate: i.gst_rate ?? 5,
           }))
         );
@@ -994,6 +1114,7 @@ export function QuotationFormModal({
           ? quotation.terms_and_conditions
           : []
       );
+      setMessage((quotation as any).message || (quotation as any).quotation_message || "");
     } else if (lead) {
       // New quotation from Lead
       setSelectedLeadId(lead._id);
@@ -1080,7 +1201,9 @@ export function QuotationFormModal({
         ]);
         setSubject(lead.requirement ? `Offer For ${lead.requirement}` : "Quotation Proposal");
       }
+      setGstEnabled(true);
       setTerms([]);
+      setMessage("");
     } else {
       setSelectedLeadId("");
       setSelectedPartyId("");
@@ -1130,10 +1253,42 @@ export function QuotationFormModal({
           gst_rate: 18,
         },
       ]);
+      setGstEnabled(true);
       setSubject("");
       setTerms([]);
+      setMessage("");
     }
   }, [open, quotation, lead, autoNextRefNo, authUser]);
+
+  // Default to Head Office branch on new quotation when branches load
+  useEffect(() => {
+    if (!quotation && !selectedBranchId && branches.length > 0 && open) {
+      const headOffice = branches.find((b) => b.is_head_office) || branches[0];
+      if (headOffice) {
+        handleBranchSelect(headOffice._id, false);
+      }
+    }
+  }, [quotation, selectedBranchId, branches, open]);
+
+  // If editing an existing quote that didn't have branch_id explicitly set, match branch by code, gstin, or fallback to head office
+  useEffect(() => {
+    if (quotation && !selectedBranchId && branches.length > 0 && open) {
+      const qAny = quotation as any;
+      const match =
+        branches.find((b) => b.branch_code && b.branch_code === qAny.branch_code) ||
+        branches.find((b) => b.taxation?.gstin && b.taxation.gstin === quotation.company_gstin) ||
+        branches.find((b) => b.is_head_office) ||
+        branches[0];
+      if (match) {
+        setSelectedBranchId(match._id);
+        if (!companyName) setCompanyName(quotation.company_name || match.branch_name);
+        if (!companyRegdAddress) setCompanyRegdAddress(quotation.company_regd_address || formatBranchAddress(match));
+        if (!companyPhone) setCompanyPhone(quotation.company_phone || match.contact?.phone || "");
+        if (!companyEmail) setCompanyEmail(quotation.company_email || match.contact?.email || "");
+        if (!companyGstin) setCompanyGstin(quotation.company_gstin || match.taxation?.gstin || "");
+      }
+    }
+  }, [quotation, selectedBranchId, branches, open]);
 
   const handleSelectAdminUser = (userId: string) => {
     if (!userId) {
@@ -1182,7 +1337,7 @@ export function QuotationFormModal({
   };
 
   const calculations = useMemo(() => {
-    const totals = computeQuotationTotals(items);
+    const totals = computeQuotationTotals(items, { gstEnabled });
     return {
       items: totals.computedItems.map(({ item, gross, discPercent, discAmt, taxable, gstAmt, lineTotal }) => ({
         ...item,
@@ -1199,8 +1354,9 @@ export function QuotationFormModal({
       totalGst: totals.totalGst,
       roundOff: totals.roundOff,
       grandTotal: totals.grandTotal,
+      amount_in_words: totals.amount_in_words || numberToIndianWords(totals.grandTotal),
     };
-  }, [items]);
+  }, [items, gstEnabled]);
 
   // Product Selection handler
   const handleSelectProduct = (index: number, productId: string) => {
@@ -1463,9 +1619,27 @@ export function QuotationFormModal({
         rate: Number(i.rate) || 0,
         discount_percent: Number(i.discount_percent) || 0,
         discount_amount: Number(i.discount_amount) || 0,
+        gst_enabled: i.gst_enabled !== false,
         gst_rate: Number(i.gst_rate) || 0,
       })),
+      gst_enabled: gstEnabled,
       terms_and_conditions: cleanedTerms,
+      message: message.trim() || undefined,
+      quotation_message: message.trim() || undefined,
+      branch_id: selectedBranchId || undefined,
+      branch_code: branches.find((b) => String(b._id) === String(selectedBranchId))?.branch_code || undefined,
+      company_branch_name: companyName || undefined,
+      company_name: companyName.trim() || undefined,
+      company_regd_address: companyRegdAddress.trim() || undefined,
+      company_phone: companyPhone.trim() || undefined,
+      company_email: companyEmail.trim() || undefined,
+      company_gstin: companyGstin.trim() || undefined,
+      bank_name: bankName.trim() || undefined,
+      account_name: accountName.trim() || undefined,
+      account_number: accountNumber.trim() || undefined,
+      ifsc_code: ifscCode.trim() || undefined,
+      branch_name: bankBranchName.trim() || undefined,
+      account_type: accountType.trim() || undefined,
       signatory_name: signatoryName.trim(),
       signatory_phone: signatoryPhone.trim(),
       signatory_email: signatoryEmail.trim(),
@@ -1476,6 +1650,7 @@ export function QuotationFormModal({
       sales_person_email: salesPersonEmail.trim(),
       sales_person_designation: salesPersonDesignation.trim() || "Sales Executive",
       sales_person_user: salesPersonUserId || undefined,
+      amount_in_words: calculations.amount_in_words || numberToIndianWords(calculations.grandTotal),
     };
 
     const targetLeadId =
@@ -1545,14 +1720,20 @@ export function QuotationFormModal({
         <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-6 py-4 dark:border-white/10">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/15 text-primary">
-              <FileText className="h-5 w-5" />
+              {isCopyMode ? <Copy className="h-5 w-5 text-indigo-500" /> : <FileText className="h-5 w-5" />}
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                {isEditing ? `Edit Quotation #${quotation?.quotation_no}` : "Generate Quotation"}
+                {isEditing
+                  ? `Edit Quotation #${quotation?.quotation_no}`
+                  : isCopyMode
+                  ? `Copy Quotation (from #${quotation?.quotation_no || quotation?.ref_no})`
+                  : "Generate Quotation"}
               </h3>
               <p className="text-xs text-slate-500">
-                Official Letterhead format quotation for {customerName || lead?.name || "Customer"}
+                {isCopyMode
+                  ? `Creating a new quotation copied from #${quotation?.quotation_no || quotation?.ref_no || "previous quotation"}`
+                  : `Official Letterhead format quotation for ${customerName || lead?.name || "Customer"}`}
               </p>
             </div>
           </div>
@@ -1568,6 +1749,15 @@ export function QuotationFormModal({
         {/* Scrollable Form Body */}
         <form onSubmit={handleSubmit} className="flex flex-1 flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
+            {isCopyMode && quotation && (
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50/70 p-3 text-xs text-indigo-900 dark:border-indigo-900/40 dark:bg-indigo-950/40 dark:text-indigo-200 flex items-center gap-2.5">
+                <Copy className="h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400" />
+                <span>
+                  Creating a new quotation copied from <strong>#{quotation.quotation_no || quotation.ref_no}</strong>. Line items, addresses, and terms &amp; conditions have been pre-filled.
+                </span>
+              </div>
+            )}
+
             {!canManageQuotations(authUser) && (
               <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3 text-xs text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-200 flex items-center gap-2">
                 <ShieldAlert className="h-4 w-4 shrink-0 text-amber-600" />
@@ -1601,6 +1791,74 @@ export function QuotationFormModal({
                 </div>
               </div>
             )}
+
+            {/* Company Branch & Letterhead Profile */}
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-2xs dark:border-white/10 dark:bg-slate-900">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-3 border-b border-slate-100 pb-2.5 dark:border-white/10">
+                <div className="text-xs font-bold uppercase tracking-wider text-primary flex items-center gap-2">
+                  <Building2 className="h-4 w-4" />
+                  <span>Company Branch / Billing &amp; Letterhead Entity</span>
+                </div>
+                {selectedBranch && (
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary/10 text-primary border border-primary/20">
+                    <span className="h-1.5 w-1.5 rounded-full bg-primary" />
+                    {selectedBranch.is_head_office ? "Head Office" : "Branch Office"} • Code: {selectedBranch.branch_code}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-1 space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Opt Company Branch <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={selectedBranchId}
+                      onChange={(e) => handleBranchSelect(e.target.value)}
+                      className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 py-2 pr-8 text-xs font-bold text-slate-900 shadow-2xs focus:border-primary focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-white cursor-pointer"
+                    >
+                      <option value="" disabled>-- Select Company Branch --</option>
+                      {branches.map((b) => (
+                        <option key={b._id} value={b._id}>
+                          {b.branch_name} ({b.address?.city || b.branch_code}){b.is_head_office ? " [HQ]" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-2.5 h-4 w-4 text-slate-400" />
+                  </div>
+                  <p className="text-[10.5px] text-slate-400">
+                    Autofills letterhead address, phone, email, GSTIN, and company banking coordinates.
+                  </p>
+                </div>
+
+                <div className="md:col-span-2 rounded-xl bg-slate-50/90 p-3 border border-slate-200/80 dark:bg-slate-800/60 dark:border-white/10 text-[11px]">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                    <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5 text-xs">
+                      <MapPin className="h-3.5 w-3.5 text-primary" />
+                      <span>{companyName || "No Branch Selected"}</span>
+                    </div>
+                    {companyGstin && (
+                      <span className="font-mono text-[10px] font-bold text-slate-600 bg-white dark:bg-slate-700 dark:text-slate-200 px-1.5 py-0.5 rounded border border-slate-200 dark:border-white/10">
+                        GSTIN: {companyGstin}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-slate-600 dark:text-slate-300 space-y-1">
+                    <div>
+                      <span className="font-semibold text-slate-700 dark:text-slate-200">Address: </span>
+                      <span>{companyRegdAddress || "Not configured"}</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[10px] pt-1 border-t border-slate-200/60 dark:border-white/10">
+                      <span><strong>Bank:</strong> {bankName || "N/A"}</span>
+                      <span><strong>A/c No:</strong> <span className="font-mono text-blue-600 dark:text-blue-400">{accountNumber || "N/A"}</span></span>
+                      <span><strong>IFSC:</strong> <span className="font-mono text-blue-600 dark:text-blue-400">{ifscCode || "N/A"}</span></span>
+                      {bankBranchName && <span><strong>Branch:</strong> {bankBranchName}</span>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
 
             {/* Proposal & Reference Details */}
             <div className="rounded-xl border border-slate-200 p-4 dark:border-white/10">
@@ -1931,6 +2189,40 @@ export function QuotationFormModal({
               </div>
             </div>
 
+            {/* Cover / Introductory Message (Above Requirements) */}
+            <div className="rounded-xl border border-slate-200 p-4 dark:border-white/10 bg-slate-50/50 dark:bg-slate-900/50">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400">
+                    <FileText className="h-3.5 w-3.5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                      Introductory Message / Cover Note
+                    </h4>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Optional cover note displayed directly above requirements &amp; pricing. If left blank, nothing is printed.
+                    </p>
+                  </div>
+                </div>
+                {message && (
+                  <button
+                    type="button"
+                    onClick={() => setMessage("")}
+                    className="text-xs font-medium text-rose-600 hover:text-rose-700 dark:text-rose-400 hover:underline"
+                  >
+                    Clear Message
+                  </button>
+                )}
+              </div>
+              <RichTextEditor
+                value={message}
+                onChange={(val) => setMessage(val)}
+                placeholder="Write your introductory message or cover note here (e.g. 'Dear Sir, We thank you for your valued enquiry...')..."
+                minHeight="95px"
+              />
+            </div>
+
             {/* Line Items Table */}
             <div className="rounded-xl border border-slate-200 p-4 dark:border-white/10">
               <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
@@ -1938,15 +2230,31 @@ export function QuotationFormModal({
                   <Calculator className="h-4 w-4 text-blue-600" />
                   Line Items &amp; Products ({items.length})
                 </div>
-                <button
-                  type="button"
-                  onClick={handleAddItem}
-                  className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 cursor-pointer"
-                  title="Add empty row for custom non-catalog item"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add Custom Item
-                </button>
+                <div className="flex items-center gap-2">
+                  <label className="inline-flex items-center gap-2 cursor-pointer select-none rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:border-white/10 dark:bg-slate-800/80 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800">
+                    <input
+                      type="checkbox"
+                      checked={gstEnabled}
+                      onChange={(e) => setGstEnabled(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <span>Calculate GST</span>
+                    {!gstEnabled && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400">
+                        Exempt / Off
+                      </span>
+                    )}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAddItem}
+                    className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 cursor-pointer"
+                    title="Add empty row for custom non-catalog item"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add Custom Item
+                  </button>
+                </div>
               </div>
 
               {/* Quick Search & Add from Catalog */}
@@ -2104,21 +2412,70 @@ export function QuotationFormModal({
                           />
                         </div>
 
-                        {/* GST % */}
+                        {/* GST % with Inline Toggle */}
                         <div className="col-span-3 sm:col-span-1">
-                          <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400 mb-1">
-                            GST %
-                          </label>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                              GST %
+                            </label>
+                            <label
+                              className={`inline-flex items-center gap-1 select-none ${
+                                !gstEnabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+                              }`}
+                              title={
+                                !gstEnabled
+                                  ? "GST is disabled at quotation level"
+                                  : it.gst_enabled === false
+                                  ? "GST disabled for this item (click to enable)"
+                                  : "GST enabled for this item (click to disable)"
+                              }
+                            >
+                              <input
+                                type="checkbox"
+                                disabled={!gstEnabled}
+                                checked={gstEnabled && it.gst_enabled !== false}
+                                onChange={(e) => {
+                                  setItems((prev) =>
+                                    prev.map((x, i) =>
+                                      i === idx ? { ...x, gst_enabled: e.target.checked } : x
+                                    )
+                                  );
+                                }}
+                                className="h-3 w-3 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:cursor-not-allowed"
+                              />
+                              <span
+                                className={`text-[9px] font-bold ${
+                                  !gstEnabled || it.gst_enabled === false
+                                    ? "text-amber-600 dark:text-amber-400"
+                                    : "text-emerald-600 dark:text-emerald-400"
+                                }`}
+                              >
+                                {!gstEnabled || it.gst_enabled === false ? "Off" : "On"}
+                              </span>
+                            </label>
+                          </div>
                           <select
-                            value={it.gst_rate}
+                            disabled={!gstEnabled || it.gst_enabled === false}
+                            value={gstEnabled && it.gst_enabled !== false ? it.gst_rate : 0}
                             onChange={(e) =>
                               setItems((prev) =>
                                 prev.map((x, i) => (i === idx ? { ...x, gst_rate: Number(e.target.value) } : x))
                               )
                             }
-                            className="w-full rounded-lg border border-slate-200 bg-white px-1.5 py-1.5 text-xs font-semibold text-slate-900 dark:border-white/10 dark:bg-slate-900 dark:text-white"
+                            className={`w-full rounded-lg border bg-white px-1.5 py-1.5 text-xs font-semibold text-slate-900 dark:border-white/10 dark:bg-slate-900 dark:text-white ${
+                              !gstEnabled || it.gst_enabled === false
+                                ? "opacity-50 cursor-not-allowed bg-slate-100 dark:bg-slate-800 text-slate-400"
+                                : "border-slate-200"
+                            }`}
+                            title={
+                              !gstEnabled
+                                ? "GST calculation is currently disabled for this quotation"
+                                : it.gst_enabled === false
+                                ? "GST is disabled for this line item"
+                                : undefined
+                            }
                           >
-                            <option value={0}>0%</option>
+                            <option value={0}>No GST (0%)</option>
                             <option value={5}>5%</option>
                             <option value={12}>12%</option>
                             <option value={18}>18%</option>
@@ -2167,7 +2524,12 @@ export function QuotationFormModal({
                             Taxable: <strong>{formatCurrencyINR(comp?.taxable || 0)}</strong>
                           </span>
                           <span>
-                            GST: <strong>{formatCurrencyINR(comp?.gstAmt || 0)}</strong>
+                            GST: <strong>{!gstEnabled || it.gst_enabled === false || !comp?.gstAmt ? "—" : formatCurrencyINR(comp?.gstAmt || 0)}</strong>
+                            {(!gstEnabled || it.gst_enabled === false) && (
+                              <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold ml-1">
+                                (Exempt)
+                              </span>
+                            )}
                           </span>
                           <span className="text-blue-700 dark:text-blue-400 font-bold">
                             Total: {formatCurrencyINR(comp?.lineTotal || 0)}
@@ -2208,6 +2570,7 @@ export function QuotationFormModal({
                   </div>
                   <div className="text-slate-600 dark:text-slate-300">
                     Total GST Amount: <strong>{formatCurrencyINR(calculations.totalGst)}</strong>
+                    {!gstEnabled && <span className="text-[10px] text-amber-600 ml-1">(Exempt / Off)</span>}
                   </div>
                   {calculations.roundOff !== 0 ? (
                     <div className="text-slate-600 dark:text-slate-300">
@@ -2230,7 +2593,7 @@ export function QuotationFormModal({
                     Sales Representative / Sales Person (Internal Use &amp; Order Handover)
                   </div>
                   <p className="text-[11px] text-slate-500 mt-0.5">
-                    Assign the sales department representative responsible for this account. Kept internal and automatically populates the sales person on Order creation upon conversion.
+                    Assign the sales representative responsible for this account from all Lead Manager portal users.
                   </p>
                 </div>
 
@@ -2245,14 +2608,18 @@ export function QuotationFormModal({
                       className="rounded-lg border border-emerald-200 bg-white px-2.5 py-1 text-xs font-bold text-slate-800 shadow-xs focus:border-emerald-500 focus:outline-none dark:border-white/10 dark:bg-slate-800 dark:text-slate-100 cursor-pointer"
                     >
                       <option value="">
-                        -- Select Sales Person (Sales Department) --
+                        -- Select Sales Person ({salesUsers.length} Lead Manager users) --
                       </option>
                       {salesUsers.map((u: any) => {
-                        const deptLabel = u.department ? `[${u.department.toUpperCase()}]` : "";
-                        const roleLabel = u.role ? `• ${u.role}` : "";
+                        const dept = u.department ? getDeptLabel(u.department || "") || u.department : "";
+                        const deptLabel = dept ? `[${dept}]` : "";
+                        const roleBadge = getLeadManagerPortalRole(u);
+                        const roleLabel = roleBadge ? `• ${roleBadge}` : (u.role ? `• ${u.role}` : "");
+                        const emailLabel = u.email ? `<${u.email}>` : "";
+                        const phoneLabel = u.phone ? `(${u.phone})` : "";
                         return (
                           <option key={u._id} value={u._id}>
-                            {u.name || u.email} {deptLabel} {roleLabel} {u.phone ? `(${u.phone})` : ""}
+                            {u.name || u.email} {deptLabel} {roleLabel} {emailLabel} {phoneLabel}
                           </option>
                         );
                       })}
@@ -2727,7 +3094,13 @@ export function QuotationFormModal({
               title={!canManageQuotations(authUser) ? "Only authorized representatives can create quotations" : undefined}
               className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-5 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
-              {isCreating || isUpdating ? "Saving..." : isEditing ? "Update Quotation" : "Generate Quotation"}
+              {isCreating || isUpdating
+                ? "Saving..."
+                : isEditing
+                ? "Update Quotation"
+                : isCopyMode
+                ? "Create Copied Quotation"
+                : "Generate Quotation"}
             </button>
           </div>
         </form>

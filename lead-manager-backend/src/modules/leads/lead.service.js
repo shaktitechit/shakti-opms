@@ -26,6 +26,7 @@ const TEMPLATE_LEAD_ASSIGNED = 'lead_assigned';
 
 const LEAD_POPULATE = [
   { path: 'assigned_to', select: 'name email phone department' },
+  { path: 'assigned_users', select: 'name email phone department' },
   { path: 'assigned_by', select: 'name email department' },
   { path: 'created_by', select: 'name email department' },
   { path: 'updated_by', select: 'name email department' },
@@ -173,13 +174,33 @@ function isWorkPlannerManager(user) {
   );
 }
 
-/** Visibility: portal admins see all leads; managers and executives only leads assigned to them or their team. */
+/** Visibility: portal admins see all leads; managers, coordinators, and executives based on assignment / creation / team scoping. */
 async function assertCanAccessLead(lead, user, action = 'view') {
   if (isLeadAdmin(user)) return;
-  if (userIsLeadAssignee(lead, user._id)) return;
-  const visible = await getVisibleLeadUserIds(user);
-  const assigneeId = refId(lead.assigned_to);
-  if (visible && assigneeId && visible.includes(assigneeId)) return;
+  const uid = String(user._id);
+
+  // Direct access: primary assignee, co-assignee in assigned_users, or creator
+  const leadAssignee = refId(lead.assigned_to);
+  const leadCreator = refId(lead.created_by);
+  const isDirectAssignee = leadAssignee === uid;
+  const isDirectCoAssignee = Array.isArray(lead.assigned_users) && lead.assigned_users.some((u) => refId(u) === uid);
+  const isDirectCreator = leadCreator === uid;
+
+  if (isDirectAssignee || isDirectCoAssignee || isDirectCreator) return;
+
+  // Manager and Coordinator team downline access: created by team or assigned to team
+  if (isLeadManager(user) || isLeadCoordinator(user)) {
+    const visible = await getVisibleLeadUserIds(user);
+    if (visible && visible.length > 0) {
+      const teamSet = new Set(visible.map(String));
+      if (leadAssignee && teamSet.has(leadAssignee)) return;
+      if (leadCreator && teamSet.has(leadCreator)) return;
+      if (Array.isArray(lead.assigned_users) && lead.assigned_users.some((u) => teamSet.has(refId(u)))) {
+        return;
+      }
+    }
+  }
+
   throw new ApiError(403, `You do not have permission to ${action} this lead`);
 }
 
@@ -311,6 +332,7 @@ async function list(query = {}, user) {
             $or: [
               { assigned_to: assignedObjId },
               { assigned_to: reqId },
+              { assigned_users: assignedObjId },
             ],
           });
         }
@@ -320,6 +342,8 @@ async function list(query = {}, user) {
         $or: [
           { assigned_to: userObjectId },
           { assigned_to: String(user._id) },
+          { assigned_users: userObjectId },
+          { created_by: userObjectId },
         ],
       });
     } else if (visibleIds && visibleIds.length > 0) {
@@ -328,6 +352,8 @@ async function list(query = {}, user) {
         $or: [
           { assigned_to: { $in: oids } },
           { assigned_to: { $in: visibleIds } },
+          { assigned_users: { $in: oids } },
+          { created_by: { $in: oids } },
         ],
       });
     } else {
@@ -335,17 +361,37 @@ async function list(query = {}, user) {
         $or: [
           { assigned_to: userObjectId },
           { assigned_to: String(user._id) },
+          { assigned_users: userObjectId },
+          { created_by: userObjectId },
         ],
       });
     }
   } else {
-    // Executives: only leads assigned to THIS user.
+    // Executives: leads assigned to this user (or in assigned_users array) or created by this user.
     andConditions.push({
       $or: [
         { assigned_to: userObjectId },
         { assigned_to: String(user._id) },
+        { assigned_users: userObjectId },
+        { created_by: userObjectId },
       ],
     });
+  }
+
+  if (query.created_by && query.created_by !== 'all') {
+    const createdByObjId = mongoose.Types.ObjectId.isValid(query.created_by)
+      ? new mongoose.Types.ObjectId(query.created_by)
+      : query.created_by;
+    andConditions.push({
+      $or: [
+        { created_by: createdByObjId },
+        { created_by: String(query.created_by) },
+      ],
+    });
+  }
+
+  if (query.department && query.department !== 'all') {
+    andConditions.push({ department: String(query.department).trim().toLowerCase() });
   }
 
   if (query.status && query.status !== 'all') {
@@ -362,6 +408,10 @@ async function list(query = {}, user) {
 
   if (query.source && query.source !== 'all') {
     andConditions.push({ source: query.source });
+  }
+
+  if (query.created_by && query.created_by !== 'all') {
+    andConditions.push({ created_by: asObjectId(query.created_by) || query.created_by });
   }
 
   if (query.city) {
@@ -484,22 +534,59 @@ async function create(body, user) {
   const { Lead } = getModels();
 
   const canManageAll = isLeadAdmin(user);
+  const department = body.department
+    ? String(body.department).trim().toLowerCase()
+    : (user.department ? String(user.department).trim().toLowerCase() : 'sales');
+
   let assigned_to = undefined;
+  let assigned_users = [];
+
+  const rawAssignedUsers = Array.isArray(body.assigned_users)
+    ? body.assigned_users.filter(Boolean).map(String)
+    : body.assigned_to
+    ? [String(body.assigned_to)]
+    : [];
+
   if (canManageAll) {
-    assigned_to = body.assigned_to ? body.assigned_to : null;
+    if (rawAssignedUsers.length > 0) {
+      assigned_users = rawAssignedUsers;
+      assigned_to = rawAssignedUsers[0];
+    } else {
+      assigned_to = body.assigned_to ? String(body.assigned_to) : null;
+      assigned_users = assigned_to ? [assigned_to] : [];
+    }
   } else if (isLeadManager(user) || isLeadCoordinator(user)) {
-    if (body.assigned_to) {
+    if (rawAssignedUsers.length > 0) {
+      for (const uid of rawAssignedUsers) {
+        const allowed = await canAccessLeadUser(user, uid);
+        if (!allowed) {
+          throw new ApiError(403, 'You can only assign leads to members of your team');
+        }
+      }
+      assigned_users = rawAssignedUsers;
+      assigned_to = rawAssignedUsers[0];
+    } else if (body.assigned_to) {
       const allowed = await canAccessLeadUser(user, body.assigned_to);
       if (!allowed) {
         throw new ApiError(403, 'You can only assign leads to members of your team');
       }
       assigned_to = body.assigned_to;
+      assigned_users = [assigned_to];
     } else {
       assigned_to = user._id;
+      assigned_users = [user._id];
     }
   } else {
     assigned_to = user._id;
+    assigned_users = [user._id];
   }
+
+  // Determine created_by: senior role can specify any portal user; executive is always self.
+  let created_by = user._id;
+  if (body.created_by && (isLeadAdmin(user) || isLeadManager(user) || isLeadCoordinator(user))) {
+    created_by = body.created_by;
+  }
+
   const status = body.status || (assigned_to ? 'assigned' : 'new');
   const assigned_at = assigned_to ? new Date() : undefined;
   const assigned_by = assigned_to ? user._id : undefined;
@@ -527,9 +614,11 @@ async function create(body, user) {
         expected_closing_date: body.expected_closing_date ? new Date(body.expected_closing_date) : undefined,
         source: String(body.source).trim(),
         source_id: body.source_id || undefined,
+        department,
         status,
         priority: body.priority || 'medium',
         assigned_to,
+        assigned_users,
         assigned_by,
         assigned_at,
         party_id: body.party_id || undefined,
@@ -538,7 +627,7 @@ async function create(body, user) {
         notes: body.notes ? String(body.notes).trim() : '',
         tags: Array.isArray(body.tags) ? body.tags : [],
         qualification: body.qualification || undefined,
-        created_by: user._id,
+        created_by,
         updated_by: user._id,
         last_activity_at: new Date(),
       });
@@ -558,22 +647,26 @@ async function create(body, user) {
     entity_type: 'lead',
     entity_id: plain._id,
     action: 'created',
-    message: `Lead #${plain.lead_no} (${plain.name}) created`,
+    message: `Lead #${plain.lead_no} (${plain.name}) created in ${department.toUpperCase()}`,
     new_value: plain,
   });
 
-  // Notify newly assigned user (in-app + email; skip self)
-  if (assigned_to && String(assigned_to) !== String(user._id)) {
+  // Notify newly assigned users (in-app + email; skip actor)
+  if (assigned_users.length > 0) {
     const { User } = getModels();
-    const assignee = await User.findById(assigned_to).select('name email').lean();
-    await notifyLeadAssignee({
-      lead: plain,
-      recipientUserId: assigned_to,
-      recipientEmail: assignee?.email || null,
-      recipientName: assignee?.name || null,
-      actor: user,
-      isReassignment: false,
-    });
+    for (const uid of assigned_users) {
+      if (String(uid) !== String(user._id)) {
+        const assignee = await User.findById(uid).select('name email').lean();
+        await notifyLeadAssignee({
+          lead: plain,
+          recipientUserId: uid,
+          recipientEmail: assignee?.email || null,
+          recipientName: assignee?.name || null,
+          actor: user,
+          isReassignment: false,
+        });
+      }
+    }
   }
 
   return plain;
@@ -620,15 +713,34 @@ async function update(id, body, user) {
     'notes',
     'tags',
     'qualification',
+    'department',
+    'assigned_users',
   ];
 
   const oldAssignedTo = lead.assigned_to ? String(lead.assigned_to) : null;
   let assignmentChanged = false;
   let nextAssignedId = null;
 
+  if (body.created_by && (isLeadAdmin(user) || isLeadManager(user) || isLeadCoordinator(user))) {
+    lead.created_by = body.created_by;
+  }
+
   for (const field of allowedUpdates) {
     if (body[field] !== undefined) {
-      if (field === 'assigned_to') {
+      if (field === 'department') {
+        lead.department = String(body.department).trim().toLowerCase();
+      } else if (field === 'assigned_users') {
+        const rawUsers = Array.isArray(body.assigned_users) ? body.assigned_users.filter(Boolean).map(String) : [];
+        lead.assigned_users = rawUsers;
+        if (rawUsers.length > 0 && body.assigned_to === undefined) {
+          const nextAssigned = rawUsers[0];
+          assignmentChanged = String(nextAssigned) !== oldAssignedTo;
+          lead.assigned_to = nextAssigned;
+          lead.assigned_by = user._id;
+          lead.assigned_at = new Date();
+          if (lead.status === 'new') lead.status = 'assigned';
+        }
+      } else if (field === 'assigned_to') {
         const nextAssigned = body.assigned_to ? body.assigned_to : null;
         nextAssignedId = nextAssigned ? String(nextAssigned) : null;
         if (
@@ -644,9 +756,13 @@ async function update(id, body, user) {
           if (nextAssigned) {
             lead.assigned_by = user._id;
             lead.assigned_at = new Date();
+            if (!Array.isArray(lead.assigned_users) || !lead.assigned_users.includes(nextAssigned)) {
+              lead.assigned_users = [nextAssigned, ...(lead.assigned_users || []).filter(u => String(u) !== String(nextAssigned))];
+            }
           } else {
             lead.assigned_by = undefined;
             lead.assigned_at = undefined;
+            lead.assigned_users = [];
           }
         }
         if (!nextAssigned && lead.status === 'assigned') {
@@ -706,18 +822,28 @@ async function assign(id, body, user) {
   if (!lead) throw new ApiError(404, 'Lead not found');
 
   const notes = body?.notes;
-  const targetUserId = body?.assigned_to;
-  if (!targetUserId) {
-    throw new ApiError(400, 'assigned_to is required');
+  const rawAssignedUsers = Array.isArray(body?.assigned_users) && body.assigned_users.length > 0
+    ? body.assigned_users.map(String)
+    : body?.assigned_to
+    ? [String(body.assigned_to)]
+    : [];
+
+  if (rawAssignedUsers.length === 0) {
+    throw new ApiError(400, 'assigned_to or assigned_users is required');
   }
 
+  const targetUserId = rawAssignedUsers[0];
   const targetUser = await User.findById(targetUserId).lean();
   if (!targetUser) throw new ApiError(404, 'Target user not found');
 
   const oldAssignedTo = lead.assigned_to;
   const isReassignment = oldAssignedTo && String(oldAssignedTo) !== String(targetUserId);
 
+  if (body?.department) {
+    lead.department = String(body.department).trim().toLowerCase();
+  }
   lead.assigned_to = targetUserId;
+  lead.assigned_users = rawAssignedUsers;
   lead.assigned_by = user._id;
   lead.assigned_at = new Date();
   lead.last_activity_at = new Date();
@@ -730,7 +856,7 @@ async function assign(id, body, user) {
   await lead.save();
 
   const actionName = isReassignment ? 'reassigned' : 'assigned';
-  const actionMsg = `Lead #${lead.lead_no} ${actionName} to ${targetUser.name}`;
+  const actionMsg = `Lead #${lead.lead_no} ${actionName} to ${targetUser.name}${rawAssignedUsers.length > 1 ? ` (+${rawAssignedUsers.length - 1} more)` : ''}`;
 
   await activityService.create({
     actor: user._id,
@@ -739,18 +865,23 @@ async function assign(id, body, user) {
     action: actionName,
     message: notes ? `${actionMsg}. Note: ${notes}` : actionMsg,
     old_value: { assigned_to: oldAssignedTo },
-    new_value: { assigned_to: lead.assigned_to },
+    new_value: { assigned_to: lead.assigned_to, assigned_users: lead.assigned_users },
   });
 
-  // Notify target user (in-app + email; excluding actor)
-  await notifyLeadAssignee({
-    lead,
-    recipientUserId: targetUserId,
-    recipientEmail: targetUser.email || null,
-    recipientName: targetUser.name || null,
-    actor: user,
-    isReassignment,
-  });
+  // Notify all target users (in-app + email; excluding actor)
+  for (const uid of rawAssignedUsers) {
+    if (String(uid) !== String(user._id)) {
+      const uDoc = await User.findById(uid).select('name email').lean();
+      await notifyLeadAssignee({
+        lead,
+        recipientUserId: uid,
+        recipientEmail: uDoc?.email || null,
+        recipientName: uDoc?.name || null,
+        actor: user,
+        isReassignment,
+      });
+    }
+  }
 
   const populated = await Lead.findById(id).populate(LEAD_POPULATE).lean();
   return toPlain(populated);
@@ -1430,9 +1561,11 @@ async function bulkCreate(body, user) {
           requirement: item.requirement ? String(item.requirement).trim() : '',
           estimated_value: Number(item.estimated_value || 0),
           source,
+          department: item.department ? String(item.department).trim().toLowerCase() : (user.department ? String(user.department).trim().toLowerCase() : 'sales'),
           status,
           priority,
           assigned_to,
+          assigned_users: item.assigned_users || (assigned_to ? [assigned_to] : []),
           assigned_by: assigned_to ? user._id : undefined,
           assigned_at: assigned_to ? new Date() : undefined,
           notes: item.notes ? String(item.notes).trim() : '',
@@ -1441,7 +1574,7 @@ async function bulkCreate(body, user) {
             state: item.state ? String(item.state).trim() : '',
             address_line1: item.address ? String(item.address).trim() : '',
           },
-          created_by: user._id,
+          created_by: item.created_by || user._id,
           updated_by: user._id,
           last_activity_at: new Date(),
         });

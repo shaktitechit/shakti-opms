@@ -27,9 +27,29 @@ export type BulkUploadPartiesModalProps = {
   onSuccess: () => void;
 };
 
+const VALID_TYPES = [
+  "customer",
+  "supplier",
+  "both",
+  "leads",
+  "lead",
+  "quotation",
+  "quotations",
+  "visits",
+  "visit",
+] as const;
+
+type ParsedPartyType =
+  | "customer"
+  | "supplier"
+  | "both"
+  | "leads"
+  | "quotation"
+  | "visits";
+
 type ParsedParty = {
   party_name: string;
-  party_type: "customer" | "supplier" | "both";
+  party_type: ParsedPartyType;
   contacts: PartyContact[];
   gst_no: string;
   drug_license_no: string;
@@ -47,8 +67,6 @@ type ParsedParty = {
 const btnSecondaryClass =
   "rounded-lg border border-slate-200/95 px-3 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-50 disabled:opacity-50 dark:border-white/15 dark:text-slate-100 dark:hover:bg-white/5";
 
-const VALID_TYPES = ["customer", "supplier", "both"] as const;
-
 function pickField(raw: Record<string, unknown>, keys: string[]): string {
   for (const key of keys) {
     const direct = raw[key];
@@ -59,10 +77,21 @@ function pickField(raw: Record<string, unknown>, keys: string[]): string {
   return "";
 }
 
+function normalizePartyType(rawType: string): ParsedPartyType {
+  const t = rawType.toLowerCase().trim();
+  if (t === "lead" || t === "leads") return "leads";
+  if (t === "quotation" || t === "quotations") return "quotation";
+  if (t === "visit" || t === "visits") return "visits";
+  if (t === "supplier") return "supplier";
+  if (t === "both") return "both";
+  return "customer";
+}
+
 function parsePartyImportRow(raw: Record<string, unknown>): ParsedParty {
   const name = pickField(raw, ["party_name", "name"]);
   const party_type_raw = pickField(raw, ["party_type", "type"]) || "customer";
-  const party_type = party_type_raw.toLowerCase().trim() as ParsedParty["party_type"];
+  const party_type_clean = party_type_raw.toLowerCase().trim();
+  const party_type = normalizePartyType(party_type_raw);
   const contacts = contactsFromBulkRow(raw);
   const gst_no = pickField(raw, ["gst_no", "gst", "gstin"]);
   const drug_license_no = pickField(raw, ["drug_license_no", "dl_no"]);
@@ -82,9 +111,9 @@ function parsePartyImportRow(raw: Record<string, unknown>): ParsedParty {
   } else if (!hasContactPhone(contacts)) {
     status = "invalid";
     reason = "Missing contact phone number";
-  } else if (party_type_raw && !VALID_TYPES.includes(party_type)) {
+  } else if (party_type_raw && !(VALID_TYPES as readonly string[]).includes(party_type_clean)) {
     status = "invalid";
-    reason = "Type must be customer, supplier, or both";
+    reason = "Type must be customer, supplier, both, leads, quotation, or visits";
   } else {
     for (const contact of contacts) {
       if (contact.email.trim() && !/\S+@\S+\.\S+/.test(contact.email)) {
@@ -97,7 +126,7 @@ function parsePartyImportRow(raw: Record<string, unknown>): ParsedParty {
 
   return {
     party_name: name,
-    party_type: VALID_TYPES.includes(party_type) ? party_type : "customer",
+    party_type,
     contacts,
     gst_no,
     drug_license_no,
@@ -258,7 +287,11 @@ export function BulkUploadPartiesModal({
     const csvContent =
       "party_name,party_type,contact_name,contact_department,contact_phone,contact_email,contact_alternate_phone,contact_2_name,contact_2_department,contact_2_phone,contact_2_email,contact_2_alternate_phone,gst_no,drug_license_no,country,state,city,district,zone,payment_terms\n" +
       '"Apollo Pharmacy","customer","Dr. Rajesh Kumar","Purchase","+91 9999988888","billing@apollomed.com","+91 8888877777","Mrs. Shalini Rao","Accounts","+91 7777766666","accounts@apollomed.com","","07AAAAA1111A1Z1","DL-12345/6789","India","Delhi","New Delhi","Central Delhi","North Zone","Net 30"\n' +
-      '"Cipla Ltd","supplier","Mr. Amit Shah","Sales","+91 8888877777","sales@cipla.com","","","","","","","27BBBBB2222B2Z2","DL-67890/1234","India","Maharashtra","Mumbai","","West Zone","Net 45"';
+      '"Cipla Ltd","supplier","Mr. Amit Shah","Sales","+91 8888877777","sales@cipla.com","","","","","","","27BBBBB2222B2Z2","DL-67890/1234","India","Maharashtra","Mumbai","","West Zone","Net 45"\n' +
+      '"Medica Hospital","both","Dr. Sharma","Admin","+91 9876543213","sharma@medica.org","","","","","","","27AAACM5678B1Z2","DL-11223","India","Maharashtra","Nagpur","Nagpur","East Zone","Immediate"\n' +
+      '"Apex Healthcare","leads","Priya Verma","Purchasing","+91 9876543214","priya@apexhealth.com","","","","","","","27AAACA9999C1Z1","","India","Maharashtra","Thane","Thane","West Zone","Net 15"\n' +
+      '"Metro Diagnostics","quotation","Vikram Singh","Accounts","+91 9876543215","vikram@metrodiag.com","","","","","","","27AAACM8888D1Z8","","India","Maharashtra","Nashik","Nashik","North Zone","Net 30"\n' +
+      '"City Care Site","visits","Suresh Patel","Operations","+91 9876543216","suresh@citycare.org","","","","","","","27AAACP7777E1Z3","","India","Maharashtra","Kolhapur","Kolhapur","South Zone","Net 45"';
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");

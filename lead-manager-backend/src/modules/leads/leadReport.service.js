@@ -25,10 +25,26 @@ function assigneeMatchOr(userId) {
 }
 
 function leadAssignedToUser(lead, userId) {
-  if (!lead || !lead.assigned_to) return false;
+  if (!lead) return false;
   const uid = String(userId);
-  const targetId = typeof lead.assigned_to === 'object' ? String(lead.assigned_to._id || lead.assigned_to) : String(lead.assigned_to);
-  return targetId === uid;
+  const targetId = typeof lead.assigned_to === 'object' ? String(lead.assigned_to?._id || lead.assigned_to) : String(lead.assigned_to);
+  if (targetId === uid) return true;
+  if (Array.isArray(lead.assigned_users)) {
+    if (lead.assigned_users.some((u) => String(u?._id || u) === uid)) return true;
+  }
+  return false;
+}
+
+function singleAssigneeOr(userId) {
+  const oid = toObjectId(userId);
+  const sid = String(userId);
+  return {
+    $or: [
+      { assigned_to: oid },
+      { assigned_to: sid },
+      { assigned_users: oid },
+    ],
+  };
 }
 
 function assigneeScopeOr(userIds) {
@@ -38,8 +54,7 @@ function assigneeScopeOr(userIds) {
     $or: [
       { assigned_to: { $in: oids } },
       { assigned_to: { $in: ids } },
-      { created_by: { $in: oids } },
-      { created_by: { $in: ids } },
+      { assigned_users: { $in: oids } },
     ],
   };
 }
@@ -59,41 +74,50 @@ async function buildLeadReportFilter(query = {}, user) {
         : null;
 
   if (isLeadAdmin(user)) {
+    // Admin sales report is global across all leads.
     if (assigneeId) {
-      andConditions.push({
-        $or: [
-          { assigned_to: toObjectId(assigneeId) },
-          { assigned_to: assigneeId },
-        ],
-      });
+      if (assigneeId === 'unassigned') {
+        andConditions.push({ assigned_to: null });
+      } else {
+        andConditions.push(singleAssigneeOr(assigneeId));
+      }
     }
   } else if (isLeadManager(user) || isLeadCoordinator(user)) {
+    // Coordinator & Manager team report: leads assigned to the team
     const visibleIds = await getVisibleLeadUserIds(user);
     const teamIds = visibleIds && visibleIds.length > 0 ? visibleIds.map(String) : [String(user._id)];
     if (assigneeId) {
-      if (!teamIds.includes(assigneeId)) {
+      if (assigneeId === 'unassigned') {
+        andConditions.push({ assigned_to: null });
+      } else if (!teamIds.includes(assigneeId)) {
         andConditions.push({ assigned_to: { $in: [] } });
       } else {
-        andConditions.push({
-          $or: [
-            { assigned_to: toObjectId(assigneeId) },
-            { assigned_to: assigneeId },
-          ],
-        });
+        andConditions.push(singleAssigneeOr(assigneeId));
       }
     } else {
       andConditions.push(assigneeScopeOr(teamIds));
     }
   } else {
-    const userId = toObjectId(user._id);
-    andConditions.push({
-      $or: [
-        { assigned_to: userId },
-        { assigned_to: String(user._id) },
-        { created_by: userId },
-        { created_by: String(user._id) },
-      ],
-    });
+    // Executive "my report": leads assigned to me OR created by me
+    if (assigneeId && assigneeId !== String(user._id)) {
+      andConditions.push({ assigned_to: { $in: [] } });
+    } else {
+      const userId = toObjectId(user._id);
+      const userStr = String(user._id);
+      andConditions.push({
+        $or: [
+          { assigned_to: userId },
+          { assigned_to: userStr },
+          { assigned_users: userId },
+          { created_by: userId },
+          { created_by: userStr },
+        ],
+      });
+    }
+  }
+
+  if (query.department && query.department !== 'all') {
+    andConditions.push({ department: String(query.department).trim().toLowerCase() });
   }
 
   // Date range / period presets
@@ -348,7 +372,14 @@ async function getSalesPerformance(query = {}, user) {
   const userFilter = {
     is_active: true,
   };
-  if (!isLeadAdmin(user)) {
+  if (isLeadAdmin(user)) {
+    // Admin sees all portal users
+  } else if (isLeadManager(user) || isLeadCoordinator(user)) {
+    const visibleIds = await getVisibleLeadUserIds(user);
+    const oids = (visibleIds || []).map(toObjectId).filter(Boolean);
+    const sids = (visibleIds || []).map(String).filter(Boolean);
+    userFilter._id = { $in: [...oids, ...sids] };
+  } else {
     userFilter._id = user._id;
   }
 
@@ -357,7 +388,7 @@ async function getSalesPerformance(query = {}, user) {
     .lean();
 
   const leads = await Lead.find(matchQ)
-    .select('assigned_to status estimated_value next_follow_up_at products')
+    .select('assigned_to assigned_users created_by status estimated_value next_follow_up_at products')
     .lean();
 
   if (isLeadAdmin(user)) {
@@ -395,6 +426,17 @@ async function getSalesPerformance(query = {}, user) {
     }
   }
 
+  const assigneeId =
+    query.assigned_to && query.assigned_to !== 'all'
+      ? String(query.assigned_to)
+      : query.sales_person && query.sales_person !== 'all'
+        ? String(query.sales_person)
+        : null;
+
+  if (assigneeId && assigneeId !== 'unassigned') {
+    assignees = assignees.filter((su) => String(su._id) === assigneeId);
+  }
+
   const followUps = await LeadFollowUp.find({ deletedAt: null })
     .select('created_by status follow_up_date lead')
     .lean();
@@ -404,7 +446,15 @@ async function getSalesPerformance(query = {}, user) {
 
   const performance = assignees.map((su) => {
     const uidStr = String(su._id);
-    const userLeads = leads.filter((l) => leadAssignedToUser(l, uidStr));
+    const isExecutiveSelf = !isLeadAdmin(user) && !isLeadManager(user) && !isLeadCoordinator(user) && uidStr === String(user._id);
+    const userLeads = leads.filter((l) => {
+      if (leadAssignedToUser(l, uidStr)) return true;
+      if (isExecutiveSelf) {
+        const creatorId = typeof l.created_by === 'object' ? String(l.created_by?._id || l.created_by) : String(l.created_by);
+        if (creatorId === uidStr) return true;
+      }
+      return false;
+    });
     const totalLeads = userLeads.length;
 
     const qualifiedLeads = userLeads.filter((l) =>
@@ -806,26 +856,16 @@ async function getFollowUpAnalyticsReport(query = {}, user) {
       : fu.lead?.assigned_to
         ? String(fu.lead.assigned_to)
         : null;
+    const inAssignedUsers = Array.isArray(fu.lead?.assigned_users) && fu.lead.assigned_users.some((u) => String(u?._id || u) === targetUserId);
     const qRep = fu.quotation?.sales_person_user?._id
       ? String(fu.quotation.sales_person_user._id)
       : fu.quotation?.sales_person_user
         ? String(fu.quotation.sales_person_user)
         : null;
-    const qCreator = fu.quotation?.created_by?._id
-      ? String(fu.quotation.created_by._id)
-      : fu.quotation?.created_by
-        ? String(fu.quotation.created_by)
-        : null;
-    const fuCreator = fu.created_by?._id
-      ? String(fu.created_by._id)
-      : fu.created_by
-        ? String(fu.created_by)
-        : null;
     return (
       leadAssignee === targetUserId ||
-      qRep === targetUserId ||
-      qCreator === targetUserId ||
-      fuCreator === targetUserId
+      inAssignedUsers ||
+      qRep === targetUserId
     );
   }
 
@@ -844,10 +884,12 @@ async function getFollowUpAnalyticsReport(query = {}, user) {
   const rows = await LeadFollowUp.find(q)
     .populate({
       path: 'lead',
-      select: 'lead_no name company_name phone email status priority estimated_value assigned_to party_id requirement_details',
+      select: 'lead_no name company_name phone email status priority estimated_value assigned_to assigned_users created_by party_id requirement_details',
       populate: [
         { path: 'party_id', select: 'party_name legal_name district state mobile email' },
         { path: 'assigned_to', select: 'name email department' },
+        { path: 'assigned_users', select: 'name email department' },
+        { path: 'created_by', select: 'name email department' },
       ],
     })
     .populate({
@@ -855,6 +897,7 @@ async function getFollowUpAnalyticsReport(query = {}, user) {
       select: 'quotation_no version grand_total status customer_name kind_attn phone email subject party_id created_by signatory_user sales_person_name sales_person_user lead',
       populate: [
         { path: 'sales_person_user', select: 'name email department' },
+        { path: 'created_by', select: 'name email department' },
         { path: 'signatory_user', select: 'name email department' },
         { path: 'party_id', select: 'party_name legal_name' },
       ],
@@ -864,55 +907,69 @@ async function getFollowUpAnalyticsReport(query = {}, user) {
     .sort({ follow_up_date: -1 })
     .lean();
 
+  function followUpMatchesCreatorUser(fu, targetUserId) {
+    const fuCreator = fu.created_by?._id ? String(fu.created_by._id) : (fu.created_by ? String(fu.created_by) : null);
+    const leadCreator = fu.lead?.created_by?._id ? String(fu.lead.created_by._id) : (fu.lead?.created_by ? String(fu.lead.created_by) : null);
+    const qCreator = fu.quotation?.created_by?._id ? String(fu.quotation.created_by._id) : (fu.quotation?.created_by ? String(fu.quotation.created_by) : null);
+    return fuCreator === targetUserId || leadCreator === targetUserId || qCreator === targetUserId;
+  }
+
   // Filter based on user scope
   let filtered = rows;
+  const scope = String(query.scope || '').toLowerCase().trim();
+
   if (!isAdmin) {
     if (isMgr || isCoord) {
-      // Manager / Coordinator: own + reporting downline. Quotations only for managers.
+      // Manager / Coordinator: own + reporting downline (by assigned OR created)
       filtered = rows.filter((fu) => {
-        const fuCreator = fu.created_by?._id ? String(fu.created_by._id) : (fu.created_by ? String(fu.created_by) : null);
         if (fu.quotation) {
           const qCreator = fu.quotation?.created_by?._id ? String(fu.quotation.created_by._id) : (fu.quotation?.created_by ? String(fu.quotation.created_by) : null);
           const qRep = fu.quotation?.sales_person_user?._id ? String(fu.quotation.sales_person_user._id) : (fu.quotation?.sales_person_user ? String(fu.quotation.sales_person_user) : null);
-          const qSignatory = fu.quotation?.signatory_user?._id
-            ? String(fu.quotation.signatory_user._id)
-            : fu.quotation?.signatory_user
-              ? String(fu.quotation.signatory_user)
-              : null;
-          return (
-            teamSet.has(qCreator) ||
-            teamSet.has(qRep) ||
-            teamSet.has(qSignatory) ||
-            teamSet.has(fuCreator)
-          );
+          const fuCreator = fu.created_by?._id ? String(fu.created_by._id) : (fu.created_by ? String(fu.created_by) : null);
+          return teamSet.has(qCreator) || teamSet.has(qRep) || teamSet.has(fuCreator);
         }
         if (fu.lead) {
           const leadAssignee = fu.lead?.assigned_to?._id ? String(fu.lead.assigned_to._id) : (fu.lead?.assigned_to ? String(fu.lead.assigned_to) : null);
-          return teamSet.has(leadAssignee) || teamSet.has(fuCreator);
+          const inAssignedUsers = Array.isArray(fu.lead?.assigned_users) && fu.lead.assigned_users.some((u) => teamSet.has(String(u?._id || u)));
+          const leadCreator = fu.lead?.created_by?._id ? String(fu.lead.created_by._id) : (fu.lead?.created_by ? String(fu.lead.created_by) : null);
+          const fuCreator = fu.created_by?._id ? String(fu.created_by._id) : (fu.created_by ? String(fu.created_by) : null);
+          return teamSet.has(leadAssignee) || inAssignedUsers || teamSet.has(leadCreator) || teamSet.has(fuCreator);
         }
-        return teamSet.has(fuCreator);
+        return false;
       });
     } else {
-      // Executive: strictly see their assigned or created lead follow-ups (no quotations)
+      // Executive: strictly see follow-ups where assigned or created
       filtered = rows.filter((fu) => {
-        if (fu.quotation) return false;
+        if (fu.quotation) {
+          const qRep = fu.quotation?.sales_person_user?._id ? String(fu.quotation.sales_person_user._id) : (fu.quotation?.sales_person_user ? String(fu.quotation.sales_person_user) : null);
+          const qCreator = fu.quotation?.created_by?._id ? String(fu.quotation.created_by._id) : (fu.quotation?.created_by ? String(fu.quotation.created_by) : null);
+          const fuCreator = fu.created_by?._id ? String(fu.created_by._id) : (fu.created_by ? String(fu.created_by) : null);
+          return qRep === userIdStr || qCreator === userIdStr || fuCreator === userIdStr;
+        }
         const leadAssignee = fu.lead?.assigned_to?._id ? String(fu.lead.assigned_to._id) : (fu.lead?.assigned_to ? String(fu.lead.assigned_to) : null);
+        const inAssignedUsers = Array.isArray(fu.lead?.assigned_users) && fu.lead.assigned_users.some((u) => String(u?._id || u) === userIdStr);
+        const leadCreator = fu.lead?.created_by?._id ? String(fu.lead.created_by._id) : (fu.lead?.created_by ? String(fu.lead.created_by) : null);
         const fuCreator = fu.created_by?._id ? String(fu.created_by._id) : (fu.created_by ? String(fu.created_by) : null);
-        return leadAssignee === userIdStr || fuCreator === userIdStr;
+        return leadAssignee === userIdStr || inAssignedUsers || leadCreator === userIdStr || fuCreator === userIdStr;
       });
     }
-  } else if (isAdmin && query.assigned_to && query.assigned_to !== 'all') {
-    const targetUserId = String(query.assigned_to);
-    filtered = rows.filter((fu) => followUpMatchesRepUser(fu, targetUserId));
   }
 
-  if ((isMgr || isCoord) && query.assigned_to && query.assigned_to !== 'all') {
+  // View Scope: "mine" vs "team"
+  if (scope === 'mine' || scope === 'me') {
+    filtered = filtered.filter((fu) => followUpMatchesRepUser(fu, userIdStr) || followUpMatchesCreatorUser(fu, userIdStr));
+  }
+
+  // Filter by assigned_to
+  if (query.assigned_to && query.assigned_to !== 'all') {
     const targetUserId = String(query.assigned_to);
-    if (!teamSet.has(targetUserId)) {
-      filtered = [];
-    } else {
-      filtered = filtered.filter((fu) => followUpMatchesRepUser(fu, targetUserId));
-    }
+    filtered = filtered.filter((fu) => followUpMatchesRepUser(fu, targetUserId));
+  }
+
+  // Filter by created_by
+  if (query.created_by && query.created_by !== 'all') {
+    const targetUserId = String(query.created_by);
+    filtered = filtered.filter((fu) => followUpMatchesCreatorUser(fu, targetUserId));
   }
 
   // Compute Summary KPIs

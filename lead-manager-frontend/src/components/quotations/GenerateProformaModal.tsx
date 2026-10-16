@@ -31,6 +31,7 @@ import {
 } from "@/store/api";
 import { useAppSelector } from "@/store/hooks";
 import { toast } from "@/lib/toast";
+import { RichTextEditor } from "./RichTextEditor";
 import ProformaInvoiceTemplate from "./ProformaInvoiceTemplate";
 import { buildProformaInvoicePdf } from "./buildProformaInvoicePdf";
 import { isSalesDepartmentUser } from "./quotationUtils";
@@ -133,6 +134,9 @@ export function GenerateProformaModal({ quotation, open, onClose, onSuccess }: P
     existingProforma.kyc_status || "na"
   );
   const [remarks, setRemarks] = useState(existingProforma.remarks || "");
+  const [message, setMessage] = useState(
+    existingProforma.message || (quotation as any).message || (quotation as any).quotation_message || ""
+  );
 
   // Reset/sync when opened
   useEffect(() => {
@@ -186,6 +190,7 @@ export function GenerateProformaModal({ quotation, open, onClose, onSuccess }: P
     setMarginSheetAttached(p.margin_sheet_attached || "na");
     setKycStatus(p.kyc_status || "na");
     setRemarks(p.remarks || "");
+    setMessage(p.message || (quotation as any).message || (quotation as any).quotation_message || "");
   }, [open, quotation, rawNo, authUser?.name, usersList]);
 
   const currentProformaDetails: LeadQuotationProformaDetails = {
@@ -206,6 +211,7 @@ export function GenerateProformaModal({ quotation, open, onClose, onSuccess }: P
     margin_sheet_attached: marginSheetAttached.trim() || "na",
     kyc_status: kycStatus.trim() || "na",
     remarks: remarks.trim(),
+    message: message.trim() || undefined,
   };
 
   const handleSaveOnly = async () => {
@@ -271,6 +277,9 @@ export function GenerateProformaModal({ quotation, open, onClose, onSuccess }: P
       return;
     }
 
+    // Detect if content exceeds single A4 printable page height (~1060px)
+    const isMultiPage = (previewNode.scrollHeight || 0) > 1060;
+
     doc.open();
     doc.write(`
       <!DOCTYPE html>
@@ -281,6 +290,18 @@ export function GenerateProformaModal({ quotation, open, onClose, onSuccess }: P
             @page {
               size: A4 portrait;
               margin: 8mm 10mm;
+              ${
+                isMultiPage
+                  ? `@bottom-center {
+                content: "Page " counter(page) " of " counter(pages);
+                font-size: 7.5pt;
+                font-weight: 700;
+                color: #334155;
+              }`
+                  : `@bottom-center {
+                content: none;
+              }`
+              }
             }
             * {
               box-sizing: border-box;
@@ -301,9 +322,83 @@ export function GenerateProformaModal({ quotation, open, onClose, onSuccess }: P
               padding: 0 !important;
               box-shadow: none !important;
             }
+            .rich-text-content {
+              font-size: 8.5px !important;
+              line-height: 1.4 !important;
+              color: #1e293b !important;
+            }
+            .rich-text-content table {
+              width: 100% !important;
+              border-collapse: collapse !important;
+              margin: 4px 0 6px 0 !important;
+              page-break-inside: avoid !important;
+            }
+            .rich-text-content th,
+            .rich-text-content td {
+              border: 1px solid #cbd5e1 !important;
+              padding: 4px 6px !important;
+              font-size: 8px !important;
+              line-height: 1.3 !important;
+              text-align: left !important;
+              vertical-align: top !important;
+            }
+            .rich-text-content th {
+              background-color: #f1f5f9 !important;
+              font-weight: 700 !important;
+              color: #0f172a !important;
+            }
+            .rich-text-content h1 {
+              font-size: 11px !important;
+              font-weight: 700 !important;
+              margin: 4px 0 2px 0 !important;
+              color: #0f172a !important;
+            }
+            .rich-text-content h2 {
+              font-size: 10px !important;
+              font-weight: 700 !important;
+              margin: 3px 0 2px 0 !important;
+              color: #0f172a !important;
+            }
+            .rich-text-content h3 {
+              font-size: 9px !important;
+              font-weight: 700 !important;
+              margin: 2px 0 1px 0 !important;
+              color: #0f172a !important;
+            }
+            .rich-text-content p {
+              margin: 0 0 3px 0 !important;
+            }
+            .rich-text-content ul,
+            .rich-text-content ol {
+              margin: 2px 0 4px 0 !important;
+              padding-left: 16px !important;
+            }
+            .rich-text-content li {
+              margin-bottom: 2px !important;
+            }
+            .rich-text-content blockquote {
+              border-left: 2px solid #94a3b8 !important;
+              padding-left: 8px !important;
+              margin: 3px 0 !important;
+              font-style: italic !important;
+            }
+            .rich-text-content hr {
+              border: none !important;
+              border-top: 1px solid #cbd5e1 !important;
+              margin: 4px 0 !important;
+            }
+            ${
+              isMultiPage
+                ? `.print-page-number::after {
+              content: "Page " counter(page) " of " counter(pages);
+            }`
+                : `.print-page-number {
+              display: none !important;
+            }`
+            }
           </style>
         </head>
-        <body>
+        <body class="${isMultiPage ? "multi-page" : "single-page"}">
           ${previewNode.outerHTML}
         </body>
       </html>
@@ -604,6 +699,34 @@ export function GenerateProformaModal({ quotation, open, onClose, onSuccess }: P
                       />
                     </div>
                   </div>
+                </div>
+
+                {/* Cover / Introductory Message (Above Items & Pricing) */}
+                <div className="rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4.5 dark:border-white/5 dark:bg-slate-800/40 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-extrabold uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                      <FileText className="h-3.5 w-3.5 text-primary" />
+                      Introductory Message / Cover Note (Above Requirements)
+                    </span>
+                    {message && (
+                      <button
+                        type="button"
+                        onClick={() => setMessage("")}
+                        className="text-xs font-medium text-rose-600 hover:text-rose-700 dark:text-rose-400 hover:underline"
+                      >
+                        Clear Message
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Optional introductory / cover message printed directly above goods &amp; pricing on the Proforma Invoice. Left blank, nothing is printed.
+                  </p>
+                  <RichTextEditor
+                    value={message}
+                    onChange={(val) => setMessage(val)}
+                    placeholder="Enter introductory message or note for Proforma invoice..."
+                    minHeight="95px"
+                  />
                 </div>
 
                 {/* 3. Items & Financial Summary Overview */}

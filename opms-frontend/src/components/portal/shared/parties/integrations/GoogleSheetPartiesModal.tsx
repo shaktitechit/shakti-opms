@@ -63,7 +63,17 @@ type PartyContact = {
 type PartyRow = {
   _id: string;
   party_name: string;
-  party_type: "customer" | "supplier" | "both";
+  party_type:
+    | "customer"
+    | "supplier"
+    | "both"
+    | "leads"
+    | "lead"
+    | "quotation"
+    | "quotations"
+    | "visits"
+    | "visit"
+    | string;
   contact_person?: string;
   mobile?: string;
   email?: string;
@@ -101,7 +111,7 @@ const COLUMNS: {
   options?: string[];
 }[] = [
   { key: "party_name", label: "Party Name*", headerLetter: "A", type: "text" },
-  { key: "party_type", label: "Party Type*", headerLetter: "B", type: "select", options: ["customer", "supplier", "both"] },
+  { key: "party_type", label: "Party Type*", headerLetter: "B", type: "select", options: ["customer", "supplier", "both", "leads", "quotation", "visits"] },
   { key: "contact_person", label: "Contact Person", headerLetter: "C", type: "text" },
   { key: "mobile", label: "Mobile / Phone", headerLetter: "D", type: "text" },
   { key: "email", label: "Email Address", headerLetter: "E", type: "text" },
@@ -160,7 +170,9 @@ export function GoogleSheetPartiesModal({
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
   const [filterActiveStatus, setFilterActiveStatus] = useState<"all" | "active" | "inactive">("all");
   const [filterFeaturedStatus, setFilterFeaturedStatus] = useState<"all" | "featured" | "not_featured">("all");
-  const [filterPartyType, setFilterPartyType] = useState<"all" | "customer" | "supplier" | "both">("all");
+  const [filterPartyType, setFilterPartyType] = useState<
+    "all" | "customer" | "supplier" | "both" | "leads" | "quotation" | "visits"
+  >("all");
   const [filterSraStatus, setFilterSraStatus] = useState<"all" | "sra" | "non-sra">("all");
   const [filterState, setFilterState] = useState<string>("all");
 
@@ -1101,6 +1113,9 @@ function onEdit(e) {
                           <option value="customer">Customer Only</option>
                           <option value="supplier">Supplier Only</option>
                           <option value="both">Both Only</option>
+                          <option value="leads">Leads Only</option>
+                          <option value="quotation">Quotation Only</option>
+                          <option value="visits">Visits Only</option>
                         </select>
                       </div>
 

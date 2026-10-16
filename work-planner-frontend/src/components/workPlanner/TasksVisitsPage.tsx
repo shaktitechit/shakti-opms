@@ -33,11 +33,6 @@ import {
   useGetPlansQuery,
   useLazyGetPlansQuery,
   useGetMyTeamQuery,
-  useCreatePlanMutation,
-  useAddVisitMutation,
-  useAddStandaloneVisitMutation,
-  useAddWorkMutation,
-  useAddStandaloneWorkMutation,
 } from "@/store/api/workPlannerApiSlice";
 import { useGetUsersQuery } from "@/store/api/authApiSlice";
 import {
@@ -62,8 +57,6 @@ import {
 } from "./workPlanUtils";
 import { DownloadTasksVisitsReportModal } from "./DownloadTasksVisitsReportModal";
 import { SeniorRemarksModal } from "./SeniorRemarksModal";
-import { VisitFormModal } from "./VisitFormModal";
-import { WorkFormModal } from "./WorkFormModal";
 
 export interface DisplayTaskVisitItem {
   id: string;
@@ -162,9 +155,8 @@ export function TasksVisitsPage() {
   const [currentMonth, setCurrentMonth] = useState<Date>(() => startOfMonth(new Date()));
   const [selectedYmd, setSelectedYmd] = useState<string | null>(() => toYmd(new Date()));
 
-  // Executive selector for planning and scoping
+  // Executive selector for scoping
   const [selectedExecutiveFilter, setSelectedExecutiveFilter] = useState<string>("all");
-  const [planningExecutiveId, setPlanningExecutiveId] = useState<string>(() => user?._id || "");
 
   // Filter States
   const initialSearch = searchParams.get("search") || searchParams.get("q") || "";
@@ -183,11 +175,6 @@ export function TasksVisitsPage() {
   // Report Modal state
   const [reportModalOpen, setReportModalOpen] = useState(false);
 
-  // Future Planning Modals
-  const [planVisitDate, setPlanVisitDate] = useState<string | null>(null);
-  const [planTaskDate, setPlanTaskDate] = useState<string | null>(null);
-  const [isPlanningSaving, setIsPlanningSaving] = useState(false);
-
   // Action targets for remarks modal
   const [seniorRemarksTarget, setSeniorRemarksTarget] = useState<DisplayTaskVisitItem | null>(null);
 
@@ -195,13 +182,8 @@ export function TasksVisitsPage() {
   const { data: usersData } = useGetUsersQuery(undefined, { skip: !adminRole });
   const { data: myTeamData } = useGetMyTeamQuery(undefined, { skip: adminRole || !managerRole });
 
-  // Mutations & Lazy queries
+  // Lazy queries
   const [lazyGetPlans] = useLazyGetPlansQuery();
-  const [createPlanMut] = useCreatePlanMutation();
-  const [addVisitMut] = useAddVisitMutation();
-  const [addStandaloneVisitMut] = useAddStandaloneVisitMutation();
-  const [addWorkMut] = useAddWorkMutation();
-  const [addStandaloneWorkMut] = useAddStandaloneWorkMutation();
 
   const allUsers = useMemo<ExecutiveUser[]>(() => {
     if (adminRole) return (usersData as ExecutiveUser[]) || [];
@@ -550,80 +532,6 @@ export function TasksVisitsPage() {
     { id: "completed", label: "Completed" },
   ];
 
-  // Handle saving visit from VisitFormModal
-  async function handlePlanFutureVisit(body: Record<string, unknown>) {
-    setIsPlanningSaving(true);
-    try {
-      const targetYmd =
-        (body.planDate as string) || (planVisitDate ? toYmd(planVisitDate) : toYmd(new Date()));
-      const targetUserId =
-        (body.salesUserId as string) ||
-        (elevatedRole && planningExecutiveId ? planningExecutiveId : user?._id || "");
-
-      const res = await addStandaloneVisitMut({
-        body: {
-          ...body,
-          sales_user: targetUserId,
-          plan_date: targetYmd,
-        },
-      }).unwrap();
-
-      const execLabel =
-        allowedExecutives.find((e) => e._id === targetUserId || e.id === targetUserId)?.name ||
-        "Executive";
-
-      const isLinkedToPlan = Boolean(res?.work_plan);
-      toast.success(
-        isLinkedToPlan
-          ? `Visit added to work plan for ${execLabel} on ${formatPlanDate(targetYmd)}`
-          : `Visit planned successfully for ${execLabel} on ${formatPlanDate(targetYmd)}`
-      );
-      setPlanVisitDate(null);
-      loadData();
-    } catch (err: any) {
-      toast.error(err?.data?.message || err?.message || "Failed to plan future visit");
-    } finally {
-      setIsPlanningSaving(false);
-    }
-  }
-
-  // Handle saving task from WorkFormModal
-  async function handlePlanFutureTask(body: Record<string, unknown>) {
-    setIsPlanningSaving(true);
-    try {
-      const targetYmd =
-        (body.planDate as string) || (planTaskDate ? toYmd(planTaskDate) : toYmd(new Date()));
-      const targetUserId =
-        (body.salesUserId as string) ||
-        (elevatedRole && planningExecutiveId ? planningExecutiveId : user?._id || "");
-
-      const res = await addStandaloneWorkMut({
-        body: {
-          ...body,
-          sales_user: targetUserId,
-          plan_date: targetYmd,
-        },
-      }).unwrap();
-
-      const execLabel =
-        allowedExecutives.find((e) => e._id === targetUserId || e.id === targetUserId)?.name ||
-        "Executive";
-
-      const isLinkedToPlan = Boolean(res?.work_plan);
-      toast.success(
-        isLinkedToPlan
-          ? `Work task added to work plan for ${execLabel} on ${formatPlanDate(targetYmd)}`
-          : `Work task planned successfully for ${execLabel} on ${formatPlanDate(targetYmd)}`
-      );
-      setPlanTaskDate(null);
-      loadData();
-    } catch (err: any) {
-      toast.error(err?.data?.message || err?.message || "Failed to plan future task");
-    } finally {
-      setIsPlanningSaving(false);
-    }
-  }
-
   return (
     <div className="space-y-3.5 sm:space-y-4 font-sans w-full max-w-full">
       {/* Top Header */}
@@ -641,22 +549,6 @@ export function TasksVisitsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-0.5 sm:flex-wrap">
-          <button
-            type="button"
-            onClick={() => setPlanVisitDate(toYmd(new Date()))}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-sky-700 shadow-xs active:scale-95 transition cursor-pointer shrink-0"
-          >
-            <Building2 className="h-4 w-4" />
-            <span>+ Create Visit</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setPlanTaskDate(toYmd(new Date()))}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-emerald-700 shadow-xs active:scale-95 transition cursor-pointer shrink-0"
-          >
-            <Briefcase className="h-4 w-4" />
-            <span>+ Create Task</span>
-          </button>
           <button
             type="button"
             onClick={() => setReportModalOpen(true)}
@@ -740,7 +632,6 @@ export function TasksVisitsPage() {
                 onClick={() => {
                   setOwnershipScope("mine");
                   setSelectedExecutiveFilter("all");
-                  setPlanningExecutiveId(user?._id || "");
                   setCurrentPage(1);
                 }}
                 className={`rounded-lg px-3 py-1 text-xs font-semibold transition cursor-pointer ${
@@ -775,9 +666,6 @@ export function TasksVisitsPage() {
                   value={selectedExecutiveFilter}
                   onChange={(e) => {
                     setSelectedExecutiveFilter(e.target.value);
-                    if (e.target.value !== "all") {
-                      setPlanningExecutiveId(e.target.value);
-                    }
                     setCurrentPage(1);
                   }}
                   className="bg-transparent text-xs font-semibold text-foreground outline-none cursor-pointer"
@@ -1004,7 +892,7 @@ export function TasksVisitsPage() {
                   <Building2 className="h-10 w-10 text-muted/40 mb-2" />
                   <p className="text-xs font-semibold text-foreground">No field visits planned for this day</p>
                   <p className="text-[11px] text-muted max-w-[220px] mt-1">
-                    Use <strong className="text-foreground">+ Create Field Visit</strong> in the top panel to schedule new visits.
+                    Field visits are scheduled by creating or updating a Work Plan.
                   </p>
                 </div>
               ) : (
@@ -1293,7 +1181,7 @@ export function TasksVisitsPage() {
                   <Briefcase className="h-10 w-10 text-muted/40 mb-2" />
                   <p className="text-xs font-semibold text-foreground">No tasks planned for this day</p>
                   <p className="text-[11px] text-muted max-w-[220px] mt-1">
-                    Use <strong className="text-foreground">+ Create Work Task</strong> in the top panel to schedule new tasks.
+                    Work tasks are scheduled by creating or updating a Work Plan.
                   </p>
                 </div>
               ) : (
@@ -1816,35 +1704,6 @@ export function TasksVisitsPage() {
         />
       )}
 
-      {/* Future Visit Planning Modal (unified VisitFormModal) */}
-      {planVisitDate && (
-        <VisitFormModal
-          open={Boolean(planVisitDate)}
-          mode="create"
-          planDate={planVisitDate}
-          salesUserId={
-            elevatedRole && planningExecutiveId ? planningExecutiveId : user?._id
-          }
-          isSaving={isPlanningSaving}
-          onClose={() => setPlanVisitDate(null)}
-          onSubmit={handlePlanFutureVisit}
-        />
-      )}
-
-      {/* Future Task Planning Modal (unified WorkFormModal) */}
-      {planTaskDate && (
-        <WorkFormModal
-          open={Boolean(planTaskDate)}
-          mode="create"
-          planDate={planTaskDate}
-          salesUserId={
-            elevatedRole && planningExecutiveId ? planningExecutiveId : user?._id
-          }
-          isSaving={isPlanningSaving}
-          onClose={() => setPlanTaskDate(null)}
-          onSubmit={handlePlanFutureTask}
-        />
-      )}
 
       {/* Report Download Modal */}
       {reportModalOpen && (

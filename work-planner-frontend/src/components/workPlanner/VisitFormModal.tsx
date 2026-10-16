@@ -16,13 +16,19 @@ import {
   User,
   UserCheck,
   Users,
+  MapPin,
   X,
 } from "lucide-react";
 import type { WorkPlanVisitPartyType, WorkPlanVisitRecord } from "@/types/workPlanner";
 import type { PartyRecord } from "@/types/party";
 import type { LeadRecord } from "@/types/lead";
 import type { PowerFacility, PowerEnquiry } from "@/types/powerApp";
-import { useGetPartiesQuery } from "@/store/api/partyApiSlice";
+import {
+  useGetPartiesQuery,
+  useGetPartyCountriesQuery,
+  useGetPartyStatesQuery,
+  useGetPartyCitiesQuery,
+} from "@/store/api/partyApiSlice";
 import { useGetLeadsQuery } from "@/store/api/leadsApiSlice";
 import {
   useGetPowerFacilitiesQuery,
@@ -49,6 +55,12 @@ export type VisitFormModalProps = {
   salesUserId?: string | null;
   /** ID of the plan owner — used to determine if current user is the senior */
   planOwnerId?: string | null;
+  defaultCountryId?: string;
+  defaultCountryName?: string;
+  defaultStateId?: string;
+  defaultStateName?: string;
+  defaultCityId?: string;
+  defaultCityName?: string;
   isSaving: boolean;
   onClose: () => void;
   onSubmit: (body: Record<string, unknown>) => void | Promise<void>;
@@ -79,7 +91,6 @@ const PARTY_TYPE_OPTIONS: Array<{ value: WorkPlanVisitPartyType; label: string }
   { value: "existing", label: "Existing Party" },
   { value: "existing_lead", label: "Existing Leads" },
   { value: "new_party", label: "New Party" },
-  { value: "new_lead", label: "New Leads" },
 ];
 
 const inputClass =
@@ -188,6 +199,12 @@ export function VisitFormModal({
   planDate,
   salesUserId,
   planOwnerId = null,
+  defaultCountryId,
+  defaultCountryName,
+  defaultStateId,
+  defaultStateName,
+  defaultCityId,
+  defaultCityName,
   isSaving,
   onClose,
   onSubmit,
@@ -322,7 +339,6 @@ export function VisitFormModal({
         { value: "existing", label: "Existing Party" },
         { value: "existing_lead", label: "Existing Leads" },
         { value: "new_party", label: "New Party" },
-        { value: "new_lead", label: "New Leads" },
       ];
     }
     return PARTY_TYPE_OPTIONS;
@@ -334,10 +350,17 @@ export function VisitFormModal({
   const [selectedPartyId, setSelectedPartyId] = useState<string>("");
   const [selectedLeadId, setSelectedLeadId] = useState<string>("");
   const [partyName, setPartyName] = useState("");
+  const [gstNo, setGstNo] = useState("");
   const [contacts, setContacts] = useState<ContactFormItem[]>([
     { id: "c-1", contact_person: "", contact_number: "", contact_email: "" },
   ]);
   const [address, setAddress] = useState("");
+  const [countryId, setCountryId] = useState("");
+  const [countryName, setCountryName] = useState("");
+  const [stateId, setStateId] = useState("");
+  const [stateName, setStateName] = useState("");
+  const [cityId, setCityId] = useState("");
+  const [cityName, setCityName] = useState("");
   const [purpose, setPurpose] = useState("");
   const [notes, setNotes] = useState("");
   const [managerRemarks, setManagerRemarks] = useState("");
@@ -363,14 +386,101 @@ export function VisitFormModal({
   const assignedExecutiveId = internalSalesUserId?.trim() || "";
 
   const { data: partiesData = [], isLoading: isPartiesLoading } = useGetPartiesQuery(
-    { search: partySearch.trim() },
+    {
+      search: partySearch.trim() || undefined,
+      state_id: stateId || undefined,
+      city_id: cityId || undefined,
+      state: stateName || undefined,
+      city: cityName || undefined,
+      country_id: countryId || undefined,
+    },
     { skip: !open || !isExistingParty }
   );
+
+  const { data: countriesData = [], isLoading: isCountriesLoading } = useGetPartyCountriesQuery(
+    { limit: 500, status: "active" },
+    { skip: !open }
+  );
+
+  const { data: statesData = [], isLoading: isStatesLoading } = useGetPartyStatesQuery(
+    countryId ? { country_id: countryId, limit: 1000, status: "active" } : undefined,
+    { skip: !open || !countryId }
+  );
+
+  const { data: citiesData = [], isLoading: isCitiesLoading } = useGetPartyCitiesQuery(
+    stateId ? { state_id: stateId, limit: 5000, status: "active" } : undefined,
+    { skip: !open || !stateId }
+  );
+
+  // Auto-select India by default if no country selected
+  useEffect(() => {
+    if (!countryId && countriesData.length > 0) {
+      const india = countriesData.find(
+        (c) =>
+          c.name.trim().toLowerCase() === "india" ||
+          c.iso_code?.toUpperCase() === "IN"
+      );
+      if (india) {
+        setCountryId(india._id || india.id || "");
+        setCountryName(india.name);
+      }
+    }
+  }, [countriesData, countryId]);
+
+  // Match state name to state ID if set by text from Party or Lead
+  useEffect(() => {
+    if (stateName && !stateId && statesData.length > 0) {
+      const sMatch = statesData.find(
+        (s) => s.name.trim().toLowerCase() === stateName.trim().toLowerCase()
+      );
+      if (sMatch) {
+        setStateId(sMatch._id || sMatch.id || "");
+      }
+    }
+  }, [statesData, stateName, stateId]);
+
+  // If stateId is set but does not belong to the currently loaded states for this country, clear it
+  useEffect(() => {
+    if (stateId && statesData.length > 0 && !isStatesLoading) {
+      const exists = statesData.some((s) => s._id === stateId || s.id === stateId);
+      if (!exists) {
+        setStateId("");
+        setStateName("");
+        setCityId("");
+        setCityName("");
+      }
+    }
+  }, [statesData, stateId, isStatesLoading]);
+
+  // Match city name to city ID if set by text from Party or Lead
+  useEffect(() => {
+    if (cityName && !cityId && citiesData.length > 0) {
+      const ciMatch = citiesData.find(
+        (ci) => ci.name.trim().toLowerCase() === cityName.trim().toLowerCase()
+      );
+      if (ciMatch) {
+        setCityId(ciMatch._id || ciMatch.id || "");
+      }
+    }
+  }, [citiesData, cityName, cityId]);
+
+  // If cityId is set but does not belong to the currently loaded cities for this state, clear it
+  useEffect(() => {
+    if (cityId && citiesData.length > 0 && !isCitiesLoading) {
+      const exists = citiesData.some((ci) => ci._id === cityId || ci.id === cityId);
+      if (!exists) {
+        setCityId("");
+        setCityName("");
+      }
+    }
+  }, [citiesData, cityId, isCitiesLoading]);
 
   const { data: leadsData = [], isLoading: isLeadsLoading } = useGetLeadsQuery(
     {
       search: leadSearch.trim() || undefined,
       assigned_to: assignedExecutiveId || undefined,
+      state: stateName || undefined,
+      city: cityName || undefined,
       limit: 30,
       paginate: "true",
     },
@@ -441,11 +551,12 @@ export function VisitFormModal({
 
         if (rawContacts.length > 0) {
           setContacts(
-            rawContacts.map((c, i) => ({
+            rawContacts.map((c: any, i) => ({
               id: `c-init-${i}-${Date.now()}`,
-              contact_person: c.contact_person || "",
-              contact_number: c.contact_number || "",
-              contact_email: c.contact_email || "",
+              contact_person: c.contact_person || c.name || "",
+              contact_number: c.contact_number || c.phone || c.alternate_phone || "",
+              contact_email: c.contact_email || c.email || "",
+              designation: c.designation || c.department || "",
             }))
           );
         } else {
@@ -453,6 +564,13 @@ export function VisitFormModal({
         }
 
         setAddress(initial.address || "");
+        setCountryId(initial.country_id || "");
+        setCountryName(initial.country || "");
+        setStateId(initial.state_id || "");
+        setStateName(initial.state || "");
+        setCityId(initial.city_id || "");
+        setCityName(initial.city || "");
+        setGstNo((initial as any)?.gst_no || (initial as any)?.gst || "");
         setPurpose(initial.purpose || "");
         setNotes(initial.notes || "");
         setManagerRemarks(initial.manager_remarks || "");
@@ -463,8 +581,15 @@ export function VisitFormModal({
         setSelectedPartyId("");
         setSelectedLeadId("");
         setPartyName("");
+        setGstNo("");
         setContacts([{ id: "c-1", contact_person: "", contact_number: "", contact_email: "" }]);
         setAddress("");
+        setCountryId(defaultCountryId || "");
+        setCountryName(defaultCountryName || "");
+        setStateId(defaultStateId || "");
+        setStateName(defaultStateName || "");
+        setCityId(defaultCityId || "");
+        setCityName(defaultCityName || "");
         setPurpose("");
         setNotes("");
         setManagerRemarks("");
@@ -491,18 +616,59 @@ export function VisitFormModal({
     setSelectedPartyId(pId);
     setSelectedLeadId("");
     setPartyName(party.party_name || "");
+    setGstNo(party.gst_no || "");
     setAddress(formatPartyAddress(party));
+
+    // Geography sync from selected Party
+    if (party.country_id) {
+      setCountryId(party.country_id);
+      const cMatch = countriesData.find((c) => c._id === party.country_id || c.id === party.country_id);
+      setCountryName(cMatch?.name || "India");
+    } else {
+      const cName = (party.billing_address as any)?.country || "India";
+      setCountryName(cName);
+      const cMatch = countriesData.find((c) => c.name.toLowerCase() === cName.toLowerCase());
+      if (cMatch) setCountryId(cMatch._id || cMatch.id || "");
+    }
+
+    if (party.state_id) {
+      setStateId(party.state_id);
+      setStateName(party.state || "");
+    } else if (party.state || (party.billing_address as any)?.state) {
+      const sName = party.state || (party.billing_address as any)?.state || "";
+      setStateName(sName);
+      setStateId("");
+    } else {
+      setStateId("");
+      setStateName("");
+    }
+
+    if (party.city_id) {
+      setCityId(party.city_id);
+      setCityName(party.city || (party.billing_address as any)?.city || "");
+    } else if (party.city || (party.billing_address as any)?.city) {
+      const ctName = party.city || (party.billing_address as any)?.city || "";
+      setCityName(ctName);
+      setCityId("");
+    } else {
+      setCityId("");
+      setCityName("");
+    }
 
     const list: ContactFormItem[] = [];
     if (Array.isArray(party.contacts) && party.contacts.length > 0) {
       party.contacts.forEach((c, idx) => {
-        if (c.contact_person || c.contact_number || c.contact_email) {
+        const name = (c.contact_person || c.name || "").trim();
+        const phone = (c.contact_number || c.phone || c.alternate_phone || "").trim();
+        const email = (c.contact_email || c.email || "").trim();
+        const desig = (c.designation || c.department || "").trim();
+        if (name || phone || email) {
           list.push({
             id: `party-c-${idx}-${Date.now()}`,
-            contact_person: c.contact_person || "",
-            contact_number: c.contact_number || "",
-            contact_email: c.contact_email || "",
-            designation: c.designation || "",
+            contact_person: name,
+            contact_number: phone,
+            contact_email: email,
+            designation: desig,
           });
         }
       });
@@ -646,7 +812,15 @@ export function VisitFormModal({
     setSelectedLeadId(leadId);
     setSelectedPartyId("");
     setPartyName(leadDisplayName(lead));
+    setGstNo((lead as any).gst_no || (lead as any).gstin || "");
     setAddress(formatLeadAddress(lead));
+
+    const lState = lead.billing_address?.state || lead.state;
+    const lCity = lead.billing_address?.city || lead.city;
+    const lCountry = lead.billing_address?.country || lead.country;
+    if (lState) setStateName(lState);
+    if (lCity) setCityName(lCity);
+    if (lCountry) setCountryName(lCountry);
 
     const list: ContactFormItem[] = [];
     if (Array.isArray(lead.contacts) && lead.contacts.length > 0) {
@@ -684,7 +858,7 @@ export function VisitFormModal({
 
   function handlePartyTypeChange(nextType: WorkPlanVisitPartyType) {
     setPartyType(nextType);
-    if (nextType === "new_party" || nextType === "new_lead") {
+    if (nextType === "new_party") {
       setSelectedPartyId("");
       setSelectedLeadId("");
     }
@@ -745,7 +919,7 @@ export function VisitFormModal({
     }
   };
 
-  function handleSave() {
+  async function handleSave() {
     if (planCompleted) return;
     const errs: Record<string, string> = {};
     if (!internalPlanDate) {
@@ -786,6 +960,16 @@ export function VisitFormModal({
       }
     });
 
+    if (!countryId && !countryName.trim()) {
+      errs.country = "Country is required";
+    }
+    if (!stateId && !stateName.trim()) {
+      errs.state = "State is required";
+    }
+    if (!cityId && !cityName.trim()) {
+      errs.city = "City is required";
+    }
+
     if (Object.keys(errs).length > 0) {
       setErrors(errs);
       return;
@@ -807,7 +991,7 @@ export function VisitFormModal({
       ...(c.designation?.trim() ? { designation: c.designation.trim() } : {}),
     }));
 
-    // Backend accepts `party` for party_type=existing / facility / enquiry.
+    // Backend of work-planner checks and creates/updates Party Master with party_type 'visits'
     onSubmit({
       planDate: internalPlanDate,
       salesUserId: internalSalesUserId || sessionUserId,
@@ -819,6 +1003,13 @@ export function VisitFormModal({
       contact_email: primarySanitizedEmail,
       contacts: cleanContacts,
       address: address.trim() || undefined,
+      country_id: countryId || undefined,
+      state_id: stateId || undefined,
+      city_id: cityId || undefined,
+      country: countryName || undefined,
+      state: stateName || undefined,
+      city: cityName || undefined,
+      gst_no: gstNo.trim() || undefined,
       purpose: purpose.trim() || undefined,
       notes: notes.trim() || undefined,
       manager_remarks: managerRemarks.trim() || undefined,
@@ -1063,6 +1254,16 @@ export function VisitFormModal({
                 </p>
               ) : null}
 
+              {(isExistingParty || isExistingLead) && (cityName || stateName) ? (
+                <div className="flex items-center gap-1.5 text-[11px] text-primary bg-primary/5 border border-primary/20 rounded-md px-2.5 py-1">
+                  <MapPin className="h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    Master scoped to location:{" "}
+                    <strong>{[cityName, stateName].filter(Boolean).join(", ")}</strong>
+                  </span>
+                </div>
+              ) : null}
+
               <div className="relative">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted" />
                 <input
@@ -1254,7 +1455,7 @@ export function VisitFormModal({
                   ) : isExistingLead ? (
                     leadsData.length === 0 ? (
                       <div className="p-3 text-center text-xs text-muted">
-                        No leads found. You can switch to &quot;New Leads&quot; to add manually.
+                        No leads found. You can switch to &quot;New Party&quot; to add manually.
                       </div>
                     ) : (
                       leadsData.map((lead: LeadRecord) => {
@@ -1337,8 +1538,7 @@ export function VisitFormModal({
           ) : (
             <div>
               <label className={labelClass}>
-                {partyType === "new_lead" ? "Lead / Company Name" : "Party / Company Name"}{" "}
-                <span className="text-rose-500">*</span>
+                Party / Company Name <span className="text-rose-500">*</span>
               </label>
               <input
                 type="text"
@@ -1492,16 +1692,179 @@ export function VisitFormModal({
             </div>
           </div>
 
-          <div>
-            <label className={labelClass}>Address / Location</label>
-            <input
-              type="text"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder="City, State, or full address"
-              disabled={isSaving}
-              className={inputClass}
-            />
+          {/* Geography & Location Section */}
+          <div className="space-y-3 rounded-xl border border-border bg-surface-muted/30 p-3.5">
+            <div className="flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-primary" />
+              <span className="text-xs font-bold text-foreground">
+                Location & Geography (Party Master)
+              </span>
+            </div>
+
+            {/* Country / State / City 3-column selector */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className={labelClass}>
+                  Country <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={countryId}
+                  onChange={(e) => {
+                    const cId = e.target.value;
+                    setCountryId(cId);
+                    const found = countriesData.find((c) => c._id === cId || c.id === cId);
+                    setCountryName(found?.name || "");
+                    setStateId("");
+                    setStateName("");
+                    setCityId("");
+                    setCityName("");
+                    setErrors((prev) => {
+                      const next = { ...prev };
+                      delete next.country;
+                      delete next.state;
+                      delete next.city;
+                      return next;
+                    });
+                  }}
+                  disabled={isSaving || isCountriesLoading}
+                  className={`${inputClass} ${
+                    errors.country ? "border-rose-500 focus:border-rose-500 focus:ring-rose-500/20" : ""
+                  }`}
+                >
+                  <option value="">
+                    {isCountriesLoading ? "Loading countries..." : "Select Country"}
+                  </option>
+                  {countriesData.map((c) => {
+                    const id = c._id || c.id || "";
+                    return (
+                      <option key={id} value={id}>
+                        {c.name}
+                      </option>
+                    );
+                  })}
+                </select>
+                {errors.country && (
+                  <p className="mt-1 text-[11px] text-rose-500">{errors.country}</p>
+                )}
+              </div>
+
+              <div>
+                <label className={labelClass}>
+                  State / Province <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={stateId}
+                  onChange={(e) => {
+                    const sId = e.target.value;
+                    setStateId(sId);
+                    const found = statesData.find((s) => s._id === sId || s.id === sId);
+                    setStateName(found?.name || "");
+                    setCityId("");
+                    setCityName("");
+                    setErrors((prev) => {
+                      const next = { ...prev };
+                      delete next.state;
+                      delete next.city;
+                      return next;
+                    });
+                  }}
+                  disabled={isSaving || !countryId || isStatesLoading}
+                  className={`${inputClass} ${
+                    errors.state ? "border-rose-500 focus:border-rose-500 focus:ring-rose-500/20" : ""
+                  }`}
+                >
+                  <option value="">
+                    {!countryId
+                      ? "Select Country first"
+                      : isStatesLoading
+                      ? "Loading states..."
+                      : "Select State"}
+                  </option>
+                  {countryId &&
+                    statesData.map((s) => {
+                      const id = s._id || s.id || "";
+                      return (
+                        <option key={id} value={id}>
+                          {s.name}
+                        </option>
+                      );
+                    })}
+                </select>
+                {errors.state && (
+                  <p className="mt-1 text-[11px] text-rose-500">{errors.state}</p>
+                )}
+              </div>
+
+              <div>
+                <label className={labelClass}>
+                  City / District <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={cityId}
+                  onChange={(e) => {
+                    const ciId = e.target.value;
+                    setCityId(ciId);
+                    const found = citiesData.find((ci) => ci._id === ciId || ci.id === ciId);
+                    setCityName(found?.name || "");
+                    setErrors((prev) => {
+                      const next = { ...prev };
+                      delete next.city;
+                      return next;
+                    });
+                  }}
+                  disabled={isSaving || !stateId || isCitiesLoading}
+                  className={`${inputClass} ${
+                    errors.city ? "border-rose-500 focus:border-rose-500 focus:ring-rose-500/20" : ""
+                  }`}
+                >
+                  <option value="">
+                    {!stateId
+                      ? "Select State first"
+                      : isCitiesLoading
+                      ? "Loading cities..."
+                      : "Select City"}
+                  </option>
+                  {stateId &&
+                    citiesData.map((ci) => {
+                      const id = ci._id || ci.id || "";
+                      return (
+                        <option key={id} value={id}>
+                          {ci.name}
+                        </option>
+                      );
+                    })}
+                </select>
+                {errors.city && (
+                  <p className="mt-1 text-[11px] text-rose-500">{errors.city}</p>
+                )}
+              </div>
+            </div>
+
+            {/* Street Address and GSTIN */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div>
+                <label className={labelClass}>Street Address / Premises (Optional)</label>
+                <input
+                  type="text"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="e.g. 4th Floor, Apex Tower, Ring Road"
+                  disabled={isSaving}
+                  className={inputClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>GSTIN / Tax ID (Optional)</label>
+                <input
+                  type="text"
+                  value={gstNo}
+                  onChange={(e) => setGstNo(e.target.value.toUpperCase())}
+                  placeholder="27AAAAA0000A1Z5"
+                  disabled={isSaving}
+                  className={`${inputClass} font-mono uppercase`}
+                />
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -32,6 +32,7 @@ const {
   notifyDayEndCompleted,
 } = require('./workPlannerAutoNotification.service');
 const { resolveReportingStakeholderEmails } = require('./workPlannerTeamReporting.service');
+const { syncPartyMasterForVisit } = require('./partySync.service');
 const {
   EDITABLE_PLAN_STATUSES,
   EDITABLE_EXPENSE_STATUSES,
@@ -233,8 +234,8 @@ async function assertCanEditStructure(plan, user) {
   if (isWpElevated(user)) {
     return;
   }
-  // Executive owners may edit planned, draft, or rejected plans.
-  if (!EDITABLE_PLAN_STATUSES.includes(plan.status)) {
+  // Executive owners may edit planned, draft, or rejected plans (and Leave plans).
+  if (!EDITABLE_PLAN_STATUSES.includes(plan.status) && !(plan.plan_type === 'Leave' && (plan.status === 'completed' || plan.status === 'planned'))) {
     throw new ApiError(400, `Cannot edit a work plan in status "${plan.status}"`);
   }
 }
@@ -912,12 +913,19 @@ async function create(body, user) {
   const planDate = startOfDay(body.plan_date);
 
   try {
+    const isLeave = (body.plan_type?.trim() || 'Visits') === 'Leave';
     const doc = await WorkPlan.create({
       plan_date: planDate,
       sales_user: salesUserId,
-      status: body.plan_type === 'Leave' ? 'completed' : 'planned',
+      status: isLeave ? 'completed' : 'planned',
       remarks: body.remarks?.trim() || undefined,
       location: body.location?.trim() || undefined,
+      country_id: (body.country_id && mongoose.Types.ObjectId.isValid(body.country_id)) ? body.country_id : undefined,
+      state_id: (body.state_id && mongoose.Types.ObjectId.isValid(body.state_id)) ? body.state_id : undefined,
+      city_id: (body.city_id && mongoose.Types.ObjectId.isValid(body.city_id)) ? body.city_id : undefined,
+      country: body.country?.trim() || undefined,
+      state: body.state?.trim() || undefined,
+      city: body.city?.trim() || undefined,
       plan_type: body.plan_type?.trim() || 'Visits',
       is_discussed_with_manager: Boolean(body.is_discussed_with_manager),
       discussed_manager_id: body.discussed_manager_id || undefined,
@@ -927,17 +935,19 @@ async function create(body, user) {
       updated_by: userId(user),
     });
 
-    // Automatically link any pre-existing standalone visits and works for this date to the new plan
-    await WorkPlanVisit.updateMany(
-      { sales_user: salesUserId, plan_date: { $gte: planDate, $lte: endOfDay(body.plan_date) }, work_plan: null, deletedAt: null },
-      { $set: { work_plan: doc._id } }
-    );
-    await WorkPlanWork.updateMany(
-      { sales_user: salesUserId, plan_date: { $gte: planDate, $lte: endOfDay(body.plan_date) }, work_plan: null, deletedAt: null },
-      { $set: { work_plan: doc._id } }
-    );
-    await renumberVisits(doc._id);
-    await renumberWorks(doc._id);
+    // Automatically link any pre-existing standalone visits and works for this date to the new plan (only if not Leave)
+    if (doc.plan_type !== 'Leave') {
+      await WorkPlanVisit.updateMany(
+        { sales_user: salesUserId, plan_date: { $gte: planDate, $lte: endOfDay(body.plan_date) }, work_plan: null, deletedAt: null },
+        { $set: { work_plan: doc._id } }
+      );
+      await WorkPlanWork.updateMany(
+        { sales_user: salesUserId, plan_date: { $gte: planDate, $lte: endOfDay(body.plan_date) }, work_plan: null, deletedAt: null },
+        { $set: { work_plan: doc._id } }
+      );
+      await renumberVisits(doc._id);
+      await renumberWorks(doc._id);
+    }
 
     await logActivity(user, doc._id, 'created', `Work plan created for ${planDate.toISOString().slice(0, 10)}`);
 
@@ -979,9 +989,34 @@ async function update(id, body, user) {
     plan.location =
       typeof body.location === 'string' ? body.location.trim() : body.location;
   }
+  if (body.country_id !== undefined) {
+    plan.country_id = (body.country_id && mongoose.Types.ObjectId.isValid(body.country_id)) ? body.country_id : null;
+  }
+  if (body.state_id !== undefined) {
+    plan.state_id = (body.state_id && mongoose.Types.ObjectId.isValid(body.state_id)) ? body.state_id : null;
+  }
+  if (body.city_id !== undefined) {
+    plan.city_id = (body.city_id && mongoose.Types.ObjectId.isValid(body.city_id)) ? body.city_id : null;
+  }
+  if (body.country !== undefined) {
+    plan.country = typeof body.country === 'string' ? body.country.trim() : body.country;
+  }
+  if (body.state !== undefined) {
+    plan.state = typeof body.state === 'string' ? body.state.trim() : body.state;
+  }
+  if (body.city !== undefined) {
+    plan.city = typeof body.city === 'string' ? body.city.trim() : body.city;
+  }
   if (body.plan_type !== undefined) {
     plan.plan_type =
       typeof body.plan_type === 'string' ? body.plan_type.trim() : body.plan_type;
+    if (plan.plan_type === 'Leave') {
+      plan.status = 'completed';
+      const { WorkPlanVisit, WorkPlanWork } = getModels();
+      const now = new Date();
+      await WorkPlanVisit.updateMany({ work_plan: plan._id, deletedAt: null }, { $set: { deletedAt: now } });
+      await WorkPlanWork.updateMany({ work_plan: plan._id, deletedAt: null }, { $set: { deletedAt: now } });
+    }
   }
   if (body.is_discussed_with_manager !== undefined) {
     plan.is_discussed_with_manager = Boolean(body.is_discussed_with_manager);
@@ -1053,7 +1088,7 @@ async function remove(id, user) {
       throw new ApiError(403, 'You do not have permission to delete this work plan');
     }
   }
-  if (plan.status === 'completed' && !isAdminDept(user) && !isWpElevated(user)) {
+  if (plan.status === 'completed' && plan.plan_type !== 'Leave' && !isAdminDept(user) && !isWpElevated(user)) {
     throw new ApiError(400, 'Completed work plans cannot be deleted');
   }
 
@@ -1105,7 +1140,7 @@ async function submit(id, user, body = {}) {
       throw new ApiError(403, 'You do not have permission to submit this work plan');
     }
   }
-  if (!EDITABLE_PLAN_STATUSES.includes(plan.status)) {
+  if (!EDITABLE_PLAN_STATUSES.includes(plan.status) && !(plan.plan_type === 'Leave' && (plan.status === 'completed' || plan.status === 'planned'))) {
     throw new ApiError(400, `Cannot submit a work plan in status "${plan.status}"`);
   }
 
@@ -1128,13 +1163,20 @@ async function submit(id, user, body = {}) {
     }
   }
 
-  plan.status = 'planned';
+  if (plan.plan_type === 'Leave') {
+    const { WorkPlanVisit, WorkPlanWork } = getModels();
+    const now = new Date();
+    await WorkPlanVisit.updateMany({ work_plan: id, deletedAt: null }, { $set: { deletedAt: now } });
+    await WorkPlanWork.updateMany({ work_plan: id, deletedAt: null }, { $set: { deletedAt: now } });
+  }
+
+  plan.status = plan.plan_type === 'Leave' ? 'completed' : 'planned';
   plan.submitted_at = new Date();
   plan.rejection_reason = undefined;
   plan.updated_by = userId(user);
   await plan.save();
 
-  await logActivity(user, plan._id, 'submitted', 'Work plan saved as planned');
+  await logActivity(user, plan._id, 'submitted', plan.plan_type === 'Leave' ? 'Leave work plan submitted and completed' : 'Work plan saved as planned');
 
   // In-app notice only after visits and tasks are saved. Mail is sent only when the client includes a recipient.
   notifyWorkPlanCreated({ planId: plan._id, actorUser: user, creationMailData: body }).catch((err) => {
@@ -1226,10 +1268,16 @@ async function addStandaloneVisit(body, user) {
   const planDate = startOfDay(rawDate);
   const userRole = getUserRole(user);
 
-  const partyType = body.party_type || (body.party ? 'existing' : 'new_party');
+  // Sync Party Master (check party master with name, contact, email, gst; create with party_type 'visits' if not exist, or update)
+  const partySyncResult = await syncPartyMasterForVisit(body, user);
+  const resolvedPartyId =
+    partySyncResult?._id ||
+    (body.party && mongoose.Types.ObjectId.isValid(body.party) ? body.party : undefined);
+
+  const partyType = body.party_type || (resolvedPartyId ? 'existing' : 'new_party');
   let partyDoc = null;
-  if (partyType === 'existing' && body.party) {
-    partyDoc = await Party.findOne({ _id: body.party, deletedAt: null }).lean();
+  if (resolvedPartyId) {
+    partyDoc = partySyncResult || (await Party.findOne({ _id: resolvedPartyId, deletedAt: null }).lean());
   }
 
   const partyName =
@@ -1261,13 +1309,20 @@ async function addStandaloneVisit(body, user) {
       plan_date: planDate,
       sequence,
       party_type: partyType,
-      party: partyType === 'existing' ? body.party : undefined,
+      party: resolvedPartyId,
       party_name: partyName,
       contact_person: body.contact_person?.trim() || undefined,
       contact_number: body.contact_number?.trim() || undefined,
       contact_email: body.contact_email?.trim()?.toLowerCase() || undefined,
       contacts: body.contacts,
       address: body.address?.trim() || undefined,
+      country: body.country?.trim() || undefined,
+      state: body.state?.trim() || undefined,
+      city: body.city?.trim() || undefined,
+      country_id: (body.country_id && mongoose.Types.ObjectId.isValid(body.country_id)) ? body.country_id : undefined,
+      state_id: (body.state_id && mongoose.Types.ObjectId.isValid(body.state_id)) ? body.state_id : undefined,
+      city_id: (body.city_id && mongoose.Types.ObjectId.isValid(body.city_id)) ? body.city_id : undefined,
+      gst_no: body.gst_no?.trim()?.toUpperCase() || undefined,
       planned_start_time: toValidDate(body.planned_start_time, planDate),
       planned_end_time: toValidDate(body.planned_end_time, planDate),
       purpose: body.purpose?.trim() || undefined,
@@ -1313,13 +1368,20 @@ async function addStandaloneVisit(body, user) {
     plan_date: planDate,
     sequence,
     party_type: partyType,
-    party: partyType === 'existing' ? body.party : undefined,
+    party: resolvedPartyId,
     party_name: partyName,
     contact_person: body.contact_person?.trim() || undefined,
     contact_number: body.contact_number?.trim() || undefined,
     contact_email: body.contact_email?.trim()?.toLowerCase() || undefined,
     contacts: body.contacts,
     address: body.address?.trim() || undefined,
+    country: body.country?.trim() || undefined,
+    state: body.state?.trim() || undefined,
+    city: body.city?.trim() || undefined,
+    country_id: (body.country_id && mongoose.Types.ObjectId.isValid(body.country_id)) ? body.country_id : undefined,
+    state_id: (body.state_id && mongoose.Types.ObjectId.isValid(body.state_id)) ? body.state_id : undefined,
+    city_id: (body.city_id && mongoose.Types.ObjectId.isValid(body.city_id)) ? body.city_id : undefined,
+    gst_no: body.gst_no?.trim()?.toUpperCase() || undefined,
     planned_start_time: toValidDate(body.planned_start_time, planDate),
     planned_end_time: toValidDate(body.planned_end_time, planDate),
     purpose: body.purpose?.trim() || undefined,
@@ -1383,6 +1445,30 @@ async function updateStandaloneVisit(visitId, body, user) {
   }
   if (body.contacts !== undefined) visit.contacts = body.contacts;
   if (body.address !== undefined) visit.address = body.address?.trim() || undefined;
+  if (body.country !== undefined) visit.country = body.country?.trim() || undefined;
+  if (body.state !== undefined) visit.state = body.state?.trim() || undefined;
+  if (body.city !== undefined) visit.city = body.city?.trim() || undefined;
+  if (body.country_id !== undefined) {
+    visit.country_id = (body.country_id && mongoose.Types.ObjectId.isValid(body.country_id)) ? body.country_id : undefined;
+  }
+  if (body.state_id !== undefined) {
+    visit.state_id = (body.state_id && mongoose.Types.ObjectId.isValid(body.state_id)) ? body.state_id : undefined;
+  }
+  if (body.city_id !== undefined) {
+    visit.city_id = (body.city_id && mongoose.Types.ObjectId.isValid(body.city_id)) ? body.city_id : undefined;
+  }
+  if (body.gst_no !== undefined) visit.gst_no = body.gst_no?.trim()?.toUpperCase() || undefined;
+
+  // If party details were provided, check/sync Party Master
+  if (body.party || body.party_name || body.contact_person || body.contact_number || body.contact_email || body.gst_no || body.address || body.contacts || body.country || body.state || body.city || body.country_id || body.state_id || body.city_id) {
+    const partySyncResult = await syncPartyMasterForVisit({
+      ...visit.toObject(),
+      ...body,
+    }, user);
+    if (partySyncResult?._id) {
+      visit.party = partySyncResult._id;
+    }
+  }
   if (body.sequence !== undefined) visit.sequence = Number(body.sequence);
   if (body.planned_start_time !== undefined) {
     visit.planned_start_time = toValidDate(body.planned_start_time, baseDate);
@@ -1496,11 +1582,16 @@ async function addVisit(planId, body, user) {
   if (!plan) throw new ApiError(404, 'Work plan not found');
   await assertCanEditVisits(plan, user);
 
-  const partyType = body.party_type || (body.party ? 'existing' : '');
+  // Sync Party Master
+  const partySyncResult = await syncPartyMasterForVisit(body, user);
+  const resolvedPartyId =
+    partySyncResult?._id ||
+    (body.party && mongoose.Types.ObjectId.isValid(body.party) ? body.party : undefined);
+
+  const partyType = body.party_type || (resolvedPartyId ? 'existing' : '');
   let partyDoc = null;
-  if (partyType === 'existing') {
-    partyDoc = await Party.findOne({ _id: body.party, deletedAt: null }).lean();
-    if (!partyDoc) throw new ApiError(404, 'Party not found');
+  if (resolvedPartyId) {
+    partyDoc = partySyncResult || (await Party.findOne({ _id: resolvedPartyId, deletedAt: null }).lean());
   }
 
   const maxSeq = await WorkPlanVisit.findOne({ work_plan: planId, deletedAt: null })
@@ -1530,6 +1621,9 @@ async function addVisit(planId, body, user) {
       if (body.planned_end_time !== undefined) {
         existingVisit.planned_end_time = toValidDate(body.planned_end_time, plan.plan_date);
       }
+      if (resolvedPartyId) {
+        existingVisit.party = resolvedPartyId;
+      }
       existingVisit.updated_by = userId(user);
       existingVisit.updated_by_role = userRole;
       await existingVisit.save();
@@ -1554,13 +1648,20 @@ async function addVisit(planId, body, user) {
     plan_date: plan.plan_date,
     sequence,
     party_type: partyType,
-    party: partyType === 'existing' ? body.party : undefined,
+    party: resolvedPartyId,
     party_name: partyName,
     contact_person: body.contact_person?.trim() || undefined,
     contact_number: body.contact_number?.trim() || undefined,
     contact_email: body.contact_email?.trim()?.toLowerCase() || undefined,
     contacts: body.contacts,
     address: body.address?.trim() || undefined,
+    country: body.country?.trim() || undefined,
+    state: body.state?.trim() || undefined,
+    city: body.city?.trim() || undefined,
+    country_id: (body.country_id && mongoose.Types.ObjectId.isValid(body.country_id)) ? body.country_id : undefined,
+    state_id: (body.state_id && mongoose.Types.ObjectId.isValid(body.state_id)) ? body.state_id : undefined,
+    city_id: (body.city_id && mongoose.Types.ObjectId.isValid(body.city_id)) ? body.city_id : undefined,
+    gst_no: body.gst_no?.trim()?.toUpperCase() || undefined,
     planned_start_time: toValidDate(body.planned_start_time, plan.plan_date),
     planned_end_time: toValidDate(body.planned_end_time, plan.plan_date),
     purpose: body.purpose?.trim() || undefined,
@@ -3810,6 +3911,12 @@ async function saveWorkPlanDraft(body, user) {
     plan_type: body.plan_type || undefined,
     remarks: body.remarks !== undefined ? body.remarks : undefined,
     location: body.location !== undefined ? body.location : undefined,
+    country_id: (body.country_id && mongoose.Types.ObjectId.isValid(body.country_id)) ? body.country_id : (body.country_id === null ? null : undefined),
+    state_id: (body.state_id && mongoose.Types.ObjectId.isValid(body.state_id)) ? body.state_id : (body.state_id === null ? null : undefined),
+    city_id: (body.city_id && mongoose.Types.ObjectId.isValid(body.city_id)) ? body.city_id : (body.city_id === null ? null : undefined),
+    country: body.country !== undefined ? body.country : undefined,
+    state: body.state !== undefined ? body.state : undefined,
+    city: body.city !== undefined ? body.city : undefined,
     is_discussed_with_manager: body.is_discussed_with_manager !== undefined ? body.is_discussed_with_manager : null,
     discussed_manager_id: body.discussed_manager_id || undefined,
     discussed_manager_name: body.discussed_manager_name || undefined,

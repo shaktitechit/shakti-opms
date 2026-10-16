@@ -29,9 +29,17 @@ export type PartyItem = {
     state?: string;
     pincode?: string;
     country?: string;
+    country_id?: string;
+    state_id?: string;
+    city_id?: string;
   };
   district?: string;
+  city?: string;
   state?: string;
+  country?: string;
+  country_id?: string;
+  state_id?: string;
+  city_id?: string;
   sra?: boolean;
 };
 

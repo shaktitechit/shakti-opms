@@ -28,6 +28,7 @@ import {
   LayoutList,
   Table as TableIcon,
   Users,
+  UserPlus,
   Send,
   Loader2,
   BarChart3,
@@ -56,6 +57,8 @@ import {
   isUserInLeadManagerPortal,
   getLeadManagerPortalRole,
   getFollowUpSalesRepName,
+  getFollowUpAssigneeName,
+  getFollowUpCreatorName,
   isLeadAdmin,
   isLeadManagerRole,
 } from "./leadUtils";
@@ -134,7 +137,10 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
   const [customTo, setCustomTo] = useState<string>("");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [scopeFilter, setScopeFilter] = useState<"team" | "mine">("team");
+  const [responsibilityMode, setResponsibilityMode] = useState<"all" | "assigned" | "created">("all");
   const [assignedFilter, setAssignedFilter] = useState<string>("all");
+  const [createdByFilter, setCreatedByFilter] = useState<string>("all");
   const [entityType, setEntityType] = useState<string>(() => (hasQuotationAccess ? "all" : "lead"));
   const [search, setSearch] = useState<string>("");
   const [viewMode, setViewMode] = useState<"calendar" | "week" | "agenda" | "table">("calendar");
@@ -207,16 +213,29 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
     const toYmd = (d: Date) => d.toISOString().split("T")[0];
 
     const entityParam = hasQuotationAccess && effectiveEntityType !== "all" ? effectiveEntityType : undefined;
+    const baseParams: {
+      entity_type?: string;
+      scope?: string;
+      assigned_to?: string;
+      created_by?: string;
+      from_date?: string;
+      to_date?: string;
+    } = {
+      entity_type: entityParam,
+      scope: canFilterRep ? scopeFilter : "mine",
+      assigned_to: assignedFilter !== "all" ? assignedFilter : undefined,
+      created_by: createdByFilter !== "all" ? createdByFilter : undefined,
+    };
 
     if (datePreset === "today") {
       const todayStr = toYmd(startOfToday);
-      return { from_date: todayStr, to_date: todayStr, entity_type: entityParam };
+      return { ...baseParams, from_date: todayStr, to_date: todayStr };
     }
     if (datePreset === "tomorrow") {
       const tomorrow = new Date(startOfToday);
       tomorrow.setDate(tomorrow.getDate() + 1);
       const tomStr = toYmd(tomorrow);
-      return { from_date: tomStr, to_date: tomStr, entity_type: entityParam };
+      return { ...baseParams, from_date: tomStr, to_date: tomStr };
     }
     if (datePreset === "this_week") {
       const day = startOfToday.getDay(); // 0 is Sunday
@@ -225,13 +244,13 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
       monday.setDate(diff);
       const sunday = new Date(monday);
       sunday.setDate(monday.getDate() + 6);
-      return { from_date: toYmd(monday), to_date: toYmd(sunday), entity_type: entityParam };
+      return { ...baseParams, from_date: toYmd(monday), to_date: toYmd(sunday) };
     }
     if (datePreset === "custom" && (customFrom || customTo)) {
       return {
+        ...baseParams,
         from_date: customFrom || undefined,
         to_date: customTo || undefined,
-        entity_type: entityParam,
       };
     }
     if (viewMode === "calendar" && datePreset === "all") {
@@ -239,7 +258,7 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
       const m = calendarDate.getMonth();
       const first = new Date(y, m - 1, 20).toISOString().split("T")[0];
       const last = new Date(y, m + 2, 10).toISOString().split("T")[0];
-      return { from_date: first, to_date: last, entity_type: entityParam };
+      return { ...baseParams, from_date: first, to_date: last };
     }
     if (viewMode === "week" && datePreset === "all") {
       const d = new Date(calendarDate);
@@ -248,10 +267,22 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
       const monday = new Date(d.setDate(diff));
       const sunday = new Date(monday);
       sunday.setDate(monday.getDate() + 6);
-      return { from_date: toYmd(monday), to_date: toYmd(sunday), entity_type: entityParam };
+      return { ...baseParams, from_date: toYmd(monday), to_date: toYmd(sunday) };
     }
-    return entityParam ? { entity_type: entityParam } : undefined;
-  }, [datePreset, customFrom, customTo, viewMode, calendarDate, hasQuotationAccess, effectiveEntityType]);
+    return baseParams;
+  }, [
+    datePreset,
+    customFrom,
+    customTo,
+    viewMode,
+    calendarDate,
+    hasQuotationAccess,
+    effectiveEntityType,
+    canFilterRep,
+    scopeFilter,
+    assignedFilter,
+    createdByFilter,
+  ]);
 
   const {
     data: followUps = [],
@@ -264,8 +295,52 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
     return new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString().split("T")[0];
   }, []);
 
+  // Helper to extract all assignee user IDs for a follow-up
+  const getFollowUpAssigneeIds = (fu: LeadFollowUpRecord): string[] => {
+    const ids: string[] = [];
+    const leadObj = typeof fu.lead === "object" && fu.lead !== null ? fu.lead : null;
+    if (leadObj?.assigned_to) {
+      const id = typeof leadObj.assigned_to === "object" ? leadObj.assigned_to._id : leadObj.assigned_to;
+      if (id) ids.push(String(id));
+    }
+    if (Array.isArray(leadObj?.assigned_users)) {
+      leadObj.assigned_users.forEach((u) => {
+        const id = typeof u === "object" ? u._id : u;
+        if (id) ids.push(String(id));
+      });
+    }
+    const quoteObj = typeof fu.quotation === "object" && fu.quotation !== null ? fu.quotation : null;
+    if (quoteObj?.sales_person_user) {
+      const id = typeof quoteObj.sales_person_user === "object" ? quoteObj.sales_person_user._id : quoteObj.sales_person_user;
+      if (id) ids.push(String(id));
+    }
+    return ids;
+  };
+
+  // Helper to extract all creator user IDs for a follow-up
+  const getFollowUpCreatorIds = (fu: LeadFollowUpRecord): string[] => {
+    const ids: string[] = [];
+    if (fu.created_by) {
+      const id = typeof fu.created_by === "object" ? fu.created_by._id : fu.created_by;
+      if (id) ids.push(String(id));
+    }
+    const leadObj = typeof fu.lead === "object" && fu.lead !== null ? fu.lead : null;
+    if (leadObj?.created_by) {
+      const id = typeof leadObj.created_by === "object" ? leadObj.created_by._id : leadObj.created_by;
+      if (id) ids.push(String(id));
+    }
+    const quoteObj = typeof fu.quotation === "object" && fu.quotation !== null ? fu.quotation : null;
+    if (quoteObj?.created_by) {
+      const id = typeof quoteObj.created_by === "object" ? quoteObj.created_by._id : quoteObj.created_by;
+      if (id) ids.push(String(id));
+    }
+    return ids;
+  };
+
   // Filter follow-ups on the client for instant search & multi-field matching
   const filteredFollowUps = useMemo(() => {
+    const myUserId = user?._id ? String(user._id) : (currentUser?._id ? String(currentUser._id) : "");
+
     return followUps.filter((fu) => {
       const leadObj = typeof fu.lead === "object" && fu.lead !== null ? fu.lead : null;
       const quoteObj = typeof fu.quotation === "object" && fu.quotation !== null ? fu.quotation : null;
@@ -278,6 +353,50 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
       if (hasQuotationAccess && effectiveEntityType !== "all") {
         if (effectiveEntityType === "lead" && isQuotation) return false;
         if (effectiveEntityType === "quotation" && !isQuotation) return false;
+      }
+
+      const assigneeIds = getFollowUpAssigneeIds(fu);
+      const creatorIds = getFollowUpCreatorIds(fu);
+
+      // 1. View Scope filter: "mine" vs "team"
+      if (scopeFilter === "mine" && myUserId) {
+        const isMine = assigneeIds.includes(myUserId) || creatorIds.includes(myUserId);
+        if (!isMine) return false;
+      }
+
+      // 2. Responsibility mode filter
+      if (responsibilityMode === "assigned") {
+        if (scopeFilter === "mine") {
+          if (!myUserId || !assigneeIds.includes(myUserId)) return false;
+        } else if (assigneeIds.length === 0) {
+          return false;
+        }
+      } else if (responsibilityMode === "created") {
+        if (scopeFilter === "mine") {
+          if (!myUserId || !creatorIds.includes(myUserId)) return false;
+        } else if (creatorIds.length === 0) {
+          return false;
+        }
+      }
+
+      // 3. Assigned To filter
+      if (assignedFilter !== "all") {
+        if (assignedFilter === "me") {
+          if (!myUserId || !assigneeIds.includes(myUserId)) return false;
+        } else if (assignedFilter === "unassigned") {
+          if (assigneeIds.length > 0) return false;
+        } else {
+          if (!assigneeIds.includes(assignedFilter)) return false;
+        }
+      }
+
+      // 4. Created By filter
+      if (createdByFilter !== "all") {
+        if (createdByFilter === "me") {
+          if (!myUserId || !creatorIds.includes(myUserId)) return false;
+        } else {
+          if (!creatorIds.includes(createdByFilter)) return false;
+        }
       }
 
       const leadNo = leadObj?.lead_no || "";
@@ -304,40 +423,6 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
       // Overdue preset filter
       if (datePreset === "overdue" && !isOverdue) return false;
 
-      if (assignedFilter !== "all") {
-        const assignedId = leadObj?.assigned_to?._id
-          ? String(leadObj.assigned_to._id)
-          : typeof leadObj?.assigned_to === "string"
-          ? leadObj.assigned_to
-          : "";
-        const qRep = quoteObj?.sales_person_user;
-        const qRepId =
-          typeof qRep === "object" && qRep !== null && "_id" in qRep
-            ? String(qRep._id || "")
-            : typeof qRep === "string"
-            ? qRep
-            : "";
-        const qCreator =
-          typeof quoteObj?.created_by === "object" && quoteObj.created_by !== null && "_id" in quoteObj.created_by
-            ? String((quoteObj.created_by as { _id?: string })._id || "")
-            : typeof quoteObj?.created_by === "string"
-            ? quoteObj.created_by
-            : "";
-        const fuCreator = fu.created_by?._id
-          ? String(fu.created_by._id)
-          : typeof fu.created_by === "string"
-          ? fu.created_by
-          : "";
-        if (
-          assignedId !== assignedFilter &&
-          qRepId !== assignedFilter &&
-          qCreator !== assignedFilter &&
-          fuCreator !== assignedFilter
-        ) {
-          return false;
-        }
-      }
-
       // Search query
       if (search.trim()) {
         const q = search.toLowerCase().trim();
@@ -361,11 +446,16 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
     statusFilter,
     typeFilter,
     datePreset,
+    scopeFilter,
+    responsibilityMode,
     assignedFilter,
+    createdByFilter,
     search,
     todayStr,
     hasQuotationAccess,
     effectiveEntityType,
+    user,
+    currentUser,
   ]);
 
   // Summary counts
@@ -444,7 +534,8 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
       const phone = quoteObj?.phone || leadObj?.phone || "";
       const email = quoteObj?.email || leadObj?.email || "";
 
-      const repName = getFollowUpSalesRepName(fu);
+      const repName = getFollowUpAssigneeName(fu);
+      const creatorName = getFollowUpCreatorName(fu);
 
       const fuDate = fu.follow_up_date ? fu.follow_up_date.split("T")[0] : "";
       const isDone = fu.status === "completed";
@@ -464,6 +555,7 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
         email,
         city: "—",
         rep_name: repName,
+        creator_name: creatorName,
         type: fu.type,
         status: fu.status,
         display_status: displayStatus,
@@ -707,9 +799,100 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
       </div>
 
       {/* ── FILTER & CONTROL BAR (Agenda & Table Modes) ── */}
-      {(viewMode === "agenda" || viewMode === "table") && (
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900 space-y-4">
-          {/* Date presets row */}
+      {/* ── VIEW SCOPE STRIP (Team vs Me) ── */}
+      {canFilterRep ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-2xl bg-white border border-slate-200/80 shadow-xs dark:bg-slate-900 dark:border-white/10">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400">View Scope:</span>
+            <div className="inline-flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl text-xs font-semibold border border-slate-200/80 dark:border-white/10">
+              <button
+                type="button"
+                onClick={() => setScopeFilter("team")}
+                className={`px-3 py-1.5 rounded-lg transition-all ${
+                  scopeFilter === "team"
+                    ? "bg-white dark:bg-slate-700 text-primary shadow-xs font-bold"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                Team Follow-ups (Assigned to or Created by Team)
+              </button>
+              <button
+                type="button"
+                onClick={() => setScopeFilter("mine")}
+                className={`px-3 py-1.5 rounded-lg transition-all ${
+                  scopeFilter === "mine"
+                    ? "bg-white dark:bg-slate-700 text-primary shadow-xs font-bold"
+                    : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
+                }`}
+              >
+                My Follow-ups (Assigned to Me or Created by Me)
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Responsibility Mode */}
+          <div className="flex items-center gap-1 text-xs">
+            <span className="text-slate-400 mr-1 font-semibold">Mode:</span>
+            <button
+              type="button"
+              onClick={() => {
+                setResponsibilityMode("all");
+                setAssignedFilter("all");
+                setCreatedByFilter("all");
+              }}
+              className={`px-2.5 py-1 rounded-lg font-medium transition ${
+                responsibilityMode === "all"
+                  ? "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800 font-bold"
+                  : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+              }`}
+            >
+              All Activities
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setResponsibilityMode("assigned");
+                setAssignedFilter(scopeFilter === "mine" ? "me" : "all");
+                setCreatedByFilter("all");
+              }}
+              className={`px-2.5 py-1 rounded-lg font-medium transition ${
+                responsibilityMode === "assigned"
+                  ? "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800 font-bold"
+                  : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+              }`}
+            >
+              Assigned To Only
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setResponsibilityMode("created");
+                setCreatedByFilter(scopeFilter === "mine" ? "me" : "all");
+                setAssignedFilter("all");
+              }}
+              className={`px-2.5 py-1 rounded-lg font-medium transition ${
+                responsibilityMode === "created"
+                  ? "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800 font-bold"
+                  : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+              }`}
+            >
+              Created By Only
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 px-1 text-xs font-medium text-slate-500 dark:text-slate-400">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 font-semibold text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border border-blue-200/50">
+            <UserCheck className="h-3.5 w-3.5" />
+            My Follow-ups (Assigned to Me or Created by Me)
+          </span>
+        </div>
+      )}
+
+      {/* ── FILTER & CONTROL BAR (Available in All View Modes) ── */}
+      <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900 space-y-4">
+        {/* Date presets row for Agenda & Table modes */}
+        {(viewMode === "agenda" || viewMode === "table") && (
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3 dark:border-white/10">
             <div className="flex flex-wrap items-center gap-1.5">
               {[
@@ -735,99 +918,116 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
               ))}
             </div>
           </div>
+        )}
 
-          {/* Custom date range inputs */}
-          {datePreset === "custom" && (
-            <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-white/5">
-              <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Custom Date:</span>
-              <input
-                type="date"
-                value={customFrom}
-                onChange={(e) => setCustomFrom(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 dark:border-white/10 dark:bg-slate-900 dark:text-white"
-              />
-              <span className="text-xs text-slate-400">to</span>
-              <input
-                type="date"
-                value={customTo}
-                onChange={(e) => setCustomTo(e.target.value)}
-                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 dark:border-white/10 dark:bg-slate-900 dark:text-white"
-              />
-            </div>
-          )}
+        {/* Custom date range inputs */}
+        {(viewMode === "agenda" || viewMode === "table") && datePreset === "custom" && (
+          <div className="flex flex-wrap items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-white/5">
+            <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Custom Date:</span>
+            <input
+              type="date"
+              value={customFrom}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 dark:border-white/10 dark:bg-slate-900 dark:text-white"
+            />
+            <span className="text-xs text-slate-400">to</span>
+            <input
+              type="date"
+              value={customTo}
+              onChange={(e) => setCustomTo(e.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 dark:border-white/10 dark:bg-slate-900 dark:text-white"
+            />
+          </div>
+        )}
 
-          {/* Secondary filters row */}
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-            {/* Search */}
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search lead, company, phone, notes..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-9 pr-3.5 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary dark:border-white/10 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
-              />
-            </div>
+        {/* Multi-field Filter Controls: Search, Channel, Status, Assigned To, Created By */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+          {/* Search */}
+          <div className="relative">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search lead, company, phone, notes..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-9 pr-3.5 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary dark:border-white/10 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
+            />
+          </div>
 
-            {/* Channel Type filter */}
-            <div>
-              <select
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-white/10 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
-              >
-                <option value="all">All Interaction Channels</option>
-                <option value="call">Phone Call</option>
-                <option value="meeting">Meeting</option>
-                <option value="whatsapp">WhatsApp</option>
-                <option value="email">Email</option>
-                <option value="demo">Product Demo</option>
-                <option value="visit">Site Visit</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
+          {/* Channel Type filter */}
+          <div>
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-white/10 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
+            >
+              <option value="all">All Interaction Channels</option>
+              <option value="call">Phone Call</option>
+              <option value="meeting">Meeting</option>
+              <option value="whatsapp">WhatsApp</option>
+              <option value="email">Email</option>
+              <option value="demo">Product Demo</option>
+              <option value="visit">Site Visit</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
 
-            {/* Status filter */}
-            <div>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-white/10 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
-              >
-                <option value="all">All Statuses</option>
-                <option value="pending">Pending</option>
-                <option value="overdue">Overdue</option>
-                <option value="completed">Completed</option>
-              </select>
-            </div>
+          {/* Status filter */}
+          <div>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-white/10 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
+            >
+              <option value="all">All Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="overdue">Overdue</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
 
-            {canFilterRep ? (
-              <div>
-                <select
-                  value={assignedFilter}
-                  onChange={(e) => setAssignedFilter(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-white/10 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
-                >
-                  <option value="all">{isAdmin ? "All Sales Reps" : "All Team Members"}</option>
-                  {assignableUsers.map((u) => {
-                    const roleBadge = getLeadManagerPortalRole(u);
-                    return (
-                      <option key={u._id} value={u._id}>
-                        {u.name} {roleBadge ? `(${roleBadge})` : ""}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-            ) : (
-              <div className="flex items-center text-xs text-slate-500 font-semibold px-2">
-                Viewing your scheduled interactions
-              </div>
-            )}
+          {/* Assigned To filter */}
+          <div>
+            <select
+              value={assignedFilter}
+              onChange={(e) => setAssignedFilter(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-white/10 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
+            >
+              <option value="all">All Assigned Reps</option>
+              <option value="me">Assigned to Me</option>
+              <option value="unassigned">Unassigned</option>
+              {assignableUsers.map((u) => {
+                const roleBadge = getLeadManagerPortalRole(u);
+                return (
+                  <option key={u._id} value={u._id}>
+                    Assigned: {u.name} {roleBadge ? `(${roleBadge})` : ""}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
+          {/* Created By filter */}
+          <div>
+            <select
+              value={createdByFilter}
+              onChange={(e) => setCreatedByFilter(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-white/10 dark:bg-slate-800/50 dark:text-white dark:focus:bg-slate-800"
+            >
+              <option value="all">All Creators</option>
+              <option value="me">Created by Me</option>
+              {assignableUsers.map((u) => {
+                const roleBadge = getLeadManagerPortalRole(u);
+                return (
+                  <option key={u._id} value={u._id}>
+                    Created by: {u.name} {roleBadge ? `(${roleBadge})` : ""}
+                  </option>
+                );
+              })}
+            </select>
           </div>
         </div>
-      )}
+      </div>
 
       {/* ── CONTENT AREA ── */}
       {isFetching ? (
@@ -868,7 +1068,10 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
                 setStatusFilter("all");
                 setTypeFilter("all");
                 setSearch("");
+                setScopeFilter("team");
+                setResponsibilityMode("all");
                 setAssignedFilter("all");
+                setCreatedByFilter("all");
               }}
               className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800 dark:text-slate-300"
             >
@@ -959,11 +1162,12 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
             <table className="w-full text-left text-xs text-slate-600 dark:text-slate-300">
               <thead className="border-b border-slate-100 bg-slate-50/80 font-bold uppercase text-slate-500 dark:border-white/5 dark:bg-slate-800/40 dark:text-slate-400">
                 <tr>
-                  <th className="px-4 py-3">Date & Time</th>
+                  <th className="px-4 py-3">Date &amp; Time</th>
                   <th className="px-4 py-3">Channel</th>
-                  <th className="px-4 py-3">Lead & Organization</th>
+                  <th className="px-4 py-3">Lead &amp; Organization</th>
                   <th className="px-4 py-3">Contact</th>
-                  <th className="px-4 py-3">Sales Rep</th>
+                  <th className="px-4 py-3">Assigned To</th>
+                  <th className="px-4 py-3">Created By</th>
                   <th className="px-4 py-3 min-w-[200px]">Agenda / Notes</th>
                   <th className="px-4 py-3 text-center">Status</th>
                   <th className="px-4 py-3 text-right">Actions</th>
@@ -1043,11 +1247,19 @@ export function LeadFollowUpsPage({ portalHome = "/dashboard" }: Props) {
                         {!phone && !email && <span className="text-slate-400">—</span>}
                       </td>
 
-                      {/* Rep */}
+                      {/* Assigned Rep */}
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                          <UserCheck className="h-3 w-3 text-slate-400" />
-                          {repName}
+                        <span className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                          <UserCheck className="h-3 w-3 text-blue-500" />
+                          {getFollowUpAssigneeName(fu)}
+                        </span>
+                      </td>
+
+                      {/* Created By */}
+                      <td className="px-4 py-3 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1 rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                          <Users className="h-3 w-3 text-slate-400" />
+                          {getFollowUpCreatorName(fu)}
                         </span>
                       </td>
 
@@ -1239,7 +1451,7 @@ function FollowUpCard({
           )}
         </div>
 
-        {/* Contact links */}
+        {/* Contact links & Assignment / Creator */}
         <div className="flex flex-wrap items-center gap-3 text-xs">
           {phone && (
             <a
@@ -1259,9 +1471,13 @@ function FollowUpCard({
               <span className="truncate max-w-[160px]">{email}</span>
             </a>
           )}
+          <div className="flex items-center gap-1 text-[11px] text-blue-700 dark:text-blue-300 font-medium">
+            <UserCheck className="h-3 w-3 text-blue-500" />
+            <span>Assigned: {getFollowUpAssigneeName(followUp)}</span>
+          </div>
           <div className="flex items-center gap-1 text-[11px] text-slate-400">
-            <UserCheck className="h-3 w-3" />
-            <span>{repName}</span>
+            <UserPlus className="h-3 w-3 text-slate-400" />
+            <span>Created by: {getFollowUpCreatorName(followUp)}</span>
           </div>
         </div>
 

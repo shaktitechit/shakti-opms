@@ -2,6 +2,35 @@ import { medicaApi } from "../baseApi";
 import { unwrapEnvelope, type ApiEnvelope } from "../unwrap";
 import { PARTY_SERVICE_URL } from "@/lib/env";
 
+export type PartyCountryRecord = {
+  _id?: string;
+  id?: string;
+  name: string;
+  iso_code?: string;
+  phone_code?: string;
+  currency?: string;
+  status?: string;
+};
+
+export type PartyStateRecord = {
+  _id?: string;
+  id?: string;
+  country: string;
+  name: string;
+  state_code?: string;
+  status?: string;
+};
+
+export type PartyCityRecord = {
+  _id?: string;
+  id?: string;
+  state: string;
+  country?: string;
+  name: string;
+  district?: string;
+  status?: string;
+};
+
 /** Common write fields for create/patch/bulk party payloads. */
 export type PartyWriteBody = {
   party_type?: string;
@@ -16,6 +45,11 @@ export type PartyWriteBody = {
   shipping_address?: Record<string, unknown>;
   district?: string;
   state?: string;
+  city?: string;
+  country?: string;
+  country_id?: string;
+  state_id?: string;
+  city_id?: string;
   payment_terms?: string;
   is_active?: boolean;
   is_featured?: boolean;
@@ -116,6 +150,72 @@ export const partiesApi = medicaApi.injectEndpoints({
       transformResponse: (raw: ApiEnvelope<unknown>) => unwrapEnvelope(raw),
       invalidatesTags: ["Parties"],
     }),
+    getPartyCountries: build.query<
+      PartyCountryRecord[],
+      { limit?: number; status?: string } | void
+    >({
+      query: (params) => {
+        const query = new URLSearchParams();
+        query.append("limit", String(params?.limit ?? 500));
+        query.append("status", params?.status ?? "active");
+        return {
+          url: `${PARTY_SERVICE_URL}/api/party-countries?${query.toString()}`,
+        };
+      },
+      transformResponse: (res: any) => {
+        const raw = unwrapEnvelope(res) ?? res;
+        if (Array.isArray(raw)) return raw;
+        if (Array.isArray(raw?.data)) return raw.data;
+        if (Array.isArray(raw?.items)) return raw.items;
+        return [];
+      },
+      providesTags: [{ type: "Parties", id: "COUNTRIES" }],
+    }),
+    getPartyStates: build.query<
+      PartyStateRecord[],
+      { country_id?: string; limit?: number; status?: string } | void
+    >({
+      query: (params) => {
+        const query = new URLSearchParams();
+        if (params?.country_id) query.append("country_id", params.country_id);
+        query.append("limit", String(params?.limit ?? 1000));
+        query.append("status", params?.status ?? "active");
+        return {
+          url: `${PARTY_SERVICE_URL}/api/party-states?${query.toString()}`,
+        };
+      },
+      transformResponse: (res: any) => {
+        const raw = unwrapEnvelope(res) ?? res;
+        if (Array.isArray(raw)) return raw;
+        if (Array.isArray(raw?.data)) return raw.data;
+        if (Array.isArray(raw?.items)) return raw.items;
+        return [];
+      },
+      providesTags: [{ type: "Parties", id: "STATES" }],
+    }),
+    getPartyCities: build.query<
+      PartyCityRecord[],
+      { state_id?: string; country_id?: string; limit?: number; status?: string } | void
+    >({
+      query: (params) => {
+        const query = new URLSearchParams();
+        if (params?.state_id) query.append("state_id", params.state_id);
+        if (params?.country_id) query.append("country_id", params.country_id);
+        query.append("limit", String(params?.limit ?? 5000));
+        query.append("status", params?.status ?? "active");
+        return {
+          url: `${PARTY_SERVICE_URL}/api/party-cities?${query.toString()}`,
+        };
+      },
+      transformResponse: (res: any) => {
+        const raw = unwrapEnvelope(res) ?? res;
+        if (Array.isArray(raw)) return raw;
+        if (Array.isArray(raw?.data)) return raw.data;
+        if (Array.isArray(raw?.items)) return raw.items;
+        return [];
+      },
+      providesTags: [{ type: "Parties", id: "CITIES" }],
+    }),
   }),
 });
 
@@ -132,6 +232,12 @@ export const {
   useRestorePartyMutation,
   useBulkCreatePartyMutation,
   useBulkDeletePartiesMutation,
+  useGetPartyCountriesQuery,
+  useLazyGetPartyCountriesQuery,
+  useGetPartyStatesQuery,
+  useLazyGetPartyStatesQuery,
+  useGetPartyCitiesQuery,
+  useLazyGetPartyCitiesQuery,
 } = partiesApi;
 
 export const useGetPartiesQuery = useListPartiesQuery;

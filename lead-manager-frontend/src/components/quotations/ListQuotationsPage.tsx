@@ -32,6 +32,7 @@ import {
   PauseCircle,
   Calendar,
   ShoppingCart,
+  Copy,
 } from "lucide-react";
 import {
   useListQuotationsQuery,
@@ -828,6 +829,15 @@ export function ListQuotationsPage({
                                   <Calendar className="h-4 w-4" />
                                 </button>
                               )}
+
+                              {/* Copy Quotation */}
+                              <Link
+                                href={`${portalHome}/quotations/new?copy_from=${q._id}`}
+                                title="Copy Quotation as New"
+                                className="rounded-lg p-1.5 text-slate-500 hover:bg-blue-50 hover:text-blue-600 dark:hover:bg-blue-950 dark:hover:text-blue-400 transition cursor-pointer"
+                              >
+                                <Copy className="h-4 w-4" />
+                              </Link>
 
                               {/* Edit */}
                               {canEdit ? (

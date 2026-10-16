@@ -7,6 +7,9 @@
 import type { LeadQuotationRecord, LeadQuotationProformaDetails } from "@/store/api";
 import { formatCompanyAddress } from "@/components/portal/shared/pdfCompanyLetterhead";
 import { resolvePublicAssetUrl } from "@/lib/env";
+import { numberToIndianWords } from "./quotationLineMath";
+import { isNonEmptyRichText } from "./RichTextDisplay";
+import { parseHtmlToBlocks, type TextRun } from "./buildQuotationPdf";
 
 type JsPDF = InstanceType<(typeof import("jspdf"))["jsPDF"]>;
 
@@ -116,18 +119,18 @@ export async function buildProformaInvoicePdf(input: BuildProformaInvoicePdfInpu
     compress: true,
   });
 
-  const { quotation, company, proformaDetails } = input;
+  const { quotation, company, proformaDetails, portalLabel, downloadedBy } = input;
   const pDetails = proformaDetails || quotation.proforma_details || {};
 
   const companyName =
+    quotation.company_name ||
     company?.trade_name ||
     company?.legal_name ||
-    quotation.company_name ||
     "Shakti Technology IT";
   const companyAddress = formatCompanyAddress(company as any, quotation.company_regd_address);
-  const companyPhone = company?.phone || quotation.company_phone || "";
-  const companyEmail = company?.email || quotation.company_email || "";
-  const companyGstin = company?.gstin || quotation.company_gstin || "";
+  const companyPhone = quotation.company_phone || company?.phone || "";
+  const companyEmail = quotation.company_email || company?.email || "";
+  const companyGstin = quotation.company_gstin || company?.gstin || "";
 
   const bankName = quotation.bank_name || company?.bank_name || "";
   const accountName = quotation.account_name || company?.account_name || companyName;
@@ -394,8 +397,9 @@ export async function buildProformaInvoicePdf(input: BuildProformaInvoicePdfInpu
       const qty = Number(it.quantity || 1);
       const rate = Number(it.rate || 0);
       const subtotal = Number(it.taxable_amount || qty * rate);
-      const gstRate = Number(it.gst_rate || 18);
-      const gstAmt = Number(it.total_gst_amount || (subtotal * gstRate) / 100);
+      const isItemGstOff = quotation.gst_enabled === false || it.gst_enabled === false || !it.gst_rate;
+      const gstRate = isItemGstOff ? 0 : Number(it.gst_rate || 0);
+      const gstAmt = isItemGstOff ? 0 : Number(it.total_gst_amount || 0);
       const total = Number(it.line_total || subtotal + gstAmt);
 
       const descLines = pdf.splitTextToSize(
@@ -457,11 +461,13 @@ export async function buildProformaInvoicePdf(input: BuildProformaInvoicePdfInpu
       cx += cols[5].w;
 
       // Col 6: Tax %
-      pdf.text(`${gstRate}%`, cx + cols[6].w / 2, currentY + 4, { align: "center" });
+      const gstRateText = isItemGstOff || !gstRate ? "" : `${gstRate}%`;
+      pdf.text(gstRateText, cx + cols[6].w / 2, currentY + 4, { align: "center" });
       cx += cols[6].w;
 
       // Col 7: Tax Amt
-      pdf.text(formatCurrency(gstAmt), cx + cols[7].w - 1.5, currentY + 4, { align: "right" });
+      const gstAmtText = isItemGstOff || !gstAmt ? "" : formatCurrency(gstAmt);
+      pdf.text(gstAmtText, cx + cols[7].w - 1.5, currentY + 4, { align: "right" });
       cx += cols[7].w;
 
       // Col 8: Total
@@ -490,7 +496,8 @@ export async function buildProformaInvoicePdf(input: BuildProformaInvoicePdfInpu
 
     // GST Total (Col 7)
     cx += cols[5].w + cols[6].w;
-    pdf.text(formatCurrency(quotation.total_gst), cx + cols[7].w - 1.5, currentY + 4, { align: "right" });
+    const gstTotalColText = quotation.gst_enabled === false || !quotation.total_gst ? "" : formatCurrency(quotation.total_gst);
+    pdf.text(gstTotalColText, cx + cols[7].w - 1.5, currentY + 4, { align: "right" });
 
     // Grand Total (Col 8)
     cx += cols[7].w;
@@ -500,17 +507,24 @@ export async function buildProformaInvoicePdf(input: BuildProformaInvoicePdfInpu
     currentY += sumH + 2;
 
     // Grand Total & Words Bar
+    const words = (quotation.amount_in_words && quotation.amount_in_words.trim()) || numberToIndianWords(quotation.grand_total) || "Zero Rupees Only";
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(7);
+    const wrappedWords = pdf.splitTextToSize(words, tableW - 30);
+    const barH = Math.max(12, 6 + wrappedWords.length * 3.3 + 1.5);
+
     pdf.setFillColor(255, 255, 255);
     pdf.setDrawColor(...LINE);
-    pdf.rect(tableX, currentY, tableW, 10, "FD");
+    pdf.rect(tableX, currentY, tableW, barH, "FD");
 
+    const hasTotalGst = quotation.gst_enabled !== false && Boolean(quotation.total_gst && quotation.total_gst > 0);
     pdf.setFont("helvetica", "bold");
     pdf.setFontSize(7.5);
     pdf.setTextColor(...NAVY);
     pdf.text("Total GST :", tableX + 3, currentY + 4);
     pdf.setFont("helvetica", "bold");
     pdf.setTextColor(...DARK);
-    pdf.text(`Rs. ${formatCurrency(quotation.total_gst)}`, tableX + 18, currentY + 4);
+    pdf.text(hasTotalGst ? `Rs. ${formatCurrency(quotation.total_gst)}` : "", tableX + 18, currentY + 4);
 
     pdf.setFont("helvetica", "bold");
     pdf.setTextColor(...NAVY);
@@ -519,16 +533,17 @@ export async function buildProformaInvoicePdf(input: BuildProformaInvoicePdfInpu
     pdf.setTextColor(...BLUE);
     pdf.text(`Rs. ${formatCurrency(quotation.grand_total)}`, tableX + 83, currentY + 4);
 
-    if (quotation.amount_in_words) {
-      pdf.setFont("helvetica", "bold");
-      pdf.setTextColor(...TEXT);
-      pdf.text("Amount in words :", tableX + 3, currentY + 8);
-      pdf.setFont("helvetica", "normal");
-      pdf.setTextColor(...DARK);
-      pdf.text(quotation.amount_in_words, tableX + 27, currentY + 8);
-    }
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(7);
+    pdf.setTextColor(...TEXT);
+    pdf.text("Amount in words :", tableX + 3, currentY + 8);
 
-    currentY += 13;
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(7);
+    pdf.setTextColor(...NAVY);
+    pdf.text(wrappedWords, tableX + 28, currentY + 8);
+
+    currentY += barH + 3;
   };
 
   // -------------------------------------------------------------
@@ -705,12 +720,300 @@ export async function buildProformaInvoicePdf(input: BuildProformaInvoicePdfInpu
     currentY += boxH + 4;
   };
 
+  const checkMessagePageBreak = (neededH: number) => {
+    if (currentY + neededH > PAGE_H - 45) {
+      pdf.addPage();
+      currentY = M;
+      drawHeader();
+    }
+  };
+
+  const drawRichTextMessage = (html: string) => {
+    const blocks = parseHtmlToBlocks(html);
+    if (blocks.length === 0) return;
+
+    for (let bIdx = 0; bIdx < blocks.length; bIdx += 1) {
+      const block = blocks[bIdx];
+
+      if (block.type === "divider") {
+        checkMessagePageBreak(3);
+        pdf.setDrawColor(203, 213, 225);
+        pdf.setLineWidth(0.2);
+        pdf.line(M + 1, currentY, M + CONTENT_W - 2, currentY);
+        currentY += 3.5;
+        continue;
+      }
+
+      if (block.type === "table" && block.rows && block.rows.length > 0) {
+        const rows = block.rows;
+        let maxCols = 1;
+        for (const r of rows) {
+          if (r.cells.length > maxCols) maxCols = r.cells.length;
+        }
+        if (maxCols === 0) continue;
+
+        const tableX = M + 1;
+        const tableW = CONTENT_W - 2;
+        const colW = tableW / maxCols;
+
+        for (const row of rows) {
+          const cellData = row.cells.map((cell) => {
+            const isHeader = cell.isHeader;
+            const fontSize = isHeader ? 7.0 : 6.5;
+            const isBold = isHeader || cell.runs.some((r) => r.bold);
+            pdf.setFont("helvetica", isBold ? "bold" : "normal");
+            pdf.setFontSize(fontSize);
+
+            const splitLines: string[] = pdf.splitTextToSize(cell.text || "", Math.max(colW - 3, 10));
+            return {
+              cell,
+              isHeader,
+              isBold,
+              fontSize,
+              splitLines: splitLines.length > 0 ? splitLines : [""],
+            };
+          });
+
+          let maxLines = 1;
+          for (const cd of cellData) {
+            if (cd.splitLines.length > maxLines) {
+              maxLines = cd.splitLines.length;
+            }
+          }
+          const lineStep = 3.2;
+          const rowH = Math.max(5.5, maxLines * lineStep + 2.0);
+
+          checkMessagePageBreak(rowH + 1);
+
+          for (let cIdx = 0; cIdx < maxCols; cIdx++) {
+            const cellX = tableX + cIdx * colW;
+            const cd = cellData[cIdx];
+            const isHeader = cd ? cd.isHeader : false;
+
+            pdf.setDrawColor(203, 213, 225);
+            pdf.setLineWidth(0.18);
+            if (isHeader) {
+              pdf.setFillColor(241, 245, 249);
+              pdf.rect(cellX, currentY, colW, rowH, "FD");
+            } else {
+              pdf.setFillColor(255, 255, 255);
+              pdf.rect(cellX, currentY, colW, rowH, "FD");
+            }
+
+            if (!cd) continue;
+
+            pdf.setFont("helvetica", cd.isBold ? "bold" : "normal");
+            pdf.setFontSize(cd.fontSize);
+            pdf.setTextColor(...(isHeader ? NAVY : TEXT));
+
+            for (let l = 0; l < cd.splitLines.length; l++) {
+              const lineText = cd.splitLines[l];
+              if (!lineText) continue;
+              const lineY = currentY + 3.2 + l * lineStep;
+
+              if (cd.cell.align === "center") {
+                pdf.text(lineText, cellX + colW / 2, lineY, { align: "center" });
+              } else if (cd.cell.align === "right") {
+                pdf.text(lineText, cellX + colW - 1.5, lineY, { align: "right" });
+              } else {
+                pdf.text(lineText, cellX + 1.5, lineY);
+              }
+            }
+          }
+
+          currentY += rowH;
+        }
+
+        currentY += 2;
+        continue;
+      }
+
+      const isH1 = block.headingLevel === 1;
+      const isH2 = block.headingLevel === 2;
+      const isH3 = block.headingLevel === 3;
+      const baseFontSize = isH1 ? 9.5 : isH2 ? 8.5 : isH3 ? 7.8 : 7.0;
+      const stepLineHeight = isH1 ? 5.0 : isH2 ? 4.5 : isH3 ? 4.0 : 3.6;
+
+      const tokens: TextRun[] = [];
+      for (const run of block.runs) {
+        if (run.text.includes("\n")) {
+          const parts = run.text.split("\n");
+          for (let p = 0; p < parts.length; p++) {
+            if (p > 0) tokens.push({ ...run, text: "\n" });
+            if (parts[p]) {
+              const words = parts[p].match(/\S+|\s+/g) || [parts[p]];
+              for (const w of words) tokens.push({ ...run, text: w });
+            }
+          }
+        } else {
+          const words = run.text.match(/\S+|\s+/g) || [run.text];
+          for (const w of words) tokens.push({ ...run, text: w });
+        }
+      }
+
+      if (tokens.length === 0) continue;
+
+      let bulletWidth = 0;
+      if (block.type === "list-item" && block.bullet) {
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(baseFontSize);
+        bulletWidth = pdf.getTextWidth(block.bullet);
+      }
+
+      const indentLeft = block.type === "list-item" ? bulletWidth + 2 : 0;
+      const maxLineWidth = CONTENT_W - 2 - indentLeft;
+
+      const linesOfTokens: TextRun[][] = [];
+      let currentLine: TextRun[] = [];
+      let currentLineWidth = 0;
+
+      for (const token of tokens) {
+        if (token.text === "\n") {
+          if (currentLine.length > 0) linesOfTokens.push(currentLine);
+          currentLine = [];
+          currentLineWidth = 0;
+          continue;
+        }
+
+        // Avoid leading whitespace indent on line start
+        if (currentLine.length === 0 && !token.text.trim()) {
+          continue;
+        }
+
+        const isBold = isH1 || isH2 || isH3 || token.bold;
+        pdf.setFont("helvetica", isBold && token.italic ? "bolditalic" : isBold ? "bold" : token.italic ? "italic" : "normal");
+        pdf.setFontSize(baseFontSize);
+        const tw = pdf.getTextWidth(token.text);
+
+        if (currentLineWidth + tw > maxLineWidth && currentLine.length > 0) {
+          linesOfTokens.push(currentLine);
+          currentLine = token.text.trim() ? [token] : [];
+          currentLineWidth = token.text.trim() ? tw : 0;
+        } else {
+          currentLine.push(token);
+          currentLineWidth += tw;
+        }
+      }
+      if (currentLine.length > 0) {
+        linesOfTokens.push(currentLine);
+      }
+
+      for (let lIdx = 0; lIdx < linesOfTokens.length; lIdx += 1) {
+        checkMessagePageBreak(stepLineHeight + 1);
+
+        const line = linesOfTokens[lIdx];
+        let x = M + 1;
+
+        if (block.type === "list-item" && block.bullet) {
+          if (lIdx === 0) {
+            pdf.setFont("helvetica", "bold");
+            pdf.setFontSize(baseFontSize);
+            pdf.setTextColor(...NAVY);
+            pdf.text(block.bullet, x, currentY);
+          }
+          x += bulletWidth + 2;
+        }
+
+        for (const token of line) {
+          const isBold = isH1 || isH2 || isH3 || token.bold;
+          pdf.setFont("helvetica", isBold && token.italic ? "bolditalic" : isBold ? "bold" : token.italic ? "italic" : "normal");
+          pdf.setFontSize(baseFontSize);
+          pdf.setTextColor(...(token.color || (isH1 || isH2 ? NAVY : TEXT)));
+          pdf.text(token.text, x, currentY);
+
+          const tw = pdf.getTextWidth(token.text);
+          if (token.underline) {
+            pdf.setDrawColor(...(token.color || TEXT));
+            pdf.setLineWidth(0.15);
+            pdf.line(x, currentY + 0.3, x + tw, currentY + 0.3);
+          }
+
+          if (token.strikethrough) {
+            pdf.setDrawColor(...(token.color || TEXT));
+            pdf.setLineWidth(0.15);
+            pdf.line(x, currentY - 0.8, x + tw, currentY - 0.8);
+          }
+
+          x += tw;
+        }
+
+        currentY += stepLineHeight;
+      }
+
+      currentY += isH1 ? 2.2 : isH2 ? 1.8 : 1.2;
+    }
+    currentY += 1.5;
+  };
+
   // Execution flow
   drawHeader();
   drawMetaBox();
+
+  const effectiveMsg = proformaDetails?.message || (quotation as any).message || (quotation as any).quotation_message;
+  if (isNonEmptyRichText(effectiveMsg)) {
+    drawRichTextMessage(effectiveMsg!);
+  }
+
   drawItemsTable();
   drawOrderDetails();
   drawSignOff();
+
+  const totalPages = pdf.getNumberOfPages();
+  const now = new Date();
+  const timestampStr = `${now.toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  })} ${now.toLocaleTimeString("en-IN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  })}`;
+  const userLabel = downloadedBy && downloadedBy.trim() ? downloadedBy.trim() : "User";
+  const auditRight = `Generated By: ${userLabel} • ${timestampStr}`;
+
+  for (let p = 1; p <= totalPages; p += 1) {
+    pdf.setPage(p);
+
+    // Top continuation indicator on later pages (only if multi-page)
+    if (totalPages > 1 && p > 1) {
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(6.8);
+      pdf.setTextColor(...NAVY);
+      pdf.text(`PI Ref: ${proformaNo}  (Page ${p} of ${totalPages})`, PAGE_W - M, M - 1.5, { align: "right" });
+    }
+
+    // System-generated notice above footer line
+    pdf.setFont("helvetica", "italic");
+    pdf.setFontSize(5.5);
+    pdf.setTextColor(...MUTED);
+    pdf.text("* This is a computer-generated Proforma Invoice; physical signature is not required. *", PAGE_W / 2, PAGE_H - M - 4.5, { align: "center" });
+
+    // Footer border line
+    pdf.setDrawColor(...LINE);
+    pdf.setLineWidth(0.2);
+    pdf.line(M, PAGE_H - M - 3, PAGE_W - M, PAGE_H - M - 3);
+
+    // Left: Ref & Portal
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(6);
+    pdf.setTextColor(...MUTED);
+    pdf.text(`PI Ref: ${proformaNo} • Generated via ${portalLabel || "Lead Manager"}`, M, PAGE_H - M);
+
+    // Center: Page count (Only printed if totalPages > 1)
+    if (totalPages > 1) {
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(...DARK);
+      pdf.text(`Page ${p} of ${totalPages}`, PAGE_W / 2, PAGE_H - M, { align: "center" });
+    }
+
+    // Right: Generated By with Timestamp
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(6);
+    pdf.setTextColor(...MUTED);
+    pdf.text(auditRight, PAGE_W - M, PAGE_H - M, { align: "right" });
+  }
 
   return pdf;
 }

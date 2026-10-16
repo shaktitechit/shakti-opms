@@ -38,6 +38,7 @@ app.get(['/health', '/api/health'], (req, res) => {
 app.use('/api/users', leadUserRosterRoutes);
 app.use('/api/users', proxyToAuthService);
 app.use('/api/company-info', proxyToAuthService);
+app.use('/api/branches', proxyToAuthService);
 
 app.use('/api/leads', leadRoutes);
 app.use('/api/team', teamRoutes);

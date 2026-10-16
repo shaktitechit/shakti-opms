@@ -54,6 +54,11 @@ import {
   useMarkNotesConvertedMutation,
 } from "@/store/api/workPlannerApiSlice";
 import {
+  useGetPartyCountriesQuery,
+  useGetPartyStatesQuery,
+  useGetPartyCitiesQuery,
+} from "@/store/api/partyApiSlice";
+import {
   isWpAdmin,
   isWpManager,
   isWpCoordinator,
@@ -248,7 +253,6 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   const [detectedPlan, setDetectedPlan] = useState<WorkPlanRecord | null>(null);
   const [checkingExisting, setCheckingExisting] = useState(false);
   const [planStatus, setPlanStatus] = useState<string | null>(null);
-  const isPlanCompleted = planStatus === "completed" || detectedPlan?.status === "completed";
 
   const activePlanId = existingPlanId || planId;
   const isEditing = Boolean(activePlanId);
@@ -298,9 +302,98 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
 
   const [planDate, setPlanDate] = useState(() => initialDate || new Date().toISOString().split("T")[0]);
   const [planType, setPlanType] = useState<string>("");
+  const isPlanCompleted =
+    planType !== "Leave" &&
+    (planStatus === "completed" || detectedPlan?.status === "completed");
   const [location, setLocation] = useState("");
+  const [countryId, setCountryId] = useState("");
+  const [countryName, setCountryName] = useState("");
+  const [stateId, setStateId] = useState("");
+  const [stateName, setStateName] = useState("");
+  const [cityId, setCityId] = useState("");
+  const [cityName, setCityName] = useState("");
   const [remarks, setRemarks] = useState("");
   const [salesUserId, setSalesUserId] = useState<string>(() => sessionUser?._id || "");
+
+  const requiresGeo = isVisitsPlan(planType) || isBothTasksAndVisitsPlan(planType);
+
+  const { data: countriesData = [], isLoading: isCountriesLoading } = useGetPartyCountriesQuery(
+    { limit: 500, status: "active" },
+    { skip: !requiresGeo }
+  );
+
+  const { data: statesData = [], isLoading: isStatesLoading } = useGetPartyStatesQuery(
+    countryId ? { country_id: countryId, limit: 1000, status: "active" } : undefined,
+    { skip: !requiresGeo || !countryId }
+  );
+
+  const { data: citiesData = [], isLoading: isCitiesLoading } = useGetPartyCitiesQuery(
+    stateId ? { state_id: stateId, limit: 5000, status: "active" } : undefined,
+    { skip: !requiresGeo || !stateId }
+  );
+
+  // Auto-select India by default if no country selected
+  useEffect(() => {
+    if (requiresGeo && !countryId && countriesData.length > 0) {
+      const india = countriesData.find(
+        (c) =>
+          c.name.trim().toLowerCase() === "india" ||
+          c.iso_code?.toUpperCase() === "IN"
+      );
+      if (india) {
+        setCountryId(india._id || india.id || "");
+        setCountryName(india.name);
+      }
+    }
+  }, [requiresGeo, countriesData, countryId]);
+
+  // Match state name to state ID if set by text from plan
+  useEffect(() => {
+    if (stateName && !stateId && statesData.length > 0) {
+      const sMatch = statesData.find(
+        (s) => s.name.trim().toLowerCase() === stateName.trim().toLowerCase()
+      );
+      if (sMatch) {
+        setStateId(sMatch._id || sMatch.id || "");
+      }
+    }
+  }, [statesData, stateName, stateId]);
+
+  // If stateId is set but does not belong to the currently loaded states for this country, clear it
+  useEffect(() => {
+    if (stateId && statesData.length > 0 && !isStatesLoading) {
+      const exists = statesData.some((s) => s._id === stateId || s.id === stateId);
+      if (!exists) {
+        setStateId("");
+        setStateName("");
+        setCityId("");
+        setCityName("");
+      }
+    }
+  }, [statesData, stateId, isStatesLoading]);
+
+  // Match city name to city ID if set by text from plan
+  useEffect(() => {
+    if (cityName && !cityId && citiesData.length > 0) {
+      const ciMatch = citiesData.find(
+        (ci) => ci.name.trim().toLowerCase() === cityName.trim().toLowerCase()
+      );
+      if (ciMatch) {
+        setCityId(ciMatch._id || ciMatch.id || "");
+      }
+    }
+  }, [citiesData, cityName, cityId]);
+
+  // If cityId is set but does not belong to the currently loaded cities for this state, clear it
+  useEffect(() => {
+    if (cityId && citiesData.length > 0 && !isCitiesLoading) {
+      const exists = citiesData.some((ci) => ci._id === cityId || ci.id === cityId);
+      if (!exists) {
+        setCityId("");
+        setCityName("");
+      }
+    }
+  }, [citiesData, cityId, isCitiesLoading]);
 
   // Local state arrays for embedded visits and tasks
   const [visits, setVisits] = useState<Array<Record<string, any>>>([]);
@@ -615,6 +708,12 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           }
           setPlanType(plan.plan_type || "");
           setLocation(plan.location || "");
+          setCountryId(plan.country_id || "");
+          setCountryName(plan.country || "");
+          setStateId(plan.state_id || "");
+          setStateName(plan.state || "");
+          setCityId(plan.city_id || "");
+          setCityName(plan.city || "");
           setRemarks(plan.remarks || "");
           if (plan.sales_user) {
             const sUser =
@@ -655,10 +754,10 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           }
 
           if (Array.isArray(plan.visits)) {
-            setVisits(plan.visits);
+            setVisits(plan.plan_type === "Leave" ? [] : plan.visits);
           }
           if (Array.isArray(plan.works)) {
-            setWorks(plan.works);
+            setWorks(plan.plan_type === "Leave" ? [] : plan.works);
           }
         }
       } catch (err: unknown) {
@@ -682,6 +781,12 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           setPlanStatus(null);
           setPlanType(plan.plan_type || "");
           setLocation(plan.location || "");
+          setCountryId(plan.country_id || "");
+          setCountryName(plan.country || "");
+          setStateId(plan.state_id || "");
+          setStateName(plan.state || "");
+          setCityId(plan.city_id || "");
+          setCityName(plan.city || "");
           setRemarks(plan.remarks || "");
           if (plan.sales_user) {
             const sUser =
@@ -841,6 +946,12 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
               setPlanType("");
             }
             setLocation(fullPlan.location || "");
+            setCountryId(fullPlan.country_id || "");
+            setCountryName(fullPlan.country || "");
+            setStateId(fullPlan.state_id || "");
+            setStateName(fullPlan.state || "");
+            setCityId(fullPlan.city_id || "");
+            setCityName(fullPlan.city || "");
             setRemarks(fullPlan.remarks || "");
 
             // Discussion state
@@ -952,6 +1063,12 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           setDetectedPlan(null);
           setPlanStatus(null);
           setLocation("");
+          setCountryId("");
+          setCountryName("");
+          setStateId("");
+          setStateName("");
+          setCityId("");
+          setCityName("");
           setRemarks("");
 
           if (copyId) {
@@ -1508,6 +1625,12 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       plan_date: planDate,
       plan_type: planType,
       location,
+      country_id: countryId || undefined,
+      state_id: stateId || undefined,
+      city_id: cityId || undefined,
+      country: countryName || undefined,
+      state: stateName || undefined,
+      city: cityName || undefined,
       remarks,
       is_discussed_with_manager: isDiscussedWithManager,
       discussed_manager_id: discussedManagerId || undefined,
@@ -1522,6 +1645,12 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       planDate,
       planType,
       location,
+      countryId,
+      countryName,
+      stateId,
+      stateName,
+      cityId,
+      cityName,
       remarks,
       isDiscussedWithManager,
       discussedManagerId,
@@ -1618,6 +1747,12 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     if (!availableDraft) return;
     if (availableDraft.planType) setPlanType(availableDraft.planType);
     if (availableDraft.location !== undefined) setLocation(availableDraft.location);
+    if (availableDraft.countryId !== undefined) setCountryId(availableDraft.countryId);
+    if (availableDraft.countryName !== undefined) setCountryName(availableDraft.countryName);
+    if (availableDraft.stateId !== undefined) setStateId(availableDraft.stateId);
+    if (availableDraft.stateName !== undefined) setStateName(availableDraft.stateName);
+    if (availableDraft.cityId !== undefined) setCityId(availableDraft.cityId);
+    if (availableDraft.cityName !== undefined) setCityName(availableDraft.cityName);
     if (availableDraft.remarks !== undefined) setRemarks(availableDraft.remarks);
     setIsDiscussedWithManager(availableDraft.isDiscussedWithManager !== undefined ? availableDraft.isDiscussedWithManager : null);
     setDiscussedManagerId(availableDraft.discussedManagerId || "");
@@ -1661,26 +1796,38 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       plan_date: planDate,
       plan_type: planType,
       location,
+      country_id: countryId || undefined,
+      state_id: stateId || undefined,
+      city_id: cityId || undefined,
+      country: countryName || undefined,
+      state: stateName || undefined,
+      city: cityName || undefined,
       remarks,
       is_discussed_with_manager: isDiscussedWithManager,
       discussed_manager_id: discussedManagerId || undefined,
       discussed_manager_name: discussedManagerName || undefined,
       discussion_method: discussionMethod || undefined,
-      visits,
-      works,
+      visits: planType === "Leave" ? [] : visits,
+      works: planType === "Leave" ? [] : works,
     };
     const localPayload = {
       salesUserId: targetUserId,
       planDate,
       planType,
       location,
+      countryId: countryId || undefined,
+      countryName: countryName || undefined,
+      stateId: stateId || undefined,
+      stateName: stateName || undefined,
+      cityId: cityId || undefined,
+      cityName: cityName || undefined,
       remarks,
       isDiscussedWithManager,
       discussedManagerId,
       discussedManagerName,
       discussionMethod,
-      visits,
-      works,
+      visits: planType === "Leave" ? [] : visits,
+      works: planType === "Leave" ? [] : works,
     };
     try {
       saveWorkPlanDraft(localPayload);
@@ -1711,7 +1858,23 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       return;
     }
 
-    if (!leaveType && !location.trim()) {
+    if (requiresGeo) {
+      if (!countryId || !countryName.trim()) {
+        toast.error("Country is required for visits plan");
+        return;
+      }
+      if (!stateId || !stateName.trim()) {
+        toast.error("State / Province is required for visits plan");
+        return;
+      }
+      if (!cityId || !cityName.trim()) {
+        toast.error("City / District is required for visits plan");
+        return;
+      }
+    }
+
+    const effectiveLocation = location.trim() || (requiresGeo && cityName ? [cityName, stateName, countryName].filter(Boolean).join(", ") : "");
+    if (!leaveType && !effectiveLocation) {
       toast.error("Work location / city is required");
       return;
     }
@@ -1770,7 +1933,18 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       const payload: Partial<WorkPlanRecord> = {
         plan_date: planDate,
         plan_type: planType as WorkPlanRecord["plan_type"],
-        location: location.trim(),
+        ...(planType === "Leave" ? { status: "completed" as const } : {}),
+        location: effectiveLocation,
+        ...(requiresGeo
+          ? {
+              country_id: countryId || undefined,
+              state_id: stateId || undefined,
+              city_id: cityId || undefined,
+              country: countryName || undefined,
+              state: stateName || undefined,
+              city: cityName || undefined,
+            }
+          : {}),
         remarks: remarks.trim(),
         is_discussed_with_manager: Boolean(isDiscussedWithManager),
         discussed_manager_id:
@@ -1792,7 +1966,13 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         _id: activePlanId || undefined,
         plan_date: planDate,
         plan_type: planType as WorkPlanRecord["plan_type"],
-        location: location.trim(),
+        location: effectiveLocation,
+        country_id: countryId || undefined,
+        state_id: stateId || undefined,
+        city_id: cityId || undefined,
+        country: countryName || undefined,
+        state: stateName || undefined,
+        city: cityName || undefined,
         remarks: remarks.trim(),
         is_discussed_with_manager: Boolean(isDiscussedWithManager),
         discussed_manager_id:
@@ -1805,7 +1985,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         discussion_method: isDiscussedWithManager ? discussionMethod : undefined,
         sales_user: selectedExec as any,
         status: planType === "Leave" ? "completed" : "planned",
-        visits: visits.map((v, idx) => ({
+        visits: planType === "Leave" ? [] : visits.map((v, idx) => ({
           sequence: idx + 1,
           party_name: v.party_name || (typeof v.party === "object" ? v.party?.party_name : undefined) || "Client Visit",
           contact_person: v.contact_person,
@@ -1817,7 +1997,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           status: v.status || "created",
           created_by_role: v.created_by_role,
         })),
-        works: works.map((w, idx) => ({
+        works: planType === "Leave" ? [] : works.map((w, idx) => ({
           sequence: idx + 1,
           title: w.title,
           description: w.description,
@@ -1829,8 +2009,8 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
 
       setPendingPlanData({
         payload,
-        visits,
-        works,
+        visits: planType === "Leave" ? [] : visits,
+        works: planType === "Leave" ? [] : works,
         displayPlan: draftRecord,
       });
       setCreateMailModalOpen(true);
@@ -2022,7 +2202,11 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       setLastDraftSavedAt(null);
       setAvailableDraft(null);
 
-      toast.success(isEditing ? "Work plan updated and email dispatched successfully!" : "Work plan created and email dispatched successfully!");
+      toast.success(
+        pendingPlanData.payload.plan_type === "Leave"
+          ? (isEditing ? "Leave plan updated successfully!" : "Leave plan submitted and completed successfully!")
+          : (isEditing ? "Work plan updated and email dispatched successfully!" : "Work plan created and email dispatched successfully!")
+      );
       setCreateMailModalOpen(false);
       router.push("/dashboard/plans");
     } catch (err: unknown) {
@@ -2442,7 +2626,11 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                       setPlanType(val);
                       if (val === "Work From Home" && !location) setLocation("Remote / Work From Home");
                       else if (val === "Work From Office" && !location) setLocation("Head Office / Branch Office");
-                      else if (val === "Leave") setLocation("");
+                      else if (val === "Leave") {
+                        setLocation("");
+                        setVisits([]);
+                        setWorks([]);
+                      }
                     }}
                     className={`rounded-lg px-3 py-2.5 text-xs font-semibold border transition text-center flex flex-col items-center justify-center gap-1 cursor-pointer ${
                       isSelected
@@ -2463,8 +2651,151 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           </div>
         </div>
 
-        {/* Location (optional on Leave) */}
-        {!leaveType && (
+        {/* Location & Geography */}
+        {!leaveType && requiresGeo ? (
+          <div className="space-y-3 rounded-xl border border-border/70 bg-surface/50 p-3.5 sm:p-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                <MapPin className="h-4 w-4 text-primary shrink-0" />
+                <span>Target Geography & Location</span>
+                <span className="text-rose-500">*</span>
+              </label>
+              <span className="text-[11px] text-muted">
+                Visits &amp; master searches will be filtered to this geography
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {/* Country */}
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-muted">
+                  Country <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={countryId}
+                  onChange={(e) => {
+                    const cId = e.target.value;
+                    setCountryId(cId);
+                    const found = countriesData.find((c) => c._id === cId || c.id === cId);
+                    setCountryName(found?.name || "");
+                    setStateId("");
+                    setStateName("");
+                    setCityId("");
+                    setCityName("");
+                  }}
+                  disabled={isPlanCompleted || isCountriesLoading}
+                  className="w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <option value="">
+                    {isCountriesLoading ? "Loading countries..." : "Select Country"}
+                  </option>
+                  {countriesData.map((c) => {
+                    const id = c._id || c.id || "";
+                    return (
+                      <option key={id} value={id}>
+                        {c.name}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* State */}
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-muted">
+                  State / Province <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={stateId}
+                  onChange={(e) => {
+                    const sId = e.target.value;
+                    setStateId(sId);
+                    const found = statesData.find((s) => s._id === sId || s.id === sId);
+                    setStateName(found?.name || "");
+                    setCityId("");
+                    setCityName("");
+                  }}
+                  disabled={isPlanCompleted || !countryId || isStatesLoading}
+                  className="w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <option value="">
+                    {!countryId
+                      ? "Select Country first"
+                      : isStatesLoading
+                      ? "Loading states..."
+                      : "Select State"}
+                  </option>
+                  {countryId &&
+                    statesData.map((s) => {
+                      const id = s._id || s.id || "";
+                      return (
+                        <option key={id} value={id}>
+                          {s.name}
+                        </option>
+                      );
+                    })}
+                </select>
+              </div>
+
+              {/* City */}
+              <div>
+                <label className="mb-1 block text-[11px] font-medium text-muted">
+                  City / District <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={cityId}
+                  onChange={(e) => {
+                    const ciId = e.target.value;
+                    setCityId(ciId);
+                    const found = citiesData.find((ci) => ci._id === ciId || ci.id === ciId);
+                    const name = found?.name || "";
+                    setCityName(name);
+                    if (name && (!location || location === stateName || location.includes(cityName))) {
+                      setLocation(stateName ? `${name}, ${stateName}` : name);
+                    }
+                  }}
+                  disabled={isPlanCompleted || !stateId || isCitiesLoading}
+                  className="w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <option value="">
+                    {!stateId
+                      ? "Select State first"
+                      : isCitiesLoading
+                      ? "Loading cities..."
+                      : "Select City"}
+                  </option>
+                  {stateId &&
+                    citiesData.map((ci) => {
+                      const id = ci._id || ci.id || "";
+                      return (
+                        <option key={id} value={id}>
+                          {ci.name}
+                        </option>
+                      );
+                    })}
+                </select>
+              </div>
+            </div>
+
+            {/* Area / Territory / Specific location details */}
+            <div>
+              <label className="mb-1 block text-[11px] font-medium text-muted">
+                Area / Territory / Specific Locality
+              </label>
+              <div className="relative">
+                <MapPin className="absolute left-3 top-2.5 h-4 w-4 text-muted" />
+                <input
+                  type="text"
+                  disabled={isPlanCompleted}
+                  placeholder="e.g. Andheri East, BKC, Sector 62 Industrial Area"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  className="w-full rounded-lg border border-border bg-surface-muted pl-9 pr-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
+                />
+              </div>
+            </div>
+          </div>
+        ) : !leaveType ? (
           <div>
             <label className="mb-1.5 block text-xs font-semibold text-foreground">
               Work Location / City <span className="text-rose-500">*</span>
@@ -2487,7 +2818,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
               />
             </div>
           </div>
-        )}
+        ) : null}
 
         {/* Remarks / Objectives */}
         <div>
@@ -3238,6 +3569,13 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           initial={editingVisitIndex !== null ? (visits[editingVisitIndex] as WorkPlanVisitRecord) : null}
           planDate={planDate}
           salesUserId={salesUserId || sessionUser?._id}
+          planOwnerId={salesUserId || sessionUser?._id}
+          defaultCountryId={countryId}
+          defaultCountryName={countryName}
+          defaultStateId={stateId}
+          defaultStateName={stateName}
+          defaultCityId={cityId}
+          defaultCityName={cityName}
           isSaving={false}
           onClose={() => {
             setVisitModalOpen(false);

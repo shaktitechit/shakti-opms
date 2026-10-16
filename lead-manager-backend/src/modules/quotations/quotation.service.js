@@ -463,10 +463,11 @@ async function getDefaultTerms() {
 /**
  * Recalculate quotation line totals and financial summary.
  */
-function computeTotals(items) {
+function computeTotals(items, gstEnabled = true) {
   let subtotal = 0;
   let totalGst = 0;
   let totalDiscount = 0;
+  const isGstActive = gstEnabled !== false;
 
   const computedItems = (items || []).map((item) => {
     const {
@@ -477,7 +478,7 @@ function computeTotals(items) {
       discountAmount,
       taxableAmount,
       gstRate,
-    } = computeQuotationLineAmounts(item);
+    } = computeQuotationLineAmounts(item, { gstEnabled: isGstActive });
 
     let cgstRate = 0;
     let cgstAmount = 0;
@@ -487,17 +488,20 @@ function computeTotals(items) {
     let igstAmount = 0;
     let totalGstAmount = 0;
 
-    if (item.igst_rate && Number(item.igst_rate) > 0) {
-      igstRate = Number(item.igst_rate);
-      igstAmount = Math.round(((taxableAmount * igstRate) / 100) * 100) / 100;
-      totalGstAmount = igstAmount;
-    } else {
-      const halfRate = gstRate / 2;
-      cgstRate = halfRate;
-      sgstRate = halfRate;
-      cgstAmount = Math.round(((taxableAmount * halfRate) / 100) * 100) / 100;
-      sgstAmount = Math.round(((taxableAmount * halfRate) / 100) * 100) / 100;
-      totalGstAmount = Math.round((cgstAmount + sgstAmount) * 100) / 100;
+    const itemGstActive = isGstActive && item.gst_enabled !== false;
+    if (itemGstActive) {
+      if (item.igst_rate && Number(item.igst_rate) > 0) {
+        igstRate = Number(item.igst_rate);
+        igstAmount = Math.round(((taxableAmount * igstRate) / 100) * 100) / 100;
+        totalGstAmount = igstAmount;
+      } else {
+        const halfRate = gstRate / 2;
+        cgstRate = halfRate;
+        sgstRate = halfRate;
+        cgstAmount = Math.round(((taxableAmount * halfRate) / 100) * 100) / 100;
+        sgstAmount = Math.round(((taxableAmount * halfRate) / 100) * 100) / 100;
+        totalGstAmount = Math.round((cgstAmount + sgstAmount) * 100) / 100;
+      }
     }
 
     const lineTotal = Math.round((taxableAmount + totalGstAmount) * 100) / 100;
@@ -508,6 +512,7 @@ function computeTotals(items) {
 
     return {
       ...item,
+      gst_enabled: item.gst_enabled !== false,
       quantity: qty,
       rate,
       discount_percent: discountPercent,
@@ -949,6 +954,7 @@ async function create(leadIdOrBody, bodyOrUser, userParam) {
     ? new Date(body.valid_until)
     : new Date(quotationDate.getTime() + validityDays * 24 * 60 * 60 * 1000);
 
+  const gstEnabled = body.gst_enabled !== false;
   const { items, total_discount, subtotal, total_gst, round_off, grand_total, amount_in_words } = computeTotals(
     body.items && body.items.length > 0
       ? body.items
@@ -959,9 +965,10 @@ async function create(leadIdOrBody, bodyOrUser, userParam) {
           quantity: 1,
           unit: 'Nos',
           rate: lead?.estimated_value || 0,
-          gst_rate: 18,
+          gst_rate: gstEnabled ? 18 : 0,
         },
-      ]
+      ],
+    gstEnabled
   );
 
   const defaultTerms = await getDefaultTerms();
@@ -976,6 +983,8 @@ async function create(leadIdOrBody, bodyOrUser, userParam) {
     valid_until: validUntil,
     validity_days: validityDays,
     subject: body.subject || (items[0]?.product_name ? `Offer For ${items[0].product_name}` : 'Quotation Proposal'),
+    message: body.message || body.quotation_message || '',
+    quotation_message: body.quotation_message || body.message || '',
     customer_name: body.customer_name || (lead ? (lead.organization_name || lead.party_name || `M/s. ${lead.first_name} ${lead.last_name}`.trim()) : 'Customer'),
     kind_attn: body.kind_attn || (lead ? `${lead.first_name} ${lead.last_name}`.trim() : ''),
     phone: body.phone || lead?.phone || '',
@@ -999,6 +1008,9 @@ async function create(leadIdOrBody, bodyOrUser, userParam) {
     terms_and_conditions: Array.isArray(body.terms_and_conditions)
       ? body.terms_and_conditions
       : [],
+    branch_id: body.branch_id || body.company_branch_id || null,
+    branch_code: body.branch_code || body.company_branch_code || '',
+    company_branch_name: body.company_branch_name || body.branch_name_selected || '',
     company_name: body.company_name || company?.legal_name || company?.trade_name || '',
     company_regd_address:
       body.company_regd_address ||
@@ -1024,6 +1036,7 @@ async function create(leadIdOrBody, bodyOrUser, userParam) {
     sales_person_email: body.sales_person_email || '',
     sales_person_designation: body.sales_person_designation || 'Sales Executive',
     sales_person_user: body.sales_person_user || null,
+    gst_enabled: gstEnabled,
     approval_status: body.approval_status || 'pending_approval',
     status: body.status || 'draft',
     created_by: user._id,
@@ -1196,8 +1209,9 @@ async function update(id, body, user) {
     }
   }
 
-  if (body.items) {
-    const computed = computeTotals(body.items);
+  const gstEnabled = body.gst_enabled !== undefined ? Boolean(body.gst_enabled) : (quotation.gst_enabled !== false);
+  if (body.items || body.gst_enabled !== undefined) {
+    const computed = computeTotals(body.items || quotation.items, gstEnabled);
     quotation.items = computed.items;
     quotation.total_discount = computed.total_discount;
     quotation.subtotal = computed.subtotal;
@@ -1205,6 +1219,7 @@ async function update(id, body, user) {
     quotation.round_off = computed.round_off;
     quotation.grand_total = computed.grand_total;
     quotation.amount_in_words = computed.amount_in_words;
+    quotation.gst_enabled = gstEnabled;
   }
 
   const allowedFields = [
@@ -1212,7 +1227,10 @@ async function update(id, body, user) {
     'customer_ref',
     'party_id',
     'lead',
+    'gst_enabled',
     'subject',
+    'message',
+    'quotation_message',
     'customer_name',
     'kind_attn',
     'phone',
@@ -1224,6 +1242,9 @@ async function update(id, body, user) {
     'valid_until',
     'validity_days',
     'terms_and_conditions',
+    'branch_id',
+    'branch_code',
+    'company_branch_name',
     'company_name',
     'company_regd_address',
     'company_phone',
@@ -2143,6 +2164,7 @@ async function convert(id, body = {}, user) {
 
   const grandTotal = Math.round((subtotal + totalTax) * 100) / 100;
   const pDetails = quotation.proforma_details || {};
+  const orderData = body.order_data || {};
   const customerPoNumber = String(orderData.customer_po_number || body.customer_po_number || quotation.customer_po_number || pDetails.customer_po_number || '').trim();
   const rawPoDate = orderData.customer_po_date || body.customer_po_date || quotation.customer_po_date || pDetails.customer_po_date;
   const customerPoDate = rawPoDate ? new Date(rawPoDate) : undefined;
@@ -2343,6 +2365,7 @@ async function saveProformaDetails(id, body = {}, user) {
     margin_sheet_attached: body.margin_sheet_attached || quotation.proforma_details?.margin_sheet_attached || 'na',
     kyc_status: body.kyc_status || quotation.proforma_details?.kyc_status || 'na',
     remarks: body.remarks || quotation.proforma_details?.remarks || '',
+    message: body.message !== undefined ? body.message : (quotation.proforma_details?.message || quotation.message || ''),
     generated_at: new Date(),
     generated_by: user._id,
   };

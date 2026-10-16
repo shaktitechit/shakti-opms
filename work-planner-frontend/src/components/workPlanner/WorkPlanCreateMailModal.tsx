@@ -136,6 +136,8 @@ export function WorkPlanCreateMailModal({
   const [uploadingFiles, setUploadingFiles] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
+  const isLeave = plan?.plan_type === "Leave";
+
   const fromName = sessionUser?.name || currentSessionUser?.name || "Executive";
   const fromEmail = sessionUser?.email || currentSessionUser?.email || draftData?.from_email || "";
 
@@ -399,11 +401,19 @@ export function WorkPlanCreateMailModal({
       activeTo = targetExecutiveEmail;
       setToEmail(targetExecutiveEmail);
       if (!subject) {
-        setSubject(`Work Plan Assigned (${planTypeStr}) — ${executiveName} (${planDateStr})`);
+        setSubject(
+          planTypeStr === "Leave"
+            ? `Leave Plan Assigned — ${executiveName} (${planDateStr})`
+            : `Work Plan Assigned (${planTypeStr}) — ${executiveName} (${planDateStr})`
+        );
       }
     } else {
       if (!subject) {
-        setSubject(`Work Plan ${actionStr} (${planTypeStr}) — ${executiveName} (${planDateStr})`);
+        setSubject(
+          planTypeStr === "Leave"
+            ? `Leave Notification / Application — ${executiveName} (${planDateStr})`
+            : `Work Plan ${actionStr} (${planTypeStr}) — ${executiveName} (${planDateStr})`
+        );
       }
 
       // Priority for TO recipient:
@@ -446,8 +456,9 @@ export function WorkPlanCreateMailModal({
     setCcEmails(Array.from(combinedCcSet));
 
     if (!bodyHtml) {
-      const visits = plan.visits || [];
-      const tasks = plan.works || [];
+      const isLeave = plan.plan_type === "Leave";
+      const visits = isLeave ? [] : (plan.visits || []);
+      const tasks = isLeave ? [] : (plan.works || []);
       const isDiscussed = plan.is_discussed_with_manager;
       const discussedManager =
         plan.discussed_manager_name ||
@@ -533,22 +544,32 @@ export function WorkPlanCreateMailModal({
         `;
       }
 
+      const headerTitle = isLeave
+        ? `Leave Notification (${actionStr}) — Summary`
+        : `Work Plan ${actionStr} — Summary`;
+      const locationLine = isLeave
+        ? ""
+        : ` | <strong>Location:</strong> ${plan.location || "N/A"}`;
+      const remarksHeading = isLeave
+        ? "Leave Reason & Remarks"
+        : "Executive Remarks / Notes";
+
       const defaultHtml = `
 <div style="font-family: Arial, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #1e293b;">
   <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-    <h2 style="margin: 0 0 12px 0; color: #0f172a; font-size: 18px;">Work Plan ${actionStr} — Summary</h2>
+    <h2 style="margin: 0 0 12px 0; color: #0f172a; font-size: 18px;">${headerTitle}</h2>
     <p style="margin: 4px 0; font-size: 14px;"><strong>Executive:</strong> ${executiveName} (${fromEmail})</p>
     <p style="margin: 4px 0; font-size: 14px;"><strong>Plan Date:</strong> ${planDateStr}</p>
-    <p style="margin: 4px 0; font-size: 14px;"><strong>Plan Type:</strong> ${plan.plan_type || "Visits"} | <strong>Location:</strong> ${plan.location || "N/A"}</p>
+    <p style="margin: 4px 0; font-size: 14px;"><strong>Plan Type:</strong> ${plan.plan_type || "Visits"}${locationLine}</p>
     <p style="margin: 4px 0; font-size: 14px;"><strong>Discussed with Manager:</strong> ${isDiscussed ? `Yes (${discussedManager})` : "No"}</p>
   </div>
 
   ${visitsHtml}
   ${tasksHtml}
 
-  <h3 style="color: #0f172a; font-size: 15px; border-bottom: 2px solid #475569; padding-bottom: 6px; margin-top: 20px;">Executive Remarks / Notes</h3>
+  <h3 style="color: #0f172a; font-size: 15px; border-bottom: 2px solid ${isLeave ? '#e11d48' : '#475569'}; padding-bottom: 6px; margin-top: 20px;">${remarksHeading}</h3>
   <p style="font-size: 14px; color: #334155; padding: 12px; background: #f1f5f9; border-radius: 6px;">
-    ${plan.remarks || "No additional remarks added for this work plan."}
+    ${plan.remarks || (isLeave ? "Leave for the day." : "No additional remarks added for this work plan.")}
   </p>
 </div>
       `;
@@ -674,20 +695,30 @@ function extractErrorMessage(err: unknown, fallbackMsg: string): string {
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-border bg-surface px-4 py-3 sm:px-6 sm:py-3.5 shrink-0 shadow-xs gap-3">
         <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0">
-          <div className="flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0">
+          <div className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl ${isLeave ? "bg-rose-500/10 text-rose-600 dark:text-rose-400" : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"} shrink-0`}>
             <Mail className="h-4 w-4 sm:h-5 sm:w-5" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-sm sm:text-base font-bold text-foreground truncate">
-                {isManagerCreatingForExecutive
+                {isLeave
+                  ? isEditing
+                    ? "Leave Plan Update & Mail Dispatch"
+                    : "Leave Plan Confirmation & Mail Dispatch"
+                  : isManagerCreatingForExecutive
                   ? `Work Plan Assigned — ${targetExecutiveName || "Executive"}`
                   : isEditing
                   ? "Work Plan Update & Mail Dispatch"
                   : "Work Plan Creation & Mail Dispatch"}
               </h3>
-              <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] sm:text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 shrink-0">
-                {isManagerCreatingForExecutive
+              <span className={`rounded-full px-2 py-0.5 text-[10px] sm:text-[11px] font-semibold shrink-0 ${
+                isLeave
+                  ? "bg-rose-500/15 text-rose-600 dark:text-rose-400"
+                  : "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+              }`}>
+                {isLeave
+                  ? "Leave Plan"
+                  : isManagerCreatingForExecutive
                   ? "Assignment"
                   : isEditing
                   ? "Plan Update"
@@ -695,7 +726,11 @@ function extractErrorMessage(err: unknown, fallbackMsg: string): string {
               </span>
             </div>
             <p className="text-[11px] sm:text-xs text-muted line-clamp-1 sm:line-clamp-2">
-              {isManagerCreatingForExecutive
+              {isLeave
+                ? isEditing
+                  ? "Review leave plan summary, configure recipient emails, format notes, and dispatch notification email to update leave"
+                  : "Review leave plan summary, configure recipient emails, format initial notes, and dispatch notification email to complete leave"
+                : isManagerCreatingForExecutive
                 ? `Review assigned work plan details, format initial notes, and send notification email to ${targetExecutiveName}`
                 : isEditing
                 ? "Review updated work plan summary, configure recipient emails, format notes, and dispatch notification email to save changes"
@@ -718,17 +753,21 @@ function extractErrorMessage(err: unknown, fallbackMsg: string): string {
             type="button"
             disabled={isBusy || uploadingFiles.length > 0}
             onClick={handleSendEmail}
-            className="inline-flex items-center gap-1.5 sm:gap-2 rounded-xl bg-emerald-600 px-3.5 sm:px-5 py-1.5 sm:py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 disabled:opacity-50 transition cursor-pointer shrink-0"
+            className={`inline-flex items-center gap-1.5 sm:gap-2 rounded-xl px-3.5 sm:px-5 py-1.5 sm:py-2 text-xs font-bold text-white shadow-xs disabled:opacity-50 transition cursor-pointer shrink-0 ${
+              isLeave
+                ? "bg-rose-600 hover:bg-rose-700"
+                : "bg-emerald-600 hover:bg-emerald-700"
+            }`}
           >
             {isBusy ? (
               <>
                 <Loader2 className="h-3.5 w-3.5 sm:h-4 sm:w-4 animate-spin" />
-                <span>{isEditing ? "Updating..." : "Creating..."}</span>
+                <span>{isLeave ? (isEditing ? "Updating Leave..." : "Submitting Leave...") : isEditing ? "Updating..." : "Creating..."}</span>
               </>
             ) : (
               <>
                 <Send className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                <span>{isEditing ? "Update & Send" : "Create & Send"}</span>
+                <span>{isLeave ? (isEditing ? "Update & Send" : "Complete & Send") : isEditing ? "Update & Send" : "Create & Send"}</span>
               </>
             )}
           </button>

@@ -8,7 +8,7 @@ export const PRODUCT_SERVICE_URL =
   process.env.NEXT_PUBLIC_PRODUCT_SERVICE_URL || "";
 
 export const PARTY_SERVICE_URL =
-  process.env.NEXT_PUBLIC_PARTY_SERVICE_URL || "";
+  process.env.NEXT_PUBLIC_PARTY_SERVICE_URL || "http://localhost:7006";
 
 export const LEAD_MANAGER_SERVICE_URL =
   process.env.NEXT_PUBLIC_LEAD_MANAGER_SERVICE_URL || "";

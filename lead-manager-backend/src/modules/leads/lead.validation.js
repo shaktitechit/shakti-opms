@@ -45,6 +45,12 @@ function assertCreate(body) {
   if (body.assigned_to) {
     assertObjectId(body.assigned_to, 'assigned_to');
   }
+  if (Array.isArray(body.assigned_users)) {
+    body.assigned_users.forEach((uid, idx) => assertObjectId(uid, `assigned_users[${idx}]`));
+  }
+  if (body.created_by) {
+    assertObjectId(body.created_by, 'created_by');
+  }
   if (body.party_id) {
     assertObjectId(body.party_id, 'party_id');
   }
@@ -66,6 +72,12 @@ function assertUpdate(body) {
   if (body.assigned_to) {
     assertObjectId(body.assigned_to, 'assigned_to');
   }
+  if (Array.isArray(body.assigned_users)) {
+    body.assigned_users.forEach((uid, idx) => assertObjectId(uid, `assigned_users[${idx}]`));
+  }
+  if (body.created_by) {
+    assertObjectId(body.created_by, 'created_by');
+  }
   if (body.party_id) {
     assertObjectId(body.party_id, 'party_id');
   }
@@ -75,10 +87,15 @@ function assertAssign(body) {
   if (!body || typeof body !== 'object') {
     throw new ApiError(400, 'Request body is required');
   }
-  if (!body.assigned_to) {
-    throw new ApiError(400, 'assigned_to is required');
+  if (!body.assigned_to && (!Array.isArray(body.assigned_users) || body.assigned_users.length === 0)) {
+    throw new ApiError(400, 'assigned_to or assigned_users is required');
   }
-  assertObjectId(body.assigned_to, 'assigned_to');
+  if (body.assigned_to) {
+    assertObjectId(body.assigned_to, 'assigned_to');
+  }
+  if (Array.isArray(body.assigned_users)) {
+    body.assigned_users.forEach((uid, idx) => assertObjectId(uid, `assigned_users[${idx}]`));
+  }
 }
 
 function assertStatusChange(body) {

@@ -7,6 +7,8 @@
 import type { LeadQuotationRecord } from "@/store/api";
 import { formatCompanyAddress } from "@/components/portal/shared/pdfCompanyLetterhead";
 import { resolvePublicAssetUrl } from "@/lib/env";
+import { numberToIndianWords } from "./quotationLineMath";
+import { isNonEmptyRichText } from "./RichTextDisplay";
 
 type JsPDF = InstanceType<(typeof import("jspdf"))["jsPDF"]>;
 
@@ -96,24 +98,38 @@ async function loadLogo(url?: string): Promise<string | null> {
   }
 }
 
-type StyleState = {
+export type StyleState = {
   bold: boolean;
   italic: boolean;
   underline: boolean;
+  strikethrough?: boolean;
   color: [number, number, number] | null;
 };
 
-type TextRun = StyleState & {
+export type TextRun = StyleState & {
   text: string;
 };
 
-type BlockNode = {
-  type: "paragraph" | "list-item";
-  bullet?: string;
+export type TableCell = {
+  isHeader?: boolean;
+  align?: "left" | "center" | "right";
+  text: string;
   runs: TextRun[];
 };
 
-function parseColorToRgb(colorStr: string): [number, number, number] | null {
+export type TableRow = {
+  cells: TableCell[];
+};
+
+export type BlockNode = {
+  type: "paragraph" | "list-item" | "divider" | "table";
+  bullet?: string;
+  headingLevel?: 1 | 2 | 3;
+  runs: TextRun[];
+  rows?: TableRow[];
+};
+
+export function parseColorToRgb(colorStr: string): [number, number, number] | null {
   if (!colorStr) return null;
   const str = colorStr.trim().toLowerCase();
   if (str.startsWith("rgb")) {
@@ -139,7 +155,7 @@ function parseColorToRgb(colorStr: string): [number, number, number] | null {
   return null;
 }
 
-function extractElementColor(elem: HTMLElement): [number, number, number] | null {
+export function extractElementColor(elem: HTMLElement): [number, number, number] | null {
   const colorAttr = elem.getAttribute("color");
   if (colorAttr) {
     const parsed = parseColorToRgb(colorAttr);
@@ -153,7 +169,7 @@ function extractElementColor(elem: HTMLElement): [number, number, number] | null
   return null;
 }
 
-function parseHtmlToBlocks(htmlString: string): BlockNode[] {
+export function parseHtmlToBlocks(htmlString: string): BlockNode[] {
   const cleanHtml = htmlString.replace(/^(\d+[\.\)]\s*)+/, "").trim();
   if (!cleanHtml) return [];
 
@@ -167,17 +183,72 @@ function parseHtmlToBlocks(htmlString: string): BlockNode[] {
   const container = doc.body.firstElementChild || doc.body;
 
   const blocks: BlockNode[] = [];
+  let currentParagraph: BlockNode = { type: "paragraph", runs: [] };
 
-  function traverse(node: Node, currentStyle: StyleState, currentBlock: BlockNode) {
+  const flushParagraph = () => {
+    if (currentParagraph.runs.length > 0) {
+      const hasContent = currentParagraph.runs.some((r) => r.text.trim().length > 0);
+      if (hasContent) {
+        blocks.push(currentParagraph);
+      }
+      currentParagraph = { type: "paragraph", runs: [] };
+    }
+  };
+
+  function processInlineChildren(parent: Node, currentStyle: StyleState, targetBlock: BlockNode) {
+    for (const child of Array.from(parent.childNodes)) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        let rawText = child.textContent || "";
+        if (!rawText) continue;
+        rawText = rawText.replace(/\u00A0/g, " ");
+        const text = rawText.replace(/[\r\n\t]+/g, " ").replace(/ +/g, " ");
+        if (!text) continue;
+        if (targetBlock.runs.length === 0 && text === " ") continue;
+
+        targetBlock.runs.push({
+          text,
+          bold: currentStyle.bold,
+          italic: currentStyle.italic,
+          underline: currentStyle.underline,
+          strikethrough: currentStyle.strikethrough,
+          color: currentStyle.color,
+        });
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        const elem = child as HTMLElement;
+        const tag = elem.tagName.toUpperCase();
+
+        const newStyle: StyleState = {
+          bold: currentStyle.bold || tag === "B" || tag === "STRONG" || tag === "TH",
+          italic: currentStyle.italic || tag === "I" || tag === "EM",
+          underline: currentStyle.underline || tag === "U" || tag === "A",
+          strikethrough: currentStyle.strikethrough || tag === "STRIKE" || tag === "S" || tag === "DEL",
+          color: extractElementColor(elem) || currentStyle.color,
+        };
+
+        if (tag === "BR") {
+          targetBlock.runs.push({ text: "\n", ...newStyle });
+        } else {
+          processInlineChildren(elem, newStyle, targetBlock);
+        }
+      }
+    }
+  }
+
+  function traverseNode(node: Node, currentStyle: StyleState) {
     if (node.nodeType === Node.TEXT_NODE) {
-      let text = node.textContent || "";
+      let rawText = node.textContent || "";
+      if (!rawText) return;
+      rawText = rawText.replace(/\u00A0/g, " ");
+      const text = rawText.replace(/[\r\n\t]+/g, " ").replace(/ +/g, " ");
       if (!text) return;
-      text = text.replace(/\u00A0/g, " ");
-      currentBlock.runs.push({
+      if (currentParagraph.runs.length === 0 && text === " ") return;
+
+      currentParagraph.runs.push({
         text,
         bold: currentStyle.bold,
         italic: currentStyle.italic,
         underline: currentStyle.underline,
+        strikethrough: currentStyle.strikethrough,
         color: currentStyle.color,
       });
       return;
@@ -188,29 +259,96 @@ function parseHtmlToBlocks(htmlString: string): BlockNode[] {
       const tag = elem.tagName.toUpperCase();
 
       const newStyle: StyleState = {
-        bold: currentStyle.bold || tag === "B" || tag === "STRONG",
-        italic: currentStyle.italic || tag === "I" || tag === "EM",
-        underline: currentStyle.underline || tag === "U",
+        bold: currentStyle.bold || tag === "B" || tag === "STRONG" || tag === "H1" || tag === "H2" || tag === "H3" || tag === "TH",
+        italic: currentStyle.italic || tag === "I" || tag === "EM" || tag === "BLOCKQUOTE",
+        underline: currentStyle.underline || tag === "U" || tag === "A",
+        strikethrough: currentStyle.strikethrough || tag === "STRIKE" || tag === "S" || tag === "DEL",
         color: extractElementColor(elem) || currentStyle.color,
       };
 
       if (tag === "BR") {
-        currentBlock.runs.push({ text: "\n", ...newStyle });
+        currentParagraph.runs.push({ text: "\n", ...newStyle });
         return;
       }
 
-      if (tag === "P" || tag === "DIV") {
-        const pBlock: BlockNode = { type: "paragraph", runs: [] };
-        for (const child of Array.from(elem.childNodes)) {
-          traverse(child, newStyle, pBlock);
+      if (tag === "HR") {
+        flushParagraph();
+        blocks.push({ type: "divider", runs: [] });
+        return;
+      }
+
+      if (tag === "TABLE") {
+        flushParagraph();
+        const trElements = Array.from(elem.querySelectorAll("tr"));
+        if (trElements.length > 0) {
+          const rows: TableRow[] = [];
+          for (const tr of trElements) {
+            const cellElements = Array.from(tr.querySelectorAll("th, td"));
+            if (cellElements.length === 0) continue;
+            const cells: TableCell[] = [];
+            for (const cell of cellElements) {
+              const htmlCell = cell as HTMLElement;
+              const isHeader = cell.tagName.toUpperCase() === "TH";
+              const alignAttr = (htmlCell.getAttribute("align") || htmlCell.style?.textAlign || "").toLowerCase();
+              const align: "left" | "center" | "right" =
+                alignAttr === "center" ? "center" : alignAttr === "right" ? "right" : "left";
+
+              const cellBlock: BlockNode = { type: "paragraph", runs: [] };
+              processInlineChildren(
+                cell,
+                {
+                  bold: isHeader || currentStyle.bold,
+                  italic: currentStyle.italic,
+                  underline: currentStyle.underline,
+                  color: currentStyle.color,
+                },
+                cellBlock
+              );
+
+              const cellText = (cell.textContent || "").replace(/\u00A0/g, " ").replace(/[\r\n\t]+/g, " ").replace(/ +/g, " ").trim();
+              cells.push({
+                isHeader,
+                align,
+                text: cellText,
+                runs: cellBlock.runs,
+              });
+            }
+            if (cells.length > 0) {
+              rows.push({ cells });
+            }
+          }
+          if (rows.length > 0) {
+            blocks.push({
+              type: "table",
+              runs: [],
+              rows,
+            });
+          }
         }
-        if (pBlock.runs.length > 0) {
-          blocks.push(pBlock);
+        return;
+      }
+
+      if (
+        tag === "P" ||
+        tag === "DIV" ||
+        tag === "H1" ||
+        tag === "H2" ||
+        tag === "H3" ||
+        tag === "BLOCKQUOTE" ||
+        tag === "PRE"
+      ) {
+        flushParagraph();
+        const headingLevel = tag === "H1" ? 1 : tag === "H2" ? 2 : tag === "H3" ? 3 : undefined;
+        const block: BlockNode = { type: "paragraph", headingLevel, runs: [] };
+        processInlineChildren(elem, newStyle, block);
+        if (block.runs.some((r) => r.text.trim().length > 0)) {
+          blocks.push(block);
         }
         return;
       }
 
       if (tag === "UL" || tag === "OL") {
+        flushParagraph();
         const isOrdered = tag === "OL";
         let itemIdx = 1;
         for (const child of Array.from(elem.childNodes)) {
@@ -221,10 +359,8 @@ function parseHtmlToBlocks(htmlString: string): BlockNode[] {
               runs: [],
             };
             itemIdx++;
-            for (const liChild of Array.from(child.childNodes)) {
-              traverse(liChild, newStyle, liBlock);
-            }
-            if (liBlock.runs.length > 0) {
+            processInlineChildren(child, newStyle, liBlock);
+            if (liBlock.runs.some((r) => r.text.trim().length > 0)) {
               blocks.push(liBlock);
             }
           }
@@ -233,18 +369,15 @@ function parseHtmlToBlocks(htmlString: string): BlockNode[] {
       }
 
       for (const child of Array.from(elem.childNodes)) {
-        traverse(child, newStyle, currentBlock);
+        traverseNode(child, newStyle);
       }
     }
   }
 
-  const rootBlock: BlockNode = { type: "paragraph", runs: [] };
   for (const child of Array.from(container.childNodes)) {
-    traverse(child, { bold: false, italic: false, underline: false, color: null }, rootBlock);
+    traverseNode(child, { bold: false, italic: false, underline: false, color: null });
   }
-  if (rootBlock.runs.length > 0) {
-    blocks.push(rootBlock);
-  }
+  flushParagraph();
 
   return blocks;
 }
@@ -263,18 +396,18 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
   const { quotation, company, portalLabel = "Lead Manager", downloadedBy } = input;
 
   const companyName =
+    quotation.company_name ||
     company?.trade_name ||
     company?.legal_name ||
-    quotation.company_name ||
     "";
 
   const resolvedPortalLabel = portalLabel || "Lead Manager";
 
   const companyAddress = formatCompanyAddress(company as any, quotation.company_regd_address);
 
-  const companyPhone = company?.phone || quotation.company_phone || "";
-  const companyEmail = company?.email || quotation.company_email || "";
-  const companyGstin = company?.gstin || quotation.company_gstin || "";
+  const companyPhone = quotation.company_phone || company?.phone || "";
+  const companyEmail = quotation.company_email || company?.email || "";
+  const companyGstin = quotation.company_gstin || company?.gstin || "";
 
   const contactLine = [
     companyPhone ? `Phone: ${companyPhone}` : "",
@@ -544,6 +677,228 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
     currentY += 6;
   };
 
+  const drawRichTextMessage = (html: string) => {
+    const blocks = parseHtmlToBlocks(html);
+    if (blocks.length === 0) return;
+
+    for (let bIdx = 0; bIdx < blocks.length; bIdx += 1) {
+      const block = blocks[bIdx];
+
+      if (block.type === "divider") {
+        checkPageBreak(3, false);
+        pdf.setDrawColor(203, 213, 225);
+        pdf.setLineWidth(0.2);
+        pdf.line(M + 1, currentY, M + CONTENT_W - 2, currentY);
+        currentY += 3.5;
+        continue;
+      }
+
+      if (block.type === "table" && block.rows && block.rows.length > 0) {
+        const rows = block.rows;
+        let maxCols = 1;
+        for (const r of rows) {
+          if (r.cells.length > maxCols) maxCols = r.cells.length;
+        }
+        if (maxCols === 0) continue;
+
+        const tableX = M + 1;
+        const tableW = CONTENT_W - 2;
+        const colW = tableW / maxCols;
+
+        for (const row of rows) {
+          const cellData = row.cells.map((cell) => {
+            const isHeader = cell.isHeader;
+            const fontSize = isHeader ? 7.0 : 6.5;
+            const isBold = isHeader || cell.runs.some((r) => r.bold);
+            pdf.setFont("helvetica", isBold ? "bold" : "normal");
+            pdf.setFontSize(fontSize);
+
+            const splitLines: string[] = pdf.splitTextToSize(cell.text || "", Math.max(colW - 3, 10));
+            return {
+              cell,
+              isHeader,
+              isBold,
+              fontSize,
+              splitLines: splitLines.length > 0 ? splitLines : [""],
+            };
+          });
+
+          let maxLines = 1;
+          for (const cd of cellData) {
+            if (cd.splitLines.length > maxLines) {
+              maxLines = cd.splitLines.length;
+            }
+          }
+          const lineStep = 3.2;
+          const rowH = Math.max(5.5, maxLines * lineStep + 2.0);
+
+          checkPageBreak(rowH + 1, false);
+
+          for (let cIdx = 0; cIdx < maxCols; cIdx++) {
+            const cellX = tableX + cIdx * colW;
+            const cd = cellData[cIdx];
+            const isHeader = cd ? cd.isHeader : false;
+
+            pdf.setDrawColor(203, 213, 225);
+            pdf.setLineWidth(0.18);
+            if (isHeader) {
+              pdf.setFillColor(241, 245, 249);
+              pdf.rect(cellX, currentY, colW, rowH, "FD");
+            } else {
+              pdf.setFillColor(255, 255, 255);
+              pdf.rect(cellX, currentY, colW, rowH, "FD");
+            }
+
+            if (!cd) continue;
+
+            pdf.setFont("helvetica", cd.isBold ? "bold" : "normal");
+            pdf.setFontSize(cd.fontSize);
+            pdf.setTextColor(...(isHeader ? NAVY : TEXT));
+
+            for (let l = 0; l < cd.splitLines.length; l++) {
+              const lineText = cd.splitLines[l];
+              if (!lineText) continue;
+              const lineY = currentY + 3.2 + l * lineStep;
+
+              if (cd.cell.align === "center") {
+                pdf.text(lineText, cellX + colW / 2, lineY, { align: "center" });
+              } else if (cd.cell.align === "right") {
+                pdf.text(lineText, cellX + colW - 1.5, lineY, { align: "right" });
+              } else {
+                pdf.text(lineText, cellX + 1.5, lineY);
+              }
+            }
+          }
+
+          currentY += rowH;
+        }
+
+        currentY += 2;
+        continue;
+      }
+
+      const isH1 = block.headingLevel === 1;
+      const isH2 = block.headingLevel === 2;
+      const isH3 = block.headingLevel === 3;
+      const baseFontSize = isH1 ? 9.5 : isH2 ? 8.5 : isH3 ? 7.8 : 7.0;
+      const stepLineHeight = isH1 ? 5.0 : isH2 ? 4.5 : isH3 ? 4.0 : 3.6;
+
+      const tokens: TextRun[] = [];
+      for (const run of block.runs) {
+        if (run.text.includes("\n")) {
+          const parts = run.text.split("\n");
+          for (let p = 0; p < parts.length; p++) {
+            if (p > 0) tokens.push({ ...run, text: "\n" });
+            if (parts[p]) {
+              const words = parts[p].match(/\S+|\s+/g) || [parts[p]];
+              for (const w of words) tokens.push({ ...run, text: w });
+            }
+          }
+        } else {
+          const words = run.text.match(/\S+|\s+/g) || [run.text];
+          for (const w of words) tokens.push({ ...run, text: w });
+        }
+      }
+
+      if (tokens.length === 0) continue;
+
+      let bulletWidth = 0;
+      if (block.type === "list-item" && block.bullet) {
+        pdf.setFont("helvetica", "bold");
+        pdf.setFontSize(baseFontSize);
+        bulletWidth = pdf.getTextWidth(block.bullet);
+      }
+
+      const indentLeft = block.type === "list-item" ? bulletWidth + 2 : 0;
+      const maxLineWidth = CONTENT_W - 2 - indentLeft;
+
+      const linesOfTokens: TextRun[][] = [];
+      let currentLine: TextRun[] = [];
+      let currentLineWidth = 0;
+
+      for (const token of tokens) {
+        if (token.text === "\n") {
+          if (currentLine.length > 0) linesOfTokens.push(currentLine);
+          currentLine = [];
+          currentLineWidth = 0;
+          continue;
+        }
+
+        // Avoid leading whitespace indent on line start
+        if (currentLine.length === 0 && !token.text.trim()) {
+          continue;
+        }
+
+        const isBold = isH1 || isH2 || isH3 || token.bold;
+        pdf.setFont("helvetica", isBold && token.italic ? "bolditalic" : isBold ? "bold" : token.italic ? "italic" : "normal");
+        pdf.setFontSize(baseFontSize);
+        const tw = pdf.getTextWidth(token.text);
+
+        if (currentLineWidth + tw > maxLineWidth && currentLine.length > 0) {
+          linesOfTokens.push(currentLine);
+          currentLine = token.text.trim() ? [token] : [];
+          currentLineWidth = token.text.trim() ? tw : 0;
+        } else {
+          currentLine.push(token);
+          currentLineWidth += tw;
+        }
+      }
+      if (currentLine.length > 0) {
+        linesOfTokens.push(currentLine);
+      }
+
+      for (let lIdx = 0; lIdx < linesOfTokens.length; lIdx += 1) {
+        checkPageBreak(stepLineHeight + 1, false);
+
+        const line = linesOfTokens[lIdx];
+        let x = M + 1;
+
+        if (block.type === "list-item" && block.bullet) {
+          if (lIdx === 0) {
+            pdf.setFont("helvetica", "bold");
+            pdf.setFontSize(baseFontSize);
+            pdf.setTextColor(...NAVY);
+            pdf.text(block.bullet, x, currentY);
+          }
+          x += bulletWidth + 2;
+        }
+
+        for (const token of line) {
+          const isBold = isH1 || isH2 || isH3 || token.bold;
+          pdf.setFont("helvetica", isBold && token.italic ? "bolditalic" : isBold ? "bold" : token.italic ? "italic" : "normal");
+          pdf.setFontSize(baseFontSize);
+          pdf.setTextColor(...(token.color || (isH1 || isH2 ? NAVY : TEXT)));
+          pdf.text(token.text, x, currentY);
+
+          const tw = pdf.getTextWidth(token.text);
+          if (token.underline) {
+            pdf.setDrawColor(...(token.color || TEXT));
+            pdf.setLineWidth(0.15);
+            pdf.line(x, currentY + 0.3, x + tw, currentY + 0.3);
+          }
+
+          if (token.strikethrough) {
+            pdf.setDrawColor(...(token.color || TEXT));
+            pdf.setLineWidth(0.15);
+            pdf.line(x, currentY - 0.8, x + tw, currentY - 0.8);
+          }
+
+          x += tw;
+        }
+
+        currentY += stepLineHeight;
+      }
+
+      currentY += isH1 ? 2.2 : isH2 ? 1.8 : 1.2;
+    }
+    currentY += 1.5;
+  };
+
+  const rawMsg = quotation.message || (quotation as any).quotation_message;
+  if (isNonEmptyRichText(rawMsg)) {
+    drawRichTextMessage(rawMsg!);
+  }
+
   drawTableHeaders();
 
   const items = quotation.items || [];
@@ -626,10 +981,14 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
     pdf.text(formatCurrency(it.taxable_amount), x + cols[5].w - 1.5, currentY + 4.2, { align: "right" });
     x += cols[5].w;
 
-    pdf.text(`${it.gst_rate}%`, x + cols[6].w / 2, currentY + 4.2, { align: "center" });
+    const isItemGstOff = quotation.gst_enabled === false || it.gst_enabled === false || !it.gst_rate;
+    const gstRateText = isItemGstOff ? "" : `${it.gst_rate}%`;
+    pdf.text(gstRateText, x + cols[6].w / 2, currentY + 4.2, { align: "center" });
     x += cols[6].w;
 
-    pdf.text(formatCurrency(it.total_gst_amount), x + cols[7].w - 1.5, currentY + 4.2, { align: "right" });
+    const gstAmtVal = isItemGstOff ? 0 : Number(it.total_gst_amount || 0);
+    const gstAmtText = isItemGstOff || !gstAmtVal ? "" : formatCurrency(gstAmtVal);
+    pdf.text(gstAmtText, x + cols[7].w - 1.5, currentY + 4.2, { align: "right" });
     x += cols[7].w;
 
     pdf.setFont("helvetica", "bold");
@@ -661,7 +1020,7 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
   pdf.setFont("helvetica", "bold");
   pdf.setFontSize(8);
   pdf.setTextColor(...NAVY);
-  const words = quotation.amount_in_words || "—";
+  const words = (quotation.amount_in_words && quotation.amount_in_words.trim()) || numberToIndianWords(quotation.grand_total) || "Zero Rupees Only";
   const wrappedWords = pdf.splitTextToSize(words, leftW - 6);
   pdf.text(wrappedWords, M + 3, currentY + 8.5);
 
@@ -700,7 +1059,10 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
   } else {
     renderSummaryRow("Sub Total (Taxable):", `Rs. ${formatCurrency(quotation.subtotal)}`);
   }
-  renderSummaryRow("Total GST:", `Rs. ${formatCurrency(quotation.total_gst)}`);
+  renderSummaryRow(
+    "Total GST:",
+    quotation.gst_enabled === false || !quotation.total_gst ? "" : `Rs. ${formatCurrency(quotation.total_gst)}`
+  );
   if (hasRoundOff) {
     renderSummaryRow("Round Off:", `Rs. ${formatCurrency(quotation.round_off)}`);
   }
@@ -782,6 +1144,10 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
             continue;
           }
 
+          if (currentLine.length === 0 && !token.text.trim()) {
+            continue;
+          }
+
           pdf.setFont("helvetica", token.bold && token.italic ? "bolditalic" : token.bold ? "bold" : token.italic ? "italic" : "normal");
           pdf.setFontSize(6.5);
           const tw = pdf.getTextWidth(token.text);
@@ -851,12 +1217,12 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
   }
 
   // COMPANY BANK DETAILS
-  const bankName = (company?.bank_name as string) || quotation.bank_name || "";
-  const accountNumber = (company?.account_number as string) || quotation.account_number || "";
-  const ifscCode = (company?.ifsc_code as string) || quotation.ifsc_code || "";
-  const accountName = (company?.account_name as string) || quotation.account_name || companyName || "";
-  const branchName = (company?.branch_name as string) || quotation.branch_name || "";
-  const accountType = (company?.account_type as string) || quotation.account_type || "";
+  const bankName = quotation.bank_name || (company?.bank_name as string) || "";
+  const accountNumber = quotation.account_number || (company?.account_number as string) || "";
+  const ifscCode = quotation.ifsc_code || (company?.ifsc_code as string) || "";
+  const accountName = quotation.account_name || (company?.account_name as string) || companyName || "";
+  const branchName = quotation.branch_name || (company?.branch_name as string) || "";
+  const accountType = quotation.account_type || (company?.account_type as string) || "";
 
   if (bankName || accountNumber || ifscCode) {
     checkPageBreak(18, false);
@@ -967,6 +1333,14 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
   for (let p = 1; p <= totalPages; p += 1) {
     pdf.setPage(p);
 
+    // Top continuation indicator on later pages (only if multi-page)
+    if (totalPages > 1 && p > 1) {
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(6.8);
+      pdf.setTextColor(...NAVY);
+      pdf.text(`Ref: ${refNumber}  (Page ${p} of ${totalPages})`, PAGE_W - M, M - 1.5, { align: "right" });
+    }
+
     // System-generated notice above footer line
     pdf.setFont("helvetica", "italic");
     pdf.setFontSize(5.5);
@@ -984,12 +1358,18 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
     pdf.setTextColor(...MUTED);
     pdf.text(`Ref: ${refNumber} • Generated via ${resolvedPortalLabel}`, M, PAGE_H - M);
 
-    // Center: Page count (Only shown if totalPages > 1)
+    // Center: Page count (Only printed if totalPages > 1)
     if (totalPages > 1) {
-      pdf.text(`Page ${p} / ${totalPages}`, PAGE_W / 2, PAGE_H - M, { align: "center" });
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(7.5);
+      pdf.setTextColor(...DARK);
+      pdf.text(`Page ${p} of ${totalPages}`, PAGE_W / 2, PAGE_H - M, { align: "center" });
     }
 
     // Right: Generated By with Timestamp
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(6);
+    pdf.setTextColor(...MUTED);
     pdf.text(auditRight, PAGE_W - M, PAGE_H - M, { align: "right" });
   }
 

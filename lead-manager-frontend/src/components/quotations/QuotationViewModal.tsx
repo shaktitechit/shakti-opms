@@ -6,7 +6,8 @@
 "use client";
 
 import React, { useRef, useMemo } from "react";
-import { X, Printer, FileText, Lock } from "lucide-react";
+import Link from "next/link";
+import { X, Printer, FileText, Lock, Copy } from "lucide-react";
 import { useGetCompanyInfoQuery, type LeadQuotationRecord } from "@/store/api";
 import { useAppSelector } from "@/store/hooks";
 import { readSessionFromStorage } from "@/utils/authStorage";
@@ -58,6 +59,9 @@ export function QuotationViewModal({
   const handlePrint = () => {
     if (!containerRef.current || !isPdfAllowed) return;
 
+    // Detect if content exceeds single A4 printable page height (~1060px)
+    const isMultiPage = (containerRef.current.scrollHeight || 0) > 1060;
+
     const printFrame = document.createElement("iframe");
     printFrame.style.position = "fixed";
     printFrame.style.right = "0";
@@ -80,6 +84,18 @@ export function QuotationViewModal({
             @page {
               size: A4 portrait;
               margin: 8mm 10mm;
+              ${
+                isMultiPage
+                  ? `@bottom-center {
+                content: "Page " counter(page) " of " counter(pages);
+                font-size: 7.5pt;
+                font-weight: 700;
+                color: #334155;
+              }`
+                  : `@bottom-center {
+                content: none;
+              }`
+              }
             }
             * {
               box-sizing: border-box;
@@ -101,9 +117,83 @@ export function QuotationViewModal({
               box-shadow: none !important;
               background: #ffffff !important;
             }
+            .rich-text-content {
+              font-size: 8.5px !important;
+              line-height: 1.4 !important;
+              color: #1e293b !important;
+            }
+            .rich-text-content table {
+              width: 100% !important;
+              border-collapse: collapse !important;
+              margin: 4px 0 6px 0 !important;
+              page-break-inside: avoid !important;
+            }
+            .rich-text-content th,
+            .rich-text-content td {
+              border: 1px solid #cbd5e1 !important;
+              padding: 4px 6px !important;
+              font-size: 8px !important;
+              line-height: 1.3 !important;
+              text-align: left !important;
+              vertical-align: top !important;
+            }
+            .rich-text-content th {
+              background-color: #f1f5f9 !important;
+              font-weight: 700 !important;
+              color: #0f172a !important;
+            }
+            .rich-text-content h1 {
+              font-size: 11px !important;
+              font-weight: 700 !important;
+              margin: 4px 0 2px 0 !important;
+              color: #0f172a !important;
+            }
+            .rich-text-content h2 {
+              font-size: 10px !important;
+              font-weight: 700 !important;
+              margin: 3px 0 2px 0 !important;
+              color: #0f172a !important;
+            }
+            .rich-text-content h3 {
+              font-size: 9px !important;
+              font-weight: 700 !important;
+              margin: 2px 0 1px 0 !important;
+              color: #0f172a !important;
+            }
+            .rich-text-content p {
+              margin: 0 0 3px 0 !important;
+            }
+            .rich-text-content ul,
+            .rich-text-content ol {
+              margin: 2px 0 4px 0 !important;
+              padding-left: 16px !important;
+            }
+            .rich-text-content li {
+              margin-bottom: 2px !important;
+            }
+            .rich-text-content blockquote {
+              border-left: 2px solid #94a3b8 !important;
+              padding-left: 8px !important;
+              margin: 3px 0 !important;
+              font-style: italic !important;
+            }
+            .rich-text-content hr {
+              border: none !important;
+              border-top: 1px solid #cbd5e1 !important;
+              margin: 4px 0 !important;
+            }
+            ${
+              isMultiPage
+                ? `.print-page-number::after {
+              content: "Page " counter(page) " of " counter(pages);
+            }`
+                : `.print-page-number {
+              display: none !important;
+            }`
+            }
           </style>
         </head>
-        <body>
+        <body class="${isMultiPage ? "multi-page" : "single-page"}">
           ${containerRef.current.innerHTML}
         </body>
       </html>
@@ -153,6 +243,14 @@ export function QuotationViewModal({
           </div>
 
           <div className="flex items-center gap-2">
+            <Link
+              href={`/dashboard/quotations/new?copy_from=${quotation._id}`}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
+              title="Copy this quotation as a new quotation"
+            >
+              <Copy className="h-3.5 w-3.5 text-indigo-500" />
+              Copy
+            </Link>
             {isPdfAllowed && (
               <>
                 <button

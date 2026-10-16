@@ -7,7 +7,7 @@ function parseQuotationLineQuantity(raw, fallback = 1) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function computeQuotationLineAmounts(item) {
+function computeQuotationLineAmounts(item, options = {}) {
   const qty = parseQuotationLineQuantity(item.quantity, 1);
   const rate = Number(item.rate ?? item.unit_price) || 0;
   const grossAmount = Math.round(qty * rate * 100) / 100;
@@ -25,7 +25,8 @@ function computeQuotationLineAmounts(item) {
   }
 
   const taxableAmount = Math.round((grossAmount - discountAmount) * 100) / 100;
-  const gstRate = Number(item.gst_rate ?? item.gst_percent) || 0;
+  const gstEnabled = options.gstEnabled !== false && item.gst_enabled !== false;
+  const gstRate = gstEnabled ? (Number(item.gst_rate ?? item.gst_percent) || 0) : 0;
 
   return {
     qty,

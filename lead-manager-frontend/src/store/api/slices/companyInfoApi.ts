@@ -117,7 +117,74 @@ export type CompanyAggregatedData = {
   };
 };
 
-/** `/api/company-info` — Company Information & Organization Settings suite. */
+export type BranchBankingRecord = {
+  _id?: string;
+  bank_name?: string;
+  account_name?: string;
+  account_number?: string;
+  ifsc_code?: string;
+  branch_name?: string;
+  account_type?: string;
+  upi_id?: string;
+  swift_code?: string;
+  is_primary?: boolean;
+};
+
+export type BranchAddressRecord = {
+  street?: string;
+  landmark?: string;
+  city?: string;
+  state?: string;
+  state_code?: string;
+  pincode?: string;
+  country?: string;
+  currency?: string;
+  timezone?: string;
+  financial_year?: string;
+};
+
+export type BranchTaxationRecord = {
+  gstin?: string;
+  pan?: string;
+  cin?: string;
+  drug_license?: string;
+  fssai_license?: string;
+  invoice_footer_note?: string;
+};
+
+export type BranchContactRecord = {
+  manager_name?: string;
+  email?: string;
+  billing_email?: string;
+  phone?: string;
+  alternate_phone?: string;
+  website?: string;
+};
+
+export type BranchInvoicingRecord = {
+  invoice_prefix?: string;
+  challan_prefix?: string;
+  quotation_prefix?: string;
+};
+
+export type BranchRecord = {
+  _id: string;
+  company_id?: string;
+  branch_code: string;
+  branch_name: string;
+  branch_type?: string;
+  is_head_office?: boolean;
+  is_active?: boolean;
+  address?: BranchAddressRecord;
+  taxation?: BranchTaxationRecord;
+  contact?: BranchContactRecord;
+  banking?: BranchBankingRecord[];
+  invoicing?: BranchInvoicingRecord;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+/** `/api/company-info` & `/api/branches` — Company Information, Branches & Organization Settings suite. */
 export const companyInfoApi = medicaApi.injectEndpoints({
   endpoints: (build) => ({
     getCompanyInfo: build.query<CompanyInfoRecord, void>({
@@ -130,6 +197,27 @@ export const companyInfoApi = medicaApi.injectEndpoints({
       query: () => "company-info/data",
       transformResponse: (raw: ApiEnvelope<CompanyAggregatedData>) =>
         unwrapEnvelope(raw),
+      providesTags: ["CompanyInfo"],
+    }),
+    getBranches: build.query<BranchRecord[], void>({
+      query: () => "branches",
+      transformResponse: (raw: any) => {
+        if (!raw) return [];
+        if (Array.isArray(raw)) return raw;
+        if (Array.isArray(raw.branches)) return raw.branches;
+        if (Array.isArray(raw.data)) return raw.data;
+        return (unwrapEnvelope(raw) as BranchRecord[]) || [];
+      },
+      providesTags: ["CompanyInfo"],
+    }),
+    getHeadOfficeBranch: build.query<BranchRecord, void>({
+      query: () => "branches/head-office",
+      transformResponse: (raw: any) => {
+        if (!raw) return null as any;
+        if (raw.branch) return raw.branch;
+        if (raw.data) return raw.data;
+        return unwrapEnvelope(raw);
+      },
       providesTags: ["CompanyInfo"],
     }),
     updateCompanyInfo: build.mutation<
@@ -153,5 +241,8 @@ export const {
   useLazyGetCompanyInfoQuery,
   useGetCompanyDataQuery,
   useLazyGetCompanyDataQuery,
+  useGetBranchesQuery,
+  useLazyGetBranchesQuery,
+  useGetHeadOfficeBranchQuery,
   useUpdateCompanyInfoMutation,
 } = companyInfoApi;

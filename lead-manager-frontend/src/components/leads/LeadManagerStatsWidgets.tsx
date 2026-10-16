@@ -105,6 +105,9 @@ export default function LeadManagerStatsWidgets({
   const showPricing = canViewLeadPricing(authUser, portalHome);
   const showQuotationsModule = canViewQuotations(authUser);
 
+  const currentUserId = authUser?._id ? String(authUser._id) : undefined;
+  const effectiveAssignedTo = assigned_to || (isExecutive && currentUserId ? currentUserId : undefined);
+
   const hasPeriod =
     dateFilter != null || selectedYears != null || selectedMonths != null;
   const statsQuery = useMemo(() => {
@@ -115,11 +118,11 @@ export default function LeadManagerStatsWidgets({
       selectedYears,
       selectedMonths,
     });
-    if (assigned_to) {
-      return { ...base, assigned_to };
+    if (effectiveAssignedTo) {
+      return { ...base, assigned_to: effectiveAssignedTo };
     }
     return base;
-  }, [dateFilter, customDateFrom, customDateTo, selectedYears, selectedMonths, assigned_to]);
+  }, [dateFilter, customDateFrom, customDateTo, selectedYears, selectedMonths, effectiveAssignedTo]);
 
   const { data, isFetching } = useGetLeadDashboardStatsQuery(statsQuery);
 
@@ -136,12 +139,24 @@ export default function LeadManagerStatsWidgets({
     useGetLeadFollowUpCalendarQuery({
       from_date: todayYmd,
       to_date: todayYmd,
+      ...(effectiveAssignedTo ? { assigned_to: effectiveAssignedTo } : {}),
     });
 
   const followUps = useMemo(() => {
     if (!Array.isArray(followUpsData)) return [];
+    if (isExecutive && currentUserId) {
+      return followUpsData.filter((fu) => {
+        const leadObj = typeof fu.lead === "object" && fu.lead !== null ? fu.lead : null;
+        const leadAssignee = leadObj?.assigned_to
+          ? typeof leadObj.assigned_to === "object"
+            ? String((leadObj.assigned_to as any)._id)
+            : String(leadObj.assigned_to)
+          : null;
+        return leadAssignee === currentUserId;
+      });
+    }
     return followUpsData;
-  }, [followUpsData]);
+  }, [followUpsData, isExecutive, currentUserId]);
 
   const isTodayPeriod = !hasPeriod || dateFilter === "today";
   const overdueCount = data?.overdueFollowUps ?? 0;
