@@ -411,6 +411,65 @@ function ProductAutocomplete({
   );
 }
 
+function getDepartmentBadge(dept: unknown): { label: string; className: string } | null {
+  if (!dept) return null;
+  const raw =
+    typeof dept === "object" && dept !== null
+      ? String(
+          (dept as Record<string, unknown>).name ||
+            (dept as Record<string, unknown>).code ||
+            ""
+        )
+      : String(dept);
+  const normalized = raw.toLowerCase().trim();
+  if (!normalized) return null;
+
+  switch (normalized) {
+    case "sales":
+      return {
+        label: "Sales",
+        className:
+          "bg-emerald-50 text-emerald-700 ring-emerald-600/20 dark:bg-emerald-950/40 dark:text-emerald-300",
+      };
+    case "admin":
+      return {
+        label: "Admin",
+        className:
+          "bg-purple-50 text-purple-700 ring-purple-600/20 dark:bg-purple-950/40 dark:text-purple-300",
+      };
+    case "super_admin":
+      return {
+        label: "Super Admin",
+        className:
+          "bg-violet-50 text-violet-700 ring-violet-600/20 dark:bg-violet-950/40 dark:text-violet-300",
+      };
+    case "finance":
+      return {
+        label: "Finance",
+        className:
+          "bg-amber-50 text-amber-700 ring-amber-600/20 dark:bg-amber-950/40 dark:text-amber-300",
+      };
+    case "account":
+      return {
+        label: "Account",
+        className:
+          "bg-sky-50 text-sky-700 ring-sky-600/20 dark:bg-sky-950/40 dark:text-sky-300",
+      };
+    case "dispatch":
+      return {
+        label: "Dispatch",
+        className:
+          "bg-orange-50 text-orange-700 ring-orange-600/20 dark:bg-orange-950/40 dark:text-orange-300",
+      };
+    default:
+      return {
+        label: raw.charAt(0).toUpperCase() + raw.slice(1),
+        className:
+          "bg-slate-100 text-slate-700 ring-slate-600/10 dark:bg-white/10 dark:text-slate-300",
+      };
+  }
+}
+
 interface SalesAutocompleteProps {
   salesUsers: Entity[];
   selectedId: string;
@@ -440,15 +499,35 @@ function SalesAutocomplete({
     }
   }, [selectedUser]);
 
+  const isInputMatchingSelected = Boolean(
+    selectedUser &&
+      search.trim() === String(selectedUser.name || selectedUser.username || "").trim()
+  );
+
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim();
-    if (!q) return salesUsers;
+    if (!q || isInputMatchingSelected) return salesUsers;
     return salesUsers.filter((u) => {
       const name = String(u.name || "").toLowerCase();
       const username = String(u.username || "").toLowerCase();
-      return name.includes(q) || username.includes(q);
+      const email = String(u.email || "").toLowerCase();
+      const rawDept =
+        typeof u.department === "object" && u.department !== null
+          ? String(
+              (u.department as Record<string, unknown>).name ||
+                (u.department as Record<string, unknown>).code ||
+                ""
+            )
+          : String(u.department || "");
+      const dept = rawDept.toLowerCase();
+      return (
+        name.includes(q) ||
+        username.includes(q) ||
+        email.includes(q) ||
+        dept.includes(q)
+      );
     });
-  }, [salesUsers, search]);
+  }, [salesUsers, search, isInputMatchingSelected]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -465,6 +544,8 @@ function SalesAutocomplete({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [selectedUser]);
 
+  const selectedDeptBadge = selectedUser ? getDepartmentBadge(selectedUser.department) : null;
+
   return (
     <div ref={containerRef} className="relative w-full">
       <div className="relative">
@@ -475,22 +556,59 @@ function SalesAutocomplete({
             setSearch(e.target.value);
             setIsOpen(true);
           }}
-          onFocus={() => setIsOpen(true)}
+          onFocus={(e) => {
+            setIsOpen(true);
+            e.target.select();
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
             }
           }}
-          placeholder="Search sales rep..."
-          className={`${className} pr-10`}
+          placeholder="Search user by name, email, department..."
+          className={`${className} pr-14`}
         />
-        <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400 dark:text-slate-500">
-          <Search className="h-4 w-4" />
+        <div className="absolute inset-y-0 right-0 flex items-center pr-3 gap-1.5">
+          {selectedId ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange("");
+                setSearch("");
+              }}
+              className="rounded p-0.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-white/10 dark:hover:text-slate-200"
+              title="Clear selection"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+          <span className="pointer-events-none text-slate-400 dark:text-slate-500">
+            <Search className="h-4 w-4" />
+          </span>
         </div>
       </div>
 
+      {selectedUser && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs">
+          {selectedDeptBadge && (
+            <span
+              className={`inline-flex items-center rounded-full px-2 py-0.5 text-2xs font-semibold ring-1 ring-inset ${selectedDeptBadge.className}`}
+            >
+              {selectedDeptBadge.label}
+            </span>
+          )}
+          {selectedUser.email ? (
+            <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400 truncate">
+              <Mail className="h-3 w-3 shrink-0 text-slate-400" />
+              <span className="truncate">{String(selectedUser.email)}</span>
+            </span>
+          ) : null}
+        </div>
+      )}
+
       {isOpen && (
-        <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-white/10 dark:bg-slate-900">
+        <div className="absolute z-50 mt-1 max-h-64 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-white/10 dark:bg-slate-900">
           <button
             type="button"
             onClick={() => {
@@ -505,13 +623,16 @@ function SalesAutocomplete({
           {filtered.length > 0 && <div className="border-t border-slate-100 dark:border-white/5 my-1" />}
           {filtered.length === 0 ? (
             <div className="px-3 py-2 text-sm text-slate-500 dark:text-slate-400">
-              No sales reps found
+              No users found
             </div>
           ) : (
             filtered.map((u) => {
               const id = String(u._id ?? u.id ?? "");
               const isSelected = id === selectedId;
               const name = String(u.name || u.username || id);
+              const email = String(u.email || "");
+              const deptBadge = getDepartmentBadge(u.department);
+
               return (
                 <button
                   key={id}
@@ -520,13 +641,33 @@ function SalesAutocomplete({
                     onChange(id);
                     setIsOpen(false);
                   }}
-                  className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition hover:bg-slate-50 dark:hover:bg-white/5 ${isSelected
+                  className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition hover:bg-slate-50 dark:hover:bg-white/5 ${
+                    isSelected
                       ? "bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-400 font-medium"
                       : "text-slate-800 dark:text-slate-200"
-                    }`}
+                  }`}
                 >
-                  <span>{name}</span>
-                  {isSelected && <Check className="h-4 w-4 text-blue-600 dark:text-blue-400" />}
+                  <div className="flex flex-col min-w-0 pr-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="truncate font-medium">{name}</span>
+                      {deptBadge && (
+                        <span
+                          className={`inline-flex items-center rounded-full px-1.5 py-0.5 text-2xs font-semibold ring-1 ring-inset ${deptBadge.className}`}
+                        >
+                          {deptBadge.label}
+                        </span>
+                      )}
+                    </div>
+                    {email && (
+                      <span className="flex items-center gap-1.5 mt-0.5 text-xs text-slate-500 dark:text-slate-400 truncate">
+                        <Mail className="h-3 w-3 shrink-0 text-slate-400" />
+                        <span className="truncate">{email}</span>
+                      </span>
+                    )}
+                  </div>
+                  {isSelected && (
+                    <Check className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400 ml-2" />
+                  )}
                 </button>
               );
             })
@@ -648,7 +789,7 @@ export default function AdminCreateOrderPage({
   const portalConfig = PORTAL_CREATE_CONFIG[portalHome];
   const partiesQ = useListPartiesQuery({ status: "active" });
   const productsQ = useListProductsQuery({});
-  const salesUsersQ = useListUsersQuery({ department: "sales" });
+  const salesUsersQ = useListUsersQuery({});
 
   const parties = useMemo(() => pickList(partiesQ.data), [partiesQ.data]);
   const products = useMemo(() => pickList(productsQ.data), [productsQ.data]);
@@ -680,6 +821,10 @@ export default function AdminCreateOrderPage({
   const selectedParty = useMemo(() => {
     return parties.find((p) => String(p._id ?? p.id ?? "") === String(partyId));
   }, [parties, partyId]);
+
+  const selectedSalesUser = useMemo(() => {
+    return salesUsers.find((u) => String(u._id ?? u.id ?? "") === String(assignedSales));
+  }, [salesUsers, assignedSales]);
 
   const selectedPartyName = selectedParty
     ? String(selectedParty.party_name || "")
@@ -1363,7 +1508,7 @@ export default function AdminCreateOrderPage({
               party={selectedParty}
               order={{
                 party: selectedParty,
-                assigned_sales_user: assignedSales ? { _id: assignedSales } : null,
+                assigned_sales_user: selectedSalesUser || (assignedSales ? { _id: assignedSales } : null),
               }}
               scope="admin_approve"
               value={emailOptions}

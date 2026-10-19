@@ -10,8 +10,11 @@ import { ReturnsTab } from "./tabs/ReturnsTab";
 import CommunicationTab from "./tabs/CommunicationTab";
 import AttachmentsTab from "./tabs/AttachmentsTab";
 import { DeliveriesTab } from "./tabs/DeliveriesTab";
+import PoTab from "./tabs/PoTab";
+import CostSheetTab from "./tabs/CostSheetTab";
+import KycTab from "./tabs/KycTab";
 import type { OrderDetailTabId, OrderDetailsPageConfig } from "./orderDetailsPageConfig";
-import { formatDate } from "./orderDetailUtils";
+import { formatDate, detailRefId } from "./orderDetailUtils";
 
 export type OrderDetailTabContentProps = {
   config: OrderDetailsPageConfig;
@@ -103,6 +106,46 @@ export function OrderDetailTabContent(props: OrderDetailTabContentProps) {
           partyLabel={partyLabel}
         />
       );
+
+    case "po":
+      if (!["/admin", "/super_admin", "/finance"].includes(config.portalHome)) {
+        return null;
+      }
+      return (
+        <PoTab
+          orderId={orderId}
+          attachments={attachments}
+          isLoading={attachmentsLoading}
+          onRefetch={refetchOrder}
+        />
+      );
+
+    case "cost_sheet":
+      if (!["/admin", "/super_admin", "/finance"].includes(config.portalHome)) {
+        return null;
+      }
+      return (
+        <CostSheetTab
+          orderId={orderId}
+          attachments={attachments}
+          isLoading={attachmentsLoading}
+          onRefetch={refetchOrder}
+        />
+      );
+
+    case "kyc": {
+      if (!["/admin", "/super_admin", "/finance"].includes(config.portalHome)) {
+        return null;
+      }
+      const partyId = detailRefId(detail.party || detail.customer);
+      return (
+        <KycTab
+          orderId={orderId}
+          partyId={partyId}
+          partyName={partyLabel}
+        />
+      );
+    }
 
     case "dispatches":
       return (
