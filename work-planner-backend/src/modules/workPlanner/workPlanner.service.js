@@ -922,10 +922,16 @@ async function create(body, user) {
       location: body.location?.trim() || undefined,
       country_id: (body.country_id && mongoose.Types.ObjectId.isValid(body.country_id)) ? body.country_id : undefined,
       state_id: (body.state_id && mongoose.Types.ObjectId.isValid(body.state_id)) ? body.state_id : undefined,
-      city_id: (body.city_id && mongoose.Types.ObjectId.isValid(body.city_id)) ? body.city_id : undefined,
+      city_id: (body.city_id && mongoose.Types.ObjectId.isValid(body.city_id))
+        ? body.city_id
+        : (Array.isArray(body.city_ids) && body.city_ids[0] && mongoose.Types.ObjectId.isValid(body.city_ids[0]))
+          ? body.city_ids[0]
+          : undefined,
+      city_ids: Array.isArray(body.city_ids) ? body.city_ids.filter((id) => mongoose.Types.ObjectId.isValid(id)) : undefined,
       country: body.country?.trim() || undefined,
       state: body.state?.trim() || undefined,
-      city: body.city?.trim() || undefined,
+      city: body.city?.trim() || (Array.isArray(body.cities) && body.cities.length > 0 ? body.cities.join(', ') : undefined),
+      cities: Array.isArray(body.cities) ? body.cities.map((s) => String(s).trim()).filter(Boolean) : undefined,
       plan_type: body.plan_type?.trim() || 'Visits',
       is_discussed_with_manager: Boolean(body.is_discussed_with_manager),
       discussed_manager_id: body.discussed_manager_id || undefined,
@@ -995,8 +1001,15 @@ async function update(id, body, user) {
   if (body.state_id !== undefined) {
     plan.state_id = (body.state_id && mongoose.Types.ObjectId.isValid(body.state_id)) ? body.state_id : null;
   }
-  if (body.city_id !== undefined) {
-    plan.city_id = (body.city_id && mongoose.Types.ObjectId.isValid(body.city_id)) ? body.city_id : null;
+  if (body.city_id !== undefined || body.city_ids !== undefined) {
+    if (body.city_id !== undefined) {
+      plan.city_id = (body.city_id && mongoose.Types.ObjectId.isValid(body.city_id)) ? body.city_id : null;
+    } else if (Array.isArray(body.city_ids) && body.city_ids.length > 0 && mongoose.Types.ObjectId.isValid(body.city_ids[0])) {
+      plan.city_id = body.city_ids[0];
+    }
+    if (Array.isArray(body.city_ids)) {
+      plan.city_ids = body.city_ids.filter((id) => mongoose.Types.ObjectId.isValid(id));
+    }
   }
   if (body.country !== undefined) {
     plan.country = typeof body.country === 'string' ? body.country.trim() : body.country;
@@ -1004,8 +1017,15 @@ async function update(id, body, user) {
   if (body.state !== undefined) {
     plan.state = typeof body.state === 'string' ? body.state.trim() : body.state;
   }
-  if (body.city !== undefined) {
-    plan.city = typeof body.city === 'string' ? body.city.trim() : body.city;
+  if (body.city !== undefined || body.cities !== undefined) {
+    if (body.city !== undefined) {
+      plan.city = typeof body.city === 'string' ? body.city.trim() : body.city;
+    } else if (Array.isArray(body.cities) && body.cities.length > 0) {
+      plan.city = body.cities.join(', ');
+    }
+    if (Array.isArray(body.cities)) {
+      plan.cities = body.cities.map((s) => String(s).trim()).filter(Boolean);
+    }
   }
   if (body.plan_type !== undefined) {
     plan.plan_type =

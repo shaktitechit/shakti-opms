@@ -145,17 +145,51 @@ async function list(query = {}) {
 
   const andClauses = [];
 
-  if (query.city_id && mongoose.Types.ObjectId.isValid(query.city_id)) {
-    const cId = new mongoose.Types.ObjectId(query.city_id);
-    const cityOr = [{ city_id: cId }];
-    if (query.city && String(query.city).trim()) {
-      const cRegex = new RegExp(String(query.city).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      cityOr.push({ city: cRegex }, { 'billing_address.city': cRegex });
+  const rawCityIds = query.city_ids || query.city_id;
+  const rawCities = query.cities || query.city;
+
+  const parsedCityIds = [];
+  if (Array.isArray(rawCityIds)) {
+    for (const id of rawCityIds) {
+      if (id && mongoose.Types.ObjectId.isValid(String(id).trim())) {
+        parsedCityIds.push(new mongoose.Types.ObjectId(String(id).trim()));
+      }
+    }
+  } else if (rawCityIds && typeof rawCityIds === 'string') {
+    const parts = rawCityIds.split(',').map((s) => s.trim()).filter(Boolean);
+    for (const p of parts) {
+      if (mongoose.Types.ObjectId.isValid(p)) {
+        parsedCityIds.push(new mongoose.Types.ObjectId(p));
+      }
+    }
+  }
+
+  const parsedCityNames = [];
+  if (Array.isArray(rawCities)) {
+    for (const c of rawCities) {
+      if (c && String(c).trim()) parsedCityNames.push(String(c).trim());
+    }
+  } else if (rawCities && typeof rawCities === 'string') {
+    const parts = rawCities.split(',').map((s) => s.trim()).filter(Boolean);
+    for (const p of parts) {
+      if (p) parsedCityNames.push(p);
+    }
+  }
+
+  if (parsedCityIds.length > 0 || parsedCityNames.length > 0) {
+    const cityOr = [];
+    if (parsedCityIds.length > 0) {
+      cityOr.push({ city_id: { $in: parsedCityIds } });
+    }
+    if (parsedCityNames.length > 0) {
+      const regexes = parsedCityNames.map(
+        (name) => new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i')
+      );
+      cityOr.push({ city: { $in: regexes } });
+      cityOr.push({ 'billing_address.city': { $in: regexes } });
+      cityOr.push({ 'shipping_address.city': { $in: regexes } });
     }
     andClauses.push({ $or: cityOr });
-  } else if (query.city && String(query.city).trim()) {
-    const cRegex = new RegExp(String(query.city).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-    andClauses.push({ $or: [{ city: cRegex }, { 'billing_address.city': cRegex }] });
   }
 
   if (query.state_id && mongoose.Types.ObjectId.isValid(query.state_id)) {

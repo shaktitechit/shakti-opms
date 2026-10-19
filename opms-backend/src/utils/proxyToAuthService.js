@@ -15,6 +15,10 @@ async function proxyToAuthService(req, res, next) {
       validateStatus: () => true,
     });
 
+    if (response.headers['set-cookie']) {
+      res.setHeader('set-cookie', response.headers['set-cookie']);
+    }
+
     res.status(response.status).send(response.data);
   } catch (err) {
     next(err);

@@ -24,8 +24,8 @@ function rolesFromAccessToken(token: string): string[] {
     const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
     const padded = base64 + "=".repeat((4 - (base64.length % 4)) % 4);
     const json = Buffer.from(padded, "base64").toString("utf8");
-    const decoded = JSON.parse(json) as { portals?: unknown };
-    return getOpmsAccessRoles({ portals: decoded.portals });
+    const decoded = JSON.parse(json);
+    return getOpmsAccessRoles(decoded);
   } catch {
     return [];
   }
@@ -39,8 +39,8 @@ export default async function Home() {
   const roles = accessToken ? rolesFromAccessToken(accessToken) : [];
 
   if (accessToken && roles.length > 0) {
-    const home = resolveHomeFromRoles(roles);
-    if (home) redirect(home);
+    const home = resolveHomeFromRoles(roles) ?? "/admin";
+    redirect(home);
   }
 
   return (

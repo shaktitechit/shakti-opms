@@ -16,6 +16,8 @@ export interface WorkPlanFormDraft {
   stateName?: string;
   cityId?: string;
   cityName?: string;
+  selectedCityIds?: string[];
+  selectedCityNames?: string[];
   remarks: string;
   isDiscussedWithManager: boolean | null;
   discussedManagerId: string;

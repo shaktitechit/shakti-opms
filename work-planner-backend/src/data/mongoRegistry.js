@@ -205,9 +205,11 @@ function registerModels() {
         country_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PartyCountry', index: true },
         state_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PartyState', index: true },
         city_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PartyCity', index: true },
+        city_ids: [{ type: mongoose.Schema.Types.ObjectId, ref: 'PartyCity' }],
         country: { type: String, trim: true },
         state: { type: String, trim: true },
         city: { type: String, trim: true },
+        cities: [{ type: String, trim: true }],
         is_discussed_with_manager: { type: Boolean, default: false },
         discussed_manager_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
         discussed_manager_name: { type: String, trim: true },
@@ -1116,6 +1118,18 @@ function registerModels() {
     mongoose.model('UserWorkPlannerSettings', userWorkPlannerSettingsSchema);
   }
 
+  // UserTaskCatalog schema (custom task definitions & templates per user)
+  if (!mongoose.models.UserTaskCatalog) {
+    const userTaskCatalogSchema = require('../models/UserTaskCatalog');
+    mongoose.model('UserTaskCatalog', userTaskCatalogSchema);
+  }
+
+  // UserVisitTemplate schema (single visit planning & outcome template per user)
+  if (!mongoose.models.UserVisitTemplate) {
+    const userVisitTemplateSchema = require('../models/UserVisitTemplate');
+    mongoose.model('UserVisitTemplate', userVisitTemplateSchema);
+  }
+
   // WorkPlannerReportingEdge — who reports to whom (executive→manager, manager→admin)
   if (!mongoose.models.WorkPlannerReportingEdge) {
     const reportingEdgeSchema = new mongoose.Schema(
@@ -1263,6 +1277,8 @@ function registerModels() {
     HelpTicket: mongoose.model('HelpTicket'),
     HelpTicketReply: mongoose.model('HelpTicketReply'),
     UserWorkPlannerSettings: mongoose.model('UserWorkPlannerSettings'),
+    UserTaskCatalog: mongoose.model('UserTaskCatalog'),
+    UserVisitTemplate: mongoose.model('UserVisitTemplate'),
     UserEmailPreference: mongoose.model('UserEmailPreference'),
     WorkPlannerReportingEdge: mongoose.model('WorkPlannerReportingEdge'),
     WorkPlanAnalyticsCache: mongoose.model('WorkPlanAnalyticsCache'),

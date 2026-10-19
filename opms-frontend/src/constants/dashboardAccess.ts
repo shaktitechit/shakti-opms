@@ -7,9 +7,12 @@ import { PORTALS } from "./portalNav";
 import {
   getOpmsAccessRoles,
   hasOpmsAccess,
+  normalizeRole,
   OPMS_ROLE_PRIORITY,
   primaryOpmsRole,
 } from "@/lib/opmsAuth";
+
+export { normalizeRole };
 
 export type PortalRouteMeta = {
   path: string;
@@ -93,11 +96,14 @@ export type DashboardNavItem = {
 
 const HOME_LOOKUP: Record<string, string> = {
   admin: "/admin",
+  administrator: "/admin",
   sales: "/sales",
   finance: "/finance",
   dispatch: "/dispatch",
   super_admin: "/super_admin",
+  superadmin: "/super_admin",
   account: "/account",
+  accounts: "/account",
 };
 
 /** Base path prefixes an access_role may navigate. */
@@ -109,13 +115,6 @@ const ROLE_TO_ALLOWED_PREFIXES: Record<string, readonly string[]> =
     }
     return acc;
   }, {});
-
-export function normalizeRole(raw: unknown): string {
-  if (raw == null) return "";
-  const s = String(raw).trim().toLowerCase();
-  if (!s || s === "null" || s === "undefined") return "";
-  return s;
-}
 
 /** @deprecated Use {@link normalizeRole}. */
 export function normalizeDepartment(raw: unknown): string {
@@ -187,10 +186,18 @@ export function resolveHomeFromRoles(
   if (!normalized.length) return null;
   for (const preferred of OPMS_ROLE_PRIORITY) {
     if (normalized.includes(preferred)) {
-      return HOME_LOOKUP[preferred] ?? null;
+      return HOME_LOOKUP[preferred] ?? `/${preferred}`;
     }
   }
-  return HOME_LOOKUP[normalized[0]] ?? null;
+  for (const r of normalized) {
+    if (HOME_LOOKUP[r]) return HOME_LOOKUP[r];
+  }
+  for (const r of normalized) {
+    const route = PORTAL_ROUTES.find((pr) => (pr.roles as readonly string[]).includes(r));
+    if (route) return route.path;
+  }
+  if (normalized.some((r) => r.includes("admin"))) return "/admin";
+  return PORTAL_ROUTES[0]?.path ?? "/admin";
 }
 
 export function resolveHomeFromUser(user: unknown): string | null {
@@ -240,6 +247,8 @@ export function rolesAllowPortalPath(params: {
   pathname: string;
   roles: readonly string[];
 }): boolean {
+  const normalized = params.roles.map(normalizeRole).filter(Boolean);
+  if (normalized.includes("super_admin")) return true;
   const prefixes = portalPrefixesForRoles(params.roles);
   if (!prefixes.length) return false;
   return pathsMatchAllowedPrefixes(params.pathname, prefixes);

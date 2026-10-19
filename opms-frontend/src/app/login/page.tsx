@@ -41,7 +41,7 @@ function loginDestination(opts: {
   from: string | null | undefined;
   user: unknown | null;
 }): string {
-  const defaultHome = resolveHomeFromUser(opts.user) ?? "/";
+  const defaultHome = resolveHomeFromUser(opts.user) ?? "/admin";
 
   const rawFrom = opts.from?.trim();
   if (!rawFrom || !rawFrom.startsWith("/") || rawFrom.startsWith("//"))
@@ -94,7 +94,7 @@ function LoginForm() {
       toast.error("No OPMS portal access assigned. Contact an administrator.");
       return;
     }
-    persistSessionMarksFromAuth({ token, user, refreshExpiresAt });
+    persistSessionMarksFromAuth({ token, refreshToken, user, refreshExpiresAt });
     const dest = loginDestination({ from, user });
     if (typeof window !== "undefined") {
       window.location.href = dest;
@@ -126,6 +126,7 @@ function LoginForm() {
         applySessionAfterAuth();
         persistSessionMarksFromAuth({
           token: data?.token,
+          refreshToken: data?.refreshToken,
           refreshExpiresAt: data?.refreshExpiresIn
             ? Date.now() + data.refreshExpiresIn * 1000
             : undefined,

@@ -35,9 +35,11 @@ function getCookie(name: string): string | null {
 }
 
 function setCookie(name: string, value: string, maxAge: number): void {
+  const isSecure =
+    typeof window !== "undefined" && window.location.protocol === "https:";
   document.cookie = `${name}=${encodeURIComponent(
     value,
-  )}; Path=/; Max-Age=${String(maxAge)}; SameSite=Lax`;
+  )}; Path=/; Max-Age=${String(maxAge)}; SameSite=Lax${isSecure ? "; Secure" : ""}`;
 }
 
 function deleteCookie(name: string): void {
@@ -74,6 +76,17 @@ export function persistSessionMarksFromAuth(input: {
       setCookie(ACCESS_COOKIE_NAME, input.token, accessMax);
     } else {
       deleteCookie(ACCESS_COOKIE_NAME);
+    }
+    if (input.refreshToken) {
+      const refreshMax =
+        input.refreshExpiresAt && input.refreshExpiresAt > Date.now()
+          ? Math.floor((input.refreshExpiresAt - Date.now()) / 1000)
+          : 30 * 24 * 60 * 60;
+      setCookie(REFRESH_COOKIE_NAME, input.refreshToken, refreshMax);
+    }
+    if (input.refreshExpiresAt && input.refreshExpiresAt > Date.now()) {
+      const maxAge = Math.floor((input.refreshExpiresAt - Date.now()) / 1000);
+      setCookie(REFRESH_EXPIRES_COOKIE, String(input.refreshExpiresAt), maxAge);
     }
     return;
   }

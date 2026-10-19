@@ -724,6 +724,50 @@ export const workPlannerApiSlice = baseApi.injectEndpoints({
       transformResponse: (res: any) => res.data || res,
       invalidatesTags: (_result, _error, { userId }) => [{ type: "WorkPlan" as const, id: `USER_SETTINGS_${userId}` }],
     }),
+    getUserTasks: builder.query<any, string>({
+      query: (userId) => `${WORK_PLANNER_SERVICE_URL}/api/work-planner/user-tasks/${userId}`,
+      transformResponse: (res: any) => res.data || res,
+      providesTags: (_result, _error, userId) => [{ type: "WorkPlan" as const, id: `USER_TASKS_${userId}` }],
+    }),
+    updateUserTasks: builder.mutation<any, { userId: string; body: any }>({
+      query: ({ userId, body }) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/user-tasks/${userId}`,
+        method: "PUT",
+        body,
+      }),
+      transformResponse: (res: any) => res.data || res,
+      invalidatesTags: (_result, _error, { userId }) => [
+        { type: "WorkPlan" as const, id: `USER_TASKS_${userId}` },
+        { type: "WorkPlan" as const, id: "USER_TASKS_SUMMARY" },
+      ],
+    }),
+    getUserTasksSummary: builder.query<Record<string, { count: number; defaultCount: number; updatedAt?: string }>, void>({
+      query: () => `${WORK_PLANNER_SERVICE_URL}/api/work-planner/user-tasks/summary`,
+      transformResponse: (res: any) => res.data || res,
+      providesTags: [{ type: "WorkPlan" as const, id: "USER_TASKS_SUMMARY" }],
+    }),
+    getUserVisitTemplate: builder.query<any, string>({
+      query: (userId) => `${WORK_PLANNER_SERVICE_URL}/api/work-planner/user-visit-template/${userId}`,
+      transformResponse: (res: any) => res.data || res,
+      providesTags: (_result, _error, userId) => [{ type: "WorkPlan" as const, id: `USER_VISIT_TEMPLATE_${userId}` }],
+    }),
+    updateUserVisitTemplate: builder.mutation<any, { userId: string; body: any }>({
+      query: ({ userId, body }) => ({
+        url: `${WORK_PLANNER_SERVICE_URL}/api/work-planner/user-visit-template/${userId}`,
+        method: "PUT",
+        body,
+      }),
+      transformResponse: (res: any) => res.data || res,
+      invalidatesTags: (_result, _error, { userId }) => [
+        { type: "WorkPlan" as const, id: `USER_VISIT_TEMPLATE_${userId}` },
+        { type: "WorkPlan" as const, id: "USER_VISIT_TEMPLATES_SUMMARY" },
+      ],
+    }),
+    getUserVisitTemplatesSummary: builder.query<Record<string, { hasTemplate: boolean; createCount: number; outcomeCount: number; updatedAt?: string }>, void>({
+      query: () => `${WORK_PLANNER_SERVICE_URL}/api/work-planner/user-visit-templates/summary`,
+      transformResponse: (res: any) => res.data || res,
+      providesTags: [{ type: "WorkPlan" as const, id: "USER_VISIT_TEMPLATES_SUMMARY" }],
+    }),
     getTeamTree: builder.query<any, void>({
       query: () => `${WORK_PLANNER_SERVICE_URL}/api/work-planner/team/tree`,
       transformResponse: (res: any) => res.data || res,
@@ -1157,6 +1201,14 @@ export const {
   useUploadWorkPlanAttachmentMutation,
   useGetUserSettingsQuery,
   useUpdateUserSettingsMutation,
+  useGetUserTasksQuery,
+  useLazyGetUserTasksQuery,
+  useUpdateUserTasksMutation,
+  useGetUserTasksSummaryQuery,
+  useGetUserVisitTemplateQuery,
+  useLazyGetUserVisitTemplateQuery,
+  useUpdateUserVisitTemplateMutation,
+  useGetUserVisitTemplatesSummaryQuery,
   useGetTeamTreeQuery,
   useGetMyTeamQuery,
   useGetTeamMembersQuery,

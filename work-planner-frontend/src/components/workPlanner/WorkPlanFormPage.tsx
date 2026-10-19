@@ -312,6 +312,22 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
   const [stateName, setStateName] = useState("");
   const [cityId, setCityId] = useState("");
   const [cityName, setCityName] = useState("");
+  const [selectedCityIds, setSelectedCityIds] = useState<string[]>([]);
+  const [selectedCityNames, setSelectedCityNames] = useState<string[]>([]);
+  const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false);
+  const [citySearchQuery, setCitySearchQuery] = useState("");
+  const cityDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Click outside to close city dropdown
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (cityDropdownRef.current && !cityDropdownRef.current.contains(event.target as Node)) {
+        setIsCityDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
   const [remarks, setRemarks] = useState("");
   const [salesUserId, setSalesUserId] = useState<string>(() => sessionUser?._id || "");
 
@@ -368,32 +384,63 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         setStateName("");
         setCityId("");
         setCityName("");
+        setSelectedCityIds([]);
+        setSelectedCityNames([]);
       }
     }
   }, [statesData, stateId, isStatesLoading]);
 
-  // Match city name to city ID if set by text from plan
+  // Match city names to city IDs when citiesData loads
   useEffect(() => {
-    if (cityName && !cityId && citiesData.length > 0) {
-      const ciMatch = citiesData.find(
-        (ci) => ci.name.trim().toLowerCase() === cityName.trim().toLowerCase()
-      );
-      if (ciMatch) {
-        setCityId(ciMatch._id || ciMatch.id || "");
+    if (citiesData.length > 0) {
+      if (selectedCityNames.length > 0 && selectedCityIds.length < selectedCityNames.length) {
+        const resolvedIds: string[] = [];
+        for (const name of selectedCityNames) {
+          const match = citiesData.find(
+            (ci) => ci.name.trim().toLowerCase() === name.trim().toLowerCase()
+          );
+          if (match) {
+            resolvedIds.push(match._id || match.id || "");
+          }
+        }
+        if (resolvedIds.length > 0) {
+          setSelectedCityIds(resolvedIds);
+          if (!cityId) setCityId(resolvedIds[0]);
+        }
+      } else if (cityName && selectedCityNames.length === 0) {
+        const names = cityName.split(",").map((s) => s.trim()).filter(Boolean);
+        if (names.length > 0) {
+          setSelectedCityNames(names);
+          const resolvedIds = citiesData
+            .filter((ci) => names.some((n) => n.toLowerCase() === ci.name.trim().toLowerCase()))
+            .map((ci) => ci._id || ci.id || "")
+            .filter(Boolean);
+          if (resolvedIds.length > 0) {
+            setSelectedCityIds(resolvedIds);
+            if (!cityId) setCityId(resolvedIds[0]);
+          }
+        }
       }
     }
-  }, [citiesData, cityName, cityId]);
+  }, [citiesData, cityName, selectedCityNames, selectedCityIds, cityId]);
 
-  // If cityId is set but does not belong to the currently loaded cities for this state, clear it
+  // If selectedCityIds are set but do not belong to the currently loaded cities for this state, filter them
   useEffect(() => {
-    if (cityId && citiesData.length > 0 && !isCitiesLoading) {
-      const exists = citiesData.some((ci) => ci._id === cityId || ci.id === cityId);
-      if (!exists) {
-        setCityId("");
-        setCityName("");
+    if (selectedCityIds.length > 0 && citiesData.length > 0 && !isCitiesLoading) {
+      const validIds = selectedCityIds.filter((cid) =>
+        citiesData.some((ci) => ci._id === cid || ci.id === cid)
+      );
+      if (validIds.length !== selectedCityIds.length) {
+        setSelectedCityIds(validIds);
+        const validNames = citiesData
+          .filter((ci) => validIds.includes(ci._id || ci.id || ""))
+          .map((ci) => ci.name);
+        setSelectedCityNames(validNames);
+        setCityId(validIds[0] || "");
+        setCityName(validNames.join(", "));
       }
     }
-  }, [citiesData, cityId, isCitiesLoading]);
+  }, [citiesData, selectedCityIds, isCitiesLoading]);
 
   // Local state arrays for embedded visits and tasks
   const [visits, setVisits] = useState<Array<Record<string, any>>>([]);
@@ -695,6 +742,20 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     return list;
   }, [adminRole, usersData, myTeamData, sessionUser]);
 
+  const applyPlanCities = (planCityId?: string, planCityName?: string, planCityIds?: string[], planCities?: string[]) => {
+    const cId = planCityId || "";
+    const cName = planCityName || "";
+    setCityId(cId);
+    setCityName(cName);
+    const ids = Array.isArray(planCityIds) && planCityIds.length > 0 ? planCityIds.map(String) : (cId ? [cId] : []);
+    let names = Array.isArray(planCities) && planCities.length > 0 ? planCities.map(String) : [];
+    if (names.length === 0 && cName) {
+      names = cName.split(",").map((s) => s.trim()).filter(Boolean);
+    }
+    setSelectedCityIds(ids);
+    setSelectedCityNames(names);
+  };
+
   useEffect(() => {
     if (!planId) return;
     async function loadPlan() {
@@ -712,8 +773,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           setCountryName(plan.country || "");
           setStateId(plan.state_id || "");
           setStateName(plan.state || "");
-          setCityId(plan.city_id || "");
-          setCityName(plan.city || "");
+          applyPlanCities(plan.city_id, plan.city, plan.city_ids, plan.cities);
           setRemarks(plan.remarks || "");
           if (plan.sales_user) {
             const sUser =
@@ -785,8 +845,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           setCountryName(plan.country || "");
           setStateId(plan.state_id || "");
           setStateName(plan.state || "");
-          setCityId(plan.city_id || "");
-          setCityName(plan.city || "");
+          applyPlanCities(plan.city_id, plan.city, plan.city_ids, plan.cities);
           setRemarks(plan.remarks || "");
           if (plan.sales_user) {
             const sUser =
@@ -950,8 +1009,7 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
             setCountryName(fullPlan.country || "");
             setStateId(fullPlan.state_id || "");
             setStateName(fullPlan.state || "");
-            setCityId(fullPlan.city_id || "");
-            setCityName(fullPlan.city || "");
+            applyPlanCities(fullPlan.city_id, fullPlan.city, fullPlan.city_ids, fullPlan.cities);
             setRemarks(fullPlan.remarks || "");
 
             // Discussion state
@@ -1069,6 +1127,8 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           setStateName("");
           setCityId("");
           setCityName("");
+          setSelectedCityIds([]);
+          setSelectedCityNames([]);
           setRemarks("");
 
           if (copyId) {
@@ -1627,10 +1687,12 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       location,
       country_id: countryId || undefined,
       state_id: stateId || undefined,
-      city_id: cityId || undefined,
+      city_id: cityId || (selectedCityIds[0] || undefined),
       country: countryName || undefined,
       state: stateName || undefined,
-      city: cityName || undefined,
+      city: cityName || (selectedCityNames.join(", ") || undefined),
+      city_ids: selectedCityIds.length ? selectedCityIds : (cityId ? [cityId] : undefined),
+      cities: selectedCityNames.length ? selectedCityNames : (cityName ? [cityName] : undefined),
       remarks,
       is_discussed_with_manager: isDiscussedWithManager,
       discussed_manager_id: discussedManagerId || undefined,
@@ -1651,6 +1713,8 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       stateName,
       cityId,
       cityName,
+      selectedCityIds,
+      selectedCityNames,
       remarks,
       isDiscussedWithManager,
       discussedManagerId,
@@ -1698,6 +1762,14 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     discussionMethod,
     visits,
     works,
+    countryId,
+    countryName,
+    stateId,
+    stateName,
+    cityId,
+    cityName,
+    selectedCityIds,
+    selectedCityNames,
     loading,
     checkingExisting,
     isPlanCompleted,
@@ -1713,6 +1785,14 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           planDate,
           planType,
           location,
+          countryId,
+          countryName,
+          stateId,
+          stateName,
+          cityId,
+          cityName,
+          selectedCityIds,
+          selectedCityNames,
           remarks,
           isDiscussedWithManager,
           discussedManagerId,
@@ -1733,6 +1813,14 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     planDate,
     planType,
     location,
+    countryId,
+    countryName,
+    stateId,
+    stateName,
+    cityId,
+    cityName,
+    selectedCityIds,
+    selectedCityNames,
     remarks,
     isDiscussedWithManager,
     discussedManagerId,
@@ -1753,6 +1841,8 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
     if (availableDraft.stateName !== undefined) setStateName(availableDraft.stateName);
     if (availableDraft.cityId !== undefined) setCityId(availableDraft.cityId);
     if (availableDraft.cityName !== undefined) setCityName(availableDraft.cityName);
+    if (Array.isArray(availableDraft.selectedCityIds)) setSelectedCityIds(availableDraft.selectedCityIds);
+    if (Array.isArray(availableDraft.selectedCityNames)) setSelectedCityNames(availableDraft.selectedCityNames);
     if (availableDraft.remarks !== undefined) setRemarks(availableDraft.remarks);
     setIsDiscussedWithManager(availableDraft.isDiscussedWithManager !== undefined ? availableDraft.isDiscussedWithManager : null);
     setDiscussedManagerId(availableDraft.discussedManagerId || "");
@@ -1798,10 +1888,12 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       location,
       country_id: countryId || undefined,
       state_id: stateId || undefined,
-      city_id: cityId || undefined,
+      city_id: cityId || (selectedCityIds[0] || undefined),
       country: countryName || undefined,
       state: stateName || undefined,
-      city: cityName || undefined,
+      city: cityName || (selectedCityNames.join(", ") || undefined),
+      city_ids: selectedCityIds.length ? selectedCityIds : (cityId ? [cityId] : undefined),
+      cities: selectedCityNames.length ? selectedCityNames : (cityName ? [cityName] : undefined),
       remarks,
       is_discussed_with_manager: isDiscussedWithManager,
       discussed_manager_id: discussedManagerId || undefined,
@@ -1821,6 +1913,8 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
       stateName: stateName || undefined,
       cityId: cityId || undefined,
       cityName: cityName || undefined,
+      selectedCityIds,
+      selectedCityNames,
       remarks,
       isDiscussedWithManager,
       discussedManagerId,
@@ -1867,13 +1961,19 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         toast.error("State / Province is required for visits plan");
         return;
       }
-      if (!cityId || !cityName.trim()) {
+      if ((!cityId || !cityName.trim()) && selectedCityIds.length === 0) {
         toast.error("City / District is required for visits plan");
         return;
       }
     }
 
-    const effectiveLocation = location.trim() || (requiresGeo && cityName ? [cityName, stateName, countryName].filter(Boolean).join(", ") : "");
+    const effectiveLocation =
+      location.trim() ||
+      (requiresGeo && (selectedCityNames.length > 0 ? selectedCityNames.join(", ") : cityName)
+        ? [selectedCityNames.length > 0 ? selectedCityNames.join(", ") : cityName, stateName, countryName]
+            .filter(Boolean)
+            .join(", ")
+        : "");
     if (!leaveType && !effectiveLocation) {
       toast.error("Work location / city is required");
       return;
@@ -1939,10 +2039,12 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           ? {
               country_id: countryId || undefined,
               state_id: stateId || undefined,
-              city_id: cityId || undefined,
+              city_id: cityId || (selectedCityIds[0] || undefined),
               country: countryName || undefined,
               state: stateName || undefined,
-              city: cityName || undefined,
+              city: cityName || (selectedCityNames.join(", ") || undefined),
+              city_ids: selectedCityIds.length ? selectedCityIds : (cityId ? [cityId] : undefined),
+              cities: selectedCityNames.length ? selectedCityNames : (cityName ? [cityName] : undefined),
             }
           : {}),
         remarks: remarks.trim(),
@@ -1969,10 +2071,12 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
         location: effectiveLocation,
         country_id: countryId || undefined,
         state_id: stateId || undefined,
-        city_id: cityId || undefined,
+        city_id: cityId || (selectedCityIds[0] || undefined),
         country: countryName || undefined,
         state: stateName || undefined,
-        city: cityName || undefined,
+        city: cityName || (selectedCityNames.join(", ") || undefined),
+        city_ids: selectedCityIds.length ? selectedCityIds : (cityId ? [cityId] : undefined),
+        cities: selectedCityNames.length ? selectedCityNames : (cityName ? [cityName] : undefined),
         remarks: remarks.trim(),
         is_discussed_with_manager: Boolean(isDiscussedWithManager),
         discussed_manager_id:
@@ -2682,6 +2786,8 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                     setStateName("");
                     setCityId("");
                     setCityName("");
+                    setSelectedCityIds([]);
+                    setSelectedCityNames([]);
                   }}
                   disabled={isPlanCompleted || isCountriesLoading}
                   className="w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
@@ -2714,6 +2820,8 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                     setStateName(found?.name || "");
                     setCityId("");
                     setCityName("");
+                    setSelectedCityIds([]);
+                    setSelectedCityNames([]);
                   }}
                   disabled={isPlanCompleted || !countryId || isStatesLoading}
                   className="w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
@@ -2737,43 +2845,225 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
                 </select>
               </div>
 
-              {/* City */}
-              <div>
-                <label className="mb-1 block text-[11px] font-medium text-muted">
-                  City / District <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={cityId}
-                  onChange={(e) => {
-                    const ciId = e.target.value;
-                    setCityId(ciId);
-                    const found = citiesData.find((ci) => ci._id === ciId || ci.id === ciId);
-                    const name = found?.name || "";
-                    setCityName(name);
-                    if (name && (!location || location === stateName || location.includes(cityName))) {
-                      setLocation(stateName ? `${name}, ${stateName}` : name);
-                    }
-                  }}
+              {/* City / District (Multi-Select) */}
+              <div className="relative" ref={cityDropdownRef}>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-medium text-muted">
+                    City / District <span className="text-rose-500">*</span>
+                  </label>
+                  {selectedCityIds.length > 0 && !isPlanCompleted && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedCityIds([]);
+                        setSelectedCityNames([]);
+                        setCityId("");
+                        setCityName("");
+                      }}
+                      className="text-[10px] text-muted hover:text-rose-500 transition cursor-pointer"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
+
+                {/* Dropdown Trigger Button */}
+                <button
+                  type="button"
                   disabled={isPlanCompleted || !stateId || isCitiesLoading}
-                  className="w-full rounded-lg border border-border bg-surface-muted px-3 py-2 text-xs font-medium text-foreground outline-none focus:border-primary disabled:opacity-60 disabled:cursor-not-allowed"
+                  onClick={() => setIsCityDropdownOpen((prev) => !prev)}
+                  className="flex min-h-[38px] w-full items-center justify-between rounded-lg border border-border bg-surface-muted px-3 py-1.5 text-xs font-medium text-foreground outline-none hover:border-primary/50 focus:border-primary disabled:opacity-60 disabled:cursor-not-allowed transition text-left"
                 >
-                  <option value="">
-                    {!stateId
-                      ? "Select State first"
-                      : isCitiesLoading
-                      ? "Loading cities..."
-                      : "Select City"}
-                  </option>
-                  {stateId &&
-                    citiesData.map((ci) => {
-                      const id = ci._id || ci.id || "";
+                  <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0 pr-2">
+                    {!stateId ? (
+                      <span className="text-muted">Select State first</span>
+                    ) : isCitiesLoading ? (
+                      <span className="text-muted">Loading cities...</span>
+                    ) : selectedCityNames.length === 0 ? (
+                      <span className="text-muted">Select one or more cities...</span>
+                    ) : (
+                      <>
+                        <span className="inline-flex items-center gap-1 rounded bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                          {selectedCityNames[0]}
+                        </span>
+                        {selectedCityNames.length > 1 && (
+                          <span className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-semibold text-primary">
+                            +{selectedCityNames.length - 1} more
+                          </span>
+                        )}
+                        <span className="text-[11px] text-muted truncate">
+                          ({selectedCityNames.length} selected)
+                        </span>
+                      </>
+                    )}
+                  </div>
+                  <ChevronDown
+                    className={`h-4 w-4 shrink-0 text-muted transition-transform duration-200 ${
+                      isCityDropdownOpen ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
+
+                {/* Dropdown Menu Popover */}
+                {isCityDropdownOpen && (
+                  <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-72 w-full rounded-xl border border-border bg-card shadow-xl overflow-hidden flex flex-col">
+                    {/* Search bar inside dropdown */}
+                    <div className="p-2 border-b border-border bg-surface-muted/50">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted" />
+                        <input
+                          type="text"
+                          placeholder="Search cities..."
+                          value={citySearchQuery}
+                          onChange={(e) => setCitySearchQuery(e.target.value)}
+                          className="w-full rounded-md border border-border bg-card pl-8 pr-7 py-1 text-xs text-foreground outline-none focus:border-primary"
+                          autoFocus
+                        />
+                        {citySearchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setCitySearchQuery("")}
+                            className="absolute right-2 top-1.5 text-muted hover:text-foreground"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Quick action bar */}
+                      <div className="flex items-center justify-between mt-1.5 px-0.5 text-[11px]">
+                        <span className="text-muted">
+                          {
+                            citiesData.filter((c) =>
+                              c.name.toLowerCase().includes(citySearchQuery.toLowerCase().trim())
+                            ).length
+                          }{" "}
+                          cities available
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const matching = citiesData.filter((c) =>
+                                c.name.toLowerCase().includes(citySearchQuery.toLowerCase().trim())
+                              );
+                              const newIds = Array.from(new Set([...selectedCityIds, ...matching.map((c) => c._id || c.id || "")]));
+                              const newNames = citiesData.filter((c) => newIds.includes(c._id || c.id || "")).map((c) => c.name);
+                              setSelectedCityIds(newIds);
+                              setSelectedCityNames(newNames);
+                              if (newIds[0]) setCityId(newIds[0]);
+                              if (newNames.length) setCityName(newNames.join(", "));
+                            }}
+                            className="text-primary hover:underline font-semibold cursor-pointer"
+                          >
+                            Select All
+                          </button>
+                          <span className="text-muted">•</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedCityIds([]);
+                              setSelectedCityNames([]);
+                              setCityId("");
+                              setCityName("");
+                            }}
+                            className="text-rose-500 hover:underline cursor-pointer"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Scrollable list of cities with checkboxes */}
+                    <div className="overflow-y-auto max-h-48 p-1">
+                      {citiesData
+                        .filter((ci) =>
+                          ci.name.toLowerCase().includes(citySearchQuery.toLowerCase().trim())
+                        )
+                        .map((ci) => {
+                          const id = ci._id || ci.id || "";
+                          const isChecked = selectedCityIds.includes(id);
+                          return (
+                            <label
+                              key={id}
+                              className={`flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-xs cursor-pointer hover:bg-surface-muted transition select-none ${
+                                isChecked ? "bg-primary/10 text-primary font-medium" : "text-foreground"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={(e) => {
+                                  let nextIds: string[];
+                                  let nextNames: string[];
+                                  if (e.target.checked) {
+                                    nextIds = [...selectedCityIds, id];
+                                  } else {
+                                    nextIds = selectedCityIds.filter((cid) => cid !== id);
+                                  }
+                                  nextNames = citiesData
+                                    .filter((c) => nextIds.includes(c._id || c.id || ""))
+                                    .map((c) => c.name);
+                                  setSelectedCityIds(nextIds);
+                                  setSelectedCityNames(nextNames);
+                                  setCityId(nextIds[0] || "");
+                                  setCityName(nextNames.join(", "));
+                                  if (nextNames.length > 0 && (!location || location === stateName || location.includes(cityName))) {
+                                    setLocation(stateName ? `${nextNames.join(", ")}, ${stateName}` : nextNames.join(", "));
+                                  }
+                                }}
+                                className="rounded border-border text-primary focus:ring-primary h-3.5 w-3.5"
+                              />
+                              <span className="flex-1 truncate">{ci.name}</span>
+                              {isChecked && <Check className="h-3.5 w-3.5 text-primary shrink-0" />}
+                            </label>
+                          );
+                        })}
+                      {citiesData.filter((ci) =>
+                        ci.name.toLowerCase().includes(citySearchQuery.toLowerCase().trim())
+                      ).length === 0 && (
+                        <div className="p-3 text-center text-xs text-muted">
+                          No cities matching &quot;{citySearchQuery}&quot;
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Selected city badges display below dropdown */}
+                {selectedCityNames.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {selectedCityNames.map((name, idx) => {
+                      const cId = selectedCityIds[idx];
                       return (
-                        <option key={id} value={id}>
-                          {ci.name}
-                        </option>
+                        <span
+                          key={cId || name}
+                          className="inline-flex items-center gap-1 rounded-md border border-primary/25 bg-primary/10 pl-2 pr-1 py-0.5 text-[11px] font-medium text-primary shadow-2xs"
+                        >
+                          <span>{name}</span>
+                          {!isPlanCompleted && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextIds = selectedCityIds.filter((_, i) => i !== idx);
+                                const nextNames = selectedCityNames.filter((_, i) => i !== idx);
+                                setSelectedCityIds(nextIds);
+                                setSelectedCityNames(nextNames);
+                                setCityId(nextIds[0] || "");
+                                setCityName(nextNames.join(", "));
+                              }}
+                              className="rounded p-0.5 hover:bg-primary/20 hover:text-primary transition cursor-pointer"
+                              title={`Remove ${name}`}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          )}
+                        </span>
                       );
                     })}
-                </select>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -3576,6 +3866,8 @@ export function WorkPlanFormPage({ planId, copyId, initialDate }: WorkPlanFormPa
           defaultStateName={stateName}
           defaultCityId={cityId}
           defaultCityName={cityName}
+          defaultCityIds={selectedCityIds.length > 0 ? selectedCityIds : (cityId ? [cityId] : [])}
+          defaultCityNames={selectedCityNames.length > 0 ? selectedCityNames : (cityName ? [cityName] : [])}
           isSaving={false}
           onClose={() => {
             setVisitModalOpen(false);

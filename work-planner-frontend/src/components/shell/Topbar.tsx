@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronDown, LogOut, Menu, Moon, Sun, User } from "lucide-react";
+import { ChevronDown, LogOut, Menu, Moon, Sun, User, Settings } from "lucide-react";
 import type { UserSession, ThemeColor } from "@/types/workPlanner";
 import { isWpAdmin, isWpManager, isWpCoordinator } from "@/utils/authStorage";
 import { NotificationBell } from "./NotificationBell";
@@ -36,6 +36,24 @@ export function Topbar({
   const coordinatorRole = isWpCoordinator(user);
 
   const getPageHeader = () => {
+    if (pathname.startsWith("/dashboard/settings") && pathname.includes("/visits")) {
+      return {
+        title: "Visit Template Designer",
+        subtitle: "Single field visit planning & outcome reporting template",
+      };
+    }
+    if (pathname.startsWith("/dashboard/settings") && pathname.includes("/tasks")) {
+      return {
+        title: "Task Template Designer",
+        subtitle: "Custom user tasks, creation requirements & outcome report templates",
+      };
+    }
+    if (pathname.startsWith("/dashboard/settings")) {
+      return {
+        title: "Portal Settings",
+        subtitle: "Global work planning policies, GPS rules & allowances",
+      };
+    }
     if (pathname.startsWith("/dashboard/team-manager")) {
       return {
         title: "Team Manager",
@@ -182,6 +200,17 @@ export function Topbar({
                 <User className="h-3.5 w-3.5 text-muted" />
                 Profile
               </Link>
+
+              {adminRole && (
+                <Link
+                  href="/dashboard/settings"
+                  onClick={() => setUserDropdownOpen(false)}
+                  className="w-full flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold text-foreground hover:bg-surface-muted transition"
+                >
+                  <Settings className="h-3.5 w-3.5 text-muted" />
+                  Portal Settings
+                </Link>
+              )}
 
               <button
                 onClick={() => {

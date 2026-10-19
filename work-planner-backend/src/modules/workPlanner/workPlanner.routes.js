@@ -14,6 +14,7 @@ const notesController = require('./notes.controller');
 const teamController = require('./team.controller');
 const emailPreferenceController = require('./emailPreference.controller');
 const analyticsController = require('./workPlanAnalytics.controller');
+const userTemplateController = require('./userTemplate.controller');
 const expenseRoutes = require('./expense/expense.routes');
 const multer = require('multer');
 
@@ -55,6 +56,16 @@ router.post('/attachments/upload', upload.single('file'), controller.uploadAttac
 router.get('/user-settings/:userId', controller.getUserSettings);
 router.put('/user-settings/:userId', elevatedRoles, controller.updateUserSettings);
 router.get('/eligible-managers', controller.getEligibleManagers);
+
+// User Tasks & Dynamic Templates
+router.get('/user-tasks/summary', elevatedRoles, userTemplateController.getUserTasksSummary);
+router.get('/user-tasks/:userId', userTemplateController.getUserTasks);
+router.put('/user-tasks/:userId', adminRole, userTemplateController.updateUserTasks);
+
+// User Visit Templates (Single per user)
+router.get('/user-visit-templates/summary', elevatedRoles, userTemplateController.getUserVisitTemplatesSummary);
+router.get('/user-visit-template/:userId', userTemplateController.getUserVisitTemplate);
+router.put('/user-visit-template/:userId', adminRole, userTemplateController.updateUserVisitTemplate);
 
 // Team hierarchy (must be before /:id)
 router.get('/team/tree', adminRole, teamController.getTree);

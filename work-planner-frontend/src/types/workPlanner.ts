@@ -560,9 +560,11 @@ export type WorkPlanRecord = {
   country_id?: string;
   state_id?: string;
   city_id?: string;
+  city_ids?: string[];
   country?: string;
   state?: string;
   city?: string;
+  cities?: string[];
   is_discussed_with_manager?: boolean;
   discussed_manager_id?: string | { _id?: string; name?: string; email?: string };
   discussed_manager_name?: string;

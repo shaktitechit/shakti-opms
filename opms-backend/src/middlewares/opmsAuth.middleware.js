@@ -27,6 +27,18 @@ const OPMS_ROLE_PRIORITY = Object.freeze([
   ROLES.SALES,
 ]);
 
+function normalizeRole(raw) {
+  if (raw == null) return '';
+  const s = String(raw).trim().toLowerCase();
+  if (!s || s === 'null' || s === 'undefined') return '';
+  if (s === 'superadmin' || s === 'super-admin' || s === 'super admin') return 'super_admin';
+  if (s === 'administrator' || s === 'admin_user') return 'admin';
+  if (s === 'accounts' || s === 'accounting') return 'account';
+  if (s === 'salesman' || s === 'sales_user') return 'sales';
+  if (s === 'dispatches' || s === 'dispatch_team') return 'dispatch';
+  return s;
+}
+
 function getOpmsPortalAccess(user) {
   if (!user) return null;
   const portals = Array.isArray(user.portals)
@@ -36,7 +48,12 @@ function getOpmsPortalAccess(user) {
       : [];
   return (
     portals.find(
-      (p) => p && (p.portal_code === OPMS_PORTAL_CODE || p.portal === OPMS_PORTAL_CODE)
+      (p) =>
+        p &&
+        (p.portal_code === OPMS_PORTAL_CODE ||
+          p.portal === OPMS_PORTAL_CODE ||
+          p.code === OPMS_PORTAL_CODE ||
+          (typeof p.portal_name === 'string' && p.portal_name.toLowerCase().includes('opms')))
     ) || null
   );
 }
@@ -60,13 +77,21 @@ function getOpmsAccessRole(user) {
     if (user.access_role) rawRole = user.access_role;
     else if (Array.isArray(user.access_roles) && user.access_roles.length > 0) rawRole = user.access_roles[0];
     else if (user.role) rawRole = user.role;
-    else if (Array.isArray(user.roles) && user.roles.length > 0) rawRole = user.roles[0];
+    else if (Array.isArray(user.roles) && user.roles.length > 0) {
+      const firstRole = user.roles[0];
+      rawRole = typeof firstRole === 'object' && firstRole ? (firstRole.code || firstRole.name) : firstRole;
+    }
     else if (Array.isArray(user.role_codes) && user.role_codes.length > 0) rawRole = user.role_codes[0];
-    else if (user.department) rawRole = user.department;
+    else if (typeof user.department === 'string') rawRole = user.department;
+    else if (user.department && typeof user.department === 'object') {
+      rawRole = user.department.code || user.department.name;
+    }
+    else if (user.department_code) rawRole = user.department_code;
+    else if (user.department_name) rawRole = user.department_name;
   }
 
   if (!rawRole) return null;
-  const normalized = String(rawRole).trim().toLowerCase();
+  const normalized = normalizeRole(rawRole);
   return OPMS_ACCESS_ROLES.includes(normalized) ? normalized : normalized;
 }
 
@@ -80,7 +105,7 @@ function hasOpmsAccess(user) {
 }
 
 function hasOpmsRole(user, ...roles) {
-  const allowed = roles.flat().map((r) => String(r || '').trim().toLowerCase()).filter(Boolean);
+  const allowed = roles.flat().map(normalizeRole).filter(Boolean);
   if (!allowed.length) return false;
   const userRole = getOpmsAccessRole(user);
   return userRole ? allowed.includes(userRole) : false;

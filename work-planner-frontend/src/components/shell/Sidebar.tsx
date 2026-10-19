@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   StickyNote,
   LifeBuoy,
+  Settings,
 } from "lucide-react";
 import type { UserSession } from "@/types/workPlanner";
 import { isWpAdmin, isWpManager, isWpCoordinator, readSessionFromStorage } from "@/utils/authStorage";
@@ -78,6 +79,7 @@ export function Sidebar({
   const isMyTeamActive = pathname.startsWith("/dashboard/my-team");
   const isAssignedTeamsActive = pathname.startsWith("/dashboard/assigned-teams");
   const isTeamManagerActive = pathname.startsWith("/dashboard/team-manager");
+  const isSettingsActive = pathname.startsWith("/dashboard/settings");
 
   return (
     <>
@@ -384,6 +386,26 @@ export function Sidebar({
                 {!desktopCollapsed && (
                   <div className="flex items-center justify-between flex-1 min-w-0">
                     <span className="truncate">Team Manager</span>
+                    <span className="ml-1 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-primary/20 text-primary shrink-0">
+                      Admin
+                    </span>
+                  </div>
+                )}
+              </Link>
+              <Link
+                href="/dashboard/settings"
+                onClick={() => setMobileNavOpen(false)}
+                className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-xs font-semibold transition ${
+                  isSettingsActive
+                    ? "bg-primary/15 border border-primary/30 text-primary font-bold shadow-xs"
+                    : "text-muted hover:bg-surface-muted hover:text-foreground border border-transparent"
+                }`}
+                title="Portal Settings"
+              >
+                <Settings className={`h-4 w-4 shrink-0 ${isSettingsActive ? "text-primary" : ""}`} />
+                {!desktopCollapsed && (
+                  <div className="flex items-center justify-between flex-1 min-w-0">
+                    <span className="truncate">Portal Settings</span>
                     <span className="ml-1 text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-primary/20 text-primary shrink-0">
                       Admin
                     </span>

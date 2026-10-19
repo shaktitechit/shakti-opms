@@ -37,14 +37,19 @@ export type UserPortalAccess = {
 export type OpmsAuthUser = {
   portals?: UserPortalAccess[];
   portal_access?: UserPortalAccess[];
-  department?: string;
+  department?: unknown;
   [key: string]: unknown;
 };
 
-function normalizeRole(raw: unknown): string {
+export function normalizeRole(raw: unknown): string {
   if (raw == null) return "";
   const s = String(raw).trim().toLowerCase();
   if (!s || s === "null" || s === "undefined") return "";
+  if (s === "superadmin" || s === "super-admin" || s === "super admin") return "super_admin";
+  if (s === "administrator" || s === "admin_user") return "admin";
+  if (s === "accounts" || s === "accounting") return "account";
+  if (s === "salesman" || s === "sales_user") return "sales";
+  if (s === "dispatches" || s === "dispatch_team") return "dispatch";
   return s;
 }
 
@@ -62,49 +67,102 @@ export function getOpmsPortalAccess(
     portals.find(
       (p) =>
         p &&
-        (p.portal_code === OPMS_PORTAL_CODE || p.portal === OPMS_PORTAL_CODE),
+        (p.portal_code === OPMS_PORTAL_CODE ||
+          p.portal === OPMS_PORTAL_CODE ||
+          (p as { code?: string }).code === OPMS_PORTAL_CODE ||
+          (typeof p.portal_name === "string" && p.portal_name.toLowerCase().includes("opms"))),
     ) || null
   );
 }
 
-export function getOpmsAccessRole(user: unknown): string | null {
-  if (!user || typeof user !== "object") return null;
+export function getOpmsAccessRoles(user: unknown): string[] {
+  if (!user || typeof user !== "object") return [];
   const u = user as OpmsAuthUser & {
     access_role?: string;
     access_roles?: string[];
     role?: string;
-    roles?: string[];
+    roles?: unknown[];
     role_codes?: string[];
+    role_names?: string[];
+    department?: string | { code?: string; name?: string };
+    department_code?: string;
+    department_name?: string;
   };
 
   const portalAccess = getOpmsPortalAccess(user);
-  let rawRole: unknown = null;
+  const collected: string[] = [];
+
+  const add = (r: unknown) => {
+    const n = normalizeRole(r);
+    if (n && !collected.includes(n)) {
+      collected.push(n);
+    }
+  };
 
   if (portalAccess) {
-    if (Array.isArray(portalAccess.access_roles) && portalAccess.access_roles.length > 0) {
-      rawRole = portalAccess.access_roles[0];
+    if (Array.isArray(portalAccess.access_roles)) {
+      for (const r of portalAccess.access_roles) add(r);
+    }
+    const pa = portalAccess as { access_role?: unknown; role?: unknown };
+    if (pa.access_role) add(pa.access_role);
+    if (pa.role) add(pa.role);
+  }
+
+  if (u.access_role) add(u.access_role);
+  if (Array.isArray(u.access_roles)) {
+    for (const r of u.access_roles) add(r);
+  }
+  if (u.role) add(u.role);
+  if (Array.isArray(u.roles)) {
+    for (const r of u.roles) {
+      if (typeof r === "string") add(r);
+      else if (r && typeof r === "object") {
+        const ro = r as { code?: unknown; name?: unknown; role?: unknown };
+        if (ro.code) add(ro.code);
+        else if (ro.name) add(ro.name);
+        else if (ro.role) add(ro.role);
+      }
     }
   }
+  if (Array.isArray(u.role_codes)) {
+    for (const r of u.role_codes) add(r);
+  }
+  if (Array.isArray(u.role_names)) {
+    for (const r of u.role_names) add(r);
+  }
+  const dept = (u as { department?: unknown }).department;
+  if (typeof dept === "string") {
+    add(dept);
+  } else if (dept && typeof dept === "object") {
+    const d = dept as { code?: unknown; name?: unknown };
+    if (d.code) add(d.code);
+    else if (d.name) add(d.name);
+  }
+  if (u.department_code) add(u.department_code);
+  if (u.department_name) add(u.department_name);
 
-  if (!rawRole) {
-    if (u.access_role) rawRole = u.access_role;
-    else if (Array.isArray(u.access_roles) && u.access_roles.length > 0) rawRole = u.access_roles[0];
-    else if (u.role) rawRole = u.role;
-    else if (Array.isArray(u.roles) && u.roles.length > 0) rawRole = u.roles[0];
-    else if (Array.isArray(u.role_codes) && u.role_codes.length > 0) rawRole = u.role_codes[0];
+  // Return filtered by OPMS_ACCESS_ROLES and ordered by OPMS_ROLE_PRIORITY
+  const opmsMatched = collected.filter((r) =>
+    (OPMS_ACCESS_ROLES as readonly string[]).includes(r as OpmsAccessRole),
+  );
+  if (opmsMatched.length > 0) {
+    return opmsMatched.sort((a, b) => {
+      const idxA = OPMS_ROLE_PRIORITY.indexOf(a as OpmsAccessRole);
+      const idxB = OPMS_ROLE_PRIORITY.indexOf(b as OpmsAccessRole);
+      return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);
+    });
   }
 
-  const normalized = normalizeRole(rawRole);
-  return normalized || null;
+  return collected;
 }
 
-export function getOpmsAccessRoles(user: unknown): string[] {
-  const role = getOpmsAccessRole(user);
-  return role ? [role] : [];
+export function getOpmsAccessRole(user: unknown): string | null {
+  const roles = getOpmsAccessRoles(user);
+  return roles[0] ?? null;
 }
 
 export function hasOpmsAccess(user: unknown): boolean {
-  return Boolean(getOpmsAccessRole(user));
+  return getOpmsAccessRoles(user).length > 0;
 }
 
 export function hasOpmsRole(user: unknown, ...roles: string[]): boolean {

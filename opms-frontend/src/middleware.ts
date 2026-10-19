@@ -25,8 +25,9 @@ type IssuedSession = {
 
 function authServiceBase(): string {
   return (
-    process.env.NEXT_PUBLIC_AUTH_ORIGIN ||
+    process.env.AUTH_SERVICE_URL ||
     process.env.NEXT_PUBLIC_AUTH_SERVICE_URL ||
+    process.env.NEXT_PUBLIC_AUTH_ORIGIN ||
     "http://localhost:7003"
   ).replace(/\/+$/, "");
 }
@@ -79,14 +80,8 @@ function rolesFromSsoToken(token: string): string[] {
       typeof atob === "function"
         ? atob(padded)
         : Buffer.from(padded, "base64").toString("utf8");
-    const decoded = JSON.parse(json) as {
-      portals?: Array<{
-        portal_code?: string;
-        portal?: string;
-        access_roles?: string[];
-      }>;
-    };
-    return getOpmsAccessRoles({ portals: decoded.portals || [] });
+    const decoded = JSON.parse(json);
+    return getOpmsAccessRoles(decoded);
   } catch {
     return [];
   }
@@ -161,7 +156,7 @@ export async function middleware(req: NextRequest) {
   const protectionHit = isProtectedPortalPath(pathname);
 
   const homeUrl = (): string =>
-    hasRoles ? resolveHomeFromRoles(roles) ?? "/login" : "/login";
+    hasRoles ? resolveHomeFromRoles(roles) ?? "/admin" : "/login";
 
   const pathAllowed = (targetPath: string): boolean =>
     rolesAllowPortalPath({ pathname: targetPath, roles });

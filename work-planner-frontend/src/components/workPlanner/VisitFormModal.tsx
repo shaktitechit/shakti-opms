@@ -61,6 +61,8 @@ export type VisitFormModalProps = {
   defaultStateName?: string;
   defaultCityId?: string;
   defaultCityName?: string;
+  defaultCityIds?: string[];
+  defaultCityNames?: string[];
   isSaving: boolean;
   onClose: () => void;
   onSubmit: (body: Record<string, unknown>) => void | Promise<void>;
@@ -205,6 +207,8 @@ export function VisitFormModal({
   defaultStateName,
   defaultCityId,
   defaultCityName,
+  defaultCityIds = [],
+  defaultCityNames = [],
   isSaving,
   onClose,
   onSubmit,
@@ -377,6 +381,24 @@ export function VisitFormModal({
   const [facilityDropdownOpen, setFacilityDropdownOpen] = useState(false);
   const [enquiryDropdownOpen, setEnquiryDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const cityFilterDropdownRef = useRef<HTMLDivElement>(null);
+
+  const [filterCityIds, setFilterCityIds] = useState<string[]>(() =>
+    Array.isArray(defaultCityIds) && defaultCityIds.length > 0
+      ? defaultCityIds
+      : defaultCityId
+      ? [defaultCityId]
+      : []
+  );
+  const [filterCityNames, setFilterCityNames] = useState<string[]>(() =>
+    Array.isArray(defaultCityNames) && defaultCityNames.length > 0
+      ? defaultCityNames
+      : defaultCityName
+      ? [defaultCityName]
+      : []
+  );
+  const [isCityFilterOpen, setIsCityFilterOpen] = useState(false);
+  const [cityFilterSearch, setCityFilterSearch] = useState("");
 
   const isFacility = partyType === "facility";
   const isEnquiry = partyType === "enquiry";
@@ -389,13 +411,32 @@ export function VisitFormModal({
     {
       search: partySearch.trim() || undefined,
       state_id: stateId || undefined,
-      city_id: cityId || undefined,
+      city_id: filterCityIds.length === 1 ? filterCityIds[0] : undefined,
+      city_ids: filterCityIds.length > 0 ? filterCityIds.join(",") : undefined,
+      cities: filterCityNames.length > 0 ? filterCityNames.join(",") : undefined,
       state: stateName || undefined,
-      city: cityName || undefined,
       country_id: countryId || undefined,
     },
     { skip: !open || !isExistingParty }
   );
+
+  const filteredParties = useMemo(() => {
+    if (!filterCityNames.length && !filterCityIds.length) return partiesData;
+    const lowerNames = filterCityNames.map((n) => n.toLowerCase().trim()).filter(Boolean);
+    const idSet = new Set(filterCityIds.filter(Boolean));
+    return partiesData.filter((party: PartyRecord) => {
+      if (party.city_id && idSet.has(String(party.city_id))) return true;
+      const pCity = (
+        party.city ||
+        (party.billing_address as any)?.city ||
+        (party.shipping_address as any)?.city ||
+        party.district ||
+        ""
+      ).toLowerCase().trim();
+      if (pCity && lowerNames.some((c) => pCity.includes(c) || c.includes(pCity))) return true;
+      return false;
+    });
+  }, [partiesData, filterCityNames, filterCityIds]);
 
   const { data: countriesData = [], isLoading: isCountriesLoading } = useGetPartyCountriesQuery(
     { limit: 500, status: "active" },
@@ -505,6 +546,12 @@ export function VisitFormModal({
         setFacilityDropdownOpen(false);
         setEnquiryDropdownOpen(false);
       }
+      if (
+        cityFilterDropdownRef.current &&
+        !cityFilterDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsCityFilterOpen(false);
+      }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -525,6 +572,28 @@ export function VisitFormModal({
         sessionUserId ||
         "";
       setInternalSalesUserId(targetSalesUser);
+
+      const initCityIds =
+        Array.isArray(defaultCityIds) && defaultCityIds.length > 0
+          ? defaultCityIds
+          : initial?.city_id
+          ? [initial.city_id]
+          : defaultCityId
+          ? [defaultCityId]
+          : [];
+      const initCityNames =
+        Array.isArray(defaultCityNames) && defaultCityNames.length > 0
+          ? defaultCityNames
+          : initial?.city
+          ? [initial.city]
+          : defaultCityName
+          ? [defaultCityName]
+          : [];
+      setFilterCityIds(initCityIds);
+      setFilterCityNames(initCityNames);
+      setIsCityFilterOpen(false);
+      setCityFilterSearch("");
+
       if (initial) {
         setPartyType(initial.party_type || (isPowerAudit ? "facility" : "existing"));
         const pId =
@@ -607,7 +676,18 @@ export function VisitFormModal({
       setErrors({});
     }
     prevOpenRef.current = open;
-  }, [open, initial, planDate, salesUserId, sessionUserId, isPowerAudit]);
+  }, [
+    open,
+    initial,
+    planDate,
+    salesUserId,
+    sessionUserId,
+    isPowerAudit,
+    defaultCityIds,
+    defaultCityNames,
+    defaultCityId,
+    defaultCityName,
+  ]);
 
   if (!open) return null;
 
@@ -1254,7 +1334,190 @@ export function VisitFormModal({
                 </p>
               ) : null}
 
-              {(isExistingParty || isExistingLead) && (cityName || stateName) ? (
+              {isExistingParty ? (
+                <div className="space-y-1.5 rounded-lg border border-border/80 bg-surface-muted/30 p-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                      <MapPin className="h-3.5 w-3.5 text-primary shrink-0" />
+                      <span>Party Master Filter</span>
+                      {stateName ? (
+                        <span className="text-[11px] font-normal text-muted">
+                          (State: <strong>{stateName}</strong>)
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {filterCityNames.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFilterCityIds([]);
+                            setFilterCityNames([]);
+                          }}
+                          className="text-[10px] text-muted hover:text-rose-500 transition cursor-pointer"
+                        >
+                          Clear all cities
+                        </button>
+                      )}
+                      {/* Popover trigger button to add/toggle cities */}
+                      <div className="relative" ref={cityFilterDropdownRef}>
+                        <button
+                          type="button"
+                          onClick={() => setIsCityFilterOpen((prev) => !prev)}
+                          disabled={isSaving || !stateId || isCitiesLoading}
+                          className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/20 transition cursor-pointer disabled:opacity-50"
+                        >
+                          <Plus className="h-3 w-3" />
+                          <span>Filter Cities</span>
+                          <ChevronDown
+                            className={`h-3 w-3 transition-transform ${isCityFilterOpen ? "rotate-180" : ""}`}
+                          />
+                        </button>
+
+                        {/* City Filter Popover */}
+                        {isCityFilterOpen && (
+                          <div className="absolute right-0 top-full z-50 mt-1 max-h-64 w-60 rounded-xl border border-border bg-card shadow-xl overflow-hidden flex flex-col">
+                            <div className="p-2 border-b border-border bg-surface-muted/50">
+                              <div className="relative">
+                                <Search className="absolute left-2 top-2 h-3 w-3 text-muted" />
+                                <input
+                                  type="text"
+                                  placeholder="Search cities..."
+                                  value={cityFilterSearch}
+                                  onChange={(e) => setCityFilterSearch(e.target.value)}
+                                  className="w-full rounded border border-border bg-card pl-7 pr-2 py-1 text-xs text-foreground outline-none focus:border-primary"
+                                  autoFocus
+                                />
+                              </div>
+                              <div className="flex items-center justify-between mt-1 px-0.5 text-[10px] text-muted">
+                                <span>
+                                  {
+                                    citiesData.filter((c) =>
+                                      c.name.toLowerCase().includes(cityFilterSearch.toLowerCase().trim())
+                                    ).length
+                                  }{" "}
+                                  cities
+                                </span>
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const matching = citiesData.filter((c) =>
+                                        c.name.toLowerCase().includes(cityFilterSearch.toLowerCase().trim())
+                                      );
+                                      const newIds = Array.from(new Set([...filterCityIds, ...matching.map((c) => c._id || c.id || "")]));
+                                      const newNames = citiesData.filter((c) => newIds.includes(c._id || c.id || "")).map((c) => c.name);
+                                      setFilterCityIds(newIds);
+                                      setFilterCityNames(newNames);
+                                    }}
+                                    className="text-primary hover:underline font-semibold cursor-pointer"
+                                  >
+                                    All
+                                  </button>
+                                  <span>•</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setFilterCityIds([]);
+                                      setFilterCityNames([]);
+                                    }}
+                                    className="text-rose-500 hover:underline cursor-pointer"
+                                  >
+                                    Clear
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="overflow-y-auto max-h-40 p-1">
+                              {citiesData
+                                .filter((ci) =>
+                                  ci.name.toLowerCase().includes(cityFilterSearch.toLowerCase().trim())
+                                )
+                                .map((ci) => {
+                                  const id = ci._id || ci.id || "";
+                                  const isChecked = filterCityIds.includes(id) || filterCityNames.some(n => n.toLowerCase() === ci.name.toLowerCase());
+                                  return (
+                                    <label
+                                      key={id}
+                                      className={`flex items-center gap-2 px-2 py-1 rounded text-xs cursor-pointer hover:bg-surface-muted transition select-none ${
+                                        isChecked ? "bg-primary/10 text-primary font-medium" : "text-foreground"
+                                      }`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={(e) => {
+                                          let nextIds: string[];
+                                          let nextNames: string[];
+                                          if (e.target.checked) {
+                                            nextIds = [...filterCityIds, id];
+                                          } else {
+                                            nextIds = filterCityIds.filter((cid) => cid !== id);
+                                          }
+                                          nextNames = citiesData
+                                            .filter((c) => nextIds.includes(c._id || c.id || ""))
+                                            .map((c) => c.name);
+                                          setFilterCityIds(nextIds);
+                                          setFilterCityNames(nextNames);
+                                        }}
+                                        className="rounded border-border text-primary focus:ring-primary h-3 w-3"
+                                      />
+                                      <span className="flex-1 truncate">{ci.name}</span>
+                                      {isChecked && <Check className="h-3 w-3 text-primary shrink-0" />}
+                                    </label>
+                                  );
+                                })}
+                              {citiesData.filter((ci) =>
+                                ci.name.toLowerCase().includes(cityFilterSearch.toLowerCase().trim())
+                              ).length === 0 && (
+                                <div className="p-2 text-center text-xs text-muted">
+                                  No cities found
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Active city filter chips */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    {filterCityNames.length === 0 ? (
+                      <span className="text-[11px] text-muted italic">
+                        Showing parties across all cities in {stateName || "the selected state"}.
+                      </span>
+                    ) : (
+                      <>
+                        <span className="text-[10px] text-muted font-medium">Filtering by:</span>
+                        {filterCityNames.map((name, idx) => (
+                          <span
+                            key={name + idx}
+                            className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/10 pl-2 pr-1 py-0.5 text-[11px] font-semibold text-primary"
+                          >
+                            <span>{name}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextIds = filterCityIds.filter((_, i) => i !== idx);
+                                const nextNames = filterCityNames.filter((_, i) => i !== idx);
+                                setFilterCityIds(nextIds);
+                                setFilterCityNames(nextNames);
+                              }}
+                              className="rounded p-0.5 hover:bg-primary/20 hover:text-primary transition cursor-pointer"
+                              title={`Remove ${name} filter`}
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </span>
+                        ))}
+                      </>
+                    )}
+                  </div>
+                </div>
+              ) : (isExistingParty || isExistingLead) && (cityName || stateName) ? (
                 <div className="flex items-center gap-1.5 text-[11px] text-primary bg-primary/5 border border-primary/20 rounded-md px-2.5 py-1">
                   <MapPin className="h-3.5 w-3.5 shrink-0" />
                   <span>
@@ -1493,14 +1756,40 @@ export function VisitFormModal({
                         );
                       })
                     )
-                  ) : partiesData.length === 0 ? (
-                    <div className="p-3 text-center text-xs text-muted">
-                      No parties found. You can switch to &quot;New Party&quot; to add manually.
+                  ) : filteredParties.length === 0 ? (
+                    <div className="p-3 text-center text-xs text-muted space-y-1.5">
+                      <div>
+                        No parties found
+                        {filterCityNames.length > 0
+                          ? ` in selected cities (${filterCityNames.join(", ")})`
+                          : ""}
+                        .
+                      </div>
+                      {filterCityNames.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFilterCityIds([]);
+                            setFilterCityNames([]);
+                          }}
+                          className="text-xs text-primary font-semibold hover:underline cursor-pointer"
+                        >
+                          Clear city filters to show all parties in {stateName || "State"}
+                        </button>
+                      )}
+                      <div>
+                        Or switch to &quot;New Party&quot; to add a new client manually.
+                      </div>
                     </div>
                   ) : (
-                    partiesData.map((party: PartyRecord) => {
+                    filteredParties.map((party: PartyRecord) => {
                       const pId = party._id || party.id || "";
                       const isSelected = selectedPartyId === pId;
+                      const partyCity =
+                        party.city ||
+                        (party.billing_address as any)?.city ||
+                        (party.shipping_address as any)?.city ||
+                        party.district;
                       return (
                         <div
                           key={pId}
@@ -1510,8 +1799,15 @@ export function VisitFormModal({
                           }`}
                         >
                           <div className="space-y-0.5 min-w-0 flex-1">
-                            <div className="font-semibold text-foreground truncate">
-                              {party.party_name}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-semibold text-foreground truncate">
+                                {party.party_name}
+                              </span>
+                              {partyCity && (
+                                <span className="inline-flex items-center rounded bg-primary/10 px-1.5 py-0.2 text-[10px] font-medium text-primary">
+                                  {partyCity}
+                                </span>
+                              )}
                             </div>
                             {party.contact_person ? (
                               <div className="text-muted text-[11px] truncate">
@@ -1827,9 +2123,15 @@ export function VisitFormModal({
                   {stateId &&
                     citiesData.map((ci) => {
                       const id = ci._id || ci.id || "";
+                      const isSuggested =
+                        filterCityIds.includes(id) ||
+                        filterCityNames.some(
+                          (n) => n.toLowerCase().trim() === ci.name.toLowerCase().trim()
+                        );
                       return (
                         <option key={id} value={id}>
                           {ci.name}
+                          {isSuggested ? " ★ (Plan City)" : ""}
                         </option>
                       );
                     })}
