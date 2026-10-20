@@ -68,6 +68,9 @@ export const ACCOUNT_ORDER_DETAILS_CONFIG: OrderDetailsPageConfig = {
   defaultTab: "approvals",
   tabs: [
     "approvals",
+    "po",
+    "cost_sheet",
+    "kyc",
     "dispatches",
     "transports",
     "deliveries",

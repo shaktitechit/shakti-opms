@@ -108,7 +108,7 @@ export function OrderDetailTabContent(props: OrderDetailTabContentProps) {
       );
 
     case "po":
-      if (!["/admin", "/super_admin", "/finance"].includes(config.portalHome)) {
+      if (!["/admin", "/super_admin", "/finance", "/account"].includes(config.portalHome)) {
         return null;
       }
       return (
@@ -121,7 +121,7 @@ export function OrderDetailTabContent(props: OrderDetailTabContentProps) {
       );
 
     case "cost_sheet":
-      if (!["/admin", "/super_admin", "/finance"].includes(config.portalHome)) {
+      if (!["/admin", "/super_admin", "/finance", "/account"].includes(config.portalHome)) {
         return null;
       }
       return (
@@ -134,7 +134,7 @@ export function OrderDetailTabContent(props: OrderDetailTabContentProps) {
       );
 
     case "kyc": {
-      if (!["/admin", "/super_admin", "/finance"].includes(config.portalHome)) {
+      if (!["/admin", "/super_admin", "/finance", "/account"].includes(config.portalHome)) {
         return null;
       }
       const partyId = detailRefId(detail.party || detail.customer);
