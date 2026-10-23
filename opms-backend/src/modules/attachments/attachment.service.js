@@ -28,7 +28,6 @@ async function create(body, user) {
     entity_id: body.entity_id,
     uploaded_by: user._id,
     remarks: body.remarks || '',
-    category: body.category || '',
   });
 
   const plain = toPlain(doc.toObject());
@@ -43,11 +42,10 @@ async function create(body, user) {
   return plain;
 }
 
-async function list({ entity_type, entity_id, category } = {}) {
+async function list({ entity_type, entity_id } = {}) {
   const q = {};
   if (entity_type) q.entity_type = entity_type;
   if (entity_id) q.entity_id = entity_id;
-  if (category) q.category = category;
   const rows = await getModels().Attachment.find(q)
     .populate('uploaded_by', 'name username department')
     .sort({ createdAt: -1 })

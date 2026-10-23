@@ -274,7 +274,7 @@ export default function SalesOrderDetail({ orderId }: { orderId: string }) {
     return computeDepartmentStageBoxes(detail, fulfillmentSnapshot);
   }, [detail, fulfillmentSnapshot]);
 
-  const currentPartyId = detail ? detailRefId(detail.party || detail.customer) : "";
+  const currentPartyId = detail ? detailRefId(detail.party) : "";
   const partyDetailQ = useGetPartyQuery(currentPartyId, {
     skip: !currentPartyId,
   });
@@ -1020,11 +1020,7 @@ export default function SalesOrderDetail({ orderId }: { orderId: string }) {
             <div className="md:hidden fixed inset-0 z-[60] flex flex-col bg-white dark:bg-slate-900">
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 sticky top-0 z-10">
                 <h2 className="text-sm font-bold text-slate-900 dark:text-slate-50">
-                  {activeTab === "approvals" && "Order Approval"}
-                  {activeTab === "dispatches" && "Dispatches"}
-                  {activeTab === "transports" && "Transports"}
-                  {activeTab === "flags" && "Flags"}
-                  {activeTab === "attachments" && "Attachments"}
+                  {activeTab === "approvals" && "Order Approval"}{activeTab === "dispatches" && "Dispatches"}{activeTab === "transports" && "Transports"}{activeTab === "flags" && "Flags"}{activeTab === "attachments" && "Attachments"}
                 </h2>
                 <button type="button" onClick={() => setMobileTabOpen(false)} className="rounded-full p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 transition" aria-label="Close panel">
                   <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>

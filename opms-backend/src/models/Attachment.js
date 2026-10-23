@@ -31,7 +31,6 @@ const attachmentSchema = new mongoose.Schema(
         "dispatch",
         "transport",
         "customer",
-        "party",
         "driver",
         "vehicle",
         "transport_agent",
@@ -55,18 +54,6 @@ const attachmentSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
-    },
-
-    category: {
-      type: String,
-      trim: true,
-      default: "",
-      index: true,
-    },
-
-    remarks: {
-      type: String,
-      default: "",
     },
 
     deletedAt: {

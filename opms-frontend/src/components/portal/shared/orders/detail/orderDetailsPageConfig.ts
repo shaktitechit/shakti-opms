@@ -13,9 +13,6 @@ export type OrderDetailFlagDepartment =
 
 export type OrderDetailTabId =
   | "approvals"
-  | "po"
-  | "cost_sheet"
-  | "kyc"
   | "dispatches"
   | "transports"
   | "deliveries"
@@ -68,9 +65,6 @@ export const ACCOUNT_ORDER_DETAILS_CONFIG: OrderDetailsPageConfig = {
   defaultTab: "approvals",
   tabs: [
     "approvals",
-    "po",
-    "cost_sheet",
-    "kyc",
     "dispatches",
     "transports",
     "deliveries",
@@ -97,9 +91,6 @@ export const ADMIN_ORDER_DETAILS_CONFIG: OrderDetailsPageConfig = {
   defaultTab: "approvals",
   tabs: [
     "approvals",
-    "po",
-    "cost_sheet",
-    "kyc",
     "dispatches",
     "transports",
     "deliveries",
@@ -127,9 +118,6 @@ export const SUPER_ADMIN_ORDER_DETAILS_CONFIG: OrderDetailsPageConfig = {
   ordersListPath: "/super_admin/orders",
   tabs: [
     "approvals",
-    "po",
-    "cost_sheet",
-    "kyc",
     "dispatches",
     "transports",
     "deliveries",
@@ -153,9 +141,6 @@ export const FINANCE_ORDER_DETAILS_CONFIG: OrderDetailsPageConfig = {
   defaultTab: "approvals",
   tabs: [
     "approvals",
-    "po",
-    "cost_sheet",
-    "kyc",
     "dispatches",
     "transports",
     "deliveries",

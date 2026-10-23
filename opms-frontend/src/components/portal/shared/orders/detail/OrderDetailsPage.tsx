@@ -3,7 +3,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, AlertTriangle, Truck, MapPin } from "lucide-react";
+import { ArrowLeft, AlertTriangle, Truck } from "lucide-react";
 
 import { LargeModalPortal } from "@/components/portal/shared/ui/modals/LargeModalPortal";
 import { Button } from "@/components/ui/Button";
@@ -78,7 +78,6 @@ import { agentLabel } from "@/components/portal/shared/transportPlanner/transpor
 import { OrderDetailTabContent } from "./OrderDetailTabContent";
 import OrderDetailsModal from "./modals/OrderDetailsModal";
 import PartyDetailsModal from "./modals/PartyDetailsModal";
-import UpdatePartyAddressModal from "./modals/UpdatePartyAddressModal";
 import TransportPlanModal from "./modals/TransportPlanModal";
 import { mobileTabIcon } from "./orderDetailMobileIcons";
 import {
@@ -256,7 +255,6 @@ export default function OrderDetailsPage({
   const [isFulfillmentModalOpen, setIsFulfillmentModalOpen] = useState(false);
   const [isOrderDetailsModalOpen, setIsOrderDetailsModalOpen] = useState(false);
   const [isPartyDetailsModalOpen, setIsPartyDetailsModalOpen] = useState(false);
-  const [isUpdateAddressModalOpen, setIsUpdateAddressModalOpen] = useState(false);
   const [isTransportPlanModalOpen, setIsTransportPlanModalOpen] = useState(false);
   const [isFinalStatementOpen, setIsFinalStatementOpen] = useState(false);
 
@@ -327,7 +325,7 @@ export default function OrderDetailsPage({
   }, [detail, currentUserId]);
 
   const currentPartyId = useMemo(
-    () => (detail ? detailRefId(detail.party || detail.customer) : ""),
+    () => (detail ? detailRefId(detail.party) : ""),
     [detail],
   );
   const partyDetailQ = useGetPartyQuery(currentPartyId, {
@@ -850,20 +848,6 @@ export default function OrderDetailsPage({
   const busy = isSubmitting || isPatching;
 
   const tabCounts = useMemo(() => {
-    const poCount = attachmentsList.filter((a) => {
-      const c = String(a.category || "").toLowerCase();
-      const r = String(a.remarks || "").toLowerCase();
-      const n = String(a.original_name || a.file_name || "").toLowerCase();
-      return c === "po" || r.startsWith("[po]") || n.startsWith("po_");
-    }).length;
-
-    const costSheetCount = attachmentsList.filter((a) => {
-      const c = String(a.category || "").toLowerCase();
-      const r = String(a.remarks || "").toLowerCase();
-      const n = String(a.original_name || a.file_name || "").toLowerCase();
-      return c === "cost_sheet" || r.startsWith("[cost_sheet]") || n.includes("cost_sheet") || n.includes("costsheet");
-    }).length;
-
     const map: Partial<Record<OrderDetailTabId, number>> = {
       approvals:
         config.approvalsMode === "finance"
@@ -871,8 +855,6 @@ export default function OrderDetailsPage({
           : config.approvalsMode === "admin"
             ? pickList(adminApprovalsQ.data).length
             : accountApprovals.length,
-      po: poCount > 0 ? 1 : 0,
-      cost_sheet: costSheetCount > 0 ? 1 : 0,
       dispatches: dispatches.length,
       transports: transports.length,
       deliveries: deliveries.length,
@@ -888,7 +870,6 @@ export default function OrderDetailsPage({
     financeAssignedCount,
     adminApprovalsQ.data,
     accountApprovals.length,
-    attachmentsList,
     dispatches.length,
     transports.length,
     deliveries.length,
@@ -1108,26 +1089,6 @@ export default function OrderDetailsPage({
         isError={partyDetailQ.isError}
         partyData={partyDetailQ.data}
         custLabel={custLabel}
-        onEditAddress={() => setIsUpdateAddressModalOpen(true)}
-      />
-
-      <UpdatePartyAddressModal
-        isOpen={isUpdateAddressModalOpen}
-        onClose={() => setIsUpdateAddressModalOpen(false)}
-        partyId={currentPartyId}
-        partyName={custLabel}
-        initialBillingAddress={
-          ((partyDetailQ.data as Record<string, unknown>)?.billing_address as Record<string, unknown>) ||
-          (((detail?.party || detail?.customer) as Record<string, unknown>)?.billing_address as Record<string, unknown>)
-        }
-        initialShippingAddress={
-          ((partyDetailQ.data as Record<string, unknown>)?.shipping_address as Record<string, unknown>) ||
-          (((detail?.party || detail?.customer) as Record<string, unknown>)?.shipping_address as Record<string, unknown>)
-        }
-        onSuccess={() => {
-          void partyDetailQ.refetch();
-          handleRefetch();
-        }}
       />
 
       <TransportPlanModal
@@ -1265,16 +1226,6 @@ export default function OrderDetailsPage({
                 className="inline-flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-1 rounded-md border border-slate-200 bg-slate-50 hover:bg-white px-2 py-1 sm:px-2 sm:py-1 text-2xs font-semibold text-slate-700 shadow-sm transition dark:border-white/10 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-white/5 cursor-pointer active:scale-[0.97]"
               >
                 <span>Party Info</span>
-              </button>
-              <button
-                type="button"
-                disabled={!currentPartyId}
-                onClick={() => setIsUpdateAddressModalOpen(true)}
-                className="inline-flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-1.5 rounded-md border border-blue-200 bg-blue-50/80 hover:bg-blue-100/90 px-2.5 py-1 sm:px-2.5 sm:py-1 text-2xs font-semibold text-blue-800 shadow-sm transition dark:border-blue-900/40 dark:bg-blue-950/30 dark:text-blue-300 dark:hover:bg-blue-950/50 cursor-pointer active:scale-[0.97] disabled:opacity-40 disabled:cursor-not-allowed"
-                title={currentPartyId ? "Update billing and shipping addresses for this party" : "No party linked to this order"}
-              >
-                <MapPin className="h-3 w-3 shrink-0" />
-                <span>Update Billing & Shipping Address</span>
               </button>
               {hasHeaderAction(config, "final_statement") &&
                 canShowFinalStatement && (

@@ -1620,7 +1620,6 @@ function registerModels() {
           "dispatch",
           "transport",
           "customer",
-          "party",
           "driver",
           "vehicle",
           "transport_agent",
@@ -1644,13 +1643,6 @@ function registerModels() {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
         required: true,
-      },
-
-      category: {
-        type: String,
-        trim: true,
-        default: "",
-        index: true,
       },
   
       remarks: {

@@ -124,9 +124,6 @@ export function countDispatchVisibleAttachments(attachments: unknown[]): number 
 
 export const TAB_LABELS: Record<string, string> = {
   approvals: "Approvals",
-  po: "Purchase Order",
-  cost_sheet: "Cost Sheet",
-  kyc: "KYC",
   dispatches: "Dispatches",
   transports: "Transports",
   deliveries: "Deliveries",
@@ -140,9 +137,6 @@ export const TAB_LABELS: Record<string, string> = {
 
 export const MOBILE_TAB_SHORT_LABELS: Record<string, string> = {
   approvals: "Approvals",
-  po: "PO",
-  cost_sheet: "Cost Sheet",
-  kyc: "KYC",
   dispatches: "Dispatch",
   transports: "Transport",
   deliveries: "Delivery",

@@ -16,7 +16,6 @@ export {
 
 export { default as OrderDetailsModal } from "./modals/OrderDetailsModal";
 export { default as PartyDetailsModal } from "./modals/PartyDetailsModal";
-export { default as UpdatePartyAddressModal } from "./modals/UpdatePartyAddressModal";
 export { ApprovalModal } from "./modals/ApprovalModal";
 export { CreateAccountDispatchModal } from "./modals/CreateAccountDispatchModal";
 export { SettleRestOrderModal } from "./modals/SettleRestOrderModal";
@@ -34,7 +33,4 @@ export { TransportShipmentCard } from "./tabs/TransportShipmentCard";
 export { DeliveriesTab } from "./tabs/DeliveriesTab";
 export { default as AttachmentsTab } from "./tabs/AttachmentsTab";
 export { default as CommunicationTab } from "./tabs/CommunicationTab";
-export { default as PoTab } from "./tabs/PoTab";
-export { default as CostSheetTab } from "./tabs/CostSheetTab";
-export { default as KycTab } from "./tabs/KycTab";
 export { ApprovalRecordCard } from "./approvals/ApprovalRecordCard";

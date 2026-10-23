@@ -1,8 +1,6 @@
 "use client";
 
 import { LargeModalPortal } from "@/components/portal/shared/ui/modals/LargeModalPortal";
-import { MapPin } from "lucide-react";
-
 interface PartyDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -10,7 +8,6 @@ interface PartyDetailsModalProps {
   isError: boolean;
   partyData: any;
   custLabel: string;
-  onEditAddress?: () => void;
 }
 
 function displayText(value: unknown): string {
@@ -42,7 +39,6 @@ export default function PartyDetailsModal({
   isError,
   partyData,
   custLabel,
-  onEditAddress,
 }: PartyDetailsModalProps) {
   if (!isOpen) return null;
 
@@ -118,23 +114,7 @@ export default function PartyDetailsModal({
                       </dd>
                     </div>
                   </dl>
-                  <div className="flex items-center justify-between border-t border-slate-100 pt-3 dark:border-white/10">
-                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">Addresses</span>
-                    {onEditAddress && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          onClose();
-                          onEditAddress();
-                        }}
-                        className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-0.5 text-2xs font-semibold text-blue-700 hover:bg-blue-100 dark:bg-blue-950/40 dark:text-blue-300 transition cursor-pointer"
-                      >
-                        <MapPin className="h-3 w-3" />
-                        <span>Update Address</span>
-                      </button>
-                    )}
-                  </div>
-                  <div className="grid gap-3 pt-1 sm:grid-cols-2 font-sans text-xs">
+                  <div className="grid gap-3 border-t border-slate-100 pt-3 dark:border-white/10 sm:grid-cols-2 font-sans text-xs">
                     <div>
                       <dt className="text-xs font-medium text-slate-500">Billing Address</dt>
                       <dd className="mt-1 whitespace-pre-line rounded-lg bg-slate-50 p-2 text-xs text-slate-700 dark:bg-slate-900/40 dark:text-slate-300 font-sans">
