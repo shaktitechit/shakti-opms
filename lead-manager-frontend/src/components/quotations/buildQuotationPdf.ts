@@ -79,23 +79,74 @@ function formatDate(dateStr?: string): string {
   }
 }
 
-async function loadLogo(url?: string): Promise<string | null> {
+export type LoadedLogo = {
+  dataUrl: string;
+  width: number;
+  height: number;
+  format: string;
+};
+
+async function loadLogo(url?: string): Promise<LoadedLogo | null> {
   if (!url) return null;
-  if (url.startsWith("data:image/")) return url;
-  try {
-    const res = await fetch(url, { mode: "cors" });
-    if (!res.ok) return null;
-    const blob = await res.blob();
-    if (!blob.type.startsWith("image/")) return null;
-    return await new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || "") || null);
-      reader.onerror = () => resolve(null);
-      reader.readAsDataURL(blob);
-    });
-  } catch {
-    return null;
-  }
+  if (typeof window === "undefined") return null;
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return resolve(null);
+        ctx.drawImage(img, 0, 0);
+        const dataUrl = canvas.toDataURL("image/png");
+        resolve({
+          dataUrl,
+          width: img.naturalWidth || 100,
+          height: img.naturalHeight || 50,
+          format: "PNG",
+        });
+      } catch {
+        // Fallback to fetch/blob if canvas tainted
+        fetch(url, { mode: "cors" })
+          .then((r) => r.blob())
+          .then((blob) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const res = String(reader.result || "");
+              resolve({
+                dataUrl: res,
+                width: img.naturalWidth || 100,
+                height: img.naturalHeight || 50,
+                format: "PNG",
+              });
+            };
+            reader.readAsDataURL(blob);
+          })
+          .catch(() => resolve(null));
+      }
+    };
+    img.onerror = () => {
+      fetch(url, { mode: "cors" })
+        .then((r) => r.blob())
+        .then((blob) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            resolve({
+              dataUrl: String(reader.result || ""),
+              width: 120,
+              height: 48,
+              format: "PNG",
+            });
+          };
+          reader.readAsDataURL(blob);
+        })
+        .catch(() => resolve(null));
+    };
+    img.src = url;
+  });
 }
 
 export type StyleState = {
@@ -122,11 +173,12 @@ export type TableRow = {
 };
 
 export type BlockNode = {
-  type: "paragraph" | "list-item" | "divider" | "table";
+  type: "paragraph" | "list-item" | "divider" | "table" | "empty-line";
   bullet?: string;
   headingLevel?: 1 | 2 | 3;
   runs: TextRun[];
   rows?: TableRow[];
+  colWidths?: number[];
 };
 
 export function parseColorToRgb(colorStr: string): [number, number, number] | null {
@@ -169,8 +221,29 @@ export function extractElementColor(elem: HTMLElement): [number, number, number]
   return null;
 }
 
+const CONTAINER_BLOCK_TAGS = new Set([
+  "DIV", "SECTION", "ARTICLE", "MAIN", "HEADER", "FOOTER", "ASIDE"
+]);
+
+const LEAF_BLOCK_TAGS = new Set([
+  "P", "H1", "H2", "H3", "H4", "H5", "H6", "BLOCKQUOTE", "PRE"
+]);
+
+function hasBlockLevelChild(elem: HTMLElement): boolean {
+  for (const child of Array.from(elem.children)) {
+    const tag = child.tagName.toUpperCase();
+    if (CONTAINER_BLOCK_TAGS.has(tag) || LEAF_BLOCK_TAGS.has(tag) || tag === "TABLE" || tag === "UL" || tag === "OL" || tag === "HR") {
+      return true;
+    }
+    if (hasBlockLevelChild(child as HTMLElement)) return true;
+  }
+  return false;
+}
+
 export function parseHtmlToBlocks(htmlString: string): BlockNode[] {
-  const cleanHtml = htmlString.replace(/^(\d+[\.\)]\s*)+/, "").trim();
+  if (!htmlString || !htmlString.trim()) return [];
+
+  const cleanHtml = htmlString.trim();
   if (!cleanHtml) return [];
 
   if (typeof window === "undefined" || typeof DOMParser === "undefined") {
@@ -187,7 +260,7 @@ export function parseHtmlToBlocks(htmlString: string): BlockNode[] {
 
   const flushParagraph = () => {
     if (currentParagraph.runs.length > 0) {
-      const hasContent = currentParagraph.runs.some((r) => r.text.trim().length > 0);
+      const hasContent = currentParagraph.runs.some((r) => r.text.trim().length > 0 || r.text === "\n");
       if (hasContent) {
         blocks.push(currentParagraph);
       }
@@ -201,7 +274,7 @@ export function parseHtmlToBlocks(htmlString: string): BlockNode[] {
         let rawText = child.textContent || "";
         if (!rawText) continue;
         rawText = rawText.replace(/\u00A0/g, " ");
-        const text = rawText.replace(/[\r\n\t]+/g, " ").replace(/ +/g, " ");
+        const text = rawText.replace(/[\r\n\t]+/g, " ");
         if (!text) continue;
         if (targetBlock.runs.length === 0 && text === " ") continue;
 
@@ -239,7 +312,7 @@ export function parseHtmlToBlocks(htmlString: string): BlockNode[] {
       let rawText = node.textContent || "";
       if (!rawText) return;
       rawText = rawText.replace(/\u00A0/g, " ");
-      const text = rawText.replace(/[\r\n\t]+/g, " ").replace(/ +/g, " ");
+      const text = rawText.replace(/[\r\n\t]+/g, " ");
       if (!text) return;
       if (currentParagraph.runs.length === 0 && text === " ") return;
 
@@ -328,25 +401,6 @@ export function parseHtmlToBlocks(htmlString: string): BlockNode[] {
         return;
       }
 
-      if (
-        tag === "P" ||
-        tag === "DIV" ||
-        tag === "H1" ||
-        tag === "H2" ||
-        tag === "H3" ||
-        tag === "BLOCKQUOTE" ||
-        tag === "PRE"
-      ) {
-        flushParagraph();
-        const headingLevel = tag === "H1" ? 1 : tag === "H2" ? 2 : tag === "H3" ? 3 : undefined;
-        const block: BlockNode = { type: "paragraph", headingLevel, runs: [] };
-        processInlineChildren(elem, newStyle, block);
-        if (block.runs.some((r) => r.text.trim().length > 0)) {
-          blocks.push(block);
-        }
-        return;
-      }
-
       if (tag === "UL" || tag === "OL") {
         flushParagraph();
         const isOrdered = tag === "OL";
@@ -360,10 +414,70 @@ export function parseHtmlToBlocks(htmlString: string): BlockNode[] {
             };
             itemIdx++;
             processInlineChildren(child, newStyle, liBlock);
-            if (liBlock.runs.some((r) => r.text.trim().length > 0)) {
+            if (liBlock.runs.length > 0) {
               blocks.push(liBlock);
             }
           }
+        }
+        return;
+      }
+
+      if (tag === "H1" || tag === "H2" || tag === "H3" || tag === "H4") {
+        flushParagraph();
+        const headingLevel = tag === "H1" ? 1 : tag === "H2" ? 2 : 3;
+        const block: BlockNode = { type: "paragraph", headingLevel, runs: [] };
+        processInlineChildren(elem, newStyle, block);
+        if (block.runs.length > 0) {
+          blocks.push(block);
+        }
+        return;
+      }
+
+      if (CONTAINER_BLOCK_TAGS.has(tag)) {
+        if (hasBlockLevelChild(elem)) {
+          flushParagraph();
+          for (const child of Array.from(elem.childNodes)) {
+            traverseNode(child, newStyle);
+          }
+          flushParagraph();
+          return;
+        } else {
+          flushParagraph();
+          const block: BlockNode = { type: "paragraph", runs: [] };
+          processInlineChildren(elem, newStyle, block);
+          if (block.runs.length > 0) {
+            const hasText = block.runs.some((r) => r.text.trim().length > 0);
+            if (hasText) {
+              blocks.push(block);
+            } else if (block.runs.some((r) => r.text === "\n")) {
+              blocks.push({ type: "empty-line", runs: [] });
+            }
+          }
+          return;
+        }
+      }
+
+      if (tag === "P" || tag === "BLOCKQUOTE" || tag === "PRE") {
+        if (hasBlockLevelChild(elem)) {
+          flushParagraph();
+          for (const child of Array.from(elem.childNodes)) {
+            traverseNode(child, newStyle);
+          }
+          flushParagraph();
+          return;
+        }
+        flushParagraph();
+        const block: BlockNode = { type: "paragraph", runs: [] };
+        processInlineChildren(elem, newStyle, block);
+        if (block.runs.length > 0) {
+          const hasText = block.runs.some((r) => r.text.trim().length > 0);
+          if (hasText) {
+            blocks.push(block);
+          } else {
+            blocks.push({ type: "empty-line", runs: [] });
+          }
+        } else {
+          blocks.push({ type: "empty-line", runs: [] });
         }
         return;
       }
@@ -446,21 +560,27 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
   // Helper: Draw Header & Brand
   const drawHeader = () => {
     const logoY = currentY;
-    const logoW = 28;
-    const logoH = 12;
+    const maxLogoW = 44; // increased from 28mm (significantly larger logo)
+    const maxLogoH = 18; // increased from 12mm (significantly larger logo)
+    let logoW = maxLogoW;
+    let logoH = maxLogoH;
+
+    if (logoData && logoData.width && logoData.height) {
+      const aspect = logoData.width / logoData.height;
+      logoW = maxLogoW;
+      logoH = logoW / aspect;
+      if (logoH > maxLogoH) {
+        logoH = maxLogoH;
+        logoW = logoH * aspect;
+      }
+    }
 
     if (logoData) {
       try {
-        const formatMatch = logoData.match(/^data:image\/(png|jpeg|jpg|webp);/i);
-        const imgFormat = formatMatch
-          ? formatMatch[1].toUpperCase() === "JPG"
-            ? "JPEG"
-            : formatMatch[1].toUpperCase()
-          : "PNG";
-        pdf.addImage(logoData, imgFormat, M, logoY, logoW, logoH, undefined, "FAST");
+        pdf.addImage(logoData.dataUrl, logoData.format, M, logoY, logoW, logoH, undefined, "FAST");
       } catch {
         try {
-          pdf.addImage(logoData, M, logoY, logoW, logoH);
+          pdf.addImage(logoData.dataUrl, M, logoY, logoW, logoH);
         } catch {
           // Fallback gracefully
         }
@@ -469,12 +589,19 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
 
     let hY = currentY + 3.5;
 
+    // Center content safe area: Page is 210mm wide, M=10.
+    // Safe text width prevents long company name from overlapping logo or right edge.
+    const maxCenterTextW = 108;
+
     if (companyName) {
       pdf.setFont("helvetica", "bold");
-      pdf.setFontSize(13);
+      pdf.setFontSize(12.5);
       pdf.setTextColor(...NAVY);
-      pdf.text(companyName.toUpperCase(), PAGE_W / 2, hY, { align: "center" });
-      hY += 4.5;
+      const companyLines = pdf.splitTextToSize(companyName.toUpperCase(), maxCenterTextW);
+      companyLines.forEach((line: string) => {
+        pdf.text(line, PAGE_W / 2, hY, { align: "center" });
+        hY += 4.5;
+      });
     }
 
     if (companyAddress) {
@@ -482,8 +609,11 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
       pdf.setFontSize(6.8);
       pdf.setTextColor(...TEXT);
       const fullAddressStr = `Regd. Off: ${companyAddress}`;
-      pdf.text(fullAddressStr, PAGE_W / 2, hY, { align: "center" });
-      hY += 3.6;
+      const splitAddr = pdf.splitTextToSize(fullAddressStr, maxCenterTextW + 10);
+      splitAddr.forEach((line: string) => {
+        pdf.text(line, PAGE_W / 2, hY, { align: "center" });
+        hY += 3.4;
+      });
     }
 
     const contactParts = [
@@ -497,11 +627,14 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
       pdf.setFontSize(6.8);
       pdf.setTextColor(...MUTED);
       const contactStr = contactParts.join("  •  ");
-      pdf.text(contactStr, PAGE_W / 2, hY, { align: "center" });
-      hY += 3.6;
+      const splitContact = pdf.splitTextToSize(contactStr, maxCenterTextW + 10);
+      splitContact.forEach((line: string) => {
+        pdf.text(line, PAGE_W / 2, hY, { align: "center" });
+        hY += 3.4;
+      });
     }
 
-    currentY = Math.max(hY + 2, logoY + logoH + 2, currentY + 15);
+    currentY = Math.max(hY + 2, logoY + logoH + 2, currentY + 16);
     pdf.setDrawColor(...NAVY);
     pdf.setLineWidth(0.5);
     pdf.line(M, currentY, PAGE_W - M, currentY);
@@ -684,8 +817,14 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
     for (let bIdx = 0; bIdx < blocks.length; bIdx += 1) {
       const block = blocks[bIdx];
 
+      if (block.type === "empty-line") {
+        checkPageBreak(3.5, false);
+        currentY += 3.5;
+        continue;
+      }
+
       if (block.type === "divider") {
-        checkPageBreak(3, false);
+        checkPageBreak(3.5, false);
         pdf.setDrawColor(203, 213, 225);
         pdf.setLineWidth(0.2);
         pdf.line(M + 1, currentY, M + CONTENT_W - 2, currentY);
@@ -703,17 +842,40 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
 
         const tableX = M + 1;
         const tableW = CONTENT_W - 2;
-        const colW = tableW / maxCols;
+
+        // Smart column width calculation based on content
+        const colMaxLens = new Array(maxCols).fill(1);
+        for (const r of rows) {
+          for (let i = 0; i < maxCols; i++) {
+            const cell = r.cells[i];
+            if (cell && cell.text) {
+              const len = cell.text.trim().length;
+              if (len > colMaxLens[i]) colMaxLens[i] = len;
+            }
+          }
+        }
+        const totalLen = colMaxLens.reduce((a, b) => a + b, 0);
+        const minColW = Math.min(18, tableW / maxCols);
+        const variableW = Math.max(0, tableW - minColW * maxCols);
+        let colWidths = colMaxLens.map((len) => {
+          const weight = totalLen > 0 ? len / totalLen : 1 / maxCols;
+          return minColW + variableW * weight;
+        });
+        const currentSum = colWidths.reduce((a, b) => a + b, 0);
+        if (currentSum > 0) {
+          colWidths = colWidths.map((w) => (w / currentSum) * tableW);
+        }
 
         for (const row of rows) {
-          const cellData = row.cells.map((cell) => {
+          const cellData = row.cells.map((cell, cIdx) => {
             const isHeader = cell.isHeader;
             const fontSize = isHeader ? 7.0 : 6.5;
             const isBold = isHeader || cell.runs.some((r) => r.bold);
             pdf.setFont("helvetica", isBold ? "bold" : "normal");
             pdf.setFontSize(fontSize);
 
-            const splitLines: string[] = pdf.splitTextToSize(cell.text || "", Math.max(colW - 3, 10));
+            const thisColW = colWidths[cIdx] || (tableW / maxCols);
+            const splitLines: string[] = pdf.splitTextToSize(cell.text || "", Math.max(thisColW - 3, 8));
             return {
               cell,
               isHeader,
@@ -734,8 +896,9 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
 
           checkPageBreak(rowH + 1, false);
 
+          let curCellX = tableX;
           for (let cIdx = 0; cIdx < maxCols; cIdx++) {
-            const cellX = tableX + cIdx * colW;
+            const thisColW = colWidths[cIdx] || (tableW / maxCols);
             const cd = cellData[cIdx];
             const isHeader = cd ? cd.isHeader : false;
 
@@ -743,37 +906,39 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
             pdf.setLineWidth(0.18);
             if (isHeader) {
               pdf.setFillColor(241, 245, 249);
-              pdf.rect(cellX, currentY, colW, rowH, "FD");
+              pdf.rect(curCellX, currentY, thisColW, rowH, "FD");
             } else {
               pdf.setFillColor(255, 255, 255);
-              pdf.rect(cellX, currentY, colW, rowH, "FD");
+              pdf.rect(curCellX, currentY, thisColW, rowH, "FD");
             }
 
-            if (!cd) continue;
+            if (cd) {
+              pdf.setFont("helvetica", cd.isBold ? "bold" : "normal");
+              pdf.setFontSize(cd.fontSize);
+              pdf.setTextColor(...(isHeader ? NAVY : TEXT));
 
-            pdf.setFont("helvetica", cd.isBold ? "bold" : "normal");
-            pdf.setFontSize(cd.fontSize);
-            pdf.setTextColor(...(isHeader ? NAVY : TEXT));
+              for (let l = 0; l < cd.splitLines.length; l++) {
+                const lineText = cd.splitLines[l];
+                if (!lineText) continue;
+                const lineY = currentY + 3.2 + l * lineStep;
 
-            for (let l = 0; l < cd.splitLines.length; l++) {
-              const lineText = cd.splitLines[l];
-              if (!lineText) continue;
-              const lineY = currentY + 3.2 + l * lineStep;
-
-              if (cd.cell.align === "center") {
-                pdf.text(lineText, cellX + colW / 2, lineY, { align: "center" });
-              } else if (cd.cell.align === "right") {
-                pdf.text(lineText, cellX + colW - 1.5, lineY, { align: "right" });
-              } else {
-                pdf.text(lineText, cellX + 1.5, lineY);
+                if (cd.cell.align === "center") {
+                  pdf.text(lineText, curCellX + thisColW / 2, lineY, { align: "center" });
+                } else if (cd.cell.align === "right") {
+                  pdf.text(lineText, curCellX + thisColW - 1.5, lineY, { align: "right" });
+                } else {
+                  pdf.text(lineText, curCellX + 1.5, lineY);
+                }
               }
             }
+
+            curCellX += thisColW;
           }
 
           currentY += rowH;
         }
 
-        currentY += 2;
+        currentY += 2.5;
         continue;
       }
 
@@ -818,7 +983,7 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
 
       for (const token of tokens) {
         if (token.text === "\n") {
-          if (currentLine.length > 0) linesOfTokens.push(currentLine);
+          linesOfTokens.push(currentLine);
           currentLine = [];
           currentLineWidth = 0;
           continue;
@@ -848,9 +1013,14 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
       }
 
       for (let lIdx = 0; lIdx < linesOfTokens.length; lIdx += 1) {
+        const line = linesOfTokens[lIdx];
         checkPageBreak(stepLineHeight + 1, false);
 
-        const line = linesOfTokens[lIdx];
+        if (line.length === 0) {
+          currentY += stepLineHeight;
+          continue;
+        }
+
         let x = M + 1;
 
         if (block.type === "list-item" && block.bullet) {
@@ -912,7 +1082,17 @@ export async function buildQuotationPdf(input: BuildQuotationPdfInput): Promise<
 
     pdf.setFont("helvetica", "normal");
     pdf.setFontSize(6.5);
-    const descLines = it.description ? pdf.splitTextToSize(it.description, 51) : [];
+    const cleanDesc = it.description
+      ? it.description
+          .replace(/<br\s*\/?>/gi, "\n")
+          .replace(/<\/p>/gi, "\n")
+          .replace(/<\/li>/gi, "\n")
+          .replace(/<li[^>]*>/gi, "• ")
+          .replace(/<[^>]+>/g, "")
+          .replace(/&nbsp;/gi, " ")
+          .trim()
+      : "";
+    const descLines = cleanDesc ? pdf.splitTextToSize(cleanDesc, 51) : [];
     if (it.discount_percent && it.discount_percent > 0) {
       descLines.unshift(`Disc: ${it.discount_percent}% (-Rs. ${formatCurrency(it.discount_amount || 0)})`);
     }

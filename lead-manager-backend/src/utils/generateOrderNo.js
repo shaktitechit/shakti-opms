@@ -9,12 +9,12 @@ function escapeRegex(value) {
 }
 
 /**
- * Generates an order number in the format: ORD-PartyInitials-YYYYMMDD-Serial
- * Serial is max existing for that prefix + 1 (includes soft-deleted) so unique index collisions are avoided.
- * @param {string} partyId - Mongoose ID of the Party
- * @param {Date|string} [orderDate] - Date of the order
- * @returns {Promise<string>} The generated order number
- */
+  * Generates an order number in the format: ORD-PartyInitials-YYYYMMDD-Serial
+  * Serial is max existing for that prefix + 1 (includes soft-deleted) so unique index collisions are avoided.
+  * @param {string} partyId - Mongoose ID of the Party
+  * @param {Date|string} [orderDate] - Date of the order
+  * @returns {Promise<string>} The generated order number
+  */
 async function generateOrderNo(partyId, orderDate) {
   if (!partyId) {
     // Fallback if partyId is missing

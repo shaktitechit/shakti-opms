@@ -1,8 +1,9 @@
 "use client";
 
 import { LargeModalPortal } from "@/components/portal/shared/ui/modals/LargeModalPortal";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowLeft, AlertTriangle, RotateCw } from "lucide-react";
 
 import { useAppSelector } from "@/store";
 import {
@@ -17,6 +18,9 @@ import {
   useListPartiesQuery,
   useGetPartyQuery,
   useGetOrderFulfillmentQuery,
+  useListOrderApprovalsQuery,
+  useListDispatchesQuery,
+  useListTransportsQuery,
 } from "@/store/api";
 import { toast } from "@/lib/toast";
 import { mutationRejectedMessage } from "@/lib/mutationMessages";
@@ -28,8 +32,12 @@ import {
   checkOrderPartySra,
   resolveOrderCounterparty,
 } from "@/components/portal/sales/partyDisplay";
+import { useShellNav } from "@/components/shell/shell-nav-context";
+import { OrderHeaderSummary } from "@/components/portal/shared/orders/detail/components/OrderHeaderSummary";
 import { OrderDetailTabsNav } from "@/components/portal/shared/orders/components/OrderDetailTabsNav";
 import { ItemFulfillmentDetailsModal } from "@/components/portal/shared/orders/modals/ItemFulfillmentDetailsModal";
+import OrderDetailsModal from "@/components/portal/shared/orders/detail/modals/OrderDetailsModal";
+import PartyDetailsModal from "@/components/portal/shared/orders/detail/modals/PartyDetailsModal";
 import { PortalBusyOverlay } from "@/components/portal/shared/shell/PortalBusyOverlay";
 import {
   OrderFulfillmentPipelineStrip,
@@ -156,6 +164,7 @@ function renderPriorityBadge(priority: string) {
 
 export default function SalesOrderDetail({ orderId }: { orderId: string }) {
   const router = useRouter();
+  const { setHeaderExtra } = useShellNav();
   const { data, isLoading, isFetching, isError, refetch } = useGetOrderQuery(orderId);
   const user = useAppSelector((s) => s.auth.user);
 
@@ -242,6 +251,31 @@ export default function SalesOrderDetail({ orderId }: { orderId: string }) {
   }, [historyQ.data]);
 
   const fulfillmentQ = useGetOrderFulfillmentQuery(orderId);
+  const approvalsQ = useListOrderApprovalsQuery(
+    { order: orderId },
+    { skip: !orderId },
+  );
+  const dispatchesQ = useListDispatchesQuery(
+    { order: orderId },
+    { skip: !orderId },
+  );
+  const transportsQ = useListTransportsQuery(
+    { order: orderId },
+    { skip: !orderId },
+  );
+
+  const approvalsCount = useMemo(
+    () => pickList(approvalsQ.data).length,
+    [approvalsQ.data],
+  );
+  const dispatchesCount = useMemo(
+    () => pickList(dispatchesQ.data).length,
+    [dispatchesQ.data],
+  );
+  const transportsCount = useMemo(
+    () => pickList(transportsQ.data).length,
+    [transportsQ.data],
+  );
 
   const [submitOrder] = useSubmitOrderMutation();
   const [createOrderApproval] = useCreateOrderApprovalMutation();
@@ -352,13 +386,263 @@ export default function SalesOrderDetail({ orderId }: { orderId: string }) {
     [deptBoxes, orderKpis.totalQty],
   );
 
+  const orderNo = detail?.order_no ? String(detail.order_no) : "Order";
+
+  const activeTransportInfo = useMemo(() => {
+    const rawTransports = pickList(transportsQ.data);
+    if (!rawTransports || rawTransports.length === 0) return null;
+    const sorted = [...rawTransports].sort((a: any, b: any) => {
+      const dateA = new Date(a.scheduled_date || a.createdAt || 0).getTime();
+      const dateB = new Date(b.scheduled_date || b.createdAt || 0).getTime();
+      return dateB - dateA;
+    });
+    const latest = sorted[0] as any;
+    const agent = latest?.transport_agent;
+    const agentName =
+      typeof agent === "object" && agent !== null
+        ? agent.agent_name || agent.name
+        : typeof agent === "string"
+          ? agent
+          : undefined;
+    return {
+      agentName: agentName ? String(agentName) : undefined,
+      scheduledDate: latest?.scheduled_date
+        ? String(latest.scheduled_date)
+        : undefined,
+    };
+  }, [transportsQ.data]);
+
+  const createdBy = useMemo(() => {
+    if (!detail) return "—";
+    const u = detail.createdBy;
+    if (typeof u === "object" && u !== null) {
+      const rec = u as Record<string, unknown>;
+      return String(rec.name || rec.username || "—");
+    }
+    return resolveUser(u).name;
+  }, [detail, resolveUser]);
+
+  const desktopTabs = useMemo(
+    () => [
+      {
+        id: "approvals",
+        name: "Order Approval",
+        count: approvalsCount,
+        hasData: approvalsCount > 0,
+      },
+      {
+        id: "dispatches",
+        name: "Dispatches",
+        count: dispatchesCount,
+        hasData: dispatchesCount > 0,
+      },
+      {
+        id: "transports",
+        name: "Transports",
+        count: transportsCount,
+        hasData: transportsCount > 0,
+      },
+      {
+        id: "flags",
+        name: "Flags",
+        count: openFlagsCount,
+        hasData: openFlagsCount > 0,
+        dangerBadge: true,
+      },
+      {
+        id: "attachments",
+        name: "Attachments",
+        count: attachmentsCount,
+        hasData: attachmentsCount > 0,
+      },
+    ],
+    [
+      approvalsCount,
+      dispatchesCount,
+      transportsCount,
+      openFlagsCount,
+      attachmentsCount,
+    ],
+  );
+
+  const mobileTabs = useMemo(
+    () =>
+      [
+        {
+          id: "approvals" as const,
+          name: "Approvals",
+          icon: (
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.8}
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+          ),
+        },
+        {
+          id: "dispatches" as const,
+          name: "Dispatch",
+          icon: (
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.8}
+                d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"
+              />
+            </svg>
+          ),
+        },
+        {
+          id: "transports" as const,
+          name: "Transport",
+          icon: (
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.8}
+                d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z"
+              />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.8}
+                d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10l2.556-2.556M13 16H9m4 0h2m2 0h.01M13 16V6m0 0h3l3 4v6h-1M6 16H5m8-10H5"
+              />
+            </svg>
+          ),
+        },
+        {
+          id: "flags" as const,
+          name: "Flags",
+          icon: (
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.8}
+                d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9"
+              />
+            </svg>
+          ),
+        },
+        {
+          id: "attachments" as const,
+          name: "Files",
+          icon: (
+            <svg
+              className="h-5 w-5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.8}
+                d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
+              />
+            </svg>
+          ),
+        },
+      ] as const,
+    [],
+  );
+
+  const tabCounts = useMemo(
+    () => ({
+      approvals: approvalsCount,
+      dispatches: dispatchesCount,
+      transports: transportsCount,
+      flags: openFlagsCount,
+      attachments: attachmentsCount,
+    }),
+    [
+      approvalsCount,
+      dispatchesCount,
+      transportsCount,
+      openFlagsCount,
+      attachmentsCount,
+    ],
+  );
+
+  useEffect(() => {
+    if (!detail) {
+      setHeaderExtra(null);
+      return;
+    }
+    setHeaderExtra(
+      <OrderHeaderSummary
+        orderNo={orderNo}
+        custLabel={custLabel}
+        orderDate={detail.order_date}
+        edd={detail.expected_delivery_date}
+        isSra={Boolean(
+          checkOrderPartySra(detail, partySraById) ||
+            (partyDetailQ.data as any)?.sra === true,
+        )}
+        priority={
+          typeof detail.priority === "string" ? detail.priority : "normal"
+        }
+        pipelineSteps={pipelineSteps}
+      />,
+    );
+    return () => {
+      setHeaderExtra(null);
+    };
+  }, [
+    detail,
+    orderNo,
+    custLabel,
+    partySraById,
+    partyDetailQ.data,
+    pipelineSteps,
+    setHeaderExtra,
+  ]);
+
   const handleRefetch = useCallback(() => {
     refetch();
     if (!flagsQ.isUninitialized) flagsQ.refetch();
     if (!historyQ.isUninitialized) historyQ.refetch();
     if (!attachmentsQ.isUninitialized) attachmentsQ.refetch();
     if (!fulfillmentQ.isUninitialized) fulfillmentQ.refetch();
-  }, [attachmentsQ, fulfillmentQ, flagsQ, historyQ, refetch]);
+    if (!approvalsQ.isUninitialized) approvalsQ.refetch();
+    if (!dispatchesQ.isUninitialized) dispatchesQ.refetch();
+    if (!transportsQ.isUninitialized) transportsQ.refetch();
+  }, [
+    attachmentsQ,
+    fulfillmentQ,
+    flagsQ,
+    historyQ,
+    approvalsQ,
+    dispatchesQ,
+    transportsQ,
+    refetch,
+  ]);
 
 
 
@@ -590,11 +874,20 @@ export default function SalesOrderDetail({ orderId }: { orderId: string }) {
   if (isError || (!isLoading && !detail)) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center px-4 font-sans">
-        <p className="text-sm text-rose-600 dark:text-rose-400">
-          Could not load order details.
+        <AlertTriangle className="h-10 w-10 text-red-500 mb-2" />
+        <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+          Failed to load order
+        </h3>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">
+          The order record could not be found or you have insufficient access
+          permissions.
         </p>
-        <button type="button" onClick={() => router.back()} className={`${btnSecondaryClass} mt-4`}>
-          Back
+        <button
+          type="button"
+          onClick={() => router.push("/sales/orders")}
+          className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-blue-650 hover:underline dark:text-blue-400"
+        >
+          Back to Orders
         </button>
       </div>
     );
@@ -605,7 +898,7 @@ export default function SalesOrderDetail({ orderId }: { orderId: string }) {
   }
 
   return (
-    <div className="h-[calc(100vh-150px)] md:h-[calc(100vh-160px)] flex flex-col min-h-0 overflow-hidden space-y-0 pb-20 md:pb-0">
+    <div className="h-[calc(100vh-150px)] md:h-[calc(100vh-160px)] flex flex-col min-h-0 overflow-hidden space-y-0 pb-20 md:pb-0 font-sans select-none">
       <EditOrderModal
         isOpen={isEditModalOpen}
         onClose={() => setIsEditModalOpen(false)}
@@ -643,395 +936,292 @@ export default function SalesOrderDetail({ orderId }: { orderId: string }) {
         fulfillmentSnapshot={fulfillmentSnapshot}
       />
 
+      <OrderDetailsModal
+        isOpen={isOrderDetailsModalOpen}
+        onClose={() => setIsOrderDetailsModalOpen(false)}
+        detail={detail}
+        createdBy={createdBy}
+        resolveUser={resolveUser}
+        activeTransportInfo={activeTransportInfo}
+      />
+
+      <PartyDetailsModal
+        isOpen={isPartyDetailsModalOpen}
+        onClose={() => setIsPartyDetailsModalOpen(false)}
+        isFetching={partyDetailQ.isFetching}
+        isError={partyDetailQ.isError}
+        partyData={partyDetailQ.data}
+        custLabel={custLabel}
+      />
+
       {isOrderItemsModalOpen && (
         <LargeModalPortal>
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[2px]">
-          <div className="w-full max-w-4xl rounded-xl border border-slate-200/90 bg-white p-5 shadow-xl dark:border-white/10 dark:bg-slate-900 transition-all max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-white/5">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-550 dark:text-slate-50">
-                Order Items
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsOrderItemsModalOpen(false)}
-                className="rounded-md text-slate-400 hover:text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 p-1 cursor-pointer"
-              >
-                <span className="sr-only">Close</span>
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[2px]">
+            <div className="w-full max-w-4xl rounded-xl border border-slate-200/90 bg-white p-5 shadow-xl dark:border-white/10 dark:bg-slate-900 transition-all max-h-[85vh] flex flex-col font-sans">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-white/5">
+                <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">
+                  Order Items
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsOrderItemsModalOpen(false)}
+                  className="rounded-md text-slate-400 hover:text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 p-1 cursor-pointer"
+                >
+                  <span className="sr-only">Close</span>
+                  <svg
+                    className="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              </div>
 
-            <div className="mt-4 overflow-y-auto flex-1 pr-1">
-              <OrderTab
-                orderId={orderId}
-                detail={detail}
-                isDraft={isDraft}
-                user={user}
-                refetchOrder={handleRefetch}
-              />
-            </div>
+              <div className="mt-4 overflow-y-auto flex-1 pr-1">
+                <OrderTab
+                  orderId={orderId}
+                  detail={detail}
+                  isDraft={isDraft}
+                  user={user}
+                  refetchOrder={handleRefetch}
+                />
+              </div>
 
-            <div className="mt-5 flex justify-end border-t border-slate-100 pt-3 dark:border-white/5">
-              <button
-                type="button"
-                onClick={() => setIsOrderItemsModalOpen(false)}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-50 dark:border-white/10 dark:text-slate-100 dark:hover:bg-white/5 cursor-pointer"
-              >
-                Close
-              </button>
+              <div className="mt-5 flex justify-end border-t border-slate-100 pt-3 dark:border-white/5">
+                <button
+                  type="button"
+                  onClick={() => setIsOrderItemsModalOpen(false)}
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-50 dark:border-white/10 dark:text-slate-100 dark:hover:bg-white/5 cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-        </LargeModalPortal>
-      )}
-
-      {isOrderDetailsModalOpen && detail && (
-        <LargeModalPortal>
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[2px]">
-          <div className="w-full max-w-4xl rounded-xl border border-slate-200/90 bg-white p-5 shadow-xl dark:border-white/10 dark:bg-slate-900 transition-all max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-white/5">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-50">
-                Order Details
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsOrderDetailsModalOpen(false)}
-                className="rounded-md text-slate-400 hover:text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 p-1 cursor-pointer"
-              >
-                <span className="sr-only">Close</span>
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="mt-4 overflow-y-auto flex-1 pr-1">
-              <dl className="grid gap-3 text-xs sm:grid-cols-2">
-                <div>
-                  <dt className="text-xs font-medium text-slate-500">Order No</dt>
-                  <dd className="mt-0.5 font-mono font-semibold text-slate-900 dark:text-slate-100">
-                    {String(detail.order_no ?? "—")}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium text-slate-500">Priority</dt>
-                  <dd className="mt-0.5 capitalize font-semibold text-slate-900 dark:text-slate-100">
-                    {typeof detail.priority === "string" ? detail.priority : "—"}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium text-slate-500">Order Date</dt>
-                  <dd className="mt-0.5 text-slate-900 dark:text-slate-100">
-                    {formatDate(detail.order_date)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium text-slate-500">Expected Delivery</dt>
-                  <dd className="mt-0.5 text-slate-900 dark:text-slate-100">
-                    {formatDate(detail.expected_delivery_date)}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium text-slate-500">Assigned Sales</dt>
-                  <dd className="mt-0.5 font-semibold text-slate-900 dark:text-slate-100">
-                    {resolveUser(detail.assigned_sales_user).name}
-                    {resolveUser(detail.assigned_sales_user).phone && (
-                      <span className="ml-1 text-slate-500 font-normal">
-                        ({resolveUser(detail.assigned_sales_user).phone})
-                      </span>
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium text-slate-500">Assigned Admin</dt>
-                  <dd className="mt-0.5 font-semibold text-slate-900 dark:text-slate-100">
-                    {resolveUser(detail.assigned_admin_user).name}
-                    {resolveUser(detail.assigned_admin_user).phone && (
-                      <span className="ml-1 text-slate-500 font-normal">
-                        ({resolveUser(detail.assigned_admin_user).phone})
-                      </span>
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium text-slate-500">Assigned Finance</dt>
-                  <dd className="mt-0.5 font-semibold text-slate-900 dark:text-slate-100">
-                    {resolveUser(detail.assigned_finance_user).name}
-                    {resolveUser(detail.assigned_finance_user).phone && (
-                      <span className="ml-1 text-slate-500 font-normal">
-                        ({resolveUser(detail.assigned_finance_user).phone})
-                      </span>
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs font-medium text-slate-500">Assigned Dispatch</dt>
-                  <dd className="mt-0.5 font-semibold text-slate-900 dark:text-slate-100">
-                    {resolveUser(detail.assigned_dispatch_user).name}
-                    {resolveUser(detail.assigned_dispatch_user).phone && (
-                      <span className="ml-1 text-slate-500 font-normal">
-                        ({resolveUser(detail.assigned_dispatch_user).phone})
-                      </span>
-                    )}
-                  </dd>
-                </div>
-                <div className="sm:col-span-2">
-                  <dt className="text-xs font-medium text-slate-500">Remarks</dt>
-                  <dd className="mt-0.5 min-h-8 whitespace-pre-wrap rounded-lg bg-slate-50 p-2 text-slate-900 dark:bg-slate-950/40 dark:text-slate-100">
-                    {typeof detail.remarks === "string" && detail.remarks.trim()
-                      ? detail.remarks
-                      : "—"}
-                  </dd>
-                </div>
-              </dl>
-            </div>
-
-            <div className="mt-5 flex justify-end border-t border-slate-100 pt-3 dark:border-white/5">
-              <button
-                type="button"
-                onClick={() => setIsOrderDetailsModalOpen(false)}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-50 dark:border-white/10 dark:text-slate-100 dark:hover:bg-white/5 cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-        </LargeModalPortal>
-      )}
-
-      {isPartyDetailsModalOpen && (
-        <LargeModalPortal>
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[2px]">
-          <div className="w-full max-w-2xl rounded-xl border border-slate-200/90 bg-white p-5 shadow-xl dark:border-white/10 dark:bg-slate-900 transition-all max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 dark:border-white/5">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-550 dark:text-slate-50">
-                Party Details
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsPartyDetailsModalOpen(false)}
-                className="rounded-md text-slate-400 hover:text-slate-500 hover:bg-slate-100 dark:hover:bg-white/5 p-1 cursor-pointer"
-              >
-                <span className="sr-only">Close</span>
-                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="mt-4 overflow-y-auto flex-1 pr-1">
-              {partyDetailQ.isFetching ? (
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Loading party details...
-                </p>
-              ) : partyDetailQ.isError ? (
-                <p className="text-xs text-rose-600 dark:text-rose-400">
-                  Error loading party details.
-                </p>
-              ) : partyDetailQ.data ? (
-                (() => {
-                  const p = partyDetailQ.data as Record<string, unknown>;
-                  return (
-                    <div className="space-y-3 text-xs">
-                      <dl className="grid gap-3 sm:grid-cols-2">
-                        <div>
-                          <dt className="text-xs font-medium text-slate-500">Party Name</dt>
-                          <dd className="mt-0.5 font-semibold text-slate-900 dark:text-slate-100">
-                            {displayText(p.party_name) !== "—" ? displayText(p.party_name) : custLabel}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs font-medium text-slate-500">Contact</dt>
-                          <dd className="mt-0.5 text-slate-900 dark:text-slate-100">
-                            {displayText(p.contact_person)}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs font-medium text-slate-500">Mobile</dt>
-                          <dd className="mt-0.5 text-slate-900 dark:text-slate-100">
-                            {displayText(p.mobile)}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs font-medium text-slate-500">Email</dt>
-                          <dd className="mt-0.5 truncate text-slate-900 dark:text-slate-100">
-                            {displayText(p.email)}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs font-medium text-slate-500">GST Number</dt>
-                          <dd className="mt-0.5 font-mono text-slate-900 dark:text-slate-100">
-                            {displayText(p.gst_no)}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs font-medium text-slate-500">Payment Terms</dt>
-                          <dd className="mt-0.5 text-slate-900 dark:text-slate-100">
-                            {displayText(p.payment_terms)}
-                          </dd>
-                        </div>
-                      </dl>
-                      <div className="grid gap-3 border-t border-slate-100 pt-3 dark:border-white/10 sm:grid-cols-2">
-                        <div>
-                          <dt className="text-xs font-medium text-slate-500">Billing Address</dt>
-                          <dd className="mt-1 whitespace-pre-line rounded-lg bg-slate-50 p-2 text-xs text-slate-700 dark:bg-slate-950/40 dark:text-slate-300">
-                            {formatStructuredAddress(p.billing_address)}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs font-medium text-slate-500">Shipping Address</dt>
-                          <dd className="mt-1 whitespace-pre-line rounded-lg bg-slate-50 p-2 text-xs text-slate-700 dark:bg-slate-950/40 dark:text-slate-300">
-                            {formatStructuredAddress(p.shipping_address)}
-                          </dd>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()
-              ) : (
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  No party linked on this order.
-                </p>
-              )}
-            </div>
-
-            <div className="mt-5 flex justify-end border-t border-slate-100 pt-3 dark:border-white/5">
-              <button
-                type="button"
-                onClick={() => setIsPartyDetailsModalOpen(false)}
-                className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-800 transition hover:bg-slate-50 dark:border-white/10 dark:text-slate-100 dark:hover:bg-white/5 cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
         </LargeModalPortal>
       )}
 
       {detail && (
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex-shrink-0 space-y-1">
-            <div className="rounded-lg border border-slate-200/80 bg-white p-2 shadow-sm dark:border-white/10 dark:bg-slate-900">
-
-              {/* ── Top row: order details + inline fulfillment pipeline ── */}
-              <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-                <div className="min-w-0 flex-1">
-                  <div className="mb-1 flex flex-wrap items-center gap-1 text-2xs text-slate-500 dark:text-slate-400">
-                    <button type="button" onClick={() => router.back()} className="font-medium text-blue-600 hover:underline dark:text-blue-400">Orders</button>
-                    <span>/</span>
-                    <span className="font-semibold text-slate-700 dark:text-slate-200">Order Details</span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <h1 className="truncate text-base sm:text-lg font-bold tracking-tight text-slate-950 dark:text-slate-50">
-                      {custLabel}
-                    </h1>
-                    {detail && (checkOrderPartySra(detail, partySraById) || (partyDetailQ.data as any)?.sra === true) && (
-                      <span className="inline-flex items-center rounded-full bg-emerald-50 px-1.5 py-0.5 text-2xs font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/10 dark:bg-emerald-500/10 dark:text-emerald-400 shrink-0">
-                        SRA
-                      </span>
-                    )}
-                    <span className="shrink-0">{renderPriorityBadge(typeof detail.priority === "string" ? detail.priority : "normal")}</span>
-                  </div>
-                  <div className="mt-0 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-lg text-slate-500 dark:text-slate-400">
-                    <span className="flex items-center gap-1">
-                      Order No:{" "}
-                      <b className="font-bold text-blue-700 dark:text-blue-400">
-                        {detail.order_no ? String(detail.order_no) : "Order"}
-                      </b>
-                    </span>
-                    <span>Date: {formatDateShort(detail.order_date)}</span>
-                    <span>EDD: {formatDateShort(detail.expected_delivery_date)}</span>
-                  </div>
-                </div>
-
-                <div className="flex min-w-0 items-center gap-1.5 lg:shrink-0">
-                  <div className="min-w-0 flex-1 overflow-x-auto lg:flex-none lg:min-w-[420px]">
-                    <OrderFulfillmentPipelineStrip steps={pipelineSteps} size="sm" />
-                  </div>
-                  <button type="button" onClick={() => setIsFulfillmentModalOpen(true)} className="shrink-0 rounded-md border border-amber-200/80 bg-white px-1.5 py-0.5 text-2xs font-bold text-amber-600 shadow-sm transition hover:bg-slate-50 dark:border-white/10 dark:bg-slate-950 dark:text-amber-400 dark:hover:bg-white/5" title="Fulfillment details">Details</button>
-                  <button type="button" onClick={handleRefetch} className="shrink-0 rounded-md border border-slate-200/95 p-1 text-slate-500 transition hover:bg-slate-50 dark:border-white/15 dark:text-slate-300 dark:hover:bg-white/5" title="Refresh">
-                    <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+          <div className="flex-shrink-0 mb-1.5">
+            <div className="rounded-lg border border-slate-200/80 bg-white p-2 shadow-xs dark:border-white/10 dark:bg-slate-900">
+              <div className="flex flex-wrap items-center justify-between gap-1.5 sm:gap-2">
+                {/* Back button & Breadcrumbs */}
+                <div className="flex items-center gap-1.5 text-2xs text-slate-500 dark:text-slate-400 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => router.back()}
+                    className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-1 font-medium text-slate-700 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-200 dark:hover:bg-white/20 transition cursor-pointer"
+                  >
+                    <ArrowLeft className="h-3 w-3" />
+                    <span>Back</span>
                   </button>
-                </div>
-              </div>
-
-              {/* ── Info buttons: 3-col on mobile, inline on sm+ ── */}
-              <div className="mt-1 grid grid-cols-3 gap-1 sm:flex sm:flex-wrap sm:gap-1.5 font-sans font-medium">
-                <button type="button" onClick={() => setIsOrderDetailsModalOpen(true)} className="inline-flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-1 rounded-md border border-slate-200 bg-slate-50 hover:bg-white px-2 py-1 sm:px-2 sm:py-1 text-2xs font-semibold text-slate-700 shadow-sm transition dark:border-white/10 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-white/5 cursor-pointer active:scale-[0.97]">
-                  <svg className="h-3.5 w-3.5 sm:h-3 sm:w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  <span>Order Info</span>
-                </button>
-                <button type="button" onClick={() => setIsPartyDetailsModalOpen(true)} className="inline-flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-1 rounded-md border border-slate-200 bg-slate-50 hover:bg-white px-2 py-1 sm:px-2 sm:py-1 text-2xs font-semibold text-slate-700 shadow-sm transition dark:border-white/10 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-white/5 cursor-pointer active:scale-[0.97]">
-                  <svg className="h-3.5 w-3.5 sm:h-3 sm:w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                  <span>Party Info</span>
-                </button>
-                <button type="button" onClick={() => setIsOrderItemsModalOpen(true)} className="inline-flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-1 rounded-md border border-slate-200 bg-slate-50 hover:bg-white px-2 py-1 sm:px-2 sm:py-1 text-2xs font-semibold text-slate-700 shadow-sm transition dark:border-white/10 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-white/5 cursor-pointer active:scale-[0.97]">
-                  <svg className="h-3.5 w-3.5 sm:h-3 sm:w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
-                  <span>Items List</span>
-                </button>
-                {isDraft && (
-                  <button type="button" onClick={() => setIsEditModalOpen(true)} className="inline-flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 sm:gap-1 rounded-md bg-blue-600 hover:bg-blue-700 px-2 py-1 sm:px-2 sm:py-1 text-2xs font-semibold text-white shadow-sm transition active:scale-[0.97] cursor-pointer dark:bg-blue-500 dark:hover:bg-blue-400">
-                    <svg className="h-3.5 w-3.5 sm:h-3 sm:w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                    <span>Edit Draft</span>
+                  <span className="text-slate-300 dark:text-slate-600">|</span>
+                  <button
+                    type="button"
+                    onClick={() => router.push("/sales/orders")}
+                    className="font-medium text-blue-650 hover:underline dark:text-blue-400"
+                  >
+                    Orders
                   </button>
-                )}
-              </div>
+                  <span>/</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">
+                    Details
+                  </span>
+                  <span className="ml-0.5 rounded bg-slate-100 px-1.5 py-0.5 text-2xs font-bold uppercase tracking-wider text-slate-600 dark:bg-white/10 dark:text-slate-300">
+                    Sales
+                  </span>
+                </div>
 
-              {/* ── Action buttons ── */}
-              <div className="mt-2 border-t border-slate-100 pt-2 dark:border-white/10">
-                <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 font-sans font-medium">
-                  <button type="button" disabled={status !== "draft"} onClick={() => { setSubmitRemarks(""); setIsSubmitPreviewOpen(true); }} className="rounded-md bg-emerald-600 px-2 sm:px-2 py-0.5 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-emerald-500 dark:hover:bg-emerald-400 active:scale-[0.98]">Submit Order</button>
+                {/* Unified Top Action Panel */}
+                <div className="flex flex-wrap items-center gap-1 sm:gap-1.5 font-sans font-medium text-2xs">
+                  {/* Order Info */}
+                  <button
+                    type="button"
+                    onClick={() => setIsOrderDetailsModalOpen(true)}
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 hover:bg-white px-2 py-1 text-2xs font-semibold text-slate-700 shadow-xs transition dark:border-white/10 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-white/5 cursor-pointer active:scale-[0.97]"
+                  >
+                    <span>Order Info</span>
+                  </button>
+
+                  {/* Party Info */}
+                  <button
+                    type="button"
+                    onClick={() => setIsPartyDetailsModalOpen(true)}
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 hover:bg-white px-2 py-1 text-2xs font-semibold text-slate-700 shadow-xs transition dark:border-white/10 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-white/5 cursor-pointer active:scale-[0.97]"
+                  >
+                    <span>Party Info</span>
+                  </button>
+
+                  {/* Items List */}
+                  <button
+                    type="button"
+                    onClick={() => setIsOrderItemsModalOpen(true)}
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 hover:bg-white px-2 py-1 text-2xs font-semibold text-slate-700 shadow-xs transition dark:border-white/10 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-white/5 cursor-pointer active:scale-[0.97]"
+                  >
+                    <span>Items List</span>
+                  </button>
+
+                  {/* Details (Fulfillment Details) */}
+                  <button
+                    type="button"
+                    onClick={() => setIsFulfillmentModalOpen(true)}
+                    className="inline-flex items-center gap-1 rounded-md border border-amber-200 bg-amber-50 hover:bg-amber-100/80 px-2 py-1 text-2xs font-semibold text-amber-800 shadow-xs transition dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50 cursor-pointer active:scale-[0.97]"
+                    title="Fulfillment details"
+                  >
+                    <span>Details</span>
+                  </button>
+
+                  {/* Refresh */}
+                  <button
+                    type="button"
+                    onClick={handleRefetch}
+                    className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-slate-50 hover:bg-white p-1 text-slate-600 shadow-xs transition dark:border-white/10 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-white/5 cursor-pointer active:scale-[0.97]"
+                    title="Refresh order"
+                  >
+                    <RotateCw className="h-3 w-3" />
+                  </button>
+
+                  {/* Edit Draft */}
+                  {isDraft && (
+                    <button
+                      type="button"
+                      onClick={() => setIsEditModalOpen(true)}
+                      className="inline-flex items-center gap-1 rounded-md bg-blue-600 hover:bg-blue-700 px-2 py-1 text-2xs font-semibold text-white shadow-xs transition active:scale-[0.97] cursor-pointer dark:bg-blue-500 dark:hover:bg-blue-400"
+                    >
+                      <span>Edit Draft</span>
+                    </button>
+                  )}
+
+                  {/* Submit Order */}
+                  {status === "draft" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSubmitRemarks("");
+                        setIsSubmitPreviewOpen(true);
+                      }}
+                      className="rounded-md bg-emerald-600 px-2 py-1 text-2xs font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-emerald-500 dark:hover:bg-emerald-400 active:scale-[0.98] cursor-pointer"
+                    >
+                      Submit Order
+                    </button>
+                  )}
                 </div>
               </div>
-
             </div>
           </div>
 
           {/* ── DESKTOP: Tab Content ── */}
           <div className="hidden md:block flex-1 min-h-0 overflow-y-auto pr-1">
-            {activeTab === "approvals" && (<ApprovalTab orderId={orderId} detail={detail} />)}
-            {activeTab === "dispatches" && (<DispatchesTab orderId={orderId} detail={detail} refetchOrder={handleRefetch} />)}
-            {activeTab === "transports" && (<TransportsTab orderId={orderId} detail={detail} refetchOrder={handleRefetch} />)}
-            {activeTab === "flags" && (<FlagsTab orderId={orderId} refetchOrder={handleRefetch} />)}
-            {activeTab === "attachments" && (<AttachmentsTab orderId={orderId} attachments={attachmentsList} isLoading={attachmentsQ.isLoading} onUploadSuccess={handleRefetch} />)}
+            {activeTab === "approvals" && (
+              <ApprovalTab orderId={orderId} detail={detail} />
+            )}
+            {activeTab === "dispatches" && (
+              <DispatchesTab
+                orderId={orderId}
+                detail={detail}
+                refetchOrder={handleRefetch}
+              />
+            )}
+            {activeTab === "transports" && (
+              <TransportsTab
+                orderId={orderId}
+                detail={detail}
+                refetchOrder={handleRefetch}
+              />
+            )}
+            {activeTab === "flags" && (
+              <FlagsTab orderId={orderId} refetchOrder={handleRefetch} />
+            )}
+            {activeTab === "attachments" && (
+              <AttachmentsTab
+                orderId={orderId}
+                attachments={attachmentsList}
+                isLoading={attachmentsQ.isLoading}
+                onUploadSuccess={handleRefetch}
+              />
+            )}
           </div>
 
           {/* ── DESKTOP: Footer Tab Nav ── */}
-          <div className="hidden md:block mb-0 flex-shrink-0 border-t border-slate-100 dark:border-white/5 bg-slate-50/95 dark:bg-slate-955/90 backdrop-blur-md px-2 pt-1.5 pb-0 [&_nav]:pb-0">
-            <OrderDetailTabsNav className="!mb-0 !rounded-none !border-0 !bg-transparent !p-0"
-              tabs={[
-                { id: "approvals", name: "Order Approval" },
-                { id: "dispatches", name: "Dispatches" },
-                { id: "transports", name: "Transports" },
-                { id: "flags", name: "Flags", count: openFlagsCount, dangerBadge: true },
-                { id: "attachments", name: "Attachments", count: attachmentsCount },
-              ]}
+          <div className="hidden md:block mb-0 flex-shrink-0 border-t border-slate-800 bg-slate-900/95 dark:bg-slate-955/95 backdrop-blur-md px-2 py-1 [&_nav]:pb-0 shadow-lg">
+            <OrderDetailTabsNav
+              className="!mb-0 !rounded-none !border-0 !bg-transparent !p-0"
+              tabs={desktopTabs}
               activeId={activeTab}
               onChange={(id) => setActiveTab(id as typeof activeTab)}
+              variant="dark"
             />
           </div>
 
           {/* ── MOBILE: Full-screen popup ── */}
           {mobileTabOpen && (
-            <div className="md:hidden fixed inset-0 z-[60] flex flex-col bg-white dark:bg-slate-900">
+            <div className="md:hidden fixed inset-0 z-[60] flex flex-col bg-white dark:bg-slate-900 animate-in slide-in-from-bottom duration-300">
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 sticky top-0 z-10">
-                <h2 className="text-sm font-bold text-slate-900 dark:text-slate-50">
-                  {activeTab === "approvals" && "Order Approval"}{activeTab === "dispatches" && "Dispatches"}{activeTab === "transports" && "Transports"}{activeTab === "flags" && "Flags"}{activeTab === "attachments" && "Attachments"}
+                <h2 className="text-sm font-bold text-slate-900 dark:text-slate-50 capitalize">
+                  {activeTab === "approvals" && "Order Approval"}
+                  {activeTab === "dispatches" && "Dispatches"}
+                  {activeTab === "transports" && "Transports"}
+                  {activeTab === "flags" && "Flags"}
+                  {activeTab === "attachments" && "Attachments"}
                 </h2>
-                <button type="button" onClick={() => setMobileTabOpen(false)} className="rounded-full p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 transition" aria-label="Close panel">
-                  <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                <button
+                  type="button"
+                  onClick={() => setMobileTabOpen(false)}
+                  className="rounded-full p-2 text-slate-500 hover:bg-slate-100 dark:hover:bg-white/10 transition active:scale-95"
+                  aria-label="Close panel"
+                >
+                  <svg
+                    className="h-5 w-5"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 9l-7 7-7-7"
+                    />
+                  </svg>
                 </button>
               </div>
               <div className="flex-1 overflow-y-auto p-4 pb-24">
-                {activeTab === "approvals" && (<ApprovalTab orderId={orderId} detail={detail} />)}
-                {activeTab === "dispatches" && (<DispatchesTab orderId={orderId} detail={detail} refetchOrder={handleRefetch} />)}
-                {activeTab === "transports" && (<TransportsTab orderId={orderId} detail={detail} refetchOrder={handleRefetch} />)}
-                {activeTab === "flags" && (<FlagsTab orderId={orderId} refetchOrder={handleRefetch} />)}
-                {activeTab === "attachments" && (<AttachmentsTab orderId={orderId} attachments={attachmentsList} isLoading={attachmentsQ.isLoading} onUploadSuccess={handleRefetch} />)}
+                {activeTab === "approvals" && (
+                  <ApprovalTab orderId={orderId} detail={detail} />
+                )}
+                {activeTab === "dispatches" && (
+                  <DispatchesTab
+                    orderId={orderId}
+                    detail={detail}
+                    refetchOrder={handleRefetch}
+                  />
+                )}
+                {activeTab === "transports" && (
+                  <TransportsTab
+                    orderId={orderId}
+                    detail={detail}
+                    refetchOrder={handleRefetch}
+                  />
+                )}
+                {activeTab === "flags" && (
+                  <FlagsTab orderId={orderId} refetchOrder={handleRefetch} />
+                )}
+                {activeTab === "attachments" && (
+                  <AttachmentsTab
+                    orderId={orderId}
+                    attachments={attachmentsList}
+                    isLoading={attachmentsQ.isLoading}
+                    onUploadSuccess={handleRefetch}
+                  />
+                )}
               </div>
             </div>
           )}
@@ -1040,24 +1230,63 @@ export default function SalesOrderDetail({ orderId }: { orderId: string }) {
 
       {/* ── MOBILE: Bottom Tab Nav ── */}
       {!isFetching && !isError && detail && (
-        <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-slate-200 dark:border-white/10 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md px-2">
-          <nav className="flex items-stretch justify-around">
-            {([
-              { id: "approvals" as const, name: "Approval", count: undefined, dangerBadge: false, icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> },
-              { id: "dispatches" as const, name: "Dispatch", count: undefined, dangerBadge: false, icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg> },
-              { id: "transports" as const, name: "Transport", count: undefined, dangerBadge: false, icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10l2.556-2.556M13 16H9m4 0h2m2 0h.01M13 16V6m0 0h3l3 4v6h-1M6 16H5m8-10H5" /></svg> },
-              { id: "flags" as const, name: "Flags", count: openFlagsCount, dangerBadge: true, icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 21v-4m0 0V5a2 2 0 012-2h6.5l1 1H21l-3 6 3 6h-8.5l-1-1H5a2 2 0 00-2 2zm9-13.5V9" /></svg> },
-              { id: "attachments" as const, name: "Files", count: attachmentsCount, dangerBadge: false, icon: <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg> },
-            ]).map((tab) => {
+        <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 border-t border-slate-800 bg-slate-900/95 dark:bg-slate-955/95 backdrop-blur-md px-2 pb-safe">
+          <nav className="flex items-stretch justify-around overflow-x-auto">
+            {mobileTabs.map((tab) => {
               const isActive = activeTab === tab.id && mobileTabOpen;
+              const count = tabCounts[tab.id] ?? 0;
+              const hasData = count > 0;
+              const dangerBadge = tab.id === "flags";
               return (
-                <button key={tab.id} type="button" onClick={() => { if (activeTab === tab.id && mobileTabOpen) { setMobileTabOpen(false); } else { setActiveTab(tab.id); setMobileTabOpen(true); } }} className={`relative flex flex-col items-center justify-center gap-0.5 py-2.5 px-2 flex-1 min-w-0 transition-colors ${isActive ? "text-blue-600 dark:text-blue-400" : "text-slate-500 dark:text-slate-400"}`}>
-                  <span className={`relative transition-transform ${isActive ? "scale-110" : ""}`}>
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    if (activeTab === tab.id && mobileTabOpen) {
+                      setMobileTabOpen(false);
+                    } else {
+                      setActiveTab(tab.id);
+                      setMobileTabOpen(true);
+                    }
+                  }}
+                  className={`relative flex flex-col items-center justify-center gap-0.5 py-2 px-2 flex-1 min-w-0 transition-colors ${
+                    isActive
+                      ? "text-white"
+                      : hasData
+                        ? "text-slate-300 hover:text-white"
+                        : "text-slate-500 hover:text-slate-400"
+                  }`}
+                >
+                  <span
+                    className={`relative transition-transform ${isActive ? "scale-110" : ""}`}
+                  >
                     {tab.icon}
-                    {tab.count !== undefined && tab.count > 0 && (<span className={`absolute -top-1.5 -right-1.5 min-w-[1rem] h-4 flex items-center justify-center rounded-full px-1 text-2xs font-bold ${tab.dangerBadge ? "bg-rose-500 text-white" : "bg-slate-600 text-white dark:bg-slate-300 dark:text-slate-900"}`}>{tab.count}</span>)}
+                    <span
+                      className={`absolute -top-1.5 -right-2 min-w-[1rem] h-3.5 flex items-center justify-center rounded-full px-1 text-3xs font-bold ring-1 ring-slate-900 ${
+                        hasData
+                          ? dangerBadge
+                            ? "bg-rose-500 text-white"
+                            : "bg-emerald-500 text-slate-950 font-extrabold"
+                          : "bg-slate-800 text-slate-500 ring-slate-700/60"
+                      }`}
+                    >
+                      {count}
+                    </span>
                   </span>
-                  <span className={`text-2xs font-semibold leading-none truncate max-w-full ${isActive ? "text-blue-600 dark:text-blue-400" : ""}`}>{tab.name}</span>
-                  {isActive && <span className="absolute top-0 left-2 right-2 h-0.5 rounded-full bg-blue-600 dark:bg-blue-400" />}
+                  <span
+                    className={`text-2xs font-semibold leading-none truncate max-w-full ${
+                      isActive
+                        ? "text-white font-bold"
+                        : hasData
+                          ? "text-slate-300"
+                          : "text-slate-500"
+                    }`}
+                  >
+                    {tab.name}
+                  </span>
+                  {isActive && (
+                    <span className="absolute top-0 left-2 right-2 h-0.5 rounded-full bg-emerald-400" />
+                  )}
                 </button>
               );
             })}

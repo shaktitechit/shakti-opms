@@ -3,7 +3,8 @@ export type OrderDetailPortalHome =
   | "/admin"
   | "/finance"
   | "/dispatch"
-  | "/super_admin";
+  | "/super_admin"
+  | "/sales";
 
 export type OrderDetailFlagDepartment =
   | "account"

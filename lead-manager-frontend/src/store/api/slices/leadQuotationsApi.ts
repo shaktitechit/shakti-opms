@@ -4,6 +4,7 @@
  */
 import { medicaApi } from "../baseApi";
 import { unwrapEnvelope, type ApiEnvelope } from "../unwrap";
+import type { FollowUpActionRecord } from "./leadsApi";
 
 export type QuotationStatus = "draft" | "pending_approval" | "approved" | "sent" | "in_negotiation" | "accepted" | "rejected" | "expired" | "on_hold" | "converted";
 export type QuotationApprovalStatus = "pending_approval" | "approved" | "rejected";
@@ -30,6 +31,113 @@ export type LeadQuotationItem = {
   igst_amount?: number;
   total_gst_amount: number;
   line_total: number;
+};
+
+export type QuotationRevisionSnapshot = {
+  _id?: string;
+  version: number;
+  quotation_no?: string;
+  ref_no?: string;
+  customer_ref?: string;
+  quotation_date?: string;
+  valid_until?: string;
+  validity_days?: number;
+  subject?: string;
+  message?: string;
+  quotation_message?: string;
+  customer_name?: string;
+  kind_attn?: string;
+  phone?: string;
+  cell?: string;
+  email?: string;
+  gstin?: string;
+  address?: {
+    address_line_1?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+    country?: string;
+    country_id?: string;
+    state_id?: string;
+    city_id?: string;
+  };
+  items?: LeadQuotationItem[];
+  subtotal?: number;
+  total_discount?: number;
+  gst_enabled?: boolean;
+  total_gst?: number;
+  round_off?: number;
+  grand_total?: number;
+  amount_in_words?: string;
+  terms_and_conditions?: string[];
+  branch_id?: string;
+  branch_code?: string;
+  company_branch_name?: string;
+  company_name?: string;
+  company_regd_address?: string;
+  company_phone?: string;
+  company_email?: string;
+  company_gstin?: string;
+  bank_name?: string;
+  account_name?: string;
+  account_number?: string;
+  ifsc_code?: string;
+  branch_name?: string;
+  account_type?: string;
+  signatory_name?: string;
+  signatory_phone?: string;
+  signatory_email?: string;
+  signatory_designation?: string;
+  signatory_user?: { _id: string; name?: string; email?: string; department?: string; phone?: string; designation?: string } | null;
+  sales_person_name?: string;
+  sales_person_phone?: string;
+  sales_person_email?: string;
+  sales_person_designation?: string;
+  sales_person_user?: { _id: string; name?: string; email?: string; department?: string; phone?: string; designation?: string } | null;
+  status?: string;
+  approval_status?: string;
+  approved_by?: { _id: string; name?: string; email?: string } | null;
+  approved_at?: string | null;
+  saved_by?: { _id: string; name?: string; email?: string } | null;
+  saved_at?: string;
+  change_summary?: string;
+};
+
+export type QuotationVersionComparison = {
+  from_version: number;
+  to_version: number;
+  from_saved_at?: string;
+  to_saved_at?: string;
+  from_saved_by?: { _id: string; name?: string; email?: string } | null;
+  to_saved_by?: { _id: string; name?: string; email?: string } | null;
+  financial_comparison: {
+    subtotal_from: number;
+    subtotal_to: number;
+    subtotal_delta: number;
+    discount_from: number;
+    discount_to: number;
+    discount_delta: number;
+    gst_from: number;
+    gst_to: number;
+    gst_delta: number;
+    grand_total_from: number;
+    grand_total_to: number;
+    grand_total_delta: number;
+  };
+  items_comparison: Array<{
+    status: 'added' | 'removed' | 'modified' | 'unchanged';
+    product_name: string;
+    from: LeadQuotationItem | null;
+    to: LeadQuotationItem | null;
+    diff?: {
+      quantity_delta: number;
+      rate_delta: number;
+      discount_delta: number;
+      line_total_delta: number;
+    };
+  }>;
+  terms_from: string[];
+  terms_to: string[];
 };
 
 export type LeadQuotationRecord = {
@@ -111,29 +219,8 @@ export type LeadQuotationRecord = {
   status: QuotationStatus;
   version?: number;
   revision_of?: string | LeadQuotationRecord;
-  revision_history?: Array<{
-    _id?: string;
-    version: number;
-    items?: LeadQuotationItem[];
-    subtotal?: number;
-    total_discount?: number;
-    total_gst?: number;
-    round_off?: number;
-    grand_total?: number;
-    amount_in_words?: string;
-    terms_and_conditions?: string[];
-    signatory_name?: string;
-    signatory_user?: { _id: string; name?: string; email?: string } | null;
-    sales_person_name?: string;
-    sales_person_user?: { _id: string; name?: string; email?: string } | null;
-    status?: string;
-    approval_status?: string;
-    approved_by?: { _id: string; name?: string; email?: string } | null;
-    approved_at?: string | null;
-    saved_by?: { _id: string; name?: string; email?: string } | null;
-    saved_at?: string;
-    change_summary?: string;
-  }>;
+  is_historical_snapshot?: boolean;
+  revision_history?: QuotationRevisionSnapshot[];
   lost_reason?: string;
   proforma_issued_at?: string;
   customer_po_number?: string;
@@ -204,22 +291,23 @@ export type LeadQuotationFollowUp = {
   lead?: string | { _id: string; lead_no?: string; organization_name?: string };
   follow_up_date: string;
   follow_up_time?: string;
-  type: "call" | "meeting" | "email" | "whatsapp" | "visit" | "demo" | "other";
+  type: "call" | "meeting" | "email" | "whatsapp" | "visit" | "demo" | "note" | "other";
   notes?: string;
   outcome?: string;
   status: "pending" | "completed" | "cancelled" | "rescheduled";
   next_follow_up_date?: string;
   completed_at?: string;
-  completed_by?: { _id: string; name?: string; email?: string };
-  created_by: { _id: string; name?: string; email?: string };
+  completed_by?: { _id: string; name?: string; email?: string; department?: string };
+  created_by: { _id: string; name?: string; email?: string; department?: string };
+  actions?: FollowUpActionRecord[];
   createdAt: string;
   updatedAt: string;
 };
 
 export type ScheduleQuotationFollowUpPayload = {
-  follow_up_date: string;
+  follow_up_date?: string;
   follow_up_time?: string;
-  type?: "call" | "meeting" | "email" | "whatsapp" | "visit" | "demo" | "other";
+  type?: "call" | "meeting" | "email" | "whatsapp" | "visit" | "demo" | "note" | "other";
   notes?: string;
 };
 
@@ -306,7 +394,10 @@ export type CreateQuotationPayload = {
   notes?: string;
 };
 
-export type UpdateQuotationPayload = Partial<CreateQuotationPayload>;
+export type UpdateQuotationPayload = Partial<CreateQuotationPayload> & {
+  change_summary?: string;
+  lost_reason?: string;
+};
 
 export type ConvertQuotationPayload = {
   conversion_type?: "new_customer" | "existing_customer";
@@ -646,6 +737,31 @@ export const leadQuotationsApi = medicaApi.injectEndpoints({
       ],
     }),
 
+    addQuotationFollowUpAction: build.mutation<
+      LeadQuotationFollowUp,
+      {
+        followUpId: string;
+        quotationId: string;
+        leadId?: string;
+        message: string;
+        action_type?: string;
+        metadata?: Record<string, unknown>;
+      }
+    >({
+      query: ({ followUpId, message, action_type, metadata }) => ({
+        url: `/quotations/follow-ups/${followUpId}/actions`,
+        method: "POST",
+        body: { message, action_type, metadata },
+      }),
+      transformResponse: (raw: ApiEnvelope<LeadQuotationFollowUp>) =>
+        unwrapEnvelope(raw) as LeadQuotationFollowUp,
+      invalidatesTags: (_res, _err, { quotationId, leadId }) => [
+        { type: "LeadQuotation", id: `FOLLOWUPS_${quotationId}` },
+        { type: "LeadQuotation", id: quotationId },
+        ...(leadId ? [{ type: "LeadFollowUp" as const, id: `LEAD_${leadId}` }] : []),
+      ],
+    }),
+
     reviseQuotation: build.mutation<
       LeadQuotationRecord,
       { quotationId: string; leadId?: string }
@@ -666,6 +782,31 @@ export const leadQuotationsApi = medicaApi.injectEndpoints({
           : []),
         "Activity",
       ],
+    }),
+
+    getQuotationVersion: build.query<
+      LeadQuotationRecord,
+      { quotationId: string; version: number }
+    >({
+      query: ({ quotationId, version }) => ({
+        url: `/quotations/${quotationId}/versions/${version}`,
+      }),
+      transformResponse: (raw: ApiEnvelope<LeadQuotationRecord>) =>
+        unwrapEnvelope(raw) as LeadQuotationRecord,
+      providesTags: (_res, _err, { quotationId, version }) => [
+        { type: "LeadQuotation", id: `${quotationId}_v${version}` },
+      ],
+    }),
+
+    compareQuotationVersions: build.query<
+      QuotationVersionComparison,
+      { quotationId: string; fromVersion: number; toVersion: number }
+    >({
+      query: ({ quotationId, fromVersion, toVersion }) => ({
+        url: `/quotations/${quotationId}/compare?from=${fromVersion}&to=${toVersion}`,
+      }),
+      transformResponse: (raw: ApiEnvelope<QuotationVersionComparison>) =>
+        unwrapEnvelope(raw) as QuotationVersionComparison,
     }),
 
     getQuotationDashboardStats: build.query<
@@ -913,7 +1054,12 @@ export const {
   useListQuotationFollowUpsQuery,
   useScheduleQuotationFollowUpMutation,
   useCompleteQuotationFollowUpMutation,
+  useAddQuotationFollowUpActionMutation,
   useReviseQuotationMutation,
+  useGetQuotationVersionQuery,
+  useLazyGetQuotationVersionQuery,
+  useCompareQuotationVersionsQuery,
+  useLazyCompareQuotationVersionsQuery,
   useGetQuotationDashboardStatsQuery,
   useGetQuotationReportSummaryQuery,
   useGetQuotationReportSalesPerformanceQuery,
