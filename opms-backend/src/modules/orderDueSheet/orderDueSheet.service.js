@@ -221,14 +221,20 @@ async function supersedePreviousCurrentSheets(orderId, excludeId = null) {
   });
 }
 
-/** Mark related OrderApproval rows when a current due sheet exists for the order. */
+/** Mark related OrderApproval and Order rows when a current due sheet exists for the order. */
 async function markOrderApprovalDueSheetUploaded(orderId) {
   if (!orderId) return;
-  const { OrderApproval } = getModels();
+  const { OrderApproval, Order } = getModels();
   await OrderApproval.updateMany(
     { order: orderId, deletedAt: null },
     { $set: { is_due_sheet_uploaded: true } },
   );
+  if (Order) {
+    await Order.updateOne(
+      { _id: orderId },
+      { $set: { is_due_sheet_uploaded: true, due_sheet_uploaded: true } },
+    );
+  }
   const { scheduleProcessStageRefresh } = require('../orders/processStage.jobs');
   await scheduleProcessStageRefresh(orderId, 'due_sheet_upload');
 }
@@ -475,6 +481,29 @@ async function softDelete(id, user) {
     action: 'deleted',
     message: `Due sheet ${plain.due_sheet_no} soft-deleted`,
   });
+
+  if (plain.order) {
+    const { OrderDueSheet, OrderApproval, Order } = getModels();
+    const remainingActive = await OrderDueSheet.countDocuments({
+      order: plain.order,
+      deletedAt: null,
+      status: DUE_SHEET_STATUS.ACTIVE,
+    });
+    if (remainingActive === 0) {
+      await OrderApproval.updateMany(
+        { order: plain.order, deletedAt: null },
+        { $set: { is_due_sheet_uploaded: false } },
+      );
+      if (Order) {
+        await Order.updateOne(
+          { _id: plain.order },
+          { $set: { is_due_sheet_uploaded: false, due_sheet_uploaded: false } },
+        );
+      }
+    }
+    const { scheduleProcessStageRefresh } = require('../orders/processStage.jobs');
+    await scheduleProcessStageRefresh(plain.order, 'due_sheet_deleted');
+  }
 
   return plain;
 }

@@ -769,7 +769,7 @@ async function loadWorkflowContext() {
   };
 }
 
-const INDEX_TTL_MS = 20_000;
+const INDEX_TTL_MS = 0;
 const indexCache = new Map();
 const indexInflight = new Map();
 

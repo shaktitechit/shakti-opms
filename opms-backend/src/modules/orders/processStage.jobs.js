@@ -14,13 +14,21 @@ async function scheduleProcessStageRefresh(orderId, source = 'workflow') {
   const oid = orderId != null ? String(orderId) : '';
   if (!oid) return;
 
+  // Always refresh inline immediately so subsequent queries, list fetches,
+  // and HTTP responses reflect the real-time stage without waiting for an async queue worker.
+  try {
+    await refreshOrderProcessStage(oid);
+  } catch (err) {
+    logger.error?.(
+      `[processStage] inline refresh failed for order ${oid} (${source}): ${err.message}`,
+    );
+  }
+
+  // Also notify queue for background workers/redundancy if queue is available
   try {
     await processStageQueue.enqueue({ orderId: oid, source });
-  } catch (err) {
-    logger.warn?.(
-      `[processStage] queue unavailable (${source}), refreshing inline for order ${oid}: ${err.message}`,
-    );
-    await refreshOrderProcessStage(oid);
+  } catch {
+    // Non-blocking: inline refresh already completed.
   }
 }
 
