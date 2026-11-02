@@ -74,7 +74,10 @@ import type {
   ListOrdersPageConfig,
   ListOrdersTabId,
 } from "./listOrdersPageConfig";
-import { type OrderWorkflowTabCategory } from "./orderWorkflowTabs";
+import {
+  orderMatchesWorkflowTab,
+  type OrderWorkflowTabCategory,
+} from "./orderWorkflowTabs";
 import { UnbilledOrdersModal } from "./UnbilledOrdersModal";
 import { useOrderListUrlState } from "./useOrderListUrlState";
 import { useOrderWorkflowCategoryOptions } from "./useOrderWorkflowCategoryOptions";
@@ -230,15 +233,37 @@ export default function ListOrdersPage({
       ? (data as ListOrdersPagePayload)
       : null;
 
-  const orders = useMemo(
+  const rawOrders = useMemo(
     () => pickOrders(data) as OrderListRow[],
     [data],
   );
 
-  const bulkOrders = useMemo(
+  const orders = useMemo(() => {
+    if (processStage === "all") return rawOrders;
+    return rawOrders.filter((o) => {
+      return orderMatchesWorkflowTab(
+        o,
+        processStage as OrderWorkflowTabCategory,
+        categoryOptions,
+      );
+    });
+  }, [rawOrders, processStage, categoryOptions]);
+
+  const rawBulkOrders = useMemo(
     () => pickOrders(bulkQ.data) as OrderListRow[],
     [bulkQ.data],
   );
+
+  const bulkOrders = useMemo(() => {
+    if (processStage === "all") return rawBulkOrders;
+    return rawBulkOrders.filter((o) => {
+      return orderMatchesWorkflowTab(
+        o,
+        processStage as OrderWorkflowTabCategory,
+        categoryOptions,
+      );
+    });
+  }, [rawBulkOrders, processStage, categoryOptions]);
 
   const getActiveTransportInfoForOrder = useCallback((o: Record<string, unknown>) => {
     const at = o.active_transport as

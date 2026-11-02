@@ -337,10 +337,16 @@ async function enrichOrdersWithApprovalPending(rows, models) {
     const docs = byOrder.get(orderKey) || [];
     // Do not require non-rejected — leftover rejection_reason must not hide the flag.
     const fromDocs = docs.some((doc) => isTruthyFlag(doc.is_due_sheet_uploaded));
+    const uploaded =
+      fromDocs ||
+      flaggedOrderIds.has(orderKey) ||
+      isTruthyFlag(row.is_due_sheet_uploaded) ||
+      isTruthyFlag(row.due_sheet_uploaded);
     return {
       ...row,
       approval_pending: resolveOrderApprovalPending(docs, row),
-      is_due_sheet_uploaded: fromDocs || flaggedOrderIds.has(orderKey),
+      is_due_sheet_uploaded: uploaded,
+      due_sheet_uploaded: uploaded || isTruthyFlag(row.due_sheet_uploaded),
     };
   });
 }
@@ -355,15 +361,14 @@ async function enrichOrdersWithDueSheetStatus(rows, models) {
   if (orderIds.length === 0) {
     return rows.map((row) => ({
       ...row,
-      due_sheet_uploaded: false,
+      due_sheet_uploaded: isTruthyFlag(row.due_sheet_uploaded) || isTruthyFlag(row.is_due_sheet_uploaded),
     }));
   }
 
   const activeDueSheets = await models.OrderDueSheet.find({
     order: { $in: orderIds },
-    is_current: true,
-    status: 'active',
     deletedAt: null,
+    status: { $ne: 'archived' },
   })
     .select('order')
     .lean();
@@ -372,12 +377,14 @@ async function enrichOrdersWithDueSheetStatus(rows, models) {
 
   return rows.map((row) => {
     const uploaded =
-      uploadedOrderIds.has(String(row._id)) || isTruthyFlag(row.is_due_sheet_uploaded);
+      uploadedOrderIds.has(String(row._id)) ||
+      isTruthyFlag(row.is_due_sheet_uploaded) ||
+      isTruthyFlag(row.due_sheet_uploaded);
     return {
       ...row,
       // Keep list tabs / badges in sync: physical sheet OR approval DB flag.
       due_sheet_uploaded: uploaded,
-      is_due_sheet_uploaded: uploaded || isTruthyFlag(row.is_due_sheet_uploaded),
+      is_due_sheet_uploaded: uploaded,
     };
   });
 }
